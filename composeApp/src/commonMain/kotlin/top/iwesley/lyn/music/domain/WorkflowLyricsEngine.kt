@@ -587,7 +587,7 @@ private fun JsonObject.stringOrDefault(key: String, default: String): String {
 
 private inline fun <reified T : Enum<T>> JsonObject.enumOrDefault(key: String, default: T): T {
     val raw = stringOrNull(key) ?: return default
-    return enumValues<T>().firstOrNull { it.name.equals(raw, ignoreCase = true) }
+    return enumValues<T>().firstOrNull { enumMatchesAlias(it.name, raw) }
         ?: error("字段 $key 的值 \"$raw\" 不合法。")
 }
 
@@ -595,7 +595,7 @@ private inline fun <reified T : Enum<T>> JsonObject.enumListOrEmpty(key: String)
     val array = this[key] as? JsonArray ?: return emptyList()
     return array.map { item ->
         val raw = (item as? JsonPrimitive)?.contentOrNull ?: error("$key 中存在非字符串值。")
-        enumValues<T>().firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        enumValues<T>().firstOrNull { enumMatchesAlias(it.name, raw) }
             ?: error("字段 $key 中的值 \"$raw\" 不合法。")
     }
 }
@@ -632,6 +632,17 @@ private fun ensureAllowedKeys(
     require(unexpected.isEmpty()) {
         "$context 包含未知字段: ${unexpected.joinToString(", ")}。"
     }
+}
+
+private fun enumMatchesAlias(enumName: String, raw: String): Boolean {
+    return normalizeEnumAlias(enumName) == normalizeEnumAlias(raw)
+}
+
+private fun normalizeEnumAlias(value: String): String {
+    return value
+        .trim()
+        .lowercase()
+        .replace(Regex("""[^a-z0-9]+"""), "")
 }
 
 private fun String.escapeJsonString(): String {
