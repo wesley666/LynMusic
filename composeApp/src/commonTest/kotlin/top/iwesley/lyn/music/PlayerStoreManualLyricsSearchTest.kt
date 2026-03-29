@@ -125,6 +125,7 @@ class PlayerStoreManualLyricsSearchTest {
             artists = listOf("工作流歌手"),
             album = "工作流专辑",
             durationSeconds = 123,
+            imageUrl = "https://img.example.com/cover.jpg",
         )
         val appliedDocument = LyricsDocument(
             lines = listOf(LyricsLine(timestampMs = 500L, text = "Workflow 第一句")),
@@ -162,6 +163,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertEquals(0, state.highlightedLineIndex)
         assertFalse(state.isManualLyricsSearchVisible)
         assertTrue(state.manualWorkflowSongResults.isEmpty())
+        assertEquals("https://img.example.com/cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         scope.cancel()
     }
 
@@ -193,6 +195,19 @@ private class FakePlaybackRepository(
     override suspend fun seekTo(positionMs: Long) = Unit
     override suspend fun setVolume(volume: Float) = Unit
     override suspend fun cycleMode() = Unit
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+        val snapshot = mutableSnapshot.value
+        val currentTrack = snapshot.currentTrack ?: return
+        val currentIndex = snapshot.currentIndex
+        if (currentIndex !in snapshot.queue.indices) return
+        val updatedQueue = snapshot.queue.toMutableList().also { queue ->
+            queue[currentIndex] = currentTrack.copy(artworkLocator = artworkLocator)
+        }
+        mutableSnapshot.value = snapshot.copy(
+            queue = updatedQueue,
+            metadataArtworkLocator = artworkLocator,
+        )
+    }
     override suspend fun close() = Unit
 }
 

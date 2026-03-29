@@ -139,6 +139,7 @@ data class PlaybackSnapshot(
     val metadataTitle: String? = null,
     val metadataArtistName: String? = null,
     val metadataAlbumTitle: String? = null,
+    val metadataArtworkLocator: String? = null,
     val errorMessage: String? = null,
 ) {
     val currentTrack: Track?
@@ -152,6 +153,9 @@ data class PlaybackSnapshot(
 
     val currentDisplayAlbumTitle: String?
         get() = metadataAlbumTitle?.takeIf { it.isNotBlank() } ?: currentTrack?.albumTitle
+
+    val currentDisplayArtworkLocator: String?
+        get() = metadataArtworkLocator?.takeIf { it.isNotBlank() } ?: currentTrack?.artworkLocator
 }
 
 data class PlaybackGatewayState(
@@ -239,6 +243,15 @@ data class WorkflowSelectionConfig(
     val maxCandidates: Int = 10,
 )
 
+data class WorkflowCandidateEnrichmentStepConfig(
+    val request: WorkflowRequestConfig,
+    val capture: Map<String, String> = emptyMap(),
+)
+
+data class WorkflowCandidateEnrichmentConfig(
+    val steps: List<WorkflowCandidateEnrichmentStepConfig> = emptyList(),
+)
+
 data class WorkflowLyricsStepConfig(
     val request: WorkflowRequestConfig,
     val capture: Map<String, String> = emptyMap(),
@@ -263,6 +276,7 @@ data class WorkflowLyricsSourceConfig(
     override val enabled: Boolean = true,
     val search: WorkflowSearchConfig,
     val selection: WorkflowSelectionConfig = WorkflowSelectionConfig(),
+    val enrichment: WorkflowCandidateEnrichmentConfig = WorkflowCandidateEnrichmentConfig(),
     val lyrics: WorkflowLyricsConfig,
     val optionalFields: WorkflowOptionalFields = WorkflowOptionalFields(),
     val rawJson: String,

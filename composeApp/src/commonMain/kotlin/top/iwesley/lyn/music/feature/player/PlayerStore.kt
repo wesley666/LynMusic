@@ -239,6 +239,9 @@ class PlayerStore(
 
     private suspend fun applyWorkflowSongCandidate(candidate: WorkflowSongCandidate) {
         val track = state.value.snapshot.currentTrack ?: return
+        if (!candidate.imageUrl.isNullOrBlank()) {
+            playbackRepository.overrideCurrentTrackArtwork(candidate.imageUrl)
+        }
         val snapshot = state.value.snapshot
         val document = lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
         updateState {

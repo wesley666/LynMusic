@@ -2,6 +2,8 @@ package top.iwesley.lyn.music.domain
 
 import io.ktor.http.encodeURLParameter
 import kotlin.io.encoding.Base64
+import kotlin.random.Random
+import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -13,6 +15,8 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.WorkflowCandidateEnrichmentConfig
+import top.iwesley.lyn.music.core.model.WorkflowCandidateEnrichmentStepConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
@@ -36,9 +40,11 @@ private val prettyWorkflowJson = Json {
 }
 
 private const val WORKFLOW_KIND = "workflow"
-private val TOP_LEVEL_KEYS = setOf("id", "name", "kind", "enabled", "priority", "search", "selection", "lyrics", "optionalFields")
+private val TOP_LEVEL_KEYS = setOf("id", "name", "kind", "enabled", "priority", "search", "selection", "enrichment", "lyrics", "optionalFields")
 private val SEARCH_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "resultPath", "mapping")
 private val SELECTION_KEYS = setOf("titleWeight", "artistWeight", "albumWeight", "durationWeight", "durationToleranceSeconds", "minScore", "maxCandidates")
+private val ENRICHMENT_KEYS = setOf("steps")
+private val ENRICHMENT_STEP_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "capture")
 private val LYRICS_KEYS = setOf("steps")
 private val STEP_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "capture", "payloadPath", "fallbackPayloadPath", "format", "transforms")
 private val OPTIONAL_FIELDS_KEYS = setOf("coverUrlField")
@@ -54,6 +60,11 @@ private val TRACK_TEMPLATE_VARIABLES = setOf(
     "track_id",
     "source_id",
 )
+private val RUNTIME_TEMPLATE_VARIABLES = setOf(
+    "timestamp_ms",
+    "random_alnum_23",
+    "random_lower_alnum_23",
+)
 
 fun parseWorkflowLyricsSourceConfig(rawJson: String): WorkflowLyricsSourceConfig {
     val root = workflowJson.parseToJsonElement(rawJson.trim()).jsonObjectOrThrow("workflow root")
@@ -62,6 +73,8 @@ fun parseWorkflowLyricsSourceConfig(rawJson: String): WorkflowLyricsSourceConfig
     require(kind == WORKFLOW_KIND) { "workflow.kind 必须为 \"$WORKFLOW_KIND\"。" }
     val search = root.requiredObject("search", "workflow").toWorkflowSearchConfig()
     val selection = root["selection"]?.jsonObjectOrThrow("workflow.selection")?.toWorkflowSelectionConfig() ?: WorkflowSelectionConfig()
+    val enrichment = root["enrichment"]?.jsonObjectOrThrow("workflow.enrichment")?.toWorkflowCandidateEnrichmentConfig()
+        ?: WorkflowCandidateEnrichmentConfig()
     val lyrics = root.requiredObject("lyrics", "workflow").toWorkflowLyricsConfig()
     val optionalFields = root["optionalFields"]?.jsonObjectOrThrow("workflow.optionalFields")?.toWorkflowOptionalFields()
         ?: WorkflowOptionalFields()
@@ -73,6 +86,7 @@ fun parseWorkflowLyricsSourceConfig(rawJson: String): WorkflowLyricsSourceConfig
         priority = root.intOrDefault("priority", 0),
         search = search,
         selection = selection,
+        enrichment = enrichment,
         lyrics = lyrics,
         optionalFields = optionalFields,
         rawJson = prettyWorkflowJson.encodeToString(JsonElement.serializer(), root),
@@ -101,12 +115,13 @@ fun buildWorkflowRequest(
     request: WorkflowRequestConfig,
     variables: Map<String, String>,
 ): LyricsRequest {
+    val resolvedVariables = variables + workflowRuntimeVariables()
     val url = appendWorkflowQuery(
-        interpolateWorkflowTemplate(request.url, variables, encode = true),
-        interpolateWorkflowTemplate(request.queryTemplate, variables, encode = true),
+        interpolateWorkflowTemplate(request.url, resolvedVariables, encode = true),
+        interpolateWorkflowTemplate(request.queryTemplate, resolvedVariables, encode = true),
     )
-    val headers = parseWorkflowHeaders(interpolateWorkflowTemplate(request.headersTemplate, variables, encode = false))
-    val body = interpolateWorkflowTemplate(request.bodyTemplate, variables, encode = false).ifBlank { null }
+    val headers = parseWorkflowHeaders(interpolateWorkflowTemplate(request.headersTemplate, resolvedVariables, encode = false))
+    val body = interpolateWorkflowTemplate(request.bodyTemplate, resolvedVariables, encode = false).ifBlank { null }
     return LyricsRequest(
         method = request.method,
         url = url,
@@ -143,6 +158,24 @@ fun workflowCandidateVariables(candidate: WorkflowSongCandidate): Map<String, St
             put("candidate.$key", value)
         }
     }
+}
+
+fun mergeWorkflowCandidateCapture(
+    candidate: WorkflowSongCandidate,
+    capture: Map<String, String>,
+): WorkflowSongCandidate {
+    if (capture.isEmpty()) return candidate
+    val imageUrl = capture["imageUrl"]
+        ?.takeIf { it.isNotBlank() }
+        ?: capture["coverUrl"]?.takeIf { it.isNotBlank() }
+        ?: candidate.imageUrl
+    val extraFields = candidate.extraFields + capture
+        .filterKeys { key -> key != "imageUrl" && key != "coverUrl" }
+        .filterValues { it.isNotBlank() }
+    return candidate.copy(
+        imageUrl = imageUrl,
+        extraFields = extraFields,
+    )
 }
 
 fun extractWorkflowSongCandidates(
@@ -199,14 +232,24 @@ fun extractWorkflowStepCapture(
     step: WorkflowLyricsStepConfig,
     payload: String,
 ): Map<String, String> {
-    if (step.capture.isEmpty()) return emptyMap()
-    require(step.request.responseFormat == LyricsResponseFormat.JSON) {
-        "workflow.lyrics.steps.capture 当前仅支持 JSON 响应。"
-    }
-    val root = workflowJson.parseToJsonElement(payload)
-    return step.capture.mapValues { (_, path) ->
-        extractJsonStrings(root, path).joinToString(" / ").trim()
-    }.filterValues { it.isNotBlank() }
+    return extractWorkflowCapture(
+        capture = step.capture,
+        responseFormat = step.request.responseFormat,
+        payload = payload,
+        context = "workflow.lyrics.steps.capture",
+    )
+}
+
+fun extractWorkflowEnrichmentStepCapture(
+    step: WorkflowCandidateEnrichmentStepConfig,
+    payload: String,
+): Map<String, String> {
+    return extractWorkflowCapture(
+        capture = step.capture,
+        responseFormat = step.request.responseFormat,
+        payload = payload,
+        context = "workflow.enrichment.steps.capture",
+    )
 }
 
 fun extractWorkflowLyricsPayload(
@@ -286,6 +329,15 @@ private fun JsonObject.toWorkflowSelectionConfig(): WorkflowSelectionConfig {
     )
 }
 
+private fun JsonObject.toWorkflowCandidateEnrichmentConfig(): WorkflowCandidateEnrichmentConfig {
+    ensureAllowedKeys(this, ENRICHMENT_KEYS, "workflow.enrichment")
+    val steps = requiredArray("steps", "workflow.enrichment")
+        .mapIndexed { index, item ->
+            item.jsonObjectOrThrow("workflow.enrichment.steps[$index]").toWorkflowCandidateEnrichmentStepConfig(index)
+        }
+    return WorkflowCandidateEnrichmentConfig(steps = steps)
+}
+
 private fun JsonObject.toWorkflowLyricsConfig(): WorkflowLyricsConfig {
     ensureAllowedKeys(this, LYRICS_KEYS, "workflow.lyrics")
     val steps = requiredArray("steps", "workflow.lyrics")
@@ -293,6 +345,14 @@ private fun JsonObject.toWorkflowLyricsConfig(): WorkflowLyricsConfig {
             item.jsonObjectOrThrow("workflow.lyrics.steps[$index]").toWorkflowLyricsStepConfig(index)
         }
     return WorkflowLyricsConfig(steps = steps)
+}
+
+private fun JsonObject.toWorkflowCandidateEnrichmentStepConfig(index: Int): WorkflowCandidateEnrichmentStepConfig {
+    ensureAllowedKeys(this, ENRICHMENT_STEP_KEYS, "workflow.enrichment.steps[$index]")
+    return WorkflowCandidateEnrichmentStepConfig(
+        request = toWorkflowRequestConfig("workflow.enrichment.steps[$index]"),
+        capture = stringMapOrEmpty("capture", "workflow.enrichment.steps[$index]"),
+    )
 }
 
 private fun JsonObject.toWorkflowLyricsStepConfig(index: Int): WorkflowLyricsStepConfig {
@@ -334,13 +394,29 @@ private fun validateWorkflowTemplateVariables(config: WorkflowLyricsSourceConfig
             config.search.request.bodyTemplate,
             config.search.request.headersTemplate,
         ),
-        allowedVariables = TRACK_TEMPLATE_VARIABLES,
+        allowedVariables = TRACK_TEMPLATE_VARIABLES + RUNTIME_TEMPLATE_VARIABLES,
     )
 
     val candidateKeys = buildSet {
         addAll(config.search.mapping.keys.map { "candidate.$it" })
         add("candidate.imageUrl")
+        config.enrichment.steps.forEach { step ->
+            addAll(step.capture.keys.map { "candidate.$it" })
+        }
     }
+    config.enrichment.steps.forEachIndexed { index, step ->
+        validatePlaceholders(
+            context = "workflow.enrichment.steps[$index]",
+            templates = listOf(
+                step.request.url,
+                step.request.queryTemplate,
+                step.request.bodyTemplate,
+                step.request.headersTemplate,
+            ),
+            allowedVariables = TRACK_TEMPLATE_VARIABLES + RUNTIME_TEMPLATE_VARIABLES + candidateKeys,
+        )
+    }
+
     val stepCaptureKeys = mutableSetOf<String>()
     config.lyrics.steps.forEachIndexed { index, step ->
         validatePlaceholders(
@@ -351,7 +427,7 @@ private fun validateWorkflowTemplateVariables(config: WorkflowLyricsSourceConfig
                 step.request.bodyTemplate,
                 step.request.headersTemplate,
             ),
-            allowedVariables = TRACK_TEMPLATE_VARIABLES + candidateKeys + stepCaptureKeys,
+            allowedVariables = TRACK_TEMPLATE_VARIABLES + RUNTIME_TEMPLATE_VARIABLES + candidateKeys + stepCaptureKeys,
         )
         step.capture.keys.forEach { key ->
             stepCaptureKeys += "step$index.$key"
@@ -529,6 +605,22 @@ private fun extractJsonValues(
     }
 }
 
+private fun extractWorkflowCapture(
+    capture: Map<String, String>,
+    responseFormat: LyricsResponseFormat,
+    payload: String,
+    context: String,
+): Map<String, String> {
+    if (capture.isEmpty()) return emptyMap()
+    require(responseFormat == LyricsResponseFormat.JSON) {
+        "$context 当前仅支持 JSON 响应。"
+    }
+    val root = workflowJson.parseToJsonElement(payload)
+    return capture.mapValues { (_, path) ->
+        extractJsonStrings(root, path).joinToString(" / ").trim()
+    }.filterValues { it.isNotBlank() }
+}
+
 private fun jsonElementToStrings(element: JsonElement): List<String> {
     return when (element) {
         is JsonPrimitive -> listOfNotNull(element.contentOrNull)
@@ -643,6 +735,22 @@ private fun normalizeEnumAlias(value: String): String {
         .trim()
         .lowercase()
         .replace(Regex("""[^a-z0-9]+"""), "")
+}
+
+private fun workflowRuntimeVariables(): Map<String, String> {
+    return mapOf(
+        "timestamp_ms" to Clock.System.now().toEpochMilliseconds().toString(),
+        "random_alnum_23" to randomWorkflowString(length = 23, alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"),
+        "random_lower_alnum_23" to randomWorkflowString(length = 23, alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"),
+    )
+}
+
+private fun randomWorkflowString(length: Int, alphabet: String): String {
+    return buildString(length) {
+        repeat(length) {
+            append(alphabet[Random.nextInt(alphabet.length)])
+        }
+    }
 }
 
 private fun String.escapeJsonString(): String {

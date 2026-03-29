@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -95,6 +96,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -148,6 +150,7 @@ import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.feature.settings.SettingsStore
+import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.heroGlow
 
@@ -1031,6 +1034,7 @@ private fun PlayerInfoPane(
         )
         VinylPlaceholder(
             size = if (compact) 250.dp else 420.dp,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
             modifier = Modifier.align(Alignment.Center),
         )
     }
@@ -2124,8 +2128,10 @@ private fun StatCard(
 @Composable
 private fun VinylPlaceholder(
     size: Dp,
+    artworkLocator: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     Box(
         modifier = modifier
             .size(size)
@@ -2144,10 +2150,30 @@ private fun VinylPlaceholder(
     ) {
         Box(
             modifier = Modifier
-                .size(size / 4)
+                .size(size * 0.58f)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f)),
-        )
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f))
+                .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (artworkBitmap != null) {
+                Image(
+                    bitmap = artworkBitmap,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(size / 4)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
+                )
+            }
+        }
     }
 }
 

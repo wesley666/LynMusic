@@ -38,6 +38,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.formatSambaEndpoint
@@ -58,6 +59,7 @@ import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.buildWorkflowRequest
+import top.iwesley.lyn.music.domain.extractWorkflowEnrichmentStepCapture
 import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
 import top.iwesley.lyn.music.domain.extractWorkflowSongCandidates
 import top.iwesley.lyn.music.domain.extractWorkflowStepCapture
@@ -70,6 +72,7 @@ import top.iwesley.lyn.music.domain.scoreWorkflowSongCandidate
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
 import top.iwesley.lyn.music.domain.selectBestWorkflowSongCandidate
 import top.iwesley.lyn.music.domain.validateWorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.domain.mergeWorkflowCandidateCapture
 import top.iwesley.lyn.music.domain.workflowCandidateVariables
 import top.iwesley.lyn.music.domain.workflowTrackVariables
 
@@ -100,6 +103,7 @@ interface PlaybackRepository {
     suspend fun seekTo(positionMs: Long)
     suspend fun setVolume(volume: Float)
     suspend fun cycleMode()
+    suspend fun overrideCurrentTrackArtwork(artworkLocator: String?)
     suspend fun close()
 }
 
@@ -588,9 +592,18 @@ class DefaultLyricsRepository(
             logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-workflow-sources track=$trackLabel" }
             return emptyList()
         }
-        return configs.flatMap { config ->
+        val candidates = configs.flatMap { config ->
             searchWorkflowCandidates(track, config, requestType = "manual")
         }
+        if (candidates.isNotEmpty()) {
+            logger.debug(LYRICS_LOG_TAG) {
+                "manual-workflow-cover-candidates track=$trackLabel results=" +
+                    candidates.joinToString(" | ") { candidate ->
+                        "${candidate.sourceId}:${candidate.id}:${candidate.imageUrl.orEmpty()}"
+                    }
+            }
+        }
+        return candidates
     }
 
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
@@ -635,7 +648,8 @@ class DefaultLyricsRepository(
         ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
         storeLyricsDocument(trackId, document)
         logger.info(LYRICS_LOG_TAG) {
-            "manual-workflow-apply track=$trackId source=${candidate.sourceId} synced=${document.isSynced} lines=${document.lines.size}"
+            "manual-workflow-apply track=$trackId source=${candidate.sourceId} synced=${document.isSynced} " +
+                "lines=${document.lines.size} coverUrl=${candidate.imageUrl.orEmpty()}"
         }
         return document
     }
@@ -702,6 +716,9 @@ class DefaultLyricsRepository(
             }
             return null
         }
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-workflow-select-hit track=${track.logIdentity()} source=${config.id} candidate=${candidate.id} coverUrl=${candidate.imageUrl.orEmpty()}"
+        }
         return fetchWorkflowLyricsForCandidate(track, config, candidate, requestType)
     }
 
@@ -739,7 +756,62 @@ class DefaultLyricsRepository(
             "$requestType-workflow-search-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
                 "elapsedMs=${now() - startedAt} candidates=${candidates.size}"
         }
-        return candidates.take(config.selection.maxCandidates.coerceAtLeast(1))
+        val limitedCandidates = candidates.take(config.selection.maxCandidates.coerceAtLeast(1))
+        if (config.enrichment.steps.isEmpty()) return limitedCandidates
+        val enrichedCandidates = limitedCandidates.map { candidate ->
+            enrichWorkflowCandidate(track, config, candidate, requestType)
+        }
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-workflow-cover-results track=$trackLabel source=${config.id} candidates=" +
+                enrichedCandidates.joinToString(" | ") { candidate ->
+                    "${candidate.id}:${candidate.imageUrl.orEmpty()}"
+                }
+        }
+        return enrichedCandidates
+    }
+
+    private suspend fun enrichWorkflowCandidate(
+        track: Track,
+        config: WorkflowLyricsSourceConfig,
+        candidate: WorkflowSongCandidate,
+        requestType: String,
+    ): WorkflowSongCandidate {
+        val trackLabel = track.logIdentity()
+        var enrichedCandidate = candidate
+        config.enrichment.steps.forEachIndexed { index, step ->
+            val requestVariables = workflowTrackVariables(track) + workflowCandidateVariables(enrichedCandidate)
+            val request = buildWorkflowRequest(step.request, requestVariables)
+            logger.debug(LYRICS_LOG_TAG) {
+                "$requestType-workflow-enrichment track=$trackLabel source=${config.id} step=$index candidate=${candidate.id} " +
+                    "method=${request.method.name} url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
+            }
+            val startedAt = now()
+            val response = httpClient.request(request).fold(
+                onSuccess = { it },
+                onFailure = { throwable ->
+                    logger.log(DiagnosticLogLevel.WARN, LYRICS_LOG_TAG,
+                        "$requestType-workflow-enrichment-failed track=$trackLabel source=${config.id} step=$index candidate=${candidate.id} elapsedMs=${now() - startedAt} url=${request.url}"
+                    , throwable)
+                    null
+                },
+            ) ?: return@forEachIndexed
+            val capture = runCatching {
+                extractWorkflowEnrichmentStepCapture(step, response.body)
+            }.getOrElse { throwable ->
+                logger.log(DiagnosticLogLevel.WARN, LYRICS_LOG_TAG,
+                    "$requestType-workflow-enrichment-capture-failed track=$trackLabel source=${config.id} step=$index candidate=${candidate.id} status=${response.statusCode}"
+                , throwable)
+                emptyMap()
+            }
+            if (capture.isNotEmpty()) {
+                enrichedCandidate = mergeWorkflowCandidateCapture(enrichedCandidate, capture)
+                logger.debug(LYRICS_LOG_TAG) {
+                    "$requestType-workflow-enrichment-response track=$trackLabel source=${config.id} step=$index candidate=${candidate.id} " +
+                        "elapsedMs=${now() - startedAt} captured=${capture.keys.joinToString(",")} imageUrl=${enrichedCandidate.imageUrl.orEmpty()}"
+                }
+            }
+        }
+        return enrichedCandidate
     }
 
     private suspend fun fetchWorkflowLyricsForCandidate(
@@ -850,6 +922,7 @@ class DefaultPlaybackRepository(
                         metadataTitle = gatewayState.metadataTitle,
                         metadataArtistName = gatewayState.metadataArtistName,
                         metadataAlbumTitle = gatewayState.metadataAlbumTitle,
+                        metadataArtworkLocator = it.metadataArtworkLocator,
                         errorMessage = gatewayState.errorMessage,
                     )
                 }
@@ -874,6 +947,7 @@ class DefaultPlaybackRepository(
             metadataTitle = null,
             metadataArtistName = null,
             metadataAlbumTitle = null,
+            metadataArtworkLocator = null,
         )
         gateway.load(tracks[index], playWhenReady = true, startPositionMs = 0L)
         persistSnapshot()
@@ -931,6 +1005,24 @@ class DefaultPlaybackRepository(
         persistSnapshot()
     }
 
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+        val snapshot = mutableSnapshot.value
+        val currentTrack = snapshot.currentTrack ?: return
+        val currentIndex = snapshot.currentIndex
+        if (currentIndex !in snapshot.queue.indices) return
+        val updatedQueue = snapshot.queue.toMutableList().also { queue ->
+            queue[currentIndex] = currentTrack.copy(
+                artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
+            )
+        }
+        mutableSnapshot.update {
+            it.copy(
+                queue = updatedQueue,
+                metadataArtworkLocator = artworkLocator ?: it.metadataArtworkLocator,
+            )
+        }
+    }
+
     override suspend fun close() {
         gateway.release()
     }
@@ -969,6 +1061,7 @@ class DefaultPlaybackRepository(
                 metadataTitle = null,
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
+                metadataArtworkLocator = null,
                 errorMessage = null,
             )
         }
@@ -996,6 +1089,7 @@ class DefaultPlaybackRepository(
             metadataTitle = null,
             metadataArtistName = null,
             metadataAlbumTitle = null,
+            metadataArtworkLocator = null,
         )
         gateway.load(tracks[index], playWhenReady = false, startPositionMs = persisted.positionMs)
     }
