@@ -7,6 +7,7 @@ import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -90,7 +91,12 @@ class PlayerStore(
                     currentLyricsTrackId = track.id
                     currentLyricsRequestKey = requestKey
                     updateState { it.copy(isLyricsLoading = true, lyrics = null) }
-                    val lyrics = runCatching { lyricsRepository.getLyrics(lookupTrack ?: track) }.getOrNull()
+                    val result = runCatching { lyricsRepository.getLyrics(lookupTrack ?: track) }.getOrNull()
+                    val lyrics = result?.document
+                    val artworkLocator = result?.artworkLocator
+                    if (!artworkLocator.isNullOrBlank()) {
+                        playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
+                    }
                     updateState {
                         it.copy(
                             isLyricsLoading = false,
@@ -242,7 +248,7 @@ class PlayerStore(
         val snapshot = state.value.snapshot
         val result = lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
         val document = result.document
-        val artworkLocator = result.artworkLocator ?: candidate.imageUrl
+        val artworkLocator = result.artworkLocator ?: normalizeArtworkLocator(candidate.imageUrl)
         if (!artworkLocator.isNullOrBlank()) {
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }

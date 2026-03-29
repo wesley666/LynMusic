@@ -23,6 +23,7 @@ import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
+import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 
@@ -228,7 +229,7 @@ private class FakeLyricsRepository(
     var appliedWorkflowCandidate: WorkflowSongCandidate? = null
         private set
 
-    override suspend fun getLyrics(track: Track): LyricsDocument? = null
+    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = null
 
     override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
         lastSearchTrack = track

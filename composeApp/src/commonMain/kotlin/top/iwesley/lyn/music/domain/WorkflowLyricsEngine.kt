@@ -26,6 +26,7 @@ import top.iwesley.lyn.music.core.model.WorkflowRequestConfig
 import top.iwesley.lyn.music.core.model.WorkflowSearchConfig
 import top.iwesley.lyn.music.core.model.WorkflowSelectionConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 
 private val workflowJson = Json {
     ignoreUnknownKeys = false
@@ -165,10 +166,12 @@ fun mergeWorkflowCandidateCapture(
     capture: Map<String, String>,
 ): WorkflowSongCandidate {
     if (capture.isEmpty()) return candidate
-    val imageUrl = capture["imageUrl"]
-        ?.takeIf { it.isNotBlank() }
-        ?: capture["coverUrl"]?.takeIf { it.isNotBlank() }
-        ?: candidate.imageUrl
+    val imageUrl = normalizeArtworkLocator(
+        capture["imageUrl"]
+            ?.takeIf { it.isNotBlank() }
+            ?: capture["coverUrl"]?.takeIf { it.isNotBlank() }
+            ?: candidate.imageUrl,
+    )
     val extraFields = candidate.extraFields + capture
         .filterKeys { key -> key != "imageUrl" && key != "coverUrl" }
         .filterValues { it.isNotBlank() }
@@ -206,9 +209,11 @@ fun extractWorkflowSongCandidates(
         val album = mappedStrings["album"].orEmpty().firstOrNull()?.trim().takeIf { !it.isNullOrBlank() }
         val durationSeconds = mappedStrings["durationSeconds"].orEmpty().firstOrNull()?.trim()?.toIntOrNull()
         val imageUrlField = config.optionalFields.coverUrlField
-        val imageUrl = imageUrlField
-            ?.let { mappedStrings[it].orEmpty().firstOrNull()?.trim() }
-            ?.takeIf { !it.isNullOrBlank() }
+        val imageUrl = normalizeArtworkLocator(
+            imageUrlField
+                ?.let { mappedStrings[it].orEmpty().firstOrNull()?.trim() }
+                ?.takeIf { !it.isNullOrBlank() },
+        )
         val coreFields = setOf("id", "title", "artists", "album", "durationSeconds")
         val extraFields = mappedStrings
             .filterKeys { it !in coreFields }

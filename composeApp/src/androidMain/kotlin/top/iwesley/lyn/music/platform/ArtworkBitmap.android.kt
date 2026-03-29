@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 
 @Composable
 actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
@@ -19,7 +20,7 @@ actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
 }
 
 private suspend fun loadAndroidArtworkBitmap(locator: String?): ImageBitmap? = withContext(Dispatchers.IO) {
-    val target = locator?.trim().orEmpty()
+    val target = normalizeArtworkLocator(locator)?.trim().orEmpty()
     if (target.isBlank()) return@withContext null
     runCatching {
         val bitmap = when {

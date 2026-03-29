@@ -46,6 +46,7 @@ import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.joinSambaPath
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.AlbumEntity
@@ -109,12 +110,17 @@ interface PlaybackRepository {
 }
 
 interface LyricsRepository {
-    suspend fun getLyrics(track: Track): LyricsDocument?
+    suspend fun getLyrics(track: Track): ResolvedLyricsResult?
     suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
     suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
     suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult
 }
+
+data class ResolvedLyricsResult(
+    val document: LyricsDocument,
+    val artworkLocator: String? = null,
+)
 
 data class AppliedWorkflowLyricsResult(
     val document: LyricsDocument,
@@ -528,7 +534,7 @@ class DefaultLyricsRepository(
     },
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : LyricsRepository {
-    override suspend fun getLyrics(track: Track): LyricsDocument? {
+    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? {
         val trackLabel = track.logIdentity()
         database.lyricsCacheDao().getByTrack(track.id)
             .firstNotNullOfOrNull { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
@@ -536,7 +542,7 @@ class DefaultLyricsRepository(
                 logger.debug(LYRICS_LOG_TAG) {
                     "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
                 }
-                return cached
+                return ResolvedLyricsResult(document = cached)
             }
 
         val sources = enabledLyricsSources()
@@ -546,12 +552,14 @@ class DefaultLyricsRepository(
         }
 
         for (source in sources) {
-            val document = when (source) {
+            val result = when (source) {
                 is LyricsSourceConfig -> requestDirectLyricsDocument(
                     track = track,
                     config = source,
                     requestType = "auto",
-                )
+                )?.let { document ->
+                    ResolvedLyricsResult(document = document)
+                }
 
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
                     track = track,
@@ -559,12 +567,12 @@ class DefaultLyricsRepository(
                     requestType = "auto",
                 )
             } ?: continue
-            storeLyricsDocument(track.id, document)
+            storeLyricsDocument(track.id, result.document)
             logger.info(LYRICS_LOG_TAG) {
-                "resolved track=$trackLabel source=${source.id} synced=${document.isSynced} " +
-                    "lines=${document.lines.size}"
+                "resolved track=$trackLabel source=${source.id} synced=${result.document.isSynced} " +
+                    "lines=${result.document.lines.size} artworkLocator=${result.artworkLocator.orEmpty()}"
             }
-            return document
+            return result
         }
         logger.warn(LYRICS_LOG_TAG) {
             "miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
@@ -669,7 +677,7 @@ class DefaultLyricsRepository(
     }
 
     private suspend fun cacheWorkflowArtwork(trackId: String, candidate: WorkflowSongCandidate): String? {
-        val sourceLocator = candidate.imageUrl?.trim().orEmpty()
+        val sourceLocator = normalizeArtworkLocator(candidate.imageUrl)?.trim().orEmpty()
         if (sourceLocator.isBlank()) return null
         val cachedLocator = runCatching {
             artworkCacheStore.cache(
@@ -743,7 +751,7 @@ class DefaultLyricsRepository(
         track: Track,
         config: WorkflowLyricsSourceConfig,
         requestType: String,
-    ): LyricsDocument? {
+    ): ResolvedLyricsResult? {
         val candidates = searchWorkflowCandidates(track, config, requestType)
         val candidate = selectBestWorkflowSongCandidate(track, candidates, config.selection)
         if (candidate == null) {
@@ -755,7 +763,12 @@ class DefaultLyricsRepository(
         logger.debug(LYRICS_LOG_TAG) {
             "$requestType-workflow-select-hit track=${track.logIdentity()} source=${config.id} candidate=${candidate.id} coverUrl=${candidate.imageUrl.orEmpty()}"
         }
-        return fetchWorkflowLyricsForCandidate(track, config, candidate, requestType)
+        val document = fetchWorkflowLyricsForCandidate(track, config, candidate, requestType) ?: return null
+        val artworkLocator = cacheWorkflowArtwork(track.id, candidate)
+        return ResolvedLyricsResult(
+            document = document,
+            artworkLocator = artworkLocator,
+        )
     }
 
     private suspend fun searchWorkflowCandidates(

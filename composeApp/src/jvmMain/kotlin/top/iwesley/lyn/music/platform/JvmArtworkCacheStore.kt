@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.security.MessageDigest
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 
 fun createJvmArtworkCacheStore(): ArtworkCacheStore = JvmArtworkCacheStore()
 
@@ -16,7 +17,7 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
     }
 
     override suspend fun cache(locator: String, cacheKey: String): String? {
-        val target = locator.trim()
+        val target = normalizeArtworkLocator(locator)?.trim().orEmpty()
         if (target.isBlank()) return null
         if (target.startsWith("file://", ignoreCase = true)) {
             return runCatching { Paths.get(URI(target)).toAbsolutePath().normalize().toString() }.getOrNull()

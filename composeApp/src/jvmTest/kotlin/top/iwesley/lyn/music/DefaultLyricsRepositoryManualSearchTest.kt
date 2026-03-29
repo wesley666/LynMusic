@@ -92,7 +92,7 @@ class DefaultLyricsRepositoryManualSearchTest {
         val cached = repository.getLyrics(track.copy(title = "不会再次发请求"))
 
         assertNotNull(cached)
-        assertEquals("source-plain", cached.sourceId)
+        assertEquals("source-plain", cached.document.sourceId)
         assertEquals(requestCountAfterManualSearch, httpClient.requestCount)
     }
 

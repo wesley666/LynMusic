@@ -12,6 +12,7 @@ import java.nio.file.Paths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 
 @Composable
 actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
@@ -22,7 +23,7 @@ actual fun rememberPlatformArtworkBitmap(locator: String?): ImageBitmap? {
 }
 
 private suspend fun loadJvmArtworkBitmap(locator: String?): ImageBitmap? = withContext(Dispatchers.IO) {
-    val target = locator?.trim().orEmpty()
+    val target = normalizeArtworkLocator(locator)?.trim().orEmpty()
     if (target.isBlank()) return@withContext null
     runCatching {
         val bytes = when {
