@@ -6,7 +6,9 @@ import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 
 fun createAndroidArtworkCacheStore(context: Context): ArtworkCacheStore = AndroidArtworkCacheStore(context)
 
@@ -16,7 +18,13 @@ private class AndroidArtworkCacheStore(
     private val directory = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
 
     override suspend fun cache(locator: String, cacheKey: String): String? {
-        val target = normalizeArtworkLocator(locator)?.trim().orEmpty()
+        val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
+        if (rawTarget.isBlank()) return null
+        val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
+            NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
+        } else {
+            rawTarget
+        }
         if (target.isBlank()) return null
         if (target.startsWith("file://", ignoreCase = true)) {
             return runCatching { File(URI(target)).absolutePath }.getOrNull()

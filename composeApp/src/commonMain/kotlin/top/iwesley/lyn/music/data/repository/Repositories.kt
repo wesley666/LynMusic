@@ -26,6 +26,9 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackMode
@@ -48,6 +51,7 @@ import top.iwesley.lyn.music.core.model.joinSambaPath
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.ArtistEntity
@@ -60,6 +64,12 @@ import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.domain.buildLyricsRequest
+import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
+import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
+import top.iwesley.lyn.music.domain.requestNavidromeLyrics
+import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
+import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
+import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import top.iwesley.lyn.music.domain.buildWorkflowRequest
 import top.iwesley.lyn.music.domain.extractWorkflowEnrichmentStepCapture
 import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
@@ -91,6 +101,7 @@ interface ImportSourceRepository {
     suspend fun importLocalFolder(): Result<Unit>
     suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit>
     suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit>
+    suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
     suspend fun rescanSource(sourceId: String): Result<Unit>
     suspend fun deleteSource(sourceId: String): Result<Unit>
 }
@@ -258,6 +269,34 @@ class RoomImportSourceRepository(
         }
     }
 
+    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
+        return runCatching {
+            val sourceId = newId("navidrome")
+            val credentialKey = "credential-$sourceId"
+            secureCredentialStore.put(credentialKey, draft.password)
+            val normalizedBaseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
+            val source = ImportSource(
+                id = sourceId,
+                type = ImportSourceType.NAVIDROME,
+                label = draft.label.ifBlank { normalizedBaseUrl },
+                rootReference = normalizedBaseUrl,
+                username = draft.username.trim(),
+                credentialKey = credentialKey,
+                createdAt = now(),
+            )
+            database.importSourceDao().upsert(source.toEntity())
+            runScan(source) {
+                gateway.scanNavidrome(
+                    draft = draft.copy(
+                        baseUrl = normalizedBaseUrl,
+                        username = draft.username.trim(),
+                    ),
+                    sourceId = sourceId,
+                )
+            }
+        }
+    }
+
     override suspend fun rescanSource(sourceId: String): Result<Unit> {
         return runCatching {
             val entity = database.importSourceDao().getById(sourceId)
@@ -301,6 +340,19 @@ class RoomImportSourceRepository(
                             sourceId = source.id,
                         )
                     }
+
+                    ImportSourceType.NAVIDROME -> {
+                        val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+                        gateway.scanNavidrome(
+                            draft = NavidromeSourceDraft(
+                                label = source.label,
+                                baseUrl = normalizeNavidromeBaseUrl(source.rootReference),
+                                username = source.username.orEmpty(),
+                                password = password,
+                            ),
+                            sourceId = source.id,
+                        )
+                    }
                 }
             }
         }
@@ -329,7 +381,7 @@ class RoomImportSourceRepository(
             }
 
             TrackEntity(
-                id = trackIdFor(source.id, candidate.relativePath),
+                id = trackIdFor(source.id, candidate.relativePath, candidate.mediaLocator),
                 sourceId = source.id,
                 title = candidate.title,
                 artistId = artistId,
@@ -530,6 +582,7 @@ class DefaultSettingsRepository(
 class DefaultLyricsRepository(
     private val database: LynMusicDatabase,
     private val httpClient: LyricsHttpClient,
+    private val secureCredentialStore: SecureCredentialStore,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
@@ -537,14 +590,45 @@ class DefaultLyricsRepository(
 ) : LyricsRepository {
     override suspend fun getLyrics(track: Track): ResolvedLyricsResult? {
         val trackLabel = track.logIdentity()
-        database.lyricsCacheDao().getByTrack(track.id)
-            .firstNotNullOfOrNull { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
-            ?.let { cached ->
-                logger.debug(LYRICS_LOG_TAG) {
-                    "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
+        val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
+        if (parseNavidromeSongLocator(track.mediaLocator) != null) {
+            cachedRows
+                .firstOrNull { it.sourceId == NAVIDROME_LYRICS_SOURCE_ID }
+                ?.let { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
+                ?.let { cached ->
+                    logger.debug(LYRICS_LOG_TAG) {
+                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
+                    }
+                    return ResolvedLyricsResult(document = cached)
                 }
-                return ResolvedLyricsResult(document = cached)
+            requestNavidromeLyricsDocument(track)?.let { navidromeLyrics ->
+                storeLyricsDocument(track.id, navidromeLyrics)
+                logger.info(LYRICS_LOG_TAG) {
+                    "resolved track=$trackLabel source=${navidromeLyrics.sourceId} synced=${navidromeLyrics.isSynced} lines=${navidromeLyrics.lines.size}"
+                }
+                return ResolvedLyricsResult(document = navidromeLyrics)
             }
+            cachedRows
+                .firstNotNullOfOrNull { cache ->
+                    cache.takeUnless { it.sourceId == NAVIDROME_LYRICS_SOURCE_ID }
+                        ?.let { parseCachedLyrics(it.sourceId, it.rawPayload) }
+                }
+                ?.let { cached ->
+                    logger.debug(LYRICS_LOG_TAG) {
+                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
+                    }
+                    return ResolvedLyricsResult(document = cached)
+                }
+        } else {
+            cachedRows
+                .firstNotNullOfOrNull { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
+                ?.let { cached ->
+                    logger.debug(LYRICS_LOG_TAG) {
+                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
+                    }
+                    return ResolvedLyricsResult(document = cached)
+                }
+        }
 
         val sources = enabledLyricsSources()
         if (sources.isEmpty()) {
@@ -579,6 +663,24 @@ class DefaultLyricsRepository(
             "miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
         }
         return null
+    }
+
+    private suspend fun requestNavidromeLyricsDocument(track: Track): LyricsDocument? {
+        val locator = parseNavidromeSongLocator(track.mediaLocator) ?: return null
+        val source = database.importSourceDao().getById(locator.first)?.takeIf { it.type == ImportSourceType.NAVIDROME.name }
+            ?: return null
+        val username = source.username?.trim().orEmpty()
+        val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+        if (username.isBlank() || password.isBlank()) return null
+        return requestNavidromeLyrics(
+            httpClient = httpClient,
+            source = top.iwesley.lyn.music.domain.NavidromeResolvedSource(
+                baseUrl = normalizeNavidromeBaseUrl(source.rootReference),
+                username = username,
+                password = password,
+            ),
+            track = track,
+        )
     }
 
     override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
@@ -1180,8 +1282,13 @@ private fun albumIdFor(artistName: String?, albumTitle: String): String {
     return "album:${artistName.orEmpty().trim().lowercase()}:${albumTitle.trim().lowercase()}"
 }
 
-private fun trackIdFor(sourceId: String, relativePath: String): String {
-    return "track:${sourceId}:${relativePath.lowercase()}"
+private fun trackIdFor(sourceId: String, relativePath: String, mediaLocator: String): String {
+    val navidromeSongId = parseNavidromeSongLocator(mediaLocator)?.second
+    return if (navidromeSongId != null) {
+        "track:${sourceId}:navidrome:${navidromeSongId.lowercase()}"
+    } else {
+        "track:${sourceId}:${relativePath.lowercase()}"
+    }
 }
 
 private fun trackIdPrefix(sourceId: String): String = "track:${sourceId}:%"

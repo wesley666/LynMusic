@@ -27,6 +27,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -39,6 +40,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
@@ -80,6 +82,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     )
     val secureStore = IosKeychainCredentialStore()
     val playbackPreferencesStore = IosPlaybackPreferencesStore()
+    val navidromeHttpClient = IosLyricsHttpClient()
     return buildLynMusicAppComponent(
         platform = PlatformDescriptor(
             name = "iPhone / iPad",
@@ -87,15 +90,16 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
                 supportsLocalFolderImport = false,
                 supportsSambaImport = false,
                 supportsWebDavImport = false,
+                supportsNavidromeImport = true,
                 supportsSystemMediaControls = false,
             ),
         ),
         database = database,
-        importSourceGateway = IosImportSourceGateway(),
+        importSourceGateway = IosImportSourceGateway(navidromeHttpClient),
         playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
-        lyricsHttpClient = IosLyricsHttpClient(),
+        lyricsHttpClient = navidromeHttpClient,
         artworkCacheStore = createIosArtworkCacheStore(),
         logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
     )
@@ -208,7 +212,9 @@ private class IosPlaybackPreferencesStore : PlaybackPreferencesStore {
     }
 }
 
-private class IosImportSourceGateway : ImportSourceGateway {
+private class IosImportSourceGateway(
+    private val navidromeHttpClient: LyricsHttpClient,
+) : ImportSourceGateway {
     override suspend fun pickLocalFolder(): LocalFolderSelection? = null
 
     override suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport {
@@ -221,6 +227,10 @@ private class IosImportSourceGateway : ImportSourceGateway {
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建暂未实现应用内 WebDAV。"))
+    }
+
+    override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
+        return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient)
     }
 }
 

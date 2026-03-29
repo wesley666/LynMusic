@@ -139,6 +139,7 @@ import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackMode
@@ -213,7 +214,26 @@ fun buildLynMusicAppComponent(
     val importSourceRepository = RoomImportSourceRepository(database, importSourceGateway, secureCredentialStore)
     val playbackRepository = DefaultPlaybackRepository(database, playbackGateway, scope)
     val settingsRepository = DefaultSettingsRepository(database, playbackPreferencesStore)
-    val lyricsRepository = DefaultLyricsRepository(database, lyricsHttpClient, artworkCacheStore, logger)
+    NavidromeLocatorRuntime.install(
+        object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
+            override suspend fun resolveStreamUrl(locator: String): String? {
+                return top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    locator = locator,
+                )
+            }
+
+            override suspend fun resolveCoverArtUrl(locator: String): String? {
+                return top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    locator = locator,
+                )
+            }
+        },
+    )
+    val lyricsRepository = DefaultLyricsRepository(database, lyricsHttpClient, secureCredentialStore, artworkCacheStore, logger)
     scope.launch {
         settingsRepository.ensureDefaults()
     }
@@ -581,13 +601,13 @@ private fun LibraryTab(
                 }
             }
             item {
-                SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV 与自定义歌词联动。")
+                SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV、Navidrome 与自定义歌词联动。")
             }
             if (state.filteredTracks.isEmpty()) {
                 item {
                     EmptyStateCard(
                         title = "曲库还是空的",
-                        body = "先到“来源”页导入本地文件夹、Samba 或 WebDAV，扫描完成后会出现在这里。",
+                        body = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
                     )
                 }
             } else {
@@ -704,7 +724,7 @@ private fun SourcesTab(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        SectionTitle(title = "导入来源", subtitle = "本地文件夹原地索引，Samba 与 WebDAV 作为远程音乐库。")
+        SectionTitle(title = "导入来源", subtitle = "本地文件夹原地索引，Samba、WebDAV 与 Navidrome 作为远程音乐库。")
         if (state.message != null) {
             BannerCard(message = state.message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
         }
@@ -722,6 +742,55 @@ private fun SourcesTab(
                     Icon(Icons.Rounded.FolderOpen, null)
                     Spacer(Modifier.width(8.dp))
                     Text("选择文件夹")
+                }
+            }
+        }
+        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Navidrome", fontWeight = FontWeight.Bold)
+                if (!state.capabilities.supportsNavidromeImport) {
+                    Text("当前平台暂未开放应用内 Navidrome 导入。")
+                }
+                OutlinedTextField(
+                    value = state.navidromeLabel,
+                    onValueChange = { onImportIntent(ImportIntent.NavidromeLabelChanged(it)) },
+                    label = { Text("名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                )
+                OutlinedTextField(
+                    value = state.navidromeBaseUrl,
+                    onValueChange = { onImportIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
+                    label = { Text("服务器地址") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = state.navidromeUsername,
+                        onValueChange = { onImportIntent(ImportIntent.NavidromeUsernameChanged(it)) },
+                        label = { Text("用户名") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                    )
+                    OutlinedTextField(
+                        value = state.navidromePassword,
+                        onValueChange = { onImportIntent(ImportIntent.NavidromePasswordChanged(it)) },
+                        label = { Text("密码") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                    )
+                }
+                Button(
+                    onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
+                    enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
+                ) {
+                    Icon(Icons.Rounded.CloudSync, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("连接并同步")
                 }
             }
         }
@@ -2083,6 +2152,7 @@ private fun SourceCard(
                                 path = state.source.path,
                             )
                             top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV -> state.source.rootReference
+                            top.iwesley.lyn.music.core.model.ImportSourceType.NAVIDROME -> state.source.rootReference
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

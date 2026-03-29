@@ -2,6 +2,7 @@ package top.iwesley.lyn.music.feature.importing
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
@@ -23,6 +24,10 @@ data class ImportState(
     val webDavUsername: String = "",
     val webDavPassword: String = "",
     val webDavAllowInsecureTls: Boolean = false,
+    val navidromeLabel: String = "",
+    val navidromeBaseUrl: String = "",
+    val navidromeUsername: String = "",
+    val navidromePassword: String = "",
     val isWorking: Boolean = false,
     val message: String? = null,
 )
@@ -31,6 +36,7 @@ sealed interface ImportIntent {
     data object ImportLocalFolder : ImportIntent
     data object AddSambaSource : ImportIntent
     data object AddWebDavSource : ImportIntent
+    data object AddNavidromeSource : ImportIntent
     data class RescanSource(val sourceId: String) : ImportIntent
     data class DeleteSource(val sourceId: String) : ImportIntent
     data class SambaLabelChanged(val value: String) : ImportIntent
@@ -44,6 +50,10 @@ sealed interface ImportIntent {
     data class WebDavUsernameChanged(val value: String) : ImportIntent
     data class WebDavPasswordChanged(val value: String) : ImportIntent
     data class WebDavAllowInsecureTlsChanged(val value: Boolean) : ImportIntent
+    data class NavidromeLabelChanged(val value: String) : ImportIntent
+    data class NavidromeBaseUrlChanged(val value: String) : ImportIntent
+    data class NavidromeUsernameChanged(val value: String) : ImportIntent
+    data class NavidromePasswordChanged(val value: String) : ImportIntent
     data object ClearMessage : ImportIntent
 }
 
@@ -152,6 +162,44 @@ class ImportStore(
                 }
             }
 
+            ImportIntent.AddNavidromeSource -> {
+                val state = state.value
+                if (state.navidromeBaseUrl.isBlank()) {
+                    setMessage("请先填写 Navidrome 服务器地址。")
+                    return
+                }
+                if (state.navidromeUsername.isBlank()) {
+                    setMessage("请先填写 Navidrome 用户名。")
+                    return
+                }
+                if (state.navidromePassword.isBlank()) {
+                    setMessage("请先填写 Navidrome 密码。")
+                    return
+                }
+                runImport {
+                    repository.addNavidromeSource(
+                        NavidromeSourceDraft(
+                            label = state.navidromeLabel,
+                            baseUrl = state.navidromeBaseUrl,
+                            username = state.navidromeUsername,
+                            password = state.navidromePassword,
+                        ),
+                    ).onSuccess {
+                        updateState {
+                            it.copy(
+                                navidromeLabel = "",
+                                navidromeBaseUrl = "",
+                                navidromeUsername = "",
+                                navidromePassword = "",
+                            )
+                        }
+                        setMessage("Navidrome 音乐源已导入。")
+                    }.onFailure {
+                        setMessage("Navidrome 导入失败: ${it.message}")
+                    }
+                }
+            }
+
             is ImportIntent.RescanSource -> runImport {
                 repository.rescanSource(intent.sourceId)
                     .onSuccess { setMessage("音乐源已重新扫描。") }
@@ -175,6 +223,10 @@ class ImportStore(
             is ImportIntent.WebDavUsernameChanged -> updateState { it.copy(webDavUsername = intent.value) }
             is ImportIntent.WebDavPasswordChanged -> updateState { it.copy(webDavPassword = intent.value) }
             is ImportIntent.WebDavAllowInsecureTlsChanged -> updateState { it.copy(webDavAllowInsecureTls = intent.value) }
+            is ImportIntent.NavidromeLabelChanged -> updateState { it.copy(navidromeLabel = intent.value) }
+            is ImportIntent.NavidromeBaseUrlChanged -> updateState { it.copy(navidromeBaseUrl = intent.value) }
+            is ImportIntent.NavidromeUsernameChanged -> updateState { it.copy(navidromeUsername = intent.value) }
+            is ImportIntent.NavidromePasswordChanged -> updateState { it.copy(navidromePassword = intent.value) }
             ImportIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
     }

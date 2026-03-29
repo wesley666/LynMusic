@@ -72,7 +72,12 @@ class DefaultLyricsRepositoryManualSearchTest {
                 "https://lyrics.example/failed" to Result.failure(IllegalStateException("boom")),
             ),
         )
-        val repository = DefaultLyricsRepository(database, httpClient, logger = NoopDiagnosticLogger)
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
         val track = sampleTrack()
 
         val candidates = repository.searchLyricsCandidates(track)

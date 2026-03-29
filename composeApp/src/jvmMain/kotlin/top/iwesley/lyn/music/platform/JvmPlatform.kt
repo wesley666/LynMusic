@@ -39,6 +39,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -57,10 +58,13 @@ import top.iwesley.lyn.music.core.model.joinSambaPath
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
+import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
@@ -95,6 +99,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     val secureStore = createJvmSecureCredentialStore(logger)
     val playbackPreferencesStore = JvmPlaybackPreferencesStore()
     val playbackGateway = JvmPlaybackGateway(database, secureStore, playbackPreferencesStore, logger)
+    val navidromeHttpClient = JvmLyricsHttpClient()
     return buildLynMusicAppComponent(
         platform = PlatformDescriptor(
             name = "Desktop",
@@ -102,15 +107,16 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
                 supportsLocalFolderImport = true,
                 supportsSambaImport = true,
                 supportsWebDavImport = true,
+                supportsNavidromeImport = true,
                 supportsSystemMediaControls = false,
             ),
         ),
         database = database,
-        importSourceGateway = JvmImportSourceGateway(logger),
+        importSourceGateway = JvmImportSourceGateway(logger, navidromeHttpClient),
         playbackGateway = playbackGateway,
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
-        lyricsHttpClient = JvmLyricsHttpClient(),
+        lyricsHttpClient = navidromeHttpClient,
         artworkCacheStore = createJvmArtworkCacheStore(),
         logger = logger,
         artworkLoader = object : ArtworkLoader {
@@ -173,6 +179,7 @@ private class JvmPlaybackPreferencesStore : PlaybackPreferencesStore {
 
 private class JvmImportSourceGateway(
     private val logger: DiagnosticLogger,
+    private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
     override suspend fun pickLocalFolder(): LocalFolderSelection? {
         val chooser = JFileChooser().apply {
@@ -242,6 +249,10 @@ private class JvmImportSourceGateway(
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return scanJvmWebDav(draft, sourceId, logger)
+    }
+
+    override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
+        return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient, logger)
     }
 
     private fun collectSambaTracks(
@@ -475,10 +486,14 @@ private class JvmPlaybackGateway(
         } else {
             null
         }
-        val sourceReference = when {
+        val actualPlaybackSource = when {
             sambaTarget != null -> sambaTarget.sourceReference
             webDavTarget != null -> webDavTarget.requestUrl
             else -> resolveLocator(track.mediaLocator)
+        }
+        val sourceReference = when {
+            parseNavidromeSongLocator(track.mediaLocator) != null -> track.mediaLocator
+            else -> actualPlaybackSource
         }
         val playbackTarget = when {
             webDavTarget != null -> "webdav-callback://${track.id}"
@@ -506,7 +521,7 @@ private class JvmPlaybackGateway(
             } else if (sambaTarget != null) {
                 mediaPlayer.media().start(sambaTarget.media)
             } else {
-                mediaPlayer.media().start(sourceReference)
+                mediaPlayer.media().start(actualPlaybackSource)
             }
         } else {
             if (webDavTarget != null) {
@@ -514,7 +529,7 @@ private class JvmPlaybackGateway(
             } else if (sambaTarget != null) {
                 mediaPlayer.media().startPaused(sambaTarget.media)
             } else {
-                mediaPlayer.media().startPaused(sourceReference)
+                mediaPlayer.media().startPaused(actualPlaybackSource)
             }
         }
         if (!started) {
@@ -580,6 +595,7 @@ private class JvmPlaybackGateway(
     }
 
     private suspend fun resolveLocator(locator: String): String {
+        resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return it }
         val samba = parseSambaLocator(locator) ?: return locator
         val source = database.importSourceDao().getById(samba.first) ?: error("Samba source missing")
         val storedPort = source.shareName?.toIntOrNull()

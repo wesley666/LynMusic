@@ -6,9 +6,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import top.iwesley.lyn.music.core.model.AppleMediaLocatorResolver
 import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 
 internal class ApplePlaybackGateway(
     private val platformLabel: String,
@@ -37,7 +39,12 @@ internal class ApplePlaybackGateway(
     }
 
     override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
-        when (val resolved = AppleMediaLocatorResolver.resolve(track.mediaLocator)) {
+        val effectiveLocator = if (parseNavidromeSongLocator(track.mediaLocator) != null) {
+            NavidromeLocatorRuntime.resolveStreamUrl(track.mediaLocator) ?: track.mediaLocator
+        } else {
+            track.mediaLocator
+        }
+        when (val resolved = AppleMediaLocatorResolver.resolve(effectiveLocator)) {
             is AppleResolvedMediaLocator.Unsupported -> {
                 player.pause()
                 mutableState.update {

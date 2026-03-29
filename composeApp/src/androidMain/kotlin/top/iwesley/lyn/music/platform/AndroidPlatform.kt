@@ -39,6 +39,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -56,11 +57,14 @@ import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.joinSambaPath
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
+import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
@@ -87,6 +91,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     val secureStore = AndroidCredentialStore(activity.applicationContext)
     val playbackPreferencesStore = AndroidPlaybackPreferencesStore(activity.applicationContext)
     val logger = ConsoleDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
+    val navidromeHttpClient = AndroidLyricsHttpClient()
     return buildLynMusicAppComponent(
         platform = PlatformDescriptor(
             name = "Android",
@@ -94,15 +99,16 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
                 supportsLocalFolderImport = true,
                 supportsSambaImport = true,
                 supportsWebDavImport = true,
+                supportsNavidromeImport = true,
                 supportsSystemMediaControls = true,
             ),
         ),
         database = database,
-        importSourceGateway = AndroidImportSourceGateway(activity, logger),
+        importSourceGateway = AndroidImportSourceGateway(activity, logger, navidromeHttpClient),
         playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, playbackPreferencesStore, logger),
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
-        lyricsHttpClient = AndroidLyricsHttpClient(),
+        lyricsHttpClient = navidromeHttpClient,
         artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
         logger = logger,
     )
@@ -225,6 +231,7 @@ private fun Context.isDebuggableApp(): Boolean {
 private class AndroidImportSourceGateway(
     private val activity: ComponentActivity,
     private val logger: DiagnosticLogger,
+    private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
     private var folderContinuation: (LocalFolderSelection?) -> Unit = {}
 
@@ -296,6 +303,10 @@ private class AndroidImportSourceGateway(
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return scanAndroidWebDav(draft, sourceId, logger)
+    }
+
+    override suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport {
+        return scanNavidromeLibrary(draft, sourceId, navidromeHttpClient, logger)
     }
 
     private fun walkDocumentTree(
@@ -499,6 +510,7 @@ private class AndroidPlaybackGateway(
             locator = track.mediaLocator,
             logger = logger,
         )
+        val navidrome = if (webDavTarget == null) parseNavidromeSongLocator(track.mediaLocator) else null
         val resolvedUri = if (webDavTarget == null) resolveLocator(track.mediaLocator) else null
         onPlayerThread {
             if (webDavTarget != null) {
@@ -506,8 +518,8 @@ private class AndroidPlaybackGateway(
                 currentRemoteLabel = webDavTarget.requestUrl
                 player.setMediaSource(webDavTarget.mediaSource)
             } else {
-                currentRemoteLogTag = null
-                currentRemoteLabel = null
+                currentRemoteLogTag = if (navidrome != null) "Navidrome" else null
+                currentRemoteLabel = if (navidrome != null) track.mediaLocator else null
                 player.setMediaItem(MediaItem.fromUri(checkNotNull(resolvedUri)))
             }
             player.prepare()
@@ -552,6 +564,7 @@ private class AndroidPlaybackGateway(
     }
 
     private suspend fun resolveLocator(locator: String): Uri {
+        resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return Uri.parse(it) }
         val samba = parseSambaLocator(locator) ?: return Uri.parse(locator)
         if (!playbackPreferencesStore.useSambaCache.value) {
             logger.info(SAMBA_LOG_TAG) {

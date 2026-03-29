@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.core.model
 
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.flow.StateFlow
 
 enum class AppTab {
@@ -12,6 +13,7 @@ enum class ImportSourceType {
     LOCAL_FOLDER,
     SAMBA,
     WEBDAV,
+    NAVIDROME,
 }
 
 enum class PlaybackMode {
@@ -108,6 +110,13 @@ data class WebDavSourceDraft(
     val username: String,
     val password: String,
     val allowInsecureTls: Boolean = false,
+)
+
+data class NavidromeSourceDraft(
+    val label: String,
+    val baseUrl: String,
+    val username: String,
+    val password: String,
 )
 
 data class ImportedTrackCandidate(
@@ -312,6 +321,7 @@ data class PlatformCapabilities(
     val supportsLocalFolderImport: Boolean,
     val supportsSambaImport: Boolean,
     val supportsWebDavImport: Boolean,
+    val supportsNavidromeImport: Boolean,
     val supportsSystemMediaControls: Boolean,
 )
 
@@ -325,6 +335,7 @@ interface ImportSourceGateway {
     suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport
     suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport
     suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport
+    suspend fun scanNavidrome(draft: NavidromeSourceDraft, sourceId: String): ImportScanReport
 }
 
 interface PlaybackGateway {
@@ -354,4 +365,22 @@ interface ArtworkLoader {
 
 interface ArtworkCacheStore {
     suspend fun cache(locator: String, cacheKey: String): String?
+}
+
+interface NavidromeLocatorResolver {
+    suspend fun resolveStreamUrl(locator: String): String?
+    suspend fun resolveCoverArtUrl(locator: String): String?
+}
+
+object NavidromeLocatorRuntime {
+    @Volatile
+    private var resolver: NavidromeLocatorResolver? = null
+
+    fun install(resolver: NavidromeLocatorResolver) {
+        this.resolver = resolver
+    }
+
+    suspend fun resolveStreamUrl(locator: String): String? = resolver?.resolveStreamUrl(locator)
+
+    suspend fun resolveCoverArtUrl(locator: String): String? = resolver?.resolveCoverArtUrl(locator)
 }

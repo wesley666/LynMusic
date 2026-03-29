@@ -65,7 +65,13 @@ class DefaultLyricsRepositoryWorkflowTest {
         val artworkCacheStore = FakeArtworkCacheStore(
             cached = mapOf("https://img.test/rain.jpg" to "/tmp/lynmusic-artwork-cache/rain.jpg"),
         )
-        val repository = DefaultLyricsRepository(database, httpClient, artworkCacheStore, NoopDiagnosticLogger)
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
         val track = Track(
             id = "track-1",
             sourceId = "local-1",
@@ -140,7 +146,12 @@ class DefaultLyricsRepositoryWorkflowTest {
                 ),
             ),
         )
-        val repository = DefaultLyricsRepository(database, httpClient, logger = NoopDiagnosticLogger)
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
         val track = Track(
             id = "track-2",
             sourceId = "local-1",

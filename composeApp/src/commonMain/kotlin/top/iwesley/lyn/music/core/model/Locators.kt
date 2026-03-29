@@ -4,6 +4,8 @@ import io.ktor.http.decodeURLPart
 import io.ktor.http.encodeURLParameter
 
 private const val SAMBA_SCHEME = "lynmusic-smb://"
+private const val NAVIDROME_SCHEME = "lynmusic-navidrome://"
+private const val NAVIDROME_COVER_SCHEME = "lynmusic-navidrome-cover://"
 const val DEFAULT_SAMBA_PORT = 445
 
 data class SambaPath(
@@ -92,4 +94,31 @@ fun encodeSambaUrlPath(path: String): String {
         .split("/")
         .filter { it.isNotBlank() }
         .joinToString("/") { segment -> segment.encodeURLParameter() }
+}
+
+fun buildNavidromeSongLocator(sourceId: String, songId: String): String {
+    return NAVIDROME_SCHEME + sourceId.encodeURLParameter() + "/" + songId.encodeURLParameter()
+}
+
+fun parseNavidromeSongLocator(locator: String): Pair<String, String>? {
+    return parseNavidromeLocator(locator, NAVIDROME_SCHEME)
+}
+
+fun buildNavidromeCoverLocator(sourceId: String, coverArtId: String): String {
+    return NAVIDROME_COVER_SCHEME + sourceId.encodeURLParameter() + "/" + coverArtId.encodeURLParameter()
+}
+
+fun parseNavidromeCoverLocator(locator: String): Pair<String, String>? {
+    return parseNavidromeLocator(locator, NAVIDROME_COVER_SCHEME)
+}
+
+private fun parseNavidromeLocator(locator: String, scheme: String): Pair<String, String>? {
+    if (!locator.startsWith(scheme)) return null
+    val payload = locator.removePrefix(scheme)
+    val dividerIndex = payload.indexOf('/')
+    if (dividerIndex <= 0) return null
+    val sourceId = payload.substring(0, dividerIndex).decodeURLPart()
+    val itemId = payload.substring(dividerIndex + 1).decodeURLPart()
+    if (sourceId.isBlank() || itemId.isBlank()) return null
+    return sourceId to itemId
 }
