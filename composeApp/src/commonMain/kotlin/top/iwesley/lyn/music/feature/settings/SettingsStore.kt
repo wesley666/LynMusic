@@ -5,13 +5,15 @@ import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
+import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.SettingsRepository
 
 data class SettingsState(
-    val configs: List<LyricsSourceConfig> = emptyList(),
+    val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = true,
     val editingId: String? = null,
     val name: String = "",
@@ -24,12 +26,15 @@ data class SettingsState(
     val extractor: String = "text",
     val priority: String = "0",
     val enabled: Boolean = true,
+    val workflowJsonInput: String = "",
+    val viewingWorkflowId: String? = null,
     val message: String? = null,
 )
 
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
+    data class ViewWorkflow(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
     data class NameChanged(val value: String) : SettingsIntent
     data class MethodChanged(val value: RequestMethod) : SettingsIntent
     data class UrlChanged(val value: String) : SettingsIntent
@@ -40,6 +45,10 @@ sealed interface SettingsIntent {
     data class ExtractorChanged(val value: String) : SettingsIntent
     data class PriorityChanged(val value: String) : SettingsIntent
     data class EnabledChanged(val value: Boolean) : SettingsIntent
+    data class WorkflowJsonChanged(val value: String) : SettingsIntent
+    data object ImportWorkflow : SettingsIntent
+    data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
+    data class DeleteSource(val sourceId: String) : SettingsIntent
     data object Save : SettingsIntent
     data object Delete : SettingsIntent
     data object ClearMessage : SettingsIntent
@@ -56,9 +65,9 @@ class SettingsStore(
 ) {
     init {
         scope.launch {
-            repository.lyricsSources.collect { configs ->
+            repository.lyricsSources.collect { sources ->
                 updateState { state ->
-                    state.copy(configs = configs)
+                    state.copy(sources = sources)
                 }
             }
         }
@@ -77,7 +86,16 @@ class SettingsStore(
             }
 
             is SettingsIntent.SelectConfig -> updateState {
-                intent.config?.toState() ?: SettingsState(configs = it.configs, useSambaCache = it.useSambaCache)
+                intent.config?.toState() ?: SettingsState(sources = it.sources, useSambaCache = it.useSambaCache, workflowJsonInput = it.workflowJsonInput)
+            }
+
+            is SettingsIntent.ViewWorkflow -> updateState {
+                it.copy(
+                    viewingWorkflowId = intent.config?.id,
+                    workflowJsonInput = intent.config?.rawJson.orEmpty(),
+                    editingId = null,
+                    message = null,
+                )
             }
 
             is SettingsIntent.NameChanged -> updateState { it.copy(name = intent.value) }
@@ -90,6 +108,60 @@ class SettingsStore(
             is SettingsIntent.ExtractorChanged -> updateState { it.copy(extractor = intent.value) }
             is SettingsIntent.PriorityChanged -> updateState { it.copy(priority = intent.value) }
             is SettingsIntent.EnabledChanged -> updateState { it.copy(enabled = intent.value) }
+            is SettingsIntent.WorkflowJsonChanged -> updateState {
+                it.copy(
+                    workflowJsonInput = intent.value,
+                    viewingWorkflowId = null,
+                )
+            }
+
+            SettingsIntent.ImportWorkflow -> {
+                val rawJson = state.value.workflowJsonInput.trim()
+                if (rawJson.isBlank()) {
+                    updateState { it.copy(message = "请先粘贴 Workflow JSON。") }
+                    return
+                }
+                val imported = runCatching { repository.importWorkflowLyricsSource(rawJson) }
+                updateState {
+                    it.copy(
+                        workflowJsonInput = imported.getOrNull()?.rawJson ?: it.workflowJsonInput,
+                        viewingWorkflowId = imported.getOrNull()?.id,
+                        message = imported.fold(
+                            onSuccess = { config -> "Workflow 源 ${config.name} 已导入。" },
+                            onFailure = { error -> error.message ?: "Workflow 导入失败。" },
+                        ),
+                    )
+                }
+            }
+
+            is SettingsIntent.ToggleSourceEnabled -> {
+                repository.setLyricsSourceEnabled(intent.sourceId, intent.enabled)
+                updateState {
+                    it.copy(message = if (intent.enabled) "歌词源已启用。" else "歌词源已停用。")
+                }
+            }
+
+            is SettingsIntent.DeleteSource -> {
+                repository.deleteLyricsSource(intent.sourceId)
+                updateState {
+                    val shouldClearDirect = it.editingId == intent.sourceId
+                    val shouldClearWorkflow = it.viewingWorkflowId == intent.sourceId
+                    if (shouldClearDirect) {
+                        SettingsState(
+                            sources = it.sources,
+                            useSambaCache = it.useSambaCache,
+                            workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
+                            message = "歌词源已删除。",
+                        )
+                    } else {
+                        it.copy(
+                            workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
+                            viewingWorkflowId = if (shouldClearWorkflow) null else it.viewingWorkflowId,
+                            message = "歌词源已删除。",
+                        )
+                    }
+                }
+            }
 
             SettingsIntent.Save -> {
                 val config = state.value.toConfig() ?: run {
@@ -97,13 +169,13 @@ class SettingsStore(
                     return
                 }
                 repository.saveLyricsSource(config)
-                updateState { config.toState(configs = it.configs, message = "歌词源已保存。") }
+                updateState { config.toState(sources = it.sources, message = "歌词源已保存。") }
             }
 
             SettingsIntent.Delete -> {
                 val editingId = state.value.editingId ?: return
                 repository.deleteLyricsSource(editingId)
-                updateState { SettingsState(configs = it.configs, useSambaCache = it.useSambaCache, message = "歌词源已删除。") }
+                updateState { SettingsState(sources = it.sources, useSambaCache = it.useSambaCache, workflowJsonInput = it.workflowJsonInput, message = "歌词源已删除。") }
             }
 
             SettingsIntent.ClearMessage -> updateState { it.copy(message = null) }
@@ -128,11 +200,11 @@ class SettingsStore(
     }
 
     private fun LyricsSourceConfig.toState(
-        configs: List<LyricsSourceConfig> = state.value.configs,
+        sources: List<LyricsSourceDefinition> = state.value.sources,
         message: String? = null,
     ): SettingsState {
         return SettingsState(
-            configs = configs,
+            sources = sources,
             useSambaCache = state.value.useSambaCache,
             editingId = id,
             name = name,
@@ -145,6 +217,7 @@ class SettingsStore(
             extractor = extractor,
             priority = priority.toString(),
             enabled = enabled,
+            workflowJsonInput = state.value.workflowJsonInput,
             message = message,
         )
     }

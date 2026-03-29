@@ -23,6 +23,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
+import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -35,6 +36,8 @@ import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.formatSambaEndpoint
@@ -52,10 +55,23 @@ import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
+import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.domain.buildLyricsRequest
+import top.iwesley.lyn.music.domain.buildWorkflowRequest
+import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
+import top.iwesley.lyn.music.domain.extractWorkflowSongCandidates
+import top.iwesley.lyn.music.domain.extractWorkflowStepCapture
+import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.parseCachedLyrics
 import top.iwesley.lyn.music.domain.parseLyricsPayload
+import top.iwesley.lyn.music.domain.parsePlainText
+import top.iwesley.lyn.music.domain.parseLrc
+import top.iwesley.lyn.music.domain.scoreWorkflowSongCandidate
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
+import top.iwesley.lyn.music.domain.selectBestWorkflowSongCandidate
+import top.iwesley.lyn.music.domain.validateWorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.domain.workflowCandidateVariables
+import top.iwesley.lyn.music.domain.workflowTrackVariables
 
 interface LibraryRepository {
     val tracks: Flow<List<Track>>
@@ -91,15 +107,19 @@ interface LyricsRepository {
     suspend fun getLyrics(track: Track): LyricsDocument?
     suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
+    suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
+    suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument
 }
 
 interface SettingsRepository {
-    val lyricsSources: Flow<List<LyricsSourceConfig>>
+    val lyricsSources: Flow<List<LyricsSourceDefinition>>
     val useSambaCache: StateFlow<Boolean>
 
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
     suspend fun saveLyricsSource(config: LyricsSourceConfig)
+    suspend fun importWorkflowLyricsSource(rawJson: String): WorkflowLyricsSourceConfig
+    suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean)
     suspend fun deleteLyricsSource(configId: String)
 }
 
@@ -419,9 +439,13 @@ class DefaultSettingsRepository(
     private val database: LynMusicDatabase,
     private val playbackPreferencesStore: PlaybackPreferencesStore,
 ) : SettingsRepository {
-    override val lyricsSources: Flow<List<LyricsSourceConfig>> = database.lyricsSourceConfigDao()
-        .observeAll()
-        .map { entities -> entities.map { it.toDomain() } }
+    override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
+        database.lyricsSourceConfigDao().observeAll(),
+        database.workflowLyricsSourceConfigDao().observeAll(),
+    ) { directConfigs, workflowConfigs ->
+        (directConfigs.map { it.toDomain() } + workflowConfigs.mapNotNull { it.toDomainOrNull() })
+            .sortedWith(compareByDescending<LyricsSourceDefinition> { it.priority }.thenBy { it.name.lowercase() })
+    }
     override val useSambaCache: StateFlow<Boolean> = playbackPreferencesStore.useSambaCache
 
     override suspend fun ensureDefaults() {
@@ -448,8 +472,27 @@ class DefaultSettingsRepository(
         database.lyricsSourceConfigDao().upsert(config.toEntity())
     }
 
+    override suspend fun importWorkflowLyricsSource(rawJson: String): WorkflowLyricsSourceConfig {
+        val config = parseWorkflowLyricsSourceConfig(rawJson)
+        database.workflowLyricsSourceConfigDao().upsert(config.toEntity())
+        return config
+    }
+
+    override suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean) {
+        val direct = database.lyricsSourceConfigDao().getAll().firstOrNull { it.id == sourceId }
+        if (direct != null) {
+            database.lyricsSourceConfigDao().upsert(direct.copy(enabled = enabled))
+            return
+        }
+        val workflow = database.workflowLyricsSourceConfigDao().getById(sourceId)
+        if (workflow != null) {
+            database.workflowLyricsSourceConfigDao().upsert(workflow.copy(enabled = enabled))
+        }
+    }
+
     override suspend fun deleteLyricsSource(configId: String) {
         database.lyricsSourceConfigDao().delete(configId)
+        database.workflowLyricsSourceConfigDao().delete(configId)
     }
 
     private fun sanitizeBuiltInLrclibConfig(config: LyricsSourceConfigEntity): LyricsSourceConfigEntity? {
@@ -483,40 +526,48 @@ class DefaultLyricsRepository(
                 return cached
             }
 
-        val configs = enabledLyricsConfigs()
-        if (configs.isEmpty()) {
+        val sources = enabledLyricsSources()
+        if (sources.isEmpty()) {
             logger.warn(LYRICS_LOG_TAG) { "no-enabled-sources track=$trackLabel" }
             return null
         }
 
-        for (config in configs) {
-            val document = requestLyricsDocument(
-                track = track,
-                config = config,
-                requestType = "auto",
-            ) ?: continue
+        for (source in sources) {
+            val document = when (source) {
+                is LyricsSourceConfig -> requestDirectLyricsDocument(
+                    track = track,
+                    config = source,
+                    requestType = "auto",
+                )
+
+                is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
+                    track = track,
+                    config = source,
+                    requestType = "auto",
+                )
+            } ?: continue
             storeLyricsDocument(track.id, document)
             logger.info(LYRICS_LOG_TAG) {
-                "resolved track=$trackLabel source=${config.id} synced=${document.isSynced} " +
+                "resolved track=$trackLabel source=${source.id} synced=${document.isSynced} " +
                     "lines=${document.lines.size}"
             }
             return document
         }
         logger.warn(LYRICS_LOG_TAG) {
-            "miss track=$trackLabel attempted=${configs.joinToString(",") { it.id }}"
+            "miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
         }
         return null
     }
 
     override suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
         val trackLabel = track.logIdentity()
-        val configs = enabledLyricsConfigs()
+        val configs = enabledDirectLyricsConfigs()
         if (configs.isEmpty()) {
-            logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-sources track=$trackLabel" }
+            logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-direct-sources track=$trackLabel" }
             return emptyList()
         }
         return configs.mapNotNull { config ->
-            requestLyricsDocument(
+            requestDirectLyricsDocument(
                 track = track,
                 config = config,
                 requestType = "manual",
@@ -527,6 +578,18 @@ class DefaultLyricsRepository(
                     document = document,
                 )
             }
+        }
+    }
+
+    override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> {
+        val trackLabel = track.logIdentity()
+        val configs = enabledWorkflowLyricsConfigs()
+        if (configs.isEmpty()) {
+            logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-workflow-sources track=$trackLabel" }
+            return emptyList()
+        }
+        return configs.flatMap { config ->
+            searchWorkflowCandidates(track, config, requestType = "manual")
         }
     }
 
@@ -551,12 +614,46 @@ class DefaultLyricsRepository(
             )
     }
 
-    private suspend fun enabledLyricsConfigs(): List<LyricsSourceConfig> {
-        return database.lyricsSourceConfigDao().getEnabled()
-            .map { it.toDomain() }
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument {
+        val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
+            ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
+        val document = fetchWorkflowLyricsForCandidate(
+            track = database.trackDao().getByIds(listOf(trackId)).firstOrNull()?.toDomain()
+                ?: Track(
+                    id = trackId,
+                    sourceId = "",
+                    title = candidate.title,
+                    artistName = candidate.artists.joinToString(" / ").ifBlank { null },
+                    albumTitle = candidate.album,
+                    durationMs = (candidate.durationSeconds?.toLong() ?: 0L) * 1_000L,
+                    mediaLocator = "",
+                    relativePath = "",
+                ),
+            config = config,
+            candidate = candidate,
+            requestType = "manual",
+        ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
+        storeLyricsDocument(trackId, document)
+        logger.info(LYRICS_LOG_TAG) {
+            "manual-workflow-apply track=$trackId source=${candidate.sourceId} synced=${document.isSynced} lines=${document.lines.size}"
+        }
+        return document
     }
 
-    private suspend fun requestLyricsDocument(
+    private suspend fun enabledLyricsSources(): List<LyricsSourceDefinition> {
+        return (enabledDirectLyricsConfigs() + enabledWorkflowLyricsConfigs())
+            .sortedWith(compareByDescending<LyricsSourceDefinition> { it.priority }.thenBy { it.name.lowercase() })
+    }
+
+    private suspend fun enabledDirectLyricsConfigs(): List<LyricsSourceConfig> {
+        return database.lyricsSourceConfigDao().getEnabled().map { it.toDomain() }
+    }
+
+    private suspend fun enabledWorkflowLyricsConfigs(): List<WorkflowLyricsSourceConfig> {
+        return database.workflowLyricsSourceConfigDao().getEnabled().mapNotNull { it.toDomainOrNull() }
+    }
+
+    private suspend fun requestDirectLyricsDocument(
         track: Track,
         config: LyricsSourceConfig,
         requestType: String,
@@ -590,6 +687,128 @@ class DefaultLyricsRepository(
             }
         }
         return document
+    }
+
+    private suspend fun requestWorkflowLyricsDocument(
+        track: Track,
+        config: WorkflowLyricsSourceConfig,
+        requestType: String,
+    ): LyricsDocument? {
+        val candidates = searchWorkflowCandidates(track, config, requestType)
+        val candidate = selectBestWorkflowSongCandidate(track, candidates, config.selection)
+        if (candidate == null) {
+            logger.warn(LYRICS_LOG_TAG) {
+                "$requestType-workflow-select-miss track=${track.logIdentity()} source=${config.id} candidates=${candidates.size}"
+            }
+            return null
+        }
+        return fetchWorkflowLyricsForCandidate(track, config, candidate, requestType)
+    }
+
+    private suspend fun searchWorkflowCandidates(
+        track: Track,
+        config: WorkflowLyricsSourceConfig,
+        requestType: String,
+    ): List<WorkflowSongCandidate> {
+        val variables = workflowTrackVariables(track)
+        val request = buildWorkflowRequest(config.search.request, variables)
+        val trackLabel = track.logIdentity()
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-workflow-search track=$trackLabel source=${config.id} method=${request.method.name} " +
+                "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
+        }
+        val startedAt = now()
+        val response = httpClient.request(request).fold(
+            onSuccess = { it },
+            onFailure = { throwable ->
+                logger.error(LYRICS_LOG_TAG, throwable) {
+                    "$requestType-workflow-search-failed track=$trackLabel source=${config.id} elapsedMs=${now() - startedAt} url=${request.url}"
+                }
+                null
+            },
+        ) ?: return emptyList()
+        val candidates = runCatching {
+            extractWorkflowSongCandidates(config, response.body)
+        }.getOrElse { throwable ->
+            logger.error(LYRICS_LOG_TAG, throwable) {
+                "$requestType-workflow-parse-failed track=$trackLabel source=${config.id} status=${response.statusCode}"
+            }
+            emptyList()
+        }
+        logger.debug(LYRICS_LOG_TAG) {
+            "$requestType-workflow-search-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
+                "elapsedMs=${now() - startedAt} candidates=${candidates.size}"
+        }
+        return candidates.take(config.selection.maxCandidates.coerceAtLeast(1))
+    }
+
+    private suspend fun fetchWorkflowLyricsForCandidate(
+        track: Track,
+        config: WorkflowLyricsSourceConfig,
+        candidate: WorkflowSongCandidate,
+        requestType: String,
+    ): LyricsDocument? {
+        val trackLabel = track.logIdentity()
+        val baseVariables = workflowTrackVariables(track) + workflowCandidateVariables(candidate)
+        val stepOutputs = mutableMapOf<String, Map<String, String>>()
+        var finalPayload: String? = null
+        config.lyrics.steps.forEachIndexed { index, step ->
+            val requestVariables = buildMap {
+                putAll(baseVariables)
+                stepOutputs.forEach { (stepName, values) ->
+                    values.forEach { (key, value) -> put("$stepName.$key", value) }
+                }
+            }
+            val request = buildWorkflowRequest(step.request, requestVariables)
+            logger.debug(LYRICS_LOG_TAG) {
+                "$requestType-workflow-step track=$trackLabel source=${config.id} step=$index method=${request.method.name} " +
+                    "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
+            }
+            val startedAt = now()
+            val response = httpClient.request(request).fold(
+                onSuccess = { it },
+                onFailure = { throwable ->
+                    logger.error(LYRICS_LOG_TAG, throwable) {
+                        "$requestType-workflow-step-failed track=$trackLabel source=${config.id} step=$index elapsedMs=${now() - startedAt} url=${request.url}"
+                    }
+                    null
+                },
+            ) ?: return null
+            val capture = runCatching {
+                extractWorkflowStepCapture(step, response.body)
+            }.getOrElse { throwable ->
+                logger.error(LYRICS_LOG_TAG, throwable) {
+                    "$requestType-workflow-step-capture-failed track=$trackLabel source=${config.id} step=$index status=${response.statusCode}"
+                }
+                return null
+            }
+            if (capture.isNotEmpty()) {
+                stepOutputs["step$index"] = capture
+            }
+            if (index == config.lyrics.steps.lastIndex) {
+                finalPayload = runCatching {
+                    extractWorkflowLyricsPayload(step, response.body)
+                }.getOrElse { throwable ->
+                    logger.error(LYRICS_LOG_TAG, throwable) {
+                        "$requestType-workflow-step-payload-failed track=$trackLabel source=${config.id} step=$index status=${response.statusCode}"
+                    }
+                    null
+                }
+            }
+        }
+        val payload = finalPayload?.trim().takeIf { !it.isNullOrBlank() } ?: return null
+        val lines = when (config.lyrics.steps.last().format) {
+            LyricsResponseFormat.LRC -> parseLrc(payload)
+            LyricsResponseFormat.TEXT -> parsePlainText(payload)
+            else -> parseLrc(payload).ifEmpty { parsePlainText(payload) }
+        }
+        if (lines.isEmpty()) return null
+        return LyricsDocument(
+            lines = lines,
+            offsetMs = 0L,
+            sourceId = config.id,
+            rawPayload = payload,
+        )
     }
 
     private suspend fun storeLyricsDocument(trackId: String, document: LyricsDocument) {
@@ -932,6 +1151,29 @@ private fun LyricsSourceConfig.toEntity(): LyricsSourceConfigEntity {
         extractor = extractor,
         priority = priority,
         enabled = enabled,
+    )
+}
+
+private fun WorkflowLyricsSourceConfigEntity.toDomainOrNull(): WorkflowLyricsSourceConfig? {
+    return runCatching {
+        parseWorkflowLyricsSourceConfig(rawJson).copy(
+            id = id,
+            name = name,
+            priority = priority,
+            enabled = enabled,
+            rawJson = rawJson,
+        )
+    }.getOrNull()
+}
+
+private fun WorkflowLyricsSourceConfig.toEntity(): WorkflowLyricsSourceConfigEntity {
+    validateWorkflowLyricsSourceConfig(this)
+    return WorkflowLyricsSourceConfigEntity(
+        id = id,
+        name = name,
+        priority = priority,
+        enabled = enabled,
+        rawJson = rawJson,
     )
 }
 

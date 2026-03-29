@@ -19,6 +19,7 @@ import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -112,6 +113,58 @@ class PlayerStoreManualLyricsSearchTest {
         scope.cancel()
     }
 
+    @Test
+    fun `manual search exposes workflow song candidates and applying one updates lyrics`() = runTest {
+        val track = sampleTrack()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow 源",
+            id = "song-42",
+            title = "工作流标题",
+            artists = listOf("工作流歌手"),
+            album = "工作流专辑",
+            durationSeconds = 123,
+        )
+        val appliedDocument = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = 500L, text = "Workflow 第一句")),
+            sourceId = "workflow-1",
+            rawPayload = "[00:00.50]Workflow 第一句",
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                positionMs = 700L,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            appliedDocument = appliedDocument,
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        assertEquals(listOf(workflowCandidate), store.state.value.manualWorkflowSongResults)
+        assertEquals("原始标题", lyricsRepository.lastWorkflowSearchTrack?.title)
+
+        store.dispatch(PlayerIntent.ApplyWorkflowSongCandidate(workflowCandidate))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(track.id, lyricsRepository.appliedTrackId)
+        assertEquals(workflowCandidate, lyricsRepository.appliedWorkflowCandidate)
+        assertEquals(appliedDocument, state.lyrics)
+        assertEquals(0, state.highlightedLineIndex)
+        assertFalse(state.isManualLyricsSearchVisible)
+        assertTrue(state.manualWorkflowSongResults.isEmpty())
+        scope.cancel()
+    }
+
     private fun sampleTrack(): Track {
         return Track(
             id = "track-1",
@@ -145,13 +198,18 @@ private class FakePlaybackRepository(
 
 private class FakeLyricsRepository(
     private val searchResults: List<LyricsSearchCandidate> = emptyList(),
+    private val workflowResults: List<WorkflowSongCandidate> = emptyList(),
     private val appliedDocument: LyricsDocument? = null,
 ) : LyricsRepository {
     var lastSearchTrack: Track? = null
         private set
+    var lastWorkflowSearchTrack: Track? = null
+        private set
     var appliedTrackId: String? = null
         private set
     var appliedCandidate: LyricsSearchCandidate? = null
+        private set
+    var appliedWorkflowCandidate: WorkflowSongCandidate? = null
         private set
 
     override suspend fun getLyrics(track: Track): LyricsDocument? = null
@@ -161,9 +219,20 @@ private class FakeLyricsRepository(
         return searchResults
     }
 
+    override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> {
+        lastWorkflowSearchTrack = track
+        return workflowResults
+    }
+
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
         appliedTrackId = trackId
         appliedCandidate = candidate
         return appliedDocument ?: candidate.document
+    }
+
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument {
+        appliedTrackId = trackId
+        appliedWorkflowCandidate = candidate
+        return appliedDocument ?: error("No applied document configured")
     }
 }

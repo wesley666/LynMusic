@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.data.db.MIGRATION_1_2
+import top.iwesley.lyn.music.data.db.MIGRATION_2_3
 
 class DatabaseMigrationTest {
 
@@ -48,6 +49,36 @@ class DatabaseMigrationTest {
 
             assertTrue(connection.hasColumn("import_source", "allowInsecureTls"))
             assertEquals(0L, connection.singleLong("SELECT allowInsecureTls FROM import_source WHERE id = 'dav-1'"))
+        }
+    }
+
+    @Test
+    fun `migration 2 to 3 creates workflow lyrics source config table`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE lyrics_source_config (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    urlTemplate TEXT NOT NULL,
+                    headersTemplate TEXT NOT NULL,
+                    queryTemplate TEXT NOT NULL,
+                    bodyTemplate TEXT NOT NULL,
+                    responseFormat TEXT NOT NULL,
+                    extractor TEXT NOT NULL,
+                    priority INTEGER NOT NULL,
+                    enabled INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_2_3.migrate(connection)
+
+            assertTrue(connection.hasColumn("workflow_lyrics_source_config", "rawJson"))
         }
     }
 

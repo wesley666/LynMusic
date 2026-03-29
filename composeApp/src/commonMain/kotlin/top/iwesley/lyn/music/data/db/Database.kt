@@ -98,6 +98,15 @@ data class LyricsSourceConfigEntity(
     val enabled: Boolean,
 )
 
+@Entity(tableName = "workflow_lyrics_source_config")
+data class WorkflowLyricsSourceConfigEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val priority: Int,
+    val enabled: Boolean,
+    val rawJson: String,
+)
+
 @Entity(
     tableName = "lyrics_cache",
     primaryKeys = ["trackId", "sourceId"],
@@ -212,6 +221,27 @@ interface LyricsSourceConfigDao {
 }
 
 @Dao
+interface WorkflowLyricsSourceConfigDao {
+    @Query("SELECT * FROM workflow_lyrics_source_config ORDER BY priority DESC, name ASC")
+    fun observeAll(): Flow<List<WorkflowLyricsSourceConfigEntity>>
+
+    @Query("SELECT * FROM workflow_lyrics_source_config")
+    suspend fun getAll(): List<WorkflowLyricsSourceConfigEntity>
+
+    @Query("SELECT * FROM workflow_lyrics_source_config WHERE enabled = 1 ORDER BY priority DESC, name ASC")
+    suspend fun getEnabled(): List<WorkflowLyricsSourceConfigEntity>
+
+    @Query("SELECT * FROM workflow_lyrics_source_config WHERE id = :configId LIMIT 1")
+    suspend fun getById(configId: String): WorkflowLyricsSourceConfigEntity?
+
+    @Upsert
+    suspend fun upsert(item: WorkflowLyricsSourceConfigEntity)
+
+    @Query("DELETE FROM workflow_lyrics_source_config WHERE id = :configId")
+    suspend fun delete(configId: String)
+}
+
+@Dao
 interface LyricsCacheDao {
     @Query("SELECT * FROM lyrics_cache WHERE trackId = :trackId ORDER BY updatedAt DESC")
     suspend fun getByTrack(trackId: String): List<LyricsCacheEntity>
@@ -235,9 +265,10 @@ interface LyricsCacheDao {
         TrackEntity::class,
         PlaybackQueueSnapshotEntity::class,
         LyricsSourceConfigEntity::class,
+        WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 2,
+    version = 3,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -248,6 +279,7 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun playbackQueueSnapshotDao(): PlaybackQueueSnapshotDao
     abstract fun lyricsSourceConfigDao(): LyricsSourceConfigDao
+    abstract fun workflowLyricsSourceConfigDao(): WorkflowLyricsSourceConfigDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
 }
 
@@ -261,6 +293,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.Default)
         .addMigrations(MIGRATION_1_2)
+        .addMigrations(MIGRATION_2_3)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -271,6 +304,22 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
             """
             ALTER TABLE import_source
             ADD COLUMN allowInsecureTls INTEGER NOT NULL DEFAULT 0
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS workflow_lyrics_source_config (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                enabled INTEGER NOT NULL,
+                rawJson TEXT NOT NULL
+            )
             """.trimIndent(),
         )
     }

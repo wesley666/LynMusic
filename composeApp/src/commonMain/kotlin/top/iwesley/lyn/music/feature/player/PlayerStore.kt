@@ -6,6 +6,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -23,6 +24,7 @@ data class PlayerState(
     val isManualLyricsSearchLoading: Boolean = false,
     val hasManualLyricsSearchResult: Boolean = false,
     val manualLyricsResults: List<LyricsSearchCandidate> = emptyList(),
+    val manualWorkflowSongResults: List<WorkflowSongCandidate> = emptyList(),
     val manualLyricsError: String? = null,
 )
 
@@ -42,6 +44,7 @@ sealed interface PlayerIntent {
     data class ManualLyricsAlbumChanged(val value: String) : PlayerIntent
     data object SearchManualLyrics : PlayerIntent
     data class ApplyManualLyricsCandidate(val candidate: LyricsSearchCandidate) : PlayerIntent
+    data class ApplyWorkflowSongCandidate(val candidate: WorkflowSongCandidate) : PlayerIntent
 }
 
 sealed interface PlayerEffect
@@ -76,6 +79,7 @@ class PlayerStore(
                         isManualLyricsSearchLoading = if (trackChanged) false else current.isManualLyricsSearchLoading,
                         hasManualLyricsSearchResult = if (trackChanged) false else current.hasManualLyricsSearchResult,
                         manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
+                        manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
                         manualLyricsError = if (trackChanged) null else current.manualLyricsError,
                     )
                 }
@@ -120,6 +124,7 @@ class PlayerStore(
             is PlayerIntent.ManualLyricsAlbumChanged -> updateManualLyricsForm(albumTitle = intent.value)
             PlayerIntent.SearchManualLyrics -> searchManualLyrics()
             is PlayerIntent.ApplyManualLyricsCandidate -> applyManualLyricsCandidate(intent.candidate)
+            is PlayerIntent.ApplyWorkflowSongCandidate -> applyWorkflowSongCandidate(intent.candidate)
         }
     }
 
@@ -135,6 +140,7 @@ class PlayerStore(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = false,
                 manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
             )
         }
@@ -147,6 +153,7 @@ class PlayerStore(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = false,
                 manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
             )
         }
@@ -164,6 +171,7 @@ class PlayerStore(
                 manualLyricsAlbumTitle = albumTitle ?: it.manualLyricsAlbumTitle,
                 hasManualLyricsSearchResult = false,
                 manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
             )
         }
@@ -178,6 +186,7 @@ class PlayerStore(
                     isManualLyricsSearchLoading = false,
                     hasManualLyricsSearchResult = false,
                     manualLyricsResults = emptyList(),
+                    manualWorkflowSongResults = emptyList(),
                     manualLyricsError = "标题不能为空",
                 )
             }
@@ -193,16 +202,19 @@ class PlayerStore(
                 isManualLyricsSearchLoading = true,
                 hasManualLyricsSearchResult = false,
                 manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
             )
         }
-        val result = runCatching { lyricsRepository.searchLyricsCandidates(searchTrack) }
+        val directResult = runCatching { lyricsRepository.searchLyricsCandidates(searchTrack) }
+        val workflowResult = runCatching { lyricsRepository.searchWorkflowSongCandidates(searchTrack) }
         updateState { current ->
             current.copy(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = true,
-                manualLyricsResults = result.getOrDefault(emptyList()),
-                manualLyricsError = result.exceptionOrNull()?.message,
+                manualLyricsResults = directResult.getOrDefault(emptyList()),
+                manualWorkflowSongResults = workflowResult.getOrDefault(emptyList()),
+                manualLyricsError = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
             )
         }
     }
@@ -219,6 +231,25 @@ class PlayerStore(
                 isManualLyricsSearchLoading = false,
                 hasManualLyricsSearchResult = false,
                 manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
+                manualLyricsError = null,
+            )
+        }
+    }
+
+    private suspend fun applyWorkflowSongCandidate(candidate: WorkflowSongCandidate) {
+        val track = state.value.snapshot.currentTrack ?: return
+        val snapshot = state.value.snapshot
+        val document = lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
+        updateState {
+            it.copy(
+                lyrics = document,
+                highlightedLineIndex = findHighlightedLine(document, snapshot.positionMs),
+                isManualLyricsSearchVisible = false,
+                isManualLyricsSearchLoading = false,
+                hasManualLyricsSearchResult = false,
+                manualLyricsResults = emptyList(),
+                manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
             )
         }

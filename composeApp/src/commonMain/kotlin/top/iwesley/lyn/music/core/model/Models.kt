@@ -186,9 +186,16 @@ data class LyricsSearchCandidate(
     val document: LyricsDocument,
 )
 
+sealed interface LyricsSourceDefinition {
+    val id: String
+    val name: String
+    val priority: Int
+    val enabled: Boolean
+}
+
 data class LyricsSourceConfig(
-    val id: String,
-    val name: String,
+    override val id: String,
+    override val name: String,
     val method: RequestMethod = RequestMethod.GET,
     val urlTemplate: String,
     val headersTemplate: String = "",
@@ -196,8 +203,81 @@ data class LyricsSourceConfig(
     val bodyTemplate: String = "",
     val responseFormat: LyricsResponseFormat = LyricsResponseFormat.JSON,
     val extractor: String = "text",
-    val priority: Int = 0,
-    val enabled: Boolean = true,
+    override val priority: Int = 0,
+    override val enabled: Boolean = true,
+) : LyricsSourceDefinition
+
+enum class WorkflowLyricsTransform {
+    BASE64_DECODE,
+    JSON_UNESCAPE,
+    TRIM,
+    JOIN_ARRAY_WITH_DELIMITER,
+}
+
+data class WorkflowRequestConfig(
+    val method: RequestMethod = RequestMethod.GET,
+    val url: String,
+    val queryTemplate: String = "",
+    val bodyTemplate: String = "",
+    val headersTemplate: String = "",
+    val responseFormat: LyricsResponseFormat = LyricsResponseFormat.JSON,
+)
+
+data class WorkflowSearchConfig(
+    val request: WorkflowRequestConfig,
+    val resultPath: String,
+    val mapping: Map<String, String>,
+)
+
+data class WorkflowSelectionConfig(
+    val titleWeight: Double = 0.7,
+    val artistWeight: Double = 0.2,
+    val albumWeight: Double = 0.05,
+    val durationWeight: Double = 0.05,
+    val durationToleranceSeconds: Int = 3,
+    val minScore: Double = 0.4,
+    val maxCandidates: Int = 10,
+)
+
+data class WorkflowLyricsStepConfig(
+    val request: WorkflowRequestConfig,
+    val capture: Map<String, String> = emptyMap(),
+    val payloadPath: String? = null,
+    val fallbackPayloadPath: String? = null,
+    val format: LyricsResponseFormat = LyricsResponseFormat.LRC,
+    val transforms: List<WorkflowLyricsTransform> = emptyList(),
+)
+
+data class WorkflowLyricsConfig(
+    val steps: List<WorkflowLyricsStepConfig>,
+)
+
+data class WorkflowOptionalFields(
+    val coverUrlField: String? = null,
+)
+
+data class WorkflowLyricsSourceConfig(
+    override val id: String,
+    override val name: String,
+    override val priority: Int = 0,
+    override val enabled: Boolean = true,
+    val search: WorkflowSearchConfig,
+    val selection: WorkflowSelectionConfig = WorkflowSelectionConfig(),
+    val lyrics: WorkflowLyricsConfig,
+    val optionalFields: WorkflowOptionalFields = WorkflowOptionalFields(),
+    val rawJson: String,
+) : LyricsSourceDefinition
+
+data class WorkflowSongCandidate(
+    val sourceId: String,
+    val sourceName: String,
+    val id: String,
+    val title: String,
+    val artists: List<String>,
+    val album: String? = null,
+    val durationSeconds: Int? = null,
+    val imageUrl: String? = null,
+    val extraFields: Map<String, String> = emptyMap(),
 )
 
 data class LyricsRequest(

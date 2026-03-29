@@ -270,18 +270,6 @@ fun App(component: LynMusicAppComponent) {
                 }
 
                 AnimatedVisibility(
-                    visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding(),
-                ) {
-                    MiniPlayerBar(
-                        state = playerState,
-                        onPlayerIntent = component.playerStore::dispatch,
-                    )
-                }
-
-                AnimatedVisibility(
                     visible = playerState.isExpanded,
                     modifier = Modifier.fillMaxSize(),
                 ) {
@@ -311,18 +299,28 @@ private fun MobileShell(
 ) {
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                listOf(
-                    Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-                    Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
-                    Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
-                ).forEach { (tab, icon, label) ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { onTabSelected(tab) },
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label) },
+            Column(
+                modifier = Modifier.navigationBarsPadding(),
+            ) {
+                AnimatedVisibility(visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded) {
+                    MiniPlayerBar(
+                        state = playerState,
+                        onPlayerIntent = onPlayerIntent,
                     )
+                }
+                NavigationBar {
+                    listOf(
+                        Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+                        Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
+                        Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
+                    ).forEach { (tab, icon, label) ->
+                        NavigationBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { onTabSelected(tab) },
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label) },
+                        )
+                    }
                 }
             }
         },
@@ -330,8 +328,7 @@ private fun MobileShell(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(bottom = if (playerState.snapshot.currentTrack != null) 86.dp else 0.dp),
+                .padding(padding),
         ) {
             HeroHeader(platform = platform, snapshot = playerState.snapshot)
             TabContent(
@@ -375,22 +372,32 @@ private fun DesktopShell(
         ) {
             HeroHeader(platform = platform, snapshot = playerState.snapshot, compact = true)
             DesktopNav(selectedTab = selectedTab, onTabSelected = onTabSelected)
-            if (playerState.snapshot.currentTrack != null) {
-                MiniPlayerBar(state = playerState, onPlayerIntent = onPlayerIntent, compact = true)
-            }
         }
 
-        TabContent(
-            selectedTab = selectedTab,
-            libraryState = libraryState,
-            importState = importState,
-            settingsState = settingsState,
-            onLibraryIntent = onLibraryIntent,
-            onImportIntent = onImportIntent,
-            onPlayerIntent = onPlayerIntent,
-            onSettingsIntent = onSettingsIntent,
-            modifier = Modifier.weight(1f),
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
+            TabContent(
+                selectedTab = selectedTab,
+                libraryState = libraryState,
+                importState = importState,
+                settingsState = settingsState,
+                onLibraryIntent = onLibraryIntent,
+                onImportIntent = onImportIntent,
+                onPlayerIntent = onPlayerIntent,
+                onSettingsIntent = onSettingsIntent,
+                modifier = Modifier.weight(1f),
+            )
+            AnimatedVisibility(visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded) {
+                MiniPlayerBar(
+                    state = playerState,
+                    onPlayerIntent = onPlayerIntent,
+                    compact = false,
+                )
+            }
+        }
     }
 }
 
@@ -795,16 +802,59 @@ private fun SettingsTab(
                 }
             }
         }
+        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Workflow JSON 导入", fontWeight = FontWeight.Bold)
+                Text(
+                    "用于导入多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前只支持粘贴一个 provider 的 JSON 文件。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = state.workflowJsonInput,
+                    onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
+                    label = { Text("Workflow JSON") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    minLines = 10,
+                    maxLines = 18,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onSettingsIntent(SettingsIntent.ImportWorkflow) }) { Text("导入 Workflow") }
+                    if (state.viewingWorkflowId != null) {
+                        OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ViewWorkflow(null)) }) { Text("清空查看") }
+                    }
+                }
+            }
+        }
 
-        SectionTitle(title = "已有配置", subtitle = "常见规则: `json:lyrics.lrc`、`json:[0].syncedLyrics`、`json-lines:data.lines|time,text`、`xml:lyrics`。")
-        if (state.configs.isEmpty()) {
+        SectionTitle(title = "已有配置", subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。")
+        if (state.sources.isEmpty()) {
             EmptyStateCard(
                 title = "还没有歌词源",
                 body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
             )
         } else {
-            state.configs.forEach { config ->
-                LyricsSourceCard(config = config, onClick = { onSettingsIntent(SettingsIntent.SelectConfig(config)) })
+            state.sources.forEach { source ->
+                LyricsSourceCard(
+                    source = source,
+                    onClick = {
+                        when (source) {
+                            is LyricsSourceConfig -> onSettingsIntent(SettingsIntent.SelectConfig(source))
+                            is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> onSettingsIntent(SettingsIntent.ViewWorkflow(source))
+                        }
+                    },
+                    onToggleEnabled = {
+                        onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
+                    },
+                    onDelete = {
+                        onSettingsIntent(SettingsIntent.DeleteSource(source.id))
+                    },
+                )
             }
         }
     }
@@ -1283,7 +1333,7 @@ private fun ManualLyricsSearchOverlay(
                         )
                     }
 
-                    state.manualLyricsResults.isNotEmpty() -> {
+                    state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1291,40 +1341,91 @@ private fun ManualLyricsSearchOverlay(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            state.manualLyricsResults.forEach { candidate ->
-                                ElevatedCard(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) },
-                                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
-                                    shape = RoundedCornerShape(20.dp),
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                            if (state.manualLyricsResults.isNotEmpty()) {
+                                Text("直接歌词结果", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                                state.manualLyricsResults.forEach { candidate ->
+                                    ElevatedCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) },
+                                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
+                                        shape = RoundedCornerShape(20.dp),
                                     ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    candidate.sourceName,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = primaryTextColor,
+                                                )
+                                                Text(
+                                                    "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
+                                                    color = secondaryTextColor,
+                                                )
+                                            }
                                             Text(
-                                                candidate.sourceName,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = primaryTextColor,
-                                            )
-                                            Text(
-                                                "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
-                                                color = secondaryTextColor,
+                                                manualLyricsPreview(candidate),
+                                                color = primaryTextColor.copy(alpha = 0.84f),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
                                             )
                                         }
-                                        Text(
-                                            manualLyricsPreview(candidate),
-                                            color = primaryTextColor.copy(alpha = 0.84f),
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
+                                    }
+                                }
+                            }
+                            if (state.manualWorkflowSongResults.isNotEmpty()) {
+                                Text("Workflow 歌曲候选", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                                state.manualWorkflowSongResults.forEach { candidate ->
+                                    ElevatedCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate)) },
+                                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
+                                        shape = RoundedCornerShape(20.dp),
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(
+                                                    candidate.sourceName,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = primaryTextColor,
+                                                )
+                                                candidate.durationSeconds?.let { seconds ->
+                                                    Text(
+                                                        "${seconds}s",
+                                                        color = secondaryTextColor,
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                candidate.title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = primaryTextColor,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                            Text(
+                                                manualWorkflowCandidatePreview(candidate),
+                                                color = primaryTextColor.copy(alpha = 0.84f),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1350,6 +1451,16 @@ private fun manualLyricsPreview(candidate: LyricsSearchCandidate): String {
         .take(2)
         .joinToString(" / ")
         .ifBlank { "歌词内容为空" }
+}
+
+private fun manualWorkflowCandidatePreview(candidate: top.iwesley.lyn.music.core.model.WorkflowSongCandidate): String {
+    return buildString {
+        append(candidate.artists.joinToString(" / ").ifBlank { "未知歌手" })
+        candidate.album?.takeIf { it.isNotBlank() }?.let {
+            append(" · ")
+            append(it)
+        }
+    }.ifBlank { "歌曲候选" }
 }
 
 @Composable
@@ -1887,8 +1998,10 @@ private fun SourceCard(
 
 @Composable
 private fun LyricsSourceCard(
-    config: LyricsSourceConfig,
+    source: top.iwesley.lyn.music.core.model.LyricsSourceDefinition,
     onClick: () -> Unit,
+    onToggleEnabled: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     ElevatedCard(
         onClick = onClick,
@@ -1900,13 +2013,38 @@ private fun LyricsSourceCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(config.name, fontWeight = FontWeight.Bold)
-                Text(if (config.enabled) "已启用" else "已停用", color = MaterialTheme.colorScheme.primary)
+                Text(source.name, fontWeight = FontWeight.Bold)
+                Text(if (source.enabled) "已启用" else "已停用", color = MaterialTheme.colorScheme.primary)
             }
-            Text(config.urlTemplate, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                when (source) {
+                    is LyricsSourceConfig -> source.urlTemplate
+                    is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> "Workflow JSON · ${source.search.request.url}"
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = {}, label = { Text(config.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
-                AssistChip(onClick = {}, label = { Text(config.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                when (source) {
+                    is LyricsSourceConfig -> {
+                        AssistChip(onClick = {}, label = { Text(source.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                        AssistChip(onClick = {}, label = { Text(source.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                    }
+
+                    is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
+                        AssistChip(onClick = {}, label = { Text("WORKFLOW") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                        AssistChip(onClick = {}, label = { Text("${source.lyrics.steps.size} 步") }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onToggleEnabled) {
+                    Text(if (source.enabled) "停用" else "启用")
+                }
+                TextButton(onClick = onDelete) {
+                    Text("删除")
+                }
             }
         }
     }
