@@ -359,7 +359,6 @@ private class JvmPlaybackGateway(
                 val activePlayer = mediaPlayer ?: return
                 val track = currentTrackForMetadata
                 val playbackTarget = currentPlaybackTarget ?: return
-                val isWebDavTrack = track?.mediaLocator?.let(::parseWebDavLocator) != null
                 val parseAccepted = activePlayer.media().parsing().parse(3_000)
                 val parseStatus = activePlayer.media().parsing().status()
                 val info = activePlayer.media().info()
@@ -367,23 +366,12 @@ private class JvmPlaybackGateway(
                 mutableState.update {
                     it.copy(
                         durationMs = info.duration().coerceAtLeast(0L),
-                        metadataTitle = if (isWebDavTrack) {
-                            it.metadataTitle
-                        } else {
-                            metaData.value(Meta.TITLE).ifBlank { null }
-                        },
-                        metadataArtistName = if (isWebDavTrack) {
-                            it.metadataArtistName
-                        } else {
-                            metaData.value(Meta.ARTIST)
-                                .ifBlank { metaData.value(Meta.ALBUM_ARTIST) }
-                                .ifBlank { null }
-                        },
-                        metadataAlbumTitle = if (isWebDavTrack) {
-                            it.metadataAlbumTitle
-                        } else {
-                            metaData.value(Meta.ALBUM).ifBlank { null }
-                        },
+                        metadataTitle = sanitizeJvmVlcMetadataTitle(metaData.value(Meta.TITLE)) ?: it.metadataTitle,
+                        metadataArtistName = metaData.value(Meta.ARTIST)
+                            .ifBlank { metaData.value(Meta.ALBUM_ARTIST) }
+                            .ifBlank { it.metadataArtistName },
+                        metadataAlbumTitle = metaData.value(Meta.ALBUM)
+                            .ifBlank { it.metadataAlbumTitle },
                         errorMessage = null,
                     )
                 }
@@ -765,3 +753,17 @@ private fun buildVlcMetadataLogMessage(
 private fun MetaData.value(meta: Meta): String {
     return get(meta)?.trim().orEmpty()
 }
+
+internal fun sanitizeJvmVlcMetadataTitle(title: String?): String? {
+    val normalized = title?.trim().orEmpty()
+    if (normalized.isBlank()) return null
+    if (INTERNAL_VLC_TITLE_PREFIXES.any { prefix -> normalized.startsWith(prefix, ignoreCase = true) }) {
+        return null
+    }
+    return normalized
+}
+
+private val INTERNAL_VLC_TITLE_PREFIXES = listOf(
+    "imem://",
+    "fd://",
+)
