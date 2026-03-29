@@ -2,7 +2,10 @@ package top.iwesley.lyn.music
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -117,6 +120,7 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkLoader
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -183,6 +187,9 @@ fun buildLynMusicAppComponent(
     playbackPreferencesStore: PlaybackPreferencesStore,
     secureCredentialStore: SecureCredentialStore,
     lyricsHttpClient: top.iwesley.lyn.music.core.model.LyricsHttpClient,
+    artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
+        override suspend fun cache(locator: String, cacheKey: String): String? = locator
+    },
     logger: DiagnosticLogger = NoopDiagnosticLogger,
     @Suppress("UNUSED_PARAMETER")
     artworkLoader: ArtworkLoader = object : ArtworkLoader {
@@ -194,7 +201,7 @@ fun buildLynMusicAppComponent(
     val importSourceRepository = RoomImportSourceRepository(database, importSourceGateway, secureCredentialStore)
     val playbackRepository = DefaultPlaybackRepository(database, playbackGateway, scope)
     val settingsRepository = DefaultSettingsRepository(database, playbackPreferencesStore)
-    val lyricsRepository = DefaultLyricsRepository(database, lyricsHttpClient, logger)
+    val lyricsRepository = DefaultLyricsRepository(database, lyricsHttpClient, artworkCacheStore, logger)
     scope.launch {
         settingsRepository.ensureDefaults()
     }
@@ -1035,6 +1042,7 @@ private fun PlayerInfoPane(
         VinylPlaceholder(
             size = if (compact) 250.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            spinning = snapshot.isPlaying,
             modifier = Modifier.align(Alignment.Center),
         )
     }
@@ -2129,9 +2137,25 @@ private fun StatCard(
 private fun VinylPlaceholder(
     size: Dp,
     artworkLocator: String? = null,
+    spinning: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val rotation = remember { Animatable(0f) }
+    LaunchedEffect(spinning) {
+        if (!spinning) return@LaunchedEffect
+        while (true) {
+            val start = rotation.value % 360f
+            rotation.snapTo(start)
+            rotation.animateTo(
+                targetValue = start + 360f,
+                animationSpec = tween(
+                    durationMillis = 18_000,
+                    easing = LinearEasing,
+                ),
+            )
+        }
+    }
     Box(
         modifier = modifier
             .size(size)
@@ -2145,7 +2169,8 @@ private fun VinylPlaceholder(
                     ),
                 ),
             )
-            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), CircleShape),
+            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), CircleShape)
+            .graphicsLayer { rotationZ = rotation.value },
         contentAlignment = Alignment.Center,
     ) {
         Box(

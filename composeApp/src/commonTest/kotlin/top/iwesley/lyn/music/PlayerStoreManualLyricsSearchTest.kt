@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
+import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 
@@ -245,9 +246,12 @@ private class FakeLyricsRepository(
         return appliedDocument ?: candidate.document
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
         appliedTrackId = trackId
         appliedWorkflowCandidate = candidate
-        return appliedDocument ?: error("No applied document configured")
+        return AppliedWorkflowLyricsResult(
+            document = appliedDocument ?: error("No applied document configured"),
+            artworkLocator = candidate.imageUrl,
+        )
     }
 }

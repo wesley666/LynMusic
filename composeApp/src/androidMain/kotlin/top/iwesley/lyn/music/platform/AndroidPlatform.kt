@@ -103,6 +103,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
         lyricsHttpClient = AndroidLyricsHttpClient(),
+        artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
         logger = logger,
     )
 }

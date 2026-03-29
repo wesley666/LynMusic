@@ -189,6 +189,9 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM track")
     suspend fun count(): Int
 
+    @Query("UPDATE track SET artworkLocator = :artworkLocator WHERE id = :trackId")
+    suspend fun updateArtworkLocator(trackId: String, artworkLocator: String?)
+
     @Upsert
     suspend fun upsertAll(items: List<TrackEntity>)
 }

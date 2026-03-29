@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.Album
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportIndexState
@@ -112,8 +113,13 @@ interface LyricsRepository {
     suspend fun searchLyricsCandidates(track: Track): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
     suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
-    suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument
+    suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult
 }
+
+data class AppliedWorkflowLyricsResult(
+    val document: LyricsDocument,
+    val artworkLocator: String? = null,
+)
 
 interface SettingsRepository {
     val lyricsSources: Flow<List<LyricsSourceDefinition>>
@@ -517,6 +523,9 @@ class DefaultSettingsRepository(
 class DefaultLyricsRepository(
     private val database: LynMusicDatabase,
     private val httpClient: LyricsHttpClient,
+    private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
+        override suspend fun cache(locator: String, cacheKey: String): String? = locator
+    },
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : LyricsRepository {
     override suspend fun getLyrics(track: Track): LyricsDocument? {
@@ -627,7 +636,7 @@ class DefaultLyricsRepository(
             )
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): LyricsDocument {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
         val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
             ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
         val document = fetchWorkflowLyricsForCandidate(
@@ -647,11 +656,38 @@ class DefaultLyricsRepository(
             requestType = "manual",
         ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
         storeLyricsDocument(trackId, document)
+        val cachedArtworkLocator = cacheWorkflowArtwork(trackId, candidate)
         logger.info(LYRICS_LOG_TAG) {
             "manual-workflow-apply track=$trackId source=${candidate.sourceId} synced=${document.isSynced} " +
-                "lines=${document.lines.size} coverUrl=${candidate.imageUrl.orEmpty()}"
+                "lines=${document.lines.size} coverUrl=${candidate.imageUrl.orEmpty()} " +
+                "artworkLocator=${cachedArtworkLocator.orEmpty()}"
         }
-        return document
+        return AppliedWorkflowLyricsResult(
+            document = document,
+            artworkLocator = cachedArtworkLocator,
+        )
+    }
+
+    private suspend fun cacheWorkflowArtwork(trackId: String, candidate: WorkflowSongCandidate): String? {
+        val sourceLocator = candidate.imageUrl?.trim().orEmpty()
+        if (sourceLocator.isBlank()) return null
+        val cachedLocator = runCatching {
+            artworkCacheStore.cache(
+                locator = sourceLocator,
+                cacheKey = "${trackId}_${candidate.sourceId}_${candidate.id}",
+            )
+        }.onFailure { throwable ->
+            logger.error(LYRICS_LOG_TAG, throwable) {
+                "workflow-artwork-cache-failed track=$trackId source=${candidate.sourceId} candidate=${candidate.id} url=$sourceLocator"
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        if (cachedLocator != null) {
+            database.trackDao().updateArtworkLocator(trackId, cachedLocator)
+            logger.debug(LYRICS_LOG_TAG) {
+                "workflow-artwork-cache-hit track=$trackId source=${candidate.sourceId} candidate=${candidate.id} locator=$cachedLocator"
+            }
+        }
+        return cachedLocator
     }
 
     private suspend fun enabledLyricsSources(): List<LyricsSourceDefinition> {

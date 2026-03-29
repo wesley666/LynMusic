@@ -111,6 +111,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
         lyricsHttpClient = JvmLyricsHttpClient(),
+        artworkCacheStore = createJvmArtworkCacheStore(),
         logger = logger,
         artworkLoader = object : ArtworkLoader {
             override suspend fun resolve(track: Track): String? = track.artworkLocator

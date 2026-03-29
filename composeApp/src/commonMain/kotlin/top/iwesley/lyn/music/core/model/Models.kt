@@ -349,3 +349,7 @@ interface LyricsHttpClient {
 interface ArtworkLoader {
     suspend fun resolve(track: Track): String?
 }
+
+interface ArtworkCacheStore {
+    suspend fun cache(locator: String, cacheKey: String): String?
+}

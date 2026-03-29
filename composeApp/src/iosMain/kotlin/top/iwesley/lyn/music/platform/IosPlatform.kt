@@ -96,6 +96,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playbackPreferencesStore = playbackPreferencesStore,
         secureCredentialStore = secureStore,
         lyricsHttpClient = IosLyricsHttpClient(),
+        artworkCacheStore = createIosArtworkCacheStore(),
         logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
     )
 }
