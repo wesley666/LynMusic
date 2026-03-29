@@ -98,7 +98,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -117,6 +119,8 @@ import kotlin.math.PI
 import kotlin.math.absoluteValue
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
@@ -892,7 +896,7 @@ private fun MiniPlayerBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            VinylPlaceholder(size = 50.dp)
+            VinylPlaceholder(vinylSize = 50.dp)
             Column(modifier = Modifier.weight(1f)) {
                 Text(state.snapshot.currentDisplayTitle, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(state.snapshot.currentDisplayArtistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1040,9 +1044,10 @@ private fun PlayerInfoPane(
             compact = compact,
         )
         VinylPlaceholder(
-            size = if (compact) 250.dp else 420.dp,
+            vinylSize = if (compact) 250.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
+            enableArtworkTint = true,
             modifier = Modifier.align(Alignment.Center),
         )
     }
@@ -1940,7 +1945,7 @@ private fun TrackRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text((index + 1).toString().padStart(2, '0'), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            VinylPlaceholder(size = 52.dp)
+            VinylPlaceholder(vinylSize = 52.dp)
             Column(modifier = Modifier.weight(1f)) {
                 Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text(track.artistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2135,12 +2140,29 @@ private fun StatCard(
 
 @Composable
 private fun VinylPlaceholder(
-    size: Dp,
+    vinylSize: Dp,
     artworkLocator: String? = null,
     spinning: Boolean = false,
+    enableArtworkTint: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val palette = rememberVinylArtworkPalette(
+        artworkBitmap = artworkBitmap,
+        enabled = enableArtworkTint,
+    )
+    val animatedRimColor by animateColorAsState(
+        targetValue = palette?.rimColor ?: Color.White.copy(alpha = 0.18f),
+        label = "vinyl-rim-color",
+    )
+    val animatedGlowColor by animateColorAsState(
+        targetValue = palette?.glowColor ?: Color.Transparent,
+        label = "vinyl-glow-color",
+    )
+    val animatedInnerGlowColor by animateColorAsState(
+        targetValue = palette?.innerGlowColor ?: Color.Transparent,
+        label = "vinyl-inner-glow-color",
+    )
     val rotation = remember { Animatable(0f) }
     LaunchedEffect(spinning) {
         if (!spinning) return@LaunchedEffect
@@ -2157,49 +2179,216 @@ private fun VinylPlaceholder(
         }
     }
     Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFFFDE2E4),
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
-                        Color(0xFF3A2226),
-                    ),
-                ),
-            )
-            .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), CircleShape)
-            .graphicsLayer { rotationZ = rotation.value },
+        modifier = modifier.size(vinylSize),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(size * 0.58f)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f))
-                .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
+                .matchParentSize()
+                .background(
+                    Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.56f to Color.Transparent,
+                            0.82f to animatedGlowColor.copy(alpha = 0.22f),
+                            1.0f to Color.Transparent,
+                        ),
+                    ),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .size(vinylSize)
+                .graphicsLayer { rotationZ = rotation.value },
             contentAlignment = Alignment.Center,
         ) {
-            if (artworkBitmap != null) {
-                Image(
-                    bitmap = artworkBitmap,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop,
+            Canvas(modifier = Modifier.matchParentSize()) {
+                val radius = min(size.width, size.height) / 2f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color(0xFF292A2E),
+                            0.42f to Color(0xFF141518),
+                            0.78f to Color(0xFF090A0C),
+                            1.0f to Color(0xFF040506),
+                        ),
+                    ),
+                    radius = radius,
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(size / 4)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
+                val ringStart = radius * 0.58f
+                val ringEnd = radius * 0.94f
+                repeat(14) { index ->
+                    val fraction = index / 13f
+                    val ringRadius = ringStart + (ringEnd - ringStart) * fraction
+                    val ringAlpha = 0.055f - fraction * 0.03f
+                    if (ringAlpha > 0f) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = ringAlpha),
+                            radius = ringRadius,
+                            style = Stroke(width = if (index % 4 == 0) 1.6f else 1.0f),
+                        )
+                    }
+                }
+                drawCircle(
+                    color = animatedRimColor.copy(alpha = if (enableArtworkTint) 0.55f else 0.22f),
+                    radius = radius - 2f,
+                    style = Stroke(width = 3.5f),
                 )
+            }
+            Box(
+                modifier = Modifier
+                    .size(vinylSize * 0.62f)
+                    .background(
+                        Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to animatedInnerGlowColor.copy(alpha = 0.24f),
+                                0.68f to animatedInnerGlowColor.copy(alpha = 0.08f),
+                                1.0f to Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .size(vinylSize * 0.58f)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f))
+                    .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (artworkBitmap != null) {
+                    Image(
+                        bitmap = artworkBitmap,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(vinylSize / 4)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
+                    )
+                }
             }
         }
     }
+}
+
+private data class VinylArtworkPalette(
+    val rimColor: Color,
+    val glowColor: Color,
+    val innerGlowColor: Color,
+)
+
+@Composable
+private fun rememberVinylArtworkPalette(
+    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    enabled: Boolean,
+): VinylArtworkPalette? {
+    return remember(artworkBitmap, enabled) {
+        if (!enabled || artworkBitmap == null) {
+            null
+        } else {
+            deriveVinylArtworkPalette(artworkBitmap)
+        }
+    }
+}
+
+private fun deriveVinylArtworkPalette(
+    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap,
+): VinylArtworkPalette? {
+    val pixelMap = artworkBitmap.toPixelMap()
+    val stepX = max(1, pixelMap.width / 24)
+    val stepY = max(1, pixelMap.height / 24)
+    val binCount = 18
+    val bins = Array(binCount) { ColorAccumulator() }
+    for (y in 0 until pixelMap.height step stepY) {
+        for (x in 0 until pixelMap.width step stepX) {
+            val color = pixelMap[x, y]
+            if (color.alpha < 0.35f) continue
+            val hsl = color.toHsl()
+            val saturation = hsl[1]
+            val lightness = hsl[2]
+            if (saturation < 0.16f) continue
+            if (lightness < 0.12f || lightness > 0.84f) continue
+            val weight = saturation * (1f - abs(lightness - 0.52f)).coerceAtLeast(0.18f)
+            if (weight <= 0f) continue
+            val binIndex = (((hsl[0] / 360f) * binCount).toInt()).coerceIn(0, binCount - 1)
+            bins[binIndex].add(color, weight)
+        }
+    }
+    val dominant = bins.maxByOrNull { it.weight }?.takeIf { it.weight > 0f }?.averageColor() ?: return null
+    val hsl = dominant.toHsl()
+    val safeHue = hsl[0]
+    val safeSaturation = min(max(hsl[1], 0.24f), 0.58f)
+    return VinylArtworkPalette(
+        rimColor = colorFromHsl(safeHue, safeSaturation, 0.64f).copy(alpha = 1f),
+        glowColor = colorFromHsl(safeHue, safeSaturation, 0.42f).copy(alpha = 1f),
+        innerGlowColor = colorFromHsl(safeHue, safeSaturation * 0.82f, 0.56f).copy(alpha = 1f),
+    )
+}
+
+private class ColorAccumulator {
+    var red = 0f
+    var green = 0f
+    var blue = 0f
+    var weight = 0f
+
+    fun add(color: Color, sampleWeight: Float) {
+        red += color.red * sampleWeight
+        green += color.green * sampleWeight
+        blue += color.blue * sampleWeight
+        weight += sampleWeight
+    }
+
+    fun averageColor(): Color {
+        if (weight <= 0f) return Color.Unspecified
+        return Color(
+            red = red / weight,
+            green = green / weight,
+            blue = blue / weight,
+            alpha = 1f,
+        )
+    }
+}
+
+private fun Color.toHsl(): FloatArray {
+    val maxValue = max(red, max(green, blue))
+    val minValue = min(red, min(green, blue))
+    val delta = maxValue - minValue
+    val lightness = (maxValue + minValue) / 2f
+    if (delta == 0f) return floatArrayOf(0f, 0f, lightness)
+    val saturation = delta / (1f - abs(2f * lightness - 1f))
+    val hue = when (maxValue) {
+        red -> 60f * (((green - blue) / delta) % 6f)
+        green -> 60f * (((blue - red) / delta) + 2f)
+        else -> 60f * (((red - green) / delta) + 4f)
+    }.let { if (it < 0f) it + 360f else it }
+    return floatArrayOf(hue, saturation, lightness)
+}
+
+private fun colorFromHsl(
+    hue: Float,
+    saturation: Float,
+    lightness: Float,
+): Color {
+    val chroma = (1f - abs(2f * lightness - 1f)) * saturation
+    val hueSegment = (hue / 60f) % 6f
+    val secondary = chroma * (1f - abs(hueSegment % 2f - 1f))
+    val (r1, g1, b1) = when {
+        hueSegment < 1f -> Triple(chroma, secondary, 0f)
+        hueSegment < 2f -> Triple(secondary, chroma, 0f)
+        hueSegment < 3f -> Triple(0f, chroma, secondary)
+        hueSegment < 4f -> Triple(0f, secondary, chroma)
+        hueSegment < 5f -> Triple(secondary, 0f, chroma)
+        else -> Triple(chroma, 0f, secondary)
+    }
+    val match = lightness - chroma / 2f
+    return Color(r1 + match, g1 + match, b1 + match, 1f)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
