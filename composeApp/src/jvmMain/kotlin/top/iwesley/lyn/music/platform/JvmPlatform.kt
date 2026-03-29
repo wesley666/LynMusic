@@ -48,7 +48,6 @@ import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
-import top.iwesley.lyn.music.core.model.buildDirectSambaUrl
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
@@ -293,7 +292,7 @@ private class JvmPlaybackGateway(
     @Volatile
     private var currentPlaybackTarget: String? = null
     @Volatile
-    private var currentSourceUrl: String? = null
+    private var currentSourceReference: String? = null
     @Volatile
     private var currentTrackForMetadata: Track? = null
     private val nativeLogListener = object : LogEventListener {
@@ -392,7 +391,7 @@ private class JvmPlaybackGateway(
                     buildVlcMetadataLogMessage(
                         track = track,
                         playbackTarget = playbackTarget,
-                        sourceUrl = currentSourceUrl,
+                        sourceReference = currentSourceReference,
                         parseAccepted = parseAccepted,
                         parseStatus = parseStatus.name,
                         durationMs = info.duration(),
@@ -455,7 +454,7 @@ private class JvmPlaybackGateway(
 
             override fun error(mediaPlayer: MediaPlayer?) {
                 logger.error(VLC_LOG_TAG) {
-                    "playback-error target=${currentPlaybackTarget.orEmpty()} sourceUrl=${currentSourceUrl.orEmpty()} recentLogs=${recentVlcLogSummary()}"
+                    "playback-error target=${currentPlaybackTarget.orEmpty()} source=${currentSourceReference.orEmpty()} recentLogs=${recentVlcLogSummary()}"
                 }
                 mutableState.update {
                     it.copy(errorMessage = "桌面播放器无法播放当前媒体。")
@@ -465,21 +464,38 @@ private class JvmPlaybackGateway(
     }
 
     override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+        runCatching { mediaPlayer.controls().stop() }
+        currentCallbackMedia = null
         val webDavTarget = resolveJvmWebDavPlaybackTarget(
             database = database,
             secureCredentialStore = secureCredentialStore,
             locator = track.mediaLocator,
             logger = logger,
         )
-        val sourceUrl = webDavTarget?.requestUrl ?: resolveLocator(track.mediaLocator)
+        val sambaTarget = if (webDavTarget == null && shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)) {
+            resolveJvmSambaPlaybackTarget(
+                database = database,
+                secureCredentialStore = secureCredentialStore,
+                locator = track.mediaLocator,
+                logger = logger,
+            )
+        } else {
+            null
+        }
+        val sourceReference = when {
+            sambaTarget != null -> sambaTarget.sourceReference
+            webDavTarget != null -> webDavTarget.requestUrl
+            else -> resolveLocator(track.mediaLocator)
+        }
         val playbackTarget = when {
             webDavTarget != null -> "webdav-callback://${track.id}"
-            else -> sourceUrl
+            sambaTarget != null -> buildJvmSambaPlaybackTarget(track.id)
+            else -> sourceReference
         }
         currentPlaybackTarget = playbackTarget
-        currentSourceUrl = sourceUrl
+        currentSourceReference = sourceReference
         currentTrackForMetadata = track
-        currentCallbackMedia = webDavTarget?.media
+        currentCallbackMedia = webDavTarget?.media ?: sambaTarget?.media
         mutableState.update {
             it.copy(
                 isPlaying = playWhenReady,
@@ -494,25 +510,29 @@ private class JvmPlaybackGateway(
         val started = if (playWhenReady) {
             if (webDavTarget != null) {
                 mediaPlayer.media().start(webDavTarget.media)
+            } else if (sambaTarget != null) {
+                mediaPlayer.media().start(sambaTarget.media)
             } else {
-                mediaPlayer.media().start(sourceUrl)
+                mediaPlayer.media().start(sourceReference)
             }
         } else {
             if (webDavTarget != null) {
                 mediaPlayer.media().startPaused(webDavTarget.media)
+            } else if (sambaTarget != null) {
+                mediaPlayer.media().startPaused(sambaTarget.media)
             } else {
-                mediaPlayer.media().startPaused(sourceUrl)
+                mediaPlayer.media().startPaused(sourceReference)
             }
         }
         if (!started) {
             logger.error(VLC_LOG_TAG) {
-                "start-failed target=$playbackTarget sourceUrl=$sourceUrl playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
+                "start-failed target=$playbackTarget source=$sourceReference playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
             }
         }
         check(started) { "Unable to load media $playbackTarget" }
         if (webDavTarget != null) {
             val expectedTrackId = track.id
-            val expectedSourceUrl = sourceUrl
+            val expectedSourceReference = sourceReference
             scope.launch {
                 val metadata = requestJvmWebDavMetadata(
                     database = database,
@@ -520,7 +540,7 @@ private class JvmPlaybackGateway(
                     locator = track.mediaLocator,
                     logger = logger,
                 ) ?: return@launch
-                if (currentTrackForMetadata?.id != expectedTrackId || currentSourceUrl != expectedSourceUrl) return@launch
+                if (currentTrackForMetadata?.id != expectedTrackId || currentSourceReference != expectedSourceReference) return@launch
                 mutableState.update {
                     it.copy(
                         metadataTitle = metadata.title.takeIf { value -> value.isNotBlank() } ?: it.metadataTitle,
@@ -557,6 +577,8 @@ private class JvmPlaybackGateway(
     override suspend fun release() {
         currentTrackForMetadata = null
         currentCallbackMedia = null
+        currentPlaybackTarget = null
+        currentSourceReference = null
         mediaPlayer.release()
         nativeLog?.removeLogListener(nativeLogListener)
         nativeLog?.release()
@@ -580,18 +602,7 @@ private class JvmPlaybackGateway(
         val username = source.username.orEmpty()
         val remotePath = joinSambaPath(sambaPath.directoryPath, samba.second)
         if (!playbackPreferencesStore.useSambaCache.value) {
-            val fullRemotePath = joinSambaPath(sambaPath.shareName, remotePath)
-            logger.info(SAMBA_LOG_TAG) {
-                "direct-link-return source=${samba.first} endpoint=$endpoint remotePath=$fullRemotePath hasCredentials=${username.isNotBlank() || password.isNotBlank()}"
-            }
-            return buildDirectSambaUrl(
-                server = source.server.orEmpty(),
-                port = storedPort,
-                shareName = sambaPath.shareName,
-                remotePath = remotePath,
-                username = username,
-                password = password,
-            )
+            error("Desktop Samba direct-link playback is disabled. Expected SMB callback target for locator=$locator")
         }
         val cacheFile = File(sambaCacheDir, buildSambaCacheFileName(samba.first, remotePath))
         if (cacheFile.exists()) {
@@ -701,7 +712,7 @@ private fun buildSambaCacheFileName(sourceId: String, remotePath: String): Strin
     return "$sourceId-$sanitized"
 }
 
-private const val SAMBA_LOG_TAG = "Samba"
+internal const val SAMBA_LOG_TAG = "Samba"
 private const val VLC_LOG_TAG = "VLC"
 
 private fun isSupportedAudio(fileName: String): Boolean {
@@ -711,7 +722,7 @@ private fun isSupportedAudio(fileName: String): Boolean {
 private fun buildVlcMetadataLogMessage(
     track: Track?,
     playbackTarget: String,
-    sourceUrl: String?,
+    sourceReference: String?,
     parseAccepted: Boolean,
     parseStatus: String,
     durationMs: Long,
@@ -722,8 +733,8 @@ private fun buildVlcMetadataLogMessage(
         append(track?.id)
         append(" target=")
         append(playbackTarget)
-        sourceUrl?.takeIf { it.isNotBlank() }?.let {
-            append(" sourceUrl=")
+        sourceReference?.takeIf { it.isNotBlank() }?.let {
+            append(" source=")
             append(it)
         }
         append(" parseAccepted=")
