@@ -104,7 +104,7 @@ class DefaultPlaybackRepository(
     override suspend fun skipPrevious() {
         val snapshot = mutableSnapshot.value
         if (snapshot.queue.isEmpty()) return
-        if (snapshot.positionMs > 5_000) {
+        if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.positionMs > 5_000) {
             gateway.seekTo(0L)
             mutableSnapshot.update { it.copy(positionMs = 0L) }
             persistSnapshot()
@@ -166,22 +166,30 @@ class DefaultPlaybackRepository(
         val snapshot = mutableSnapshot.value
         if (snapshot.queue.isEmpty()) return
         val nextIndex = when (snapshot.mode) {
-            PlaybackMode.REPEAT_ONE -> snapshot.currentIndex
-            PlaybackMode.SHUFFLE -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
-            PlaybackMode.ORDER -> {
-                if (snapshot.currentIndex + 1 <= snapshot.queue.lastIndex) {
-                    snapshot.currentIndex + 1
-                } else if (autoTriggered) {
-                    gateway.pause()
-                    mutableSnapshot.update { it.copy(isPlaying = false, positionMs = 0L) }
-                    persistSnapshot()
-                    return
+            PlaybackMode.REPEAT_ONE -> {
+                if (autoTriggered) {
+                    snapshot.currentIndex
                 } else {
-                    0
+                    nextSequentialIndex(snapshot, autoTriggered = false) ?: return
                 }
             }
+            PlaybackMode.SHUFFLE -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
+            PlaybackMode.ORDER -> nextSequentialIndex(snapshot, autoTriggered) ?: return
         }
         loadIndex(nextIndex, playWhenReady = true)
+    }
+
+    private suspend fun nextSequentialIndex(snapshot: PlaybackSnapshot, autoTriggered: Boolean): Int? {
+        if (snapshot.currentIndex + 1 <= snapshot.queue.lastIndex) {
+            return snapshot.currentIndex + 1
+        }
+        if (autoTriggered) {
+            gateway.pause()
+            mutableSnapshot.update { it.copy(isPlaying = false, positionMs = 0L) }
+            persistSnapshot()
+            return null
+        }
+        return 0
     }
 
     private suspend fun loadIndex(index: Int, playWhenReady: Boolean) {
