@@ -36,12 +36,16 @@ data class PlayerState(
     val selectedLyricsLineIndices: Set<Int> = emptySet(),
     val shareCardModel: LyricsShareCardModel? = null,
     val sharePreviewBytes: ByteArray? = null,
+    val sharePreviewSelection: Set<Int> = emptySet(),
     val sharePreviewError: String? = null,
     val isShareRendering: Boolean = false,
     val isShareSaving: Boolean = false,
     val isShareCopying: Boolean = false,
     val shareMessage: String? = null,
-)
+) {
+    val hasFreshSharePreview: Boolean
+        get() = sharePreviewBytes != null && sharePreviewSelection == selectedLyricsLineIndices
+}
 
 sealed interface PlayerIntent {
     data class PlayTracks(val tracks: List<Track>, val startIndex: Int) : PlayerIntent
@@ -247,6 +251,7 @@ class PlayerStore(
                 selectedLyricsLineIndices = defaultSelection,
                 shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, defaultSelection),
                 sharePreviewBytes = null,
+                sharePreviewSelection = emptySet(),
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -279,7 +284,6 @@ class PlayerStore(
             it.copy(
                 selectedLyricsLineIndices = updatedSelection,
                 shareCardModel = deriveLyricsShareCardModel(snapshot, lyrics, updatedSelection),
-                sharePreviewBytes = null,
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -299,6 +303,7 @@ class PlayerStore(
                 selectedLyricsLineIndices = emptySet(),
                 shareCardModel = null,
                 sharePreviewBytes = null,
+                sharePreviewSelection = emptySet(),
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -418,6 +423,7 @@ class PlayerStore(
                 it.copy(
                     shareCardModel = model,
                     sharePreviewBytes = null,
+                    sharePreviewSelection = emptySet(),
                     sharePreviewError = null,
                     isShareRendering = false,
                 )
@@ -428,7 +434,6 @@ class PlayerStore(
         updateState {
             it.copy(
                 shareCardModel = model,
-                sharePreviewBytes = null,
                 sharePreviewError = null,
                 isShareRendering = true,
             )
@@ -441,6 +446,7 @@ class PlayerStore(
                     it.copy(
                         shareCardModel = model,
                         sharePreviewBytes = bytes,
+                        sharePreviewSelection = it.selectedLyricsLineIndices,
                         sharePreviewError = null,
                         isShareRendering = false,
                     )
@@ -451,7 +457,6 @@ class PlayerStore(
                 updateState {
                     it.copy(
                         shareCardModel = model,
-                        sharePreviewBytes = null,
                         sharePreviewError = "生成分享图片失败: ${throwable.message.orEmpty()}",
                         isShareRendering = false,
                     )
@@ -500,7 +505,9 @@ class PlayerStore(
             updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
             return null
         }
-        state.value.sharePreviewBytes?.let { return it }
+        if (state.value.hasFreshSharePreview) {
+            state.value.sharePreviewBytes?.let { return it }
+        }
         return rebuildLyricsSharePreview()
     }
 
@@ -556,6 +563,7 @@ private fun PlayerState.clearLyricsShareState(): PlayerState {
         selectedLyricsLineIndices = emptySet(),
         shareCardModel = null,
         sharePreviewBytes = null,
+        sharePreviewSelection = emptySet(),
         sharePreviewError = null,
         isShareRendering = false,
         isShareSaving = false,

@@ -1980,6 +1980,7 @@ private fun LyricsShareOverlay(
     val primaryTextColor = Color.White.copy(alpha = 0.96f)
     val secondaryTextColor = Color.White.copy(alpha = 0.74f)
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
+    val exportActionsEnabled = state.selectedLyricsLineIndices.isNotEmpty() && !state.isShareSaving && !state.isShareCopying
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -2112,14 +2113,14 @@ private fun LyricsShareOverlay(
                             }
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
-                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                enabled = exportActionsEnabled,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                             ) {
                                 Text(if (state.isShareCopying) "复制中..." else "复制图片")
                             }
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
-                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                enabled = exportActionsEnabled,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFFEEE0C8),
                                     contentColor = Color(0xFF3C2E24),
@@ -2146,7 +2147,7 @@ private fun LyricsShareOverlay(
                             Spacer(Modifier.width(10.dp))
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
-                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                enabled = exportActionsEnabled,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                             ) {
                                 Text(if (state.isShareCopying) "复制中..." else "复制图片")
@@ -2154,7 +2155,7 @@ private fun LyricsShareOverlay(
                             Spacer(Modifier.width(10.dp))
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
-                                enabled = !state.isShareRendering && !state.isShareSaving && !state.isShareCopying,
+                                enabled = exportActionsEnabled,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFFEEE0C8),
                                     contentColor = Color(0xFF3C2E24),
@@ -2273,9 +2274,10 @@ private fun LyricsSharePreviewPane(
         SectionTitle(
             title = "预览",
             subtitle = when {
+                state.isShareRendering && previewBitmap != null -> "正在更新预览，旧图会暂时保留。"
                 state.isShareRendering -> "正在生成便签风歌词卡片。"
                 state.selectedLyricsLineIndices.isEmpty() -> "请先选择至少一句歌词。"
-                state.sharePreviewBytes != null -> "当前预览会用于复制和保存。"
+                state.hasFreshSharePreview -> "当前预览会用于复制和保存。"
                 else -> "选句后会自动刷新预览。"
             },
         )
@@ -2315,6 +2317,22 @@ private fun LyricsSharePreviewPane(
                         LyricsShareNoteCard(
                             model = shareCardModel,
                             modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                if (state.isShareRendering && shareCardModel != null) {
+                    Card(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.56f)),
+                    ) {
+                        Text(
+                            text = "更新预览中",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = Color.White.copy(alpha = 0.92f),
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }

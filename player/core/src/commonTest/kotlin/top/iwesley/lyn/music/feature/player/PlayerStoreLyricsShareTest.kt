@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.feature.player
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,6 +66,8 @@ class PlayerStoreLyricsShareTest {
         assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
         assertEquals(1, shareService.buildPreviewCalls)
         assertEquals(FakeLyricsSharePlatformService.previewBytes.toList(), state.sharePreviewBytes?.toList())
+        assertEquals(setOf(0), state.sharePreviewSelection)
+        assertTrue(state.hasFreshSharePreview)
         scope.cancel()
     }
 
@@ -95,6 +99,57 @@ class PlayerStoreLyricsShareTest {
         assertEquals(setOf(0, 1), store.state.value.selectedLyricsLineIndices)
         assertEquals(listOf("第一句", "第二句"), store.state.value.shareCardModel?.lyricsLines)
         assertEquals(2, shareService.buildPreviewCalls)
+        assertEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
+        assertTrue(store.state.value.hasFreshSharePreview)
+        scope.cancel()
+    }
+
+    @Test
+    fun `toggling lyrics selection keeps previous preview visible while next preview renders`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val lyrics = syncedLyrics()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val delayedPreview = CompletableDeferred<Result<ByteArray>>()
+        val shareService = FakeLyricsSharePlatformService(
+            previewResults = ArrayDeque(
+                listOf(
+                    PreviewResponse.Immediate(Result.success(FakeLyricsSharePlatformService.previewBytes)),
+                    PreviewResponse.Deferred(delayedPreview),
+                ),
+            ),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(lyrics),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+
+        val previousPreview = store.state.value.sharePreviewBytes
+        store.dispatch(PlayerIntent.ToggleLyricsLineSelection(1))
+        runCurrent()
+
+        assertTrue(store.state.value.isShareRendering)
+        assertEquals(previousPreview?.toList(), store.state.value.sharePreviewBytes?.toList())
+        assertEquals(setOf(0), store.state.value.sharePreviewSelection)
+        assertFalse(store.state.value.hasFreshSharePreview)
+
+        delayedPreview.complete(Result.success(byteArrayOf(0x09, 0x08, 0x07, 0x06)))
+        advanceUntilIdle()
+
+        assertEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
+        assertEquals(byteArrayOf(0x09, 0x08, 0x07, 0x06).toList(), store.state.value.sharePreviewBytes?.toList())
+        assertTrue(store.state.value.hasFreshSharePreview)
         scope.cancel()
     }
 
@@ -327,6 +382,7 @@ private class FakeLyricsShareRepository(
 
 private class FakeLyricsSharePlatformService(
     private val previewResult: Result<ByteArray> = Result.success(previewBytes),
+    private val previewResults: ArrayDeque<PreviewResponse> = ArrayDeque(),
     private val saveResult: Result<LyricsShareSaveResult> = Result.success(LyricsShareSaveResult("图片已保存到文件")),
     private val copyResult: Result<Unit> = Result.success(Unit),
 ) : LyricsSharePlatformService {
@@ -342,7 +398,7 @@ private class FakeLyricsSharePlatformService(
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> {
         buildPreviewCalls += 1
         lastPreviewModel = model
-        return previewResult
+        return previewResults.removeFirstOrNull()?.await() ?: previewResult
     }
 
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> {
@@ -359,5 +415,21 @@ private class FakeLyricsSharePlatformService(
 
     companion object {
         val previewBytes = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+    }
+}
+
+private sealed interface PreviewResponse {
+    suspend fun await(): Result<ByteArray>
+
+    data class Immediate(
+        private val result: Result<ByteArray>,
+    ) : PreviewResponse {
+        override suspend fun await(): Result<ByteArray> = result
+    }
+
+    data class Deferred(
+        private val deferred: CompletableDeferred<Result<ByteArray>>,
+    ) : PreviewResponse {
+        override suspend fun await(): Result<ByteArray> = deferred.await()
     }
 }
