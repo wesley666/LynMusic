@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
@@ -1323,7 +1324,7 @@ private fun PlayerOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                if (state.snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
+                                playbackModeIcon(state.snapshot.mode),
                                 null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
                             )
@@ -2028,7 +2029,7 @@ private fun PlayerBottomControls(
                             ) {
                                 IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
                                     Icon(
-                                        if (snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
+                                        playbackModeIcon(snapshot.mode),
                                         null,
                                         modifier = Modifier.size(15.dp),
                                         tint = Color.White.copy(alpha = 0.92f),
@@ -2077,7 +2078,7 @@ private fun PlayerBottomControls(
                         ) {
                             IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(28.dp)) {
                                 Icon(
-                                    if (snapshot.mode == PlaybackMode.SHUFFLE) Icons.Rounded.Shuffle else Icons.Rounded.Repeat,
+                                    playbackModeIcon(snapshot.mode),
                                     null,
                                     modifier = Modifier.size(15.dp),
                                     tint = Color.White.copy(alpha = 0.92f),
@@ -3020,6 +3021,14 @@ private fun modeLabel(mode: PlaybackMode): String {
         PlaybackMode.ORDER -> "顺序播放"
         PlaybackMode.SHUFFLE -> "随机播放"
         PlaybackMode.REPEAT_ONE -> "单曲循环"
+    }
+}
+
+private fun playbackModeIcon(mode: PlaybackMode): ImageVector {
+    return when (mode) {
+        PlaybackMode.ORDER -> Icons.Rounded.Repeat
+        PlaybackMode.SHUFFLE -> Icons.Rounded.Shuffle
+        PlaybackMode.REPEAT_ONE -> Icons.Rounded.RepeatOne
     }
 }
 
