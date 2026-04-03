@@ -26,7 +26,9 @@ data class PlaybackSnapshot(
         get() = queue.getOrNull(currentIndex)
 
     val currentDisplayTitle: String
-        get() = metadataTitle?.takeIf { it.isNotBlank() } ?: currentTrack?.title.orEmpty()
+        get() = metadataTitle
+            ?.takeIf(::isUsablePlaybackMetadataTitle)
+            ?: currentTrack?.title.orEmpty()
 
     val currentDisplayArtistName: String?
         get() = metadataArtistName?.takeIf { it.isNotBlank() } ?: currentTrack?.artistName
@@ -37,6 +39,26 @@ data class PlaybackSnapshot(
     val currentDisplayArtworkLocator: String?
         get() = metadataArtworkLocator?.takeIf { it.isNotBlank() } ?: currentTrack?.artworkLocator
 }
+
+private fun isUsablePlaybackMetadataTitle(title: String): Boolean {
+    val normalized = title.trim()
+    if (normalized.isBlank()) return false
+    val lowercase = normalized.lowercase()
+    if (INTERNAL_PLAYBACK_TITLE_PREFIXES.any { prefix -> lowercase.startsWith(prefix) }) {
+        return false
+    }
+    return when {
+        lowercase.startsWith("stream?") -> false
+        lowercase.startsWith("/rest/stream?") -> false
+        lowercase.startsWith("http://") || lowercase.startsWith("https://") -> "/rest/stream?" !in lowercase
+        else -> true
+    }
+}
+
+private val INTERNAL_PLAYBACK_TITLE_PREFIXES = listOf(
+    "imem://",
+    "fd://",
+)
 
 data class PlaybackGatewayState(
     val isPlaying: Boolean = false,
