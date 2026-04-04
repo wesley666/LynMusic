@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -323,6 +324,19 @@ private fun MusicTagsEditorPane(
                     title = if (readOnly) "标签详情" else "标签编辑器",
                     subtitle = selectedTrack.relativePath.ifBlank { selectedTrack.mediaLocator },
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = { onMusicTagsIntent(MusicTagsIntent.RefreshSelected) },
+                        enabled = !state.isLoadingSelected && !state.isSaving && !state.isRefreshing,
+                    ) {
+                        Icon(Icons.Rounded.Sync, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (state.isRefreshing) "刷新中…" else "刷新")
+                    }
+                }
                 if (state.isLoadingSelected) {
                     MusicTagsNoteCard("正在读取音频标签…")
                 }

@@ -43,6 +43,7 @@ data class MusicTagsState(
     val canEditSelected: Boolean = false,
     val canWriteSelected: Boolean = false,
     val isLoadingSelected: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
     val pendingSelectionTrackId: String? = null,
     val showDiscardChangesDialog: Boolean = false,
@@ -71,6 +72,7 @@ sealed interface MusicTagsIntent {
     data object PickArtwork : MusicTagsIntent
     data object ClearArtwork : MusicTagsIntent
     data object ResetDraft : MusicTagsIntent
+    data object RefreshSelected : MusicTagsIntent
     data object Save : MusicTagsIntent
     data object ClearMessage : MusicTagsIntent
 }
@@ -143,6 +145,7 @@ class MusicTagsStore(
             }
 
             MusicTagsIntent.ResetDraft -> resetDraft()
+            MusicTagsIntent.RefreshSelected -> refreshSelectedTrack()
             MusicTagsIntent.Save -> saveSelectedTrack()
             MusicTagsIntent.PickArtwork -> pickArtwork()
             MusicTagsIntent.ClearArtwork -> updateDraft {
@@ -201,6 +204,7 @@ class MusicTagsStore(
                 canEditSelected = false,
                 canWriteSelected = false,
                 isLoadingSelected = true,
+                isRefreshing = false,
                 message = null,
             )
         }
@@ -218,6 +222,7 @@ class MusicTagsStore(
                         canEditSelected = canEdit,
                         canWriteSelected = canWrite,
                         isLoadingSelected = false,
+                        isRefreshing = false,
                         rowMetadata = current.rowMetadata + (trackId to snapshot.toRowMetadata()),
                         rowMetadataLoadingIds = current.rowMetadataLoadingIds - trackId,
                     )
@@ -232,6 +237,7 @@ class MusicTagsStore(
                         canEditSelected = canEdit,
                         canWriteSelected = canWrite,
                         isLoadingSelected = false,
+                        isRefreshing = false,
                         rowMetadataLoadingIds = it.rowMetadataLoadingIds - trackId,
                         message = throwable.message ?: "读取音频标签失败。",
                     )
@@ -294,6 +300,28 @@ class MusicTagsStore(
         }
     }
 
+    private suspend fun refreshSelectedTrack() {
+        val current = state.value
+        val track = current.selectedTrack ?: return
+        if (current.isDirty) {
+            updateState { it.copy(message = "请先保存或重置当前修改后再刷新。") }
+            return
+        }
+        updateState { it.copy(isRefreshing = true, message = null) }
+        repository.refreshTags(track)
+            .onSuccess { result ->
+                applyRefreshResult(track.id, result)
+            }
+            .onFailure { throwable ->
+                updateState {
+                    it.copy(
+                        isRefreshing = false,
+                        message = throwable.message ?: "刷新标签失败。",
+                    )
+                }
+            }
+    }
+
     private suspend fun saveSelectedTrack() {
         val current = state.value
         val track = current.selectedTrack ?: return
@@ -328,10 +356,31 @@ class MusicTagsStore(
                 draft = result.snapshot.toDraft(),
                 isDirty = false,
                 isSaving = false,
+                isRefreshing = false,
                 canEditSelected = true,
                 canWriteSelected = current.canWriteSelected,
                 rowMetadata = current.rowMetadata + (trackId to result.snapshot.toRowMetadata()),
                 message = "标签已保存。",
+            )
+        }
+    }
+
+    private fun applyRefreshResult(trackId: String, result: MusicTagSaveResult) {
+        updateState { current ->
+            val updatedTracks = current.tracks.map { existing ->
+                if (existing.id == result.track.id) result.track else existing
+            }
+            current.copy(
+                tracks = updatedTracks,
+                selectedTrackId = trackId,
+                selectedSnapshot = result.snapshot,
+                draft = result.snapshot.toDraft(),
+                isDirty = false,
+                isRefreshing = false,
+                canEditSelected = true,
+                canWriteSelected = current.canWriteSelected,
+                rowMetadata = current.rowMetadata + (trackId to result.snapshot.toRowMetadata()),
+                message = "标签已刷新。",
             )
         }
     }

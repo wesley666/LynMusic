@@ -108,6 +108,47 @@ class MusicTagsStoreTest {
     }
 
     @Test
+    fun `refresh selected reloads track metadata from repository`() = runTest {
+        val track = sampleTrack()
+        val refreshedSnapshot = sampleSnapshot(
+            title = "外部改过的标题",
+            artistName = "外部艺人",
+            albumTitle = "外部专辑",
+            trackNumber = 9,
+            discNumber = 3,
+            artworkLocator = "/tmp/external-art.png",
+        )
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot()),
+            refreshResult = Result.success(
+                MusicTagSaveResult(
+                    track = track.copy(
+                        title = refreshedSnapshot.title,
+                        artistName = refreshedSnapshot.artistName,
+                        albumTitle = refreshedSnapshot.albumTitle,
+                        trackNumber = refreshedSnapshot.trackNumber,
+                        discNumber = refreshedSnapshot.discNumber,
+                        artworkLocator = refreshedSnapshot.artworkLocator,
+                    ),
+                    snapshot = refreshedSnapshot,
+                ),
+            ),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.RefreshSelected)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("标签已刷新。", state.message)
+        assertEquals("外部改过的标题", state.selectedTrack?.title)
+        assertEquals("外部改过的标题", state.draft.title)
+        assertFalse(state.isRefreshing)
+    }
+
+    @Test
     fun `save failure keeps draft and exposes error message`() = runTest {
         val track = sampleTrack()
         val repository = FakeMusicTagsRepository(
@@ -167,6 +208,7 @@ private class FakeMusicTagsRepository(
     tracks: List<Track>,
     private val snapshots: Map<String, AudioTagSnapshot>,
     private val writableTrackIds: Set<String> = snapshots.keys,
+    private val refreshResult: Result<MusicTagSaveResult>? = null,
     private val saveResult: Result<MusicTagSaveResult>? = null,
 ) : MusicTagsRepository {
     private val mutableTracks = MutableStateFlow(tracks)
@@ -180,6 +222,32 @@ private class FakeMusicTagsRepository(
     override suspend fun readTags(track: Track): Result<AudioTagSnapshot> {
         return snapshots[track.id]?.let(Result.Companion::success)
             ?: Result.failure(IllegalStateException("missing snapshot"))
+    }
+
+    override suspend fun refreshTags(track: Track): Result<MusicTagSaveResult> {
+        val configured = refreshResult
+        if (configured != null) {
+            configured.getOrNull()?.let { result ->
+                mutableTracks.value = mutableTracks.value.map { existing ->
+                    if (existing.id == result.track.id) result.track else existing
+                }
+            }
+            return configured
+        }
+        val snapshot = snapshots[track.id] ?: return Result.failure(IllegalStateException("missing snapshot"))
+        return Result.success(
+            MusicTagSaveResult(
+                track = track.copy(
+                    title = snapshot.title,
+                    artistName = snapshot.artistName,
+                    albumTitle = snapshot.albumTitle,
+                    trackNumber = snapshot.trackNumber,
+                    discNumber = snapshot.discNumber,
+                    artworkLocator = snapshot.artworkLocator,
+                ),
+                snapshot = snapshot,
+            ),
+        )
     }
 
     override suspend fun saveTags(track: Track, patch: AudioTagPatch): Result<MusicTagSaveResult> {

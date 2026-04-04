@@ -24,6 +24,7 @@ interface MusicTagsRepository {
     suspend fun canEdit(track: Track): Boolean
     suspend fun canWrite(track: Track): Boolean
     suspend fun readTags(track: Track): Result<AudioTagSnapshot>
+    suspend fun refreshTags(track: Track): Result<MusicTagSaveResult>
     suspend fun saveTags(track: Track, patch: AudioTagPatch): Result<MusicTagSaveResult>
 }
 
@@ -46,6 +47,17 @@ class RoomMusicTagsRepository(
     override suspend fun canWrite(track: Track): Boolean = audioTagGateway.canWrite(track)
 
     override suspend fun readTags(track: Track): Result<AudioTagSnapshot> = audioTagGateway.read(track)
+
+    override suspend fun refreshTags(track: Track): Result<MusicTagSaveResult> {
+        return runCatching {
+            if (!audioTagGateway.canEdit(track)) {
+                error("当前歌曲不支持标签读取。")
+            }
+            val snapshot = audioTagGateway.read(track).getOrThrow()
+            val updatedTrack = persistTrackSnapshot(track, snapshot)
+            MusicTagSaveResult(track = updatedTrack, snapshot = snapshot)
+        }
+    }
 
     override suspend fun saveTags(track: Track, patch: AudioTagPatch): Result<MusicTagSaveResult> {
         return runCatching {
