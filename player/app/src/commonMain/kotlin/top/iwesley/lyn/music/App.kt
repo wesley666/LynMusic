@@ -293,6 +293,7 @@ fun App(component: LynMusicAppComponent) {
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     PlayerOverlay(
+                        platform = component.platform,
                         state = playerState,
                         onPlayerIntent = component.playerStore::dispatch,
                         isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
@@ -1288,6 +1289,7 @@ private fun MiniPlayerBar(
 
 @Composable
 private fun PlayerOverlay(
+    platform: PlatformDescriptor,
     state: PlayerState,
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
@@ -1315,6 +1317,9 @@ private fun PlayerOverlay(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val wide = maxWidth >= 980.dp
+                val useTapToRevealLyrics =
+                    isMobilePlaybackPlatform(platform) &&
+                        (maxWidth < 820.dp || maxHeight < 860.dp)
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1342,7 +1347,16 @@ private fun PlayerOverlay(
                             )
                         }
                     }
-                    if (wide) {
+                    if (useTapToRevealLyrics) {
+                        MobilePlayerPrimaryPane(
+                            state = state,
+                            track = track,
+                            onPlayerIntent = onPlayerIntent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                    } else if (wide) {
                         Row(
                             modifier = Modifier
                                 .weight(1f)
@@ -1408,6 +1422,92 @@ private fun PlayerOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun MobilePlayerPrimaryPane(
+    state: PlayerState,
+    track: Track,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
+
+    if (lyricsVisible) {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = { lyricsVisible = false }) {
+                    Text("回到唱片")
+                }
+            }
+            PlayerLyricsPane(
+                state = state,
+                track = track,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier.weight(1f),
+                compact = true,
+            )
+        }
+        return
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(30.dp))
+            .clickable { lyricsVisible = true },
+    ) {
+        PlayerInfoPane(
+            snapshot = state.snapshot,
+            track = track,
+            modifier = Modifier.fillMaxSize(),
+            compact = true,
+        )
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.34f)),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = state.snapshot.currentDisplayTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White.copy(alpha = 0.96f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = state.snapshot.currentDisplayArtistName ?: "未知艺人",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AssistChip(
+                    onClick = { lyricsVisible = true },
+                    label = { Text(if (state.isLyricsLoading) "正在准备歌词" else "点按唱片区查看歌词") },
+                    leadingIcon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
+                )
+            }
+        }
+    }
+}
+
+private fun isMobilePlaybackPlatform(platform: PlatformDescriptor): Boolean {
+    return platform.name == "Android" || platform.name == "iPhone / iPad"
 }
 
 @Composable
