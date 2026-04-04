@@ -57,6 +57,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.QueueMusic
@@ -3131,7 +3132,7 @@ private fun TrackRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text((index + 1).toString().padStart(2, '0'), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            VinylPlaceholder(vinylSize = 52.dp)
+            TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
             Column(modifier = Modifier.weight(1f)) {
                 Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                 Text(track.artistName ?: "未知艺人", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -3149,6 +3150,41 @@ private fun TrackRow(
                 .height(1.dp)
                 .background(Color.White.copy(alpha = 0.08f)),
         )
+    }
+}
+
+@Composable
+private fun TrackArtworkThumbnail(
+    artworkLocator: String?,
+    modifier: Modifier = Modifier,
+) {
+    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    Box(
+        modifier = modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(1.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(1.dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (artworkBitmap != null) {
+            Image(
+                bitmap = artworkBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.MusicNote,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 
