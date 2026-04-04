@@ -3503,50 +3503,88 @@ private fun LyricsSourceCard(
     onToggleEnabled: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    ElevatedCard(
-        onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick)
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(source.name, fontWeight = FontWeight.Bold)
-                Text(if (source.enabled) "已启用" else "已停用", color = MaterialTheme.colorScheme.primary)
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    source.name,
+                    modifier = Modifier.weight(1f, fill = false),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                PriorityBadge(priority = source.priority)
             }
-            Text(
-                when (source) {
-                    is LyricsSourceConfig -> source.urlTemplate
-                    is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> "Workflow JSON · ${source.search.request.url}"
-                },
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (source) {
-                    is LyricsSourceConfig -> {
-                        AssistChip(onClick = {}, label = { Text(source.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
-                        AssistChip(onClick = {}, label = { Text(source.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
-                    }
+            Text(if (source.enabled) "已启用" else "已停用", color = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            when (source) {
+                is LyricsSourceConfig -> source.urlTemplate
+                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> "Workflow JSON · ${source.search.request.url}"
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (source) {
+                is LyricsSourceConfig -> {
+                    AssistChip(onClick = {}, label = { Text(source.method.name) }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                    AssistChip(onClick = {}, label = { Text(source.responseFormat.name) }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
+                }
 
-                    is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
-                        AssistChip(onClick = {}, label = { Text("WORKFLOW") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
-                        AssistChip(onClick = {}, label = { Text("${source.lyrics.steps.size} 步") }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
-                    }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onToggleEnabled) {
-                    Text(if (source.enabled) "停用" else "启用")
-                }
-                TextButton(onClick = onDelete) {
-                    Text("删除")
+                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
+                    AssistChip(onClick = {}, label = { Text("WORKFLOW") }, leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+                    AssistChip(onClick = {}, label = { Text("${source.lyrics.steps.size} 步") }, leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
                 }
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onToggleEnabled) {
+                Text(if (source.enabled) "停用" else "启用")
+            }
+            TextButton(onClick = onDelete) {
+                Text("删除")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PriorityBadge(
+    priority: Int,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+    ) {
+        Text(
+            text = "P$priority",
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
