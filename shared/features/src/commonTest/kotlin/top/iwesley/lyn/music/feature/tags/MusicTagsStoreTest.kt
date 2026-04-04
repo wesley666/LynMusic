@@ -67,6 +67,33 @@ class MusicTagsStoreTest {
     }
 
     @Test
+    fun `confirm discard selection switches to pending track`() = runTest {
+        val first = sampleTrack(id = "track-1", title = "情歌")
+        val second = sampleTrack(id = "track-2", title = "丝路", relativePath = "梁静茹/丝路.mp3")
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(first, second),
+            snapshots = mapOf(
+                first.id to sampleSnapshot(title = "情歌"),
+                second.id to sampleSnapshot(title = "丝路"),
+            ),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.TitleChanged("情歌 2026"))
+        store.dispatch(MusicTagsIntent.SelectTrack(second.id))
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.ConfirmDiscardSelection)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertFalse(state.showDiscardChangesDialog)
+        assertEquals(second.id, state.selectedTrackId)
+        assertEquals("丝路", state.draft.title)
+        assertFalse(state.isDirty)
+    }
+
+    @Test
     fun `save success updates selected track and clears dirty state`() = runTest {
         val track = sampleTrack()
         val repository = FakeMusicTagsRepository(

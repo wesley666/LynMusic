@@ -128,14 +128,15 @@ class MusicTagsStore(
             MusicTagsIntent.ClearMessage -> updateState { it.copy(message = null) }
             MusicTagsIntent.ConfirmDiscardSelection -> {
                 val pendingTrackId = state.value.pendingSelectionTrackId
-                updateState {
-                    it.copy(
-                        pendingSelectionTrackId = null,
-                        showDiscardChangesDialog = false,
-                    )
-                }
                 if (pendingTrackId != null) {
-                    selectTrack(pendingTrackId)
+                    discardAndSelectTrack(pendingTrackId)
+                } else {
+                    updateState {
+                        it.copy(
+                            pendingSelectionTrackId = null,
+                            showDiscardChangesDialog = false,
+                        )
+                    }
                 }
             }
 
@@ -190,6 +191,28 @@ class MusicTagsStore(
                 selectedTrackId = trackId,
                 pendingSelectionTrackId = null,
                 showDiscardChangesDialog = false,
+            )
+        }
+        loadSelectedTrack(trackId)
+    }
+
+    private suspend fun discardAndSelectTrack(trackId: String) {
+        if (trackId == state.value.selectedTrackId) {
+            updateState {
+                it.copy(
+                    pendingSelectionTrackId = null,
+                    showDiscardChangesDialog = false,
+                    isDirty = false,
+                )
+            }
+            return
+        }
+        updateState {
+            it.copy(
+                selectedTrackId = trackId,
+                pendingSelectionTrackId = null,
+                showDiscardChangesDialog = false,
+                isDirty = false,
             )
         }
         loadSelectedTrack(trackId)
