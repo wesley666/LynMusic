@@ -1683,11 +1683,6 @@ private fun PlayerLyricsPane(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlayerSectionChip(label = "歌词", active = true)
-                PlayerSectionChip(label = "信息", active = false)
-                PlayerSectionChip(label = modeLabel(state.snapshot.mode), active = false)
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2763,28 +2758,6 @@ private fun QueueToggleButton(
             imageVector = Icons.Rounded.QueueMusic,
             contentDescription = "播放队列",
             tint = tint,
-        )
-    }
-}
-
-@Composable
-private fun PlayerSectionChip(
-    label: String,
-    active: Boolean,
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (active) {
-            Color.White.copy(alpha = 0.18f)
-        } else {
-            Color.White.copy(alpha = 0.06f)
-        },
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            color = if (active) Color.White.copy(alpha = 0.96f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f),
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
         )
     }
 }
