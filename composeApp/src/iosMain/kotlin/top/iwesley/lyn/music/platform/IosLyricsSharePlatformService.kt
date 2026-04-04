@@ -33,6 +33,7 @@ import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -109,24 +110,23 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX.toFloat()
         val lyricsLines = wrapLines(model.lyricsLines, maxCharsPerLine = 12)
-        val titleLines = wrapLines(listOf(model.title.ifBlank { "当前歌曲" }), maxCharsPerLine = 18).take(2)
-        val artistLines = wrapLines(listOf(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人"), maxCharsPerLine = 22).take(2)
+        val footerLines = wrapLines(
+            listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
+            maxCharsPerLine = 28,
+        ).take(1)
 
         val lyricsFont = Font(null, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX)
         val titleFont = Font(null, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
-        val artistFont = Font(null, LyricsShareCardSpec.META_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
         val lyricsLineHeight = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX + LyricsShareCardSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareCardSpec.TITLE_FONT_SIZE_PX + 12f
-        val artistLineHeight = LyricsShareCardSpec.META_FONT_SIZE_PX + 8f
         val contentHeight =
             LyricsShareCardSpec.PAPER_PADDING_TOP_PX +
                 LyricsShareCardSpec.ARTWORK_SIZE_PX +
                 LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
                 max(1, lyricsLines.size) * lyricsLineHeight +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
-                max(1, titleLines.size) * titleLineHeight +
-                max(1, artistLines.size) * artistLineHeight +
+                max(1, footerLines.size) * titleLineHeight +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
                 LyricsShareCardSpec.BRAND_FONT_SIZE_PX +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
@@ -159,6 +159,10 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         val textPrimaryPaint = Paint().apply {
             isAntiAlias = true
             color = LyricsShareCardSpec.TEXT_PRIMARY_ARGB
+        }
+        val textFooterPaint = Paint().apply {
+            isAntiAlias = true
+            color = LyricsShareCardSpec.TEXT_FOOTER_ARGB
         }
         val textSecondaryPaint = Paint().apply {
             isAntiAlias = true
@@ -237,13 +241,9 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             cursorY += lyricsLineHeight
         }
         cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX - LyricsShareCardSpec.LYRICS_FONT_SIZE_PX
-        titleLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY + LyricsShareCardSpec.TITLE_FONT_SIZE_PX, titleFont, textPrimaryPaint)
+        footerLines.forEach { line ->
+            canvas.drawString(line, textX, cursorY + LyricsShareCardSpec.TITLE_FONT_SIZE_PX, titleFont, textFooterPaint)
             cursorY += titleLineHeight
-        }
-        artistLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY + LyricsShareCardSpec.META_FONT_SIZE_PX, artistFont, textSecondaryPaint)
-            cursorY += artistLineHeight
         }
 
         val brandText = LyricsShareCardSpec.BRAND_TEXT
@@ -264,17 +264,17 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
         val lyricsLines = wrapLines(model.lyricsLines, maxCharsPerLine = 12)
-        val titleLines = wrapLines(listOf(model.title.ifBlank { "当前歌曲" }), maxCharsPerLine = 18).take(2)
-        val artistLines = wrapLines(listOf(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人"), maxCharsPerLine = 22).take(2)
+        val footerLines = wrapLines(
+            listOf(buildLyricsShareTitleArtistLine(model.title, model.artistName)),
+            maxCharsPerLine = 28,
+        ).take(1)
         val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkImage)
 
         val lyricsFont = Font(null, LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX)
         val titleFont = Font(null, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
-        val artistFont = Font(null, LyricsShareArtworkTintSpec.META_FONT_SIZE_PX)
         val brandFont = Font(null, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
         val lyricsLineHeight = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX + LyricsShareArtworkTintSpec.LYRICS_IOS_LINE_GAP_PX
         val titleLineHeight = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX + 12f
-        val artistLineHeight = LyricsShareArtworkTintSpec.META_FONT_SIZE_PX + 8f
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
                 LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX +
@@ -282,8 +282,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
                 max(1, lyricsLines.size) * lyricsLineHeight +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
-                max(1, titleLines.size) * titleLineHeight +
-                max(1, artistLines.size) * artistLineHeight +
+                max(1, footerLines.size) * titleLineHeight +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
                 LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX +
                 LyricsShareArtworkTintSpec.OUTER_PADDING_PX
@@ -344,6 +343,10 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             isAntiAlias = true
             color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
         }
+        val textFooterPaint = Paint().apply {
+            isAntiAlias = true
+            color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
+        }
         val textSecondaryPaint = Paint().apply {
             isAntiAlias = true
             color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
@@ -395,13 +398,9 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             cursorY += lyricsLineHeight
         }
         cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX - LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX
-        titleLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY + LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX, titleFont, textPrimaryPaint)
+        footerLines.forEach { line ->
+            canvas.drawString(line, textX, cursorY + LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX, titleFont, textFooterPaint)
             cursorY += titleLineHeight
-        }
-        artistLines.forEach { line ->
-            canvas.drawString(line, textX, cursorY + LyricsShareArtworkTintSpec.META_FONT_SIZE_PX, artistFont, textSecondaryPaint)
-            cursorY += artistLineHeight
         }
 
         val brandText = LyricsShareCardSpec.BRAND_TEXT

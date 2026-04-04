@@ -158,6 +158,7 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
@@ -2876,6 +2877,7 @@ private fun LyricsShareNoteCard(
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
     val primaryTextColor = Color(0xFF3C2E24)
+    val footerTextColor = composeColorFromArgb(LyricsShareCardSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = Color(0xFF70584B)
     Card(
         modifier = modifier,
@@ -2913,22 +2915,14 @@ private fun LyricsShareNoteCard(
                         )
                     }
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = model.title.ifBlank { "当前歌曲" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = footerTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center,
@@ -2971,6 +2965,7 @@ private fun LyricsShareArtworkTintCard(
         ),
     )
     val primaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB)
+    val footerTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB)
     Card(
         modifier = modifier,
@@ -3053,22 +3048,14 @@ private fun LyricsShareArtworkTintCard(
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = model.title.ifBlank { "当前歌曲" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = footerTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(10.dp))
                 Box(
                     modifier = Modifier.fillMaxWidth(),

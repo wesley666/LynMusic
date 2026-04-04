@@ -32,6 +32,7 @@ import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.math.max
 
@@ -110,16 +111,19 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX
         val canvasFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX.toInt())
         val titleFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.TITLE_FONT_SIZE_PX.toInt())
-        val metaFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.META_FONT_SIZE_PX.toInt())
         val brandFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.BRAND_FONT_SIZE_PX.toInt())
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
         val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, canvasFont, contentWidth)
-        val wrappedTitle = wrapSingleBlock(model.title.ifBlank { "当前歌曲" }, probe, titleFont, contentWidth, 2)
-        val wrappedArtist = wrapSingleBlock(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人", probe, metaFont, contentWidth, 2)
+        val wrappedFooterLine = wrapSingleBlock(
+            buildLyricsShareTitleArtistLine(model.title, model.artistName),
+            probe,
+            titleFont,
+            contentWidth,
+            1,
+        )
         val lyricsLineHeight = probe.getFontMetrics(canvasFont).height + LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
-        val artistLineHeight = probe.getFontMetrics(metaFont).height + 2
         val brandLineHeight = probe.getFontMetrics(brandFont).height
         probe.dispose()
 
@@ -129,8 +133,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareCardSpec.LYRICS_TOP_GAP_PX +
                 max(1, wrappedLyrics.size) * lyricsLineHeight +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
-                max(1, wrappedTitle.size) * titleLineHeight +
-                max(1, wrappedArtist.size) * artistLineHeight +
+                max(1, wrappedFooterLine.size) * titleLineHeight +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
                 brandLineHeight +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
@@ -146,6 +149,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val shadowColor = awtColor(LyricsShareCardSpec.PAPER_SHADOW_ARGB)
         val tapeColor = awtColor(LyricsShareCardSpec.TAPE_ARGB)
         val textPrimary = awtColor(LyricsShareCardSpec.TEXT_PRIMARY_ARGB)
+        val textFooter = awtColor(LyricsShareCardSpec.TEXT_FOOTER_ARGB)
         val textSecondary = awtColor(LyricsShareCardSpec.TEXT_SECONDARY_ARGB)
         val placeholder = awtColor(LyricsShareCardSpec.PLACEHOLDER_ARGB)
 
@@ -238,21 +242,13 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         }
 
         cursorY += LyricsShareCardSpec.FOOTER_TOP_GAP_PX
+        graphics.color = textFooter
         graphics.font = titleFont
         val titleMetrics = graphics.fontMetrics
-        wrappedTitle.forEach { line ->
+        wrappedFooterLine.forEach { line ->
             cursorY += titleMetrics.ascent
             graphics.drawString(line, textX, cursorY)
             cursorY += titleMetrics.descent + titleMetrics.leading + 4
-        }
-
-        graphics.color = textSecondary
-        graphics.font = metaFont
-        val metaMetrics = graphics.fontMetrics
-        wrappedArtist.forEach { line ->
-            cursorY += metaMetrics.ascent
-            graphics.drawString(line, textX, cursorY)
-            cursorY += metaMetrics.descent + metaMetrics.leading + 2
         }
 
         graphics.color = textSecondary
@@ -277,16 +273,19 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
         val lyricsFont = Font("Serif", Font.BOLD, LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX.toInt())
         val titleFont = Font("Serif", Font.BOLD, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX.toInt())
-        val metaFont = Font("Serif", Font.PLAIN, LyricsShareArtworkTintSpec.META_FONT_SIZE_PX.toInt())
         val brandFont = Font("Serif", Font.PLAIN, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX.toInt())
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
         val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, lyricsFont, contentWidth)
-        val wrappedTitle = wrapSingleBlock(model.title.ifBlank { "当前歌曲" }, probe, titleFont, contentWidth, 2)
-        val wrappedArtist = wrapSingleBlock(model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人", probe, metaFont, contentWidth, 2)
+        val wrappedFooterLine = wrapSingleBlock(
+            buildLyricsShareTitleArtistLine(model.title, model.artistName),
+            probe,
+            titleFont,
+            contentWidth,
+            1,
+        )
         val lyricsLineHeight = probe.getFontMetrics(lyricsFont).height + LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
-        val artistLineHeight = probe.getFontMetrics(metaFont).height + 2
         val brandLineHeight = probe.getFontMetrics(brandFont).height
         probe.dispose()
 
@@ -297,8 +296,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareArtworkTintSpec.LYRICS_TOP_GAP_PX +
                 max(1, wrappedLyrics.size) * lyricsLineHeight +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
-                max(1, wrappedTitle.size) * titleLineHeight +
-                max(1, wrappedArtist.size) * artistLineHeight +
+                max(1, wrappedFooterLine.size) * titleLineHeight +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
                 brandLineHeight +
                 LyricsShareArtworkTintSpec.OUTER_PADDING_PX
@@ -330,6 +328,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
             ),
         )
         val textPrimary = awtColor(LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB)
+        val textFooter = awtColor(LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB)
         val textSecondary = awtColor(LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB)
         val placeholder = awtColor(LyricsShareArtworkTintSpec.PLACEHOLDER_ARGB)
         val artworkShadow = awtColor(LyricsShareArtworkTintSpec.ARTWORK_SHADOW_ARGB)
@@ -409,21 +408,13 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         }
 
         cursorY += LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX
+        graphics.color = textFooter
         graphics.font = titleFont
         val titleMetrics = graphics.fontMetrics
-        wrappedTitle.forEach { line ->
+        wrappedFooterLine.forEach { line ->
             cursorY += titleMetrics.ascent
             graphics.drawString(line, textX, cursorY)
             cursorY += titleMetrics.descent + titleMetrics.leading + 4
-        }
-
-        graphics.color = textSecondary
-        graphics.font = metaFont
-        val metaMetrics = graphics.fontMetrics
-        wrappedArtist.forEach { line ->
-            cursorY += metaMetrics.ascent
-            graphics.drawString(line, textX, cursorY)
-            cursorY += metaMetrics.descent + metaMetrics.leading + 2
         }
 
         graphics.color = textSecondary

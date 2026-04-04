@@ -40,6 +40,7 @@ import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.argbWithAlpha
+import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import kotlin.coroutines.resume
 
@@ -204,13 +205,9 @@ class AndroidLyricsSharePlatformService(
             isFakeBoldText = true
         }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareCardSpec.TEXT_PRIMARY_ARGB
+            color = LyricsShareCardSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareCardSpec.TITLE_FONT_SIZE_PX
             isFakeBoldText = true
-        }
-        val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareCardSpec.TEXT_SECONDARY_ARGB
-            textSize = LyricsShareCardSpec.META_FONT_SIZE_PX
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.TEXT_SECONDARY_ARGB
@@ -227,16 +224,8 @@ class AndroidLyricsSharePlatformService(
             lineSpacingExtraPx = LyricsShareCardSpec.LYRICS_ANDROID_LINE_GAP_PX,
         )
         val titleLayout = createTextLayout(
-            text = model.title.ifBlank { "当前歌曲" },
+            text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
             paint = titlePaint,
-            widthPx = availableWidth,
-            alignment = Layout.Alignment.ALIGN_NORMAL,
-            lineSpacingExtraPx = 0f,
-        )
-        val artistText = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人"
-        val artistLayout = createTextLayout(
-            text = artistText,
-            paint = artistPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
             lineSpacingExtraPx = 0f,
@@ -249,7 +238,6 @@ class AndroidLyricsSharePlatformService(
                 lyricsLayout.height +
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 titleLayout.height +
-                artistLayout.height +
                 LyricsShareCardSpec.BRAND_TOP_GAP_PX +
                 brandPaint.textSize.toInt() +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
@@ -333,12 +321,6 @@ class AndroidLyricsSharePlatformService(
         canvas.translate(artworkLeft, cursorY)
         titleLayout.draw(canvas)
         canvas.restore()
-        cursorY += titleLayout.height.toFloat()
-
-        canvas.save()
-        canvas.translate(artworkLeft, cursorY)
-        artistLayout.draw(canvas)
-        canvas.restore()
 
         val brandText = LyricsShareCardSpec.BRAND_TEXT
         val brandBaseline = paperRect.bottom - LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX - brandPaint.fontMetrics.descent
@@ -411,13 +393,9 @@ class AndroidLyricsSharePlatformService(
             isFakeBoldText = true
         }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
+            color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
             isFakeBoldText = true
-        }
-        val artistPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
-            textSize = LyricsShareArtworkTintSpec.META_FONT_SIZE_PX
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
@@ -434,15 +412,8 @@ class AndroidLyricsSharePlatformService(
             lineSpacingExtraPx = LyricsShareArtworkTintSpec.LYRICS_ANDROID_LINE_GAP_PX,
         )
         val titleLayout = createTextLayout(
-            text = model.title.ifBlank { "当前歌曲" },
+            text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
             paint = titlePaint,
-            widthPx = availableWidth,
-            alignment = Layout.Alignment.ALIGN_NORMAL,
-            lineSpacingExtraPx = 0f,
-        )
-        val artistLayout = createTextLayout(
-            text = model.artistName?.ifBlank { "未知艺人" } ?: "未知艺人",
-            paint = artistPaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
             lineSpacingExtraPx = 0f,
@@ -455,7 +426,6 @@ class AndroidLyricsSharePlatformService(
                 lyricsLayout.height +
                 LyricsShareArtworkTintSpec.FOOTER_TOP_GAP_PX +
                 titleLayout.height +
-                artistLayout.height +
                 LyricsShareArtworkTintSpec.BRAND_TOP_GAP_PX +
                 brandPaint.textSize.toInt() +
                 LyricsShareArtworkTintSpec.OUTER_PADDING_PX
@@ -520,12 +490,6 @@ class AndroidLyricsSharePlatformService(
         canvas.save()
         canvas.translate(artworkLeft, cursorY)
         titleLayout.draw(canvas)
-        canvas.restore()
-        cursorY += titleLayout.height.toFloat()
-
-        canvas.save()
-        canvas.translate(artworkLeft, cursorY)
-        artistLayout.draw(canvas)
         canvas.restore()
 
         val brandText = LyricsShareCardSpec.BRAND_TEXT

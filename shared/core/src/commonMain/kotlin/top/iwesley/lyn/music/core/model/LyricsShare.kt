@@ -65,6 +65,7 @@ object LyricsShareCardSpec {
     const val PAPER_SHADOW_ARGB: Int = 0x1F000000
     const val TAPE_ARGB: Int = 0x9FFFF6D8.toInt()
     const val TEXT_PRIMARY_ARGB: Int = 0xFF3C2E24.toInt()
+    const val TEXT_FOOTER_ARGB: Int = 0xD93C2E24.toInt()
     const val TEXT_SECONDARY_ARGB: Int = 0xA35A493D.toInt()
     const val PLACEHOLDER_ARGB: Int = 0xFFE3D1BC.toInt()
 
@@ -116,6 +117,7 @@ object LyricsShareArtworkTintSpec {
     const val BRAND_FONT_SIZE_PX: Float = 30f
     const val DEFAULT_BACKGROUND_ARGB: Int = 0xFF232325.toInt()
     const val TEXT_PRIMARY_ARGB: Int = 0xFFFFFFFF.toInt()
+    const val TEXT_FOOTER_ARGB: Int = 0xD9FFFFFF.toInt()
     const val TEXT_SECONDARY_ARGB: Int = 0x99FFFFFF.toInt()
     const val PLACEHOLDER_ARGB: Int = 0x22FFFFFF
     const val ARTWORK_SHADOW_ARGB: Int = 0x33000000
@@ -154,6 +156,15 @@ fun buildLyricsShareSuggestedName(title: String): String {
         .trim('_', ' ')
         .ifBlank { "lynmusic" }
     return "$normalized-lyrics-share.png"
+}
+
+fun buildLyricsShareTitleArtistLine(
+    title: String,
+    artistName: String?,
+): String {
+    val resolvedTitle = title.trim().ifBlank { "当前歌曲" }
+    val resolvedArtist = artistName?.trim().orEmpty().ifBlank { "未知艺人" }
+    return "$resolvedTitle · $resolvedArtist"
 }
 
 private val ILLEGAL_FILE_NAME_CHARS = Regex("""[\\/:*?"<>|]+""")
