@@ -1298,12 +1298,56 @@ private fun PlayerOverlay(
     onOpenQueue: () -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
+    val defaultBackgroundColor = Color(0xFF232325)
     val playbackStatusColor = Color.White.copy(alpha = 0.6f)
+    val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
+    val artworkPalette = rememberVinylArtworkPalette(
+        artworkBitmap = artworkBitmap,
+        enabled = true,
+    )
+    val backgroundTopTint by animateColorAsState(
+        targetValue = artworkPalette?.innerGlowColor?.copy(alpha = 0.22f) ?: Color.Transparent,
+        label = "player-background-top-tint",
+    )
+    val backgroundMidTint by animateColorAsState(
+        targetValue = artworkPalette?.glowColor?.copy(alpha = 0.18f) ?: Color.Transparent,
+        label = "player-background-mid-tint",
+    )
+    val backgroundAccentTint by animateColorAsState(
+        targetValue = artworkPalette?.rimColor?.copy(alpha = 0.12f) ?: Color.Transparent,
+        label = "player-background-accent-tint",
+    )
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF232325),
+        color = defaultBackgroundColor,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                backgroundTopTint,
+                                backgroundMidTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                backgroundAccentTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
             val wide = maxWidth >= 980.dp
             val useTapToRevealLyrics =
                 isMobilePlaybackPlatform(platform) &&
