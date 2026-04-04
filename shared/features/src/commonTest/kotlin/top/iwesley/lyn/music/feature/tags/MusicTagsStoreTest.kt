@@ -6,6 +6,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -62,7 +64,7 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertTrue(state.showDiscardChangesDialog)
-        assertEquals(second.id, state.pendingSelectionTrackId)
+        assertEquals(MusicTagsPendingTrackAction.SelectOnly(second.id), state.pendingTrackAction)
         assertEquals(first.id, state.selectedTrackId)
     }
 
@@ -91,6 +93,86 @@ class MusicTagsStoreTest {
         assertEquals(second.id, state.selectedTrackId)
         assertEquals("丝路", state.draft.title)
         assertFalse(state.isDirty)
+    }
+
+    @Test
+    fun `activate track with unsaved changes opens play discard confirmation`() = runTest {
+        val first = sampleTrack(id = "track-1", title = "情歌")
+        val second = sampleTrack(id = "track-2", title = "丝路", relativePath = "梁静茹/丝路.mp3")
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(first, second),
+            snapshots = mapOf(
+                first.id to sampleSnapshot(title = "情歌"),
+                second.id to sampleSnapshot(title = "丝路"),
+            ),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.TitleChanged("情歌 2026"))
+        store.dispatch(MusicTagsIntent.ActivateTrack(second.id))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertTrue(state.showDiscardChangesDialog)
+        assertEquals(MusicTagsPendingTrackAction.SelectAndPlay(second.id), state.pendingTrackAction)
+        assertEquals(first.id, state.selectedTrackId)
+    }
+
+    @Test
+    fun `confirm discard selection with play action switches and emits play effect`() = runTest {
+        val first = sampleTrack(id = "track-1", title = "情歌")
+        val second = sampleTrack(id = "track-2", title = "丝路", relativePath = "梁静茹/丝路.mp3")
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(first, second),
+            snapshots = mapOf(
+                first.id to sampleSnapshot(title = "情歌"),
+                second.id to sampleSnapshot(title = "丝路"),
+            ),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        val effect = async { store.effects.first() }
+        store.dispatch(MusicTagsIntent.TitleChanged("情歌 2026"))
+        store.dispatch(MusicTagsIntent.ActivateTrack(second.id))
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.ConfirmDiscardSelection)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertFalse(state.showDiscardChangesDialog)
+        assertEquals(second.id, state.selectedTrackId)
+        assertFalse(state.isDirty)
+        assertEquals(
+            MusicTagsEffect.PlayTracks(listOf(first, second), 1),
+            effect.await(),
+        )
+    }
+
+    @Test
+    fun `activate selected track plays immediately without discard dialog`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot()),
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        val effect = async { store.effects.first() }
+        store.dispatch(MusicTagsIntent.TitleChanged("情歌 2026"))
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.ActivateTrack(track.id))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertFalse(state.showDiscardChangesDialog)
+        assertEquals(
+            MusicTagsEffect.PlayTracks(listOf(track), 0),
+            effect.await(),
+        )
+        assertTrue(state.isDirty)
     }
 
     @Test

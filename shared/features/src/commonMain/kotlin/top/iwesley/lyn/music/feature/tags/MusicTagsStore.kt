@@ -15,6 +15,13 @@ data class MusicTagsRowMetadata(
     val albumArtist: String? = null,
 )
 
+sealed interface MusicTagsPendingTrackAction {
+    val trackId: String
+
+    data class SelectOnly(override val trackId: String) : MusicTagsPendingTrackAction
+    data class SelectAndPlay(override val trackId: String) : MusicTagsPendingTrackAction
+}
+
 data class MusicTagsDraft(
     val title: String = "",
     val artistName: String = "",
@@ -46,7 +53,7 @@ data class MusicTagsState(
     val isLoadingSelected: Boolean = false,
     val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
-    val pendingSelectionTrackId: String? = null,
+    val pendingTrackAction: MusicTagsPendingTrackAction? = null,
     val showDiscardChangesDialog: Boolean = false,
     val message: String? = null,
 ) {
@@ -56,6 +63,7 @@ data class MusicTagsState(
 
 sealed interface MusicTagsIntent {
     data class SelectTrack(val trackId: String) : MusicTagsIntent
+    data class ActivateTrack(val trackId: String) : MusicTagsIntent
     data class EnsureRowMetadata(val trackId: String) : MusicTagsIntent
     data object ConfirmDiscardSelection : MusicTagsIntent
     data object DismissDiscardSelection : MusicTagsIntent
@@ -79,7 +87,9 @@ sealed interface MusicTagsIntent {
     data object ClearMessage : MusicTagsIntent
 }
 
-sealed interface MusicTagsEffect
+sealed interface MusicTagsEffect {
+    data class PlayTracks(val tracks: List<Track>, val startIndex: Int) : MusicTagsEffect
+}
 
 class MusicTagsStore(
     private val repository: MusicTagsRepository,
@@ -127,13 +137,13 @@ class MusicTagsStore(
         when (intent) {
             MusicTagsIntent.ClearMessage -> updateState { it.copy(message = null) }
             MusicTagsIntent.ConfirmDiscardSelection -> {
-                val pendingTrackId = state.value.pendingSelectionTrackId
-                if (pendingTrackId != null) {
-                    discardAndSelectTrack(pendingTrackId)
+                val pendingAction = state.value.pendingTrackAction
+                if (pendingAction != null) {
+                    discardAndHandlePendingAction(pendingAction)
                 } else {
                     updateState {
                         it.copy(
-                            pendingSelectionTrackId = null,
+                            pendingTrackAction = null,
                             showDiscardChangesDialog = false,
                         )
                     }
@@ -142,7 +152,7 @@ class MusicTagsStore(
 
             MusicTagsIntent.DismissDiscardSelection -> updateState {
                 it.copy(
-                    pendingSelectionTrackId = null,
+                    pendingTrackAction = null,
                     showDiscardChangesDialog = false,
                 )
             }
@@ -159,6 +169,7 @@ class MusicTagsStore(
             }
 
             is MusicTagsIntent.SelectTrack -> selectTrack(intent.trackId)
+            is MusicTagsIntent.ActivateTrack -> activateTrack(intent.trackId)
             is MusicTagsIntent.EnsureRowMetadata -> ensureRowMetadata(intent.trackId)
             is MusicTagsIntent.TitleChanged -> updateDraft { copy(title = intent.value) }
             is MusicTagsIntent.ArtistChanged -> updateDraft { copy(artistName = intent.value) }
@@ -180,7 +191,7 @@ class MusicTagsStore(
         if (state.value.isDirty) {
             updateState {
                 it.copy(
-                    pendingSelectionTrackId = trackId,
+                    pendingTrackAction = MusicTagsPendingTrackAction.SelectOnly(trackId),
                     showDiscardChangesDialog = true,
                 )
             }
@@ -189,20 +200,24 @@ class MusicTagsStore(
         updateState {
             it.copy(
                 selectedTrackId = trackId,
-                pendingSelectionTrackId = null,
+                pendingTrackAction = null,
                 showDiscardChangesDialog = false,
             )
         }
         loadSelectedTrack(trackId)
     }
 
-    private suspend fun discardAndSelectTrack(trackId: String) {
-        if (trackId == state.value.selectedTrackId) {
+    private suspend fun activateTrack(trackId: String) {
+        val current = state.value
+        if (trackId == current.selectedTrackId) {
+            emitPlayTracksFor(trackId)
+            return
+        }
+        if (current.isDirty) {
             updateState {
                 it.copy(
-                    pendingSelectionTrackId = null,
-                    showDiscardChangesDialog = false,
-                    isDirty = false,
+                    pendingTrackAction = MusicTagsPendingTrackAction.SelectAndPlay(trackId),
+                    showDiscardChangesDialog = true,
                 )
             }
             return
@@ -210,12 +225,47 @@ class MusicTagsStore(
         updateState {
             it.copy(
                 selectedTrackId = trackId,
-                pendingSelectionTrackId = null,
+                pendingTrackAction = null,
+                showDiscardChangesDialog = false,
+            )
+        }
+        emitPlayTracksFor(trackId)
+        loadSelectedTrack(trackId)
+    }
+
+    private suspend fun discardAndHandlePendingAction(action: MusicTagsPendingTrackAction) {
+        if (action.trackId == state.value.selectedTrackId) {
+            updateState {
+                it.copy(
+                    pendingTrackAction = null,
+                    showDiscardChangesDialog = false,
+                    isDirty = false,
+                )
+            }
+            if (action is MusicTagsPendingTrackAction.SelectAndPlay) {
+                emitPlayTracksFor(action.trackId)
+            }
+            return
+        }
+        updateState {
+            it.copy(
+                selectedTrackId = action.trackId,
+                pendingTrackAction = null,
                 showDiscardChangesDialog = false,
                 isDirty = false,
             )
         }
-        loadSelectedTrack(trackId)
+        if (action is MusicTagsPendingTrackAction.SelectAndPlay) {
+            emitPlayTracksFor(action.trackId)
+        }
+        loadSelectedTrack(action.trackId)
+    }
+
+    private suspend fun emitPlayTracksFor(trackId: String) {
+        val tracks = state.value.tracks
+        val startIndex = tracks.indexOfFirst { it.id == trackId }
+        if (startIndex < 0) return
+        emitEffect(MusicTagsEffect.PlayTracks(tracks = tracks, startIndex = startIndex))
     }
 
     private suspend fun loadSelectedTrack(trackId: String) {
@@ -231,6 +281,7 @@ class MusicTagsStore(
                 canWriteSelected = false,
                 isLoadingSelected = true,
                 isRefreshing = false,
+                pendingTrackAction = null,
                 message = null,
             )
         }

@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -66,9 +67,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsDraft
+import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
@@ -81,10 +85,21 @@ private val MusicTagsTableWidth = 940.dp
 fun MusicTagsTab(
     platform: PlatformDescriptor,
     state: MusicTagsState,
+    effects: Flow<MusicTagsEffect>,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isDesktop = platform.name == "Desktop"
+    LaunchedEffect(effects) {
+        effects.collect { effect ->
+            when (effect) {
+                is MusicTagsEffect.PlayTracks -> {
+                    onPlayerIntent(PlayerIntent.PlayTracks(effect.tracks, effect.startIndex))
+                }
+            }
+        }
+    }
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -101,6 +116,7 @@ fun MusicTagsTab(
                 DesktopMusicTagsLayout(
                     state = state,
                     onMusicTagsIntent = onMusicTagsIntent,
+                    onActivateTrack = { onMusicTagsIntent(MusicTagsIntent.ActivateTrack(it)) },
                 )
             } else {
                 MobileMusicTagsLayout(
@@ -142,6 +158,7 @@ fun MusicTagsTab(
 private fun DesktopMusicTagsLayout(
     state: MusicTagsState,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onActivateTrack: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -152,6 +169,7 @@ private fun DesktopMusicTagsLayout(
         MusicTagsTrackPane(
             state = state,
             onMusicTagsIntent = onMusicTagsIntent,
+            onActivateTrack = onActivateTrack,
             modifier = Modifier
                 .weight(1.18f)
                 .fillMaxHeight(),
@@ -232,6 +250,7 @@ private fun MobileMusicTagsLayout(
 private fun MusicTagsTrackPane(
     state: MusicTagsState,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onActivateTrack: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -300,6 +319,9 @@ private fun MusicTagsTrackPane(
                                                 rowMetadata = state.rowMetadata[track.id],
                                                 selected = state.selectedTrackId == track.id,
                                                 onClick = { onMusicTagsIntent(MusicTagsIntent.SelectTrack(track.id)) },
+                                                onDoubleClick = onActivateTrack?.let { handler ->
+                                                    { handler(track.id) }
+                                                },
                                             )
                                         }
                                     }
@@ -548,6 +570,7 @@ private fun MusicTagsTrackRow(
     rowMetadata: MusicTagsRowMetadata?,
     selected: Boolean,
     onClick: () -> Unit,
+    onDoubleClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -556,7 +579,16 @@ private fun MusicTagsTrackRow(
                 if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                 else Color.Transparent,
             )
-            .clickable(onClick = onClick)
+            .let { baseModifier ->
+                if (onDoubleClick != null) {
+                    baseModifier.combinedClickable(
+                        onClick = onClick,
+                        onDoubleClick = onDoubleClick,
+                    )
+                } else {
+                    baseModifier.clickable(onClick = onClick)
+                }
+            }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

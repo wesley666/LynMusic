@@ -131,6 +131,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -171,6 +172,7 @@ import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.feature.settings.SettingsStore
+import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
@@ -271,6 +273,7 @@ fun App(component: LynMusicAppComponent) {
                         libraryState = libraryState,
                         favoritesState = favoritesState,
                         musicTagsState = musicTagsState,
+                        musicTagsEffects = component.musicTagsStore.effects,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
@@ -289,6 +292,7 @@ fun App(component: LynMusicAppComponent) {
                         libraryState = libraryState,
                         favoritesState = favoritesState,
                         musicTagsState = musicTagsState,
+                        musicTagsEffects = component.musicTagsStore.effects,
                         importState = importState,
                         playerState = playerState,
                         settingsState = settingsState,
@@ -339,6 +343,7 @@ private fun MobileShell(
     libraryState: LibraryState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
+    musicTagsEffects: Flow<MusicTagsEffect>,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
@@ -398,6 +403,7 @@ private fun MobileShell(
                 libraryState = libraryState,
                 favoritesState = favoritesState,
                 musicTagsState = musicTagsState,
+                musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
@@ -420,6 +426,7 @@ private fun DesktopShell(
     libraryState: LibraryState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
+    musicTagsEffects: Flow<MusicTagsEffect>,
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
@@ -455,6 +462,7 @@ private fun DesktopShell(
                 libraryState = libraryState,
                 favoritesState = favoritesState,
                 musicTagsState = musicTagsState,
+                musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
                 onLibraryIntent = onLibraryIntent,
@@ -584,6 +592,7 @@ private fun TabContent(
     libraryState: LibraryState,
     favoritesState: FavoritesState,
     musicTagsState: MusicTagsState,
+    musicTagsEffects: Flow<MusicTagsEffect>,
     importState: ImportState,
     settingsState: SettingsState,
     onLibraryIntent: (LibraryIntent) -> Unit,
@@ -614,7 +623,9 @@ private fun TabContent(
         AppTab.Tags -> MusicTagsTab(
             platform = platform,
             state = musicTagsState,
+            effects = musicTagsEffects,
             onMusicTagsIntent = onMusicTagsIntent,
+            onPlayerIntent = onPlayerIntent,
             modifier = modifier,
         )
 
