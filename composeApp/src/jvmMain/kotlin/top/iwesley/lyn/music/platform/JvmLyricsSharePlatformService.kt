@@ -96,6 +96,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val canvasFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX.toInt())
         val titleFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.TITLE_FONT_SIZE_PX.toInt())
         val metaFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.META_FONT_SIZE_PX.toInt())
+        val brandFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.BRAND_FONT_SIZE_PX.toInt())
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
         val wrappedLyrics = wrapTextLines(model.lyricsLines, probe, canvasFont, contentWidth)
@@ -104,6 +105,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val lyricsLineHeight = probe.getFontMetrics(canvasFont).height + 8
         val titleLineHeight = probe.getFontMetrics(titleFont).height + 4
         val artistLineHeight = probe.getFontMetrics(metaFont).height + 2
+        val brandLineHeight = probe.getFontMetrics(brandFont).height
         probe.dispose()
 
         val contentHeight =
@@ -114,6 +116,8 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 max(1, wrappedTitle.size) * titleLineHeight +
                 max(1, wrappedArtist.size) * artistLineHeight +
+                LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                brandLineHeight +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
         val height = (contentHeight + LyricsShareCardSpec.OUTER_PADDING_PX * 2 + LyricsShareCardSpec.SHADOW_OFFSET_PX)
             .coerceIn(LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX)
@@ -235,6 +239,14 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
             graphics.drawString(line, textX, cursorY)
             cursorY += metaMetrics.descent + metaMetrics.leading + 2
         }
+
+        graphics.color = textSecondary
+        graphics.font = brandFont
+        val brandMetrics = graphics.fontMetrics
+        val brandText = LyricsShareCardSpec.BRAND_TEXT
+        val brandX = (paperX + (paperWidth - brandMetrics.stringWidth(brandText)) / 2f).toInt()
+        val brandY = (paperY + paperHeight - LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX - brandMetrics.descent).toInt()
+        graphics.drawString(brandText, brandX, brandY)
 
         graphics.dispose()
         return ByteArrayOutputStream().use { output ->

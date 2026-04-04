@@ -195,6 +195,11 @@ class AndroidLyricsSharePlatformService(
             color = LyricsShareCardSpec.TEXT_SECONDARY_ARGB
             textSize = LyricsShareCardSpec.META_FONT_SIZE_PX
         }
+        val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = LyricsShareCardSpec.TEXT_SECONDARY_ARGB
+            textSize = LyricsShareCardSpec.BRAND_FONT_SIZE_PX
+            textAlign = Paint.Align.LEFT
+        }
 
         val availableWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
         val lyricsLayout = createTextLayout(
@@ -225,6 +230,8 @@ class AndroidLyricsSharePlatformService(
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 titleLayout.height +
                 artistLayout.height +
+                LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                brandPaint.textSize.toInt() +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
         val height = (contentHeight + LyricsShareCardSpec.OUTER_PADDING_PX * 2 + LyricsShareCardSpec.SHADOW_OFFSET_PX)
             .coerceIn(LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX)
@@ -312,6 +319,11 @@ class AndroidLyricsSharePlatformService(
         canvas.translate(artworkLeft, cursorY)
         artistLayout.draw(canvas)
         canvas.restore()
+
+        val brandText = LyricsShareCardSpec.BRAND_TEXT
+        val brandBaseline = paperRect.bottom - LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX - brandPaint.fontMetrics.descent
+        val brandX = paperRect.centerX() - brandPaint.measureText(brandText) / 2f
+        canvas.drawText(brandText, brandX, brandBaseline, brandPaint)
 
         return ByteArrayOutputStream().use { output ->
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)

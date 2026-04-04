@@ -90,6 +90,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         val lyricsFont = Font(null, LyricsShareCardSpec.LYRICS_FONT_SIZE_PX)
         val titleFont = Font(null, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
         val artistFont = Font(null, LyricsShareCardSpec.META_FONT_SIZE_PX)
+        val brandFont = Font(null, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
         val lyricsLineHeight = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX + 18f
         val titleLineHeight = LyricsShareCardSpec.TITLE_FONT_SIZE_PX + 12f
         val artistLineHeight = LyricsShareCardSpec.META_FONT_SIZE_PX + 8f
@@ -101,6 +102,8 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
                 LyricsShareCardSpec.FOOTER_TOP_GAP_PX +
                 max(1, titleLines.size) * titleLineHeight +
                 max(1, artistLines.size) * artistLineHeight +
+                LyricsShareCardSpec.BRAND_TOP_GAP_PX +
+                LyricsShareCardSpec.BRAND_FONT_SIZE_PX +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
         val height = (contentHeight + LyricsShareCardSpec.OUTER_PADDING_PX * 2 + LyricsShareCardSpec.SHADOW_OFFSET_PX)
             .toInt()
@@ -217,6 +220,13 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             canvas.drawString(line, textX, cursorY + LyricsShareCardSpec.META_FONT_SIZE_PX, artistFont, textSecondaryPaint)
             cursorY += artistLineHeight
         }
+
+        val brandText = LyricsShareCardSpec.BRAND_TEXT
+        val brandBounds = brandFont.measureText(brandText)
+        val brandWidth = brandBounds.right - brandBounds.left
+        val brandX = paperX + (paperWidth - brandWidth) / 2f
+        val brandY = paperY + paperHeight - LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX.toFloat()
+        canvas.drawString(brandText, brandX, brandY, brandFont, textSecondaryPaint)
 
         val encoded = surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG, 100)
             ?: error("无法导出 PNG 数据。")

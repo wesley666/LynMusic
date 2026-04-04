@@ -141,6 +141,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
@@ -2399,6 +2400,16 @@ private fun LyricsShareNoteCard(
                         color = secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = LyricsShareCardSpec.BRAND_TEXT,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = secondaryTextColor.copy(alpha = 0.85f),
                     )
                 }
             }
