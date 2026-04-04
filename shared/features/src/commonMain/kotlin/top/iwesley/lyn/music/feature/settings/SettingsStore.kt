@@ -12,6 +12,8 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
+import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
+import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
@@ -28,7 +30,7 @@ data class SettingsState(
     val priority: String = "0",
     val enabled: Boolean = true,
     val workflowJsonInput: String = "",
-    val viewingWorkflowId: String? = null,
+    val editingWorkflowId: String? = null,
     val message: String? = null,
 )
 
@@ -48,6 +50,8 @@ sealed interface SettingsIntent {
     data class EnabledChanged(val value: Boolean) : SettingsIntent
     data class WorkflowJsonChanged(val value: String) : SettingsIntent
     data object ImportWorkflow : SettingsIntent
+    data object CreateNew : SettingsIntent
+    data object CreateNewWorkflow : SettingsIntent
     data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
     data class DeleteSource(val sourceId: String) : SettingsIntent
     data object Save : SettingsIntent
@@ -87,16 +91,45 @@ class SettingsStore(
             }
 
             is SettingsIntent.SelectConfig -> updateState {
-                intent.config?.toState() ?: SettingsState(sources = it.sources, useSambaCache = it.useSambaCache, workflowJsonInput = it.workflowJsonInput)
+                intent.config?.toState() ?: if (it.editingId != null) {
+                    it.copy(
+                        editingId = null,
+                        message = null,
+                    )
+                } else {
+                    SettingsState(
+                        sources = it.sources,
+                        useSambaCache = it.useSambaCache,
+                        workflowJsonInput = it.workflowJsonInput,
+                        editingWorkflowId = it.editingWorkflowId,
+                    )
+                }
             }
 
             is SettingsIntent.ViewWorkflow -> updateState {
-                it.copy(
-                    viewingWorkflowId = intent.config?.id,
-                    workflowJsonInput = intent.config?.rawJson.orEmpty(),
-                    editingId = null,
-                    message = null,
-                )
+                when (val config = intent.config) {
+                    null -> {
+                        if (it.editingWorkflowId != null) {
+                            it.copy(
+                                editingWorkflowId = null,
+                                message = null,
+                            )
+                        } else {
+                            it.copy(
+                                workflowJsonInput = "",
+                                message = null,
+                            )
+                        }
+                    }
+
+                    else -> {
+                        it.copy(
+                            editingWorkflowId = config.id,
+                            workflowJsonInput = config.rawJson,
+                            message = null,
+                        )
+                    }
+                }
             }
 
             is SettingsIntent.NameChanged -> updateState { it.copy(name = intent.value) }
@@ -112,7 +145,6 @@ class SettingsStore(
             is SettingsIntent.WorkflowJsonChanged -> updateState {
                 it.copy(
                     workflowJsonInput = intent.value,
-                    viewingWorkflowId = null,
                 )
             }
 
@@ -122,15 +154,66 @@ class SettingsStore(
                     updateState { it.copy(message = "请先粘贴 Workflow JSON。") }
                     return
                 }
-                val imported = runCatching { repository.importWorkflowLyricsSource(rawJson) }
+                val isEditingWorkflow = state.value.editingWorkflowId != null
+                val imported = runCatching {
+                    repository.saveWorkflowLyricsSource(
+                        rawJson = rawJson,
+                        editingId = state.value.editingWorkflowId,
+                    )
+                }
                 updateState {
                     it.copy(
                         workflowJsonInput = imported.getOrNull()?.rawJson ?: it.workflowJsonInput,
-                        viewingWorkflowId = imported.getOrNull()?.id,
+                        editingWorkflowId = imported.getOrNull()?.id ?: it.editingWorkflowId,
                         message = imported.fold(
-                            onSuccess = { config -> "Workflow 源 ${config.name} 已导入。" },
-                            onFailure = { error -> error.message ?: "Workflow 导入失败。" },
+                            onSuccess = { config -> if (isEditingWorkflow) "Workflow 源已保存。" else "Workflow 源 ${config.name} 已导入。" },
+                            onFailure = { error -> error.message ?: "Workflow 保存失败。" },
                         ),
+                    )
+                }
+            }
+
+            SettingsIntent.CreateNew -> {
+                val config = state.value.toConfig(forceNew = true) ?: run {
+                    updateState { it.copy(message = "请至少填写歌词源名称和 URL。") }
+                    return
+                }
+                val created = runCatching { repository.saveLyricsSource(config) }
+                updateState { currentState ->
+                    created.fold(
+                        onSuccess = { config.toState(sources = currentState.sources, message = "歌词源已新建。") },
+                        onFailure = { error -> currentState.copy(message = error.message ?: "歌词源新建失败。") },
+                    )
+                }
+            }
+
+            SettingsIntent.CreateNewWorkflow -> {
+                val rawJson = state.value.workflowJsonInput.trim()
+                if (rawJson.isBlank()) {
+                    updateState { it.copy(message = "请先粘贴 Workflow JSON。") }
+                    return
+                }
+                val preparedRawJson = runCatching {
+                    state.value.prepareWorkflowDraftForNew(rawJson)
+                }
+                val created = preparedRawJson.fold(
+                    onSuccess = { normalizedRawJson ->
+                        runCatching { repository.saveWorkflowLyricsSource(rawJson = normalizedRawJson, editingId = null) }
+                    },
+                    onFailure = { error -> Result.failure(error) },
+                )
+                updateState { currentState ->
+                    created.fold(
+                        onSuccess = { config ->
+                            currentState.copy(
+                                workflowJsonInput = config.rawJson,
+                                editingWorkflowId = config.id,
+                                message = "Workflow 源已新建。",
+                            )
+                        },
+                        onFailure = { error ->
+                            currentState.copy(message = error.message ?: "Workflow 新建失败。")
+                        },
                     )
                 }
             }
@@ -146,18 +229,19 @@ class SettingsStore(
                 repository.deleteLyricsSource(intent.sourceId)
                 updateState {
                     val shouldClearDirect = it.editingId == intent.sourceId
-                    val shouldClearWorkflow = it.viewingWorkflowId == intent.sourceId
+                    val shouldClearWorkflow = it.editingWorkflowId == intent.sourceId
                     if (shouldClearDirect) {
                         SettingsState(
                             sources = it.sources,
                             useSambaCache = it.useSambaCache,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
+                            editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
                             message = "歌词源已删除。",
                         )
                     } else {
                         it.copy(
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
-                            viewingWorkflowId = if (shouldClearWorkflow) null else it.viewingWorkflowId,
+                            editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
                             message = "歌词源已删除。",
                         )
                     }
@@ -169,24 +253,37 @@ class SettingsStore(
                     updateState { it.copy(message = "请至少填写歌词源名称和 URL。") }
                     return
                 }
-                repository.saveLyricsSource(config)
-                updateState { config.toState(sources = it.sources, message = "歌词源已保存。") }
+                val saved = runCatching { repository.saveLyricsSource(config) }
+                updateState { currentState ->
+                    saved.fold(
+                        onSuccess = { config.toState(sources = currentState.sources, message = "歌词源已保存。") },
+                        onFailure = { error -> currentState.copy(message = error.message ?: "歌词源保存失败。") },
+                    )
+                }
             }
 
             SettingsIntent.Delete -> {
                 val editingId = state.value.editingId ?: return
                 repository.deleteLyricsSource(editingId)
-                updateState { SettingsState(sources = it.sources, useSambaCache = it.useSambaCache, workflowJsonInput = it.workflowJsonInput, message = "歌词源已删除。") }
+                updateState {
+                    SettingsState(
+                        sources = it.sources,
+                        useSambaCache = it.useSambaCache,
+                        workflowJsonInput = it.workflowJsonInput,
+                        editingWorkflowId = it.editingWorkflowId,
+                        message = "歌词源已删除。",
+                    )
+                }
             }
 
             SettingsIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
     }
 
-    private fun SettingsState.toConfig(): LyricsSourceConfig? {
+    private fun SettingsState.toConfig(forceNew: Boolean = false): LyricsSourceConfig? {
         if (name.isBlank() || urlTemplate.isBlank()) return null
         return LyricsSourceConfig(
-            id = editingId ?: "lyrics-${Clock.System.now().toEpochMilliseconds()}-${Random.nextInt(1000, 9999)}",
+            id = if (!forceNew && editingId != null) editingId else newLyricsSourceId("lyrics"),
             name = name,
             method = method,
             urlTemplate = urlTemplate,
@@ -219,7 +316,24 @@ class SettingsStore(
             priority = priority.toString(),
             enabled = enabled,
             workflowJsonInput = state.value.workflowJsonInput,
+            editingWorkflowId = state.value.editingWorkflowId,
             message = message,
         )
     }
+
+    private fun SettingsState.prepareWorkflowDraftForNew(rawJson: String): String {
+        val currentEditingWorkflowId = editingWorkflowId ?: return rawJson
+        val parsed = parseWorkflowLyricsSourceConfig(rawJson)
+        if (parsed.id != currentEditingWorkflowId) {
+            return rawJson
+        }
+        return rewriteWorkflowLyricsSourceId(
+            rawJson = rawJson,
+            newId = newLyricsSourceId("workflow"),
+        )
+    }
+}
+
+private fun newLyricsSourceId(prefix: String): String {
+    return "$prefix-${Clock.System.now().toEpochMilliseconds()}-${Random.nextInt(1000, 9999)}"
 }

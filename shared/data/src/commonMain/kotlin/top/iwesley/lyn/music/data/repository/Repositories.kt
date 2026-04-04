@@ -122,7 +122,7 @@ interface SettingsRepository {
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
     suspend fun saveLyricsSource(config: LyricsSourceConfig)
-    suspend fun importWorkflowLyricsSource(rawJson: String): WorkflowLyricsSourceConfig
+    suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String? = null): WorkflowLyricsSourceConfig
     suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean)
     suspend fun deleteLyricsSource(configId: String)
 }
@@ -501,8 +501,12 @@ class DefaultSettingsRepository(
     override suspend fun ensureDefaults() {
         val existing = database.lyricsSourceConfigDao().getAll()
         if (existing.isEmpty()) {
+            val reservedNames = database.workflowLyricsSourceConfigDao().getAll()
+                .mapTo(mutableSetOf()) { normalizeLyricsSourceName(it.name) }
             defaultLyricsSourceConfigs().forEach { config ->
-                database.lyricsSourceConfigDao().upsert(config.toEntity())
+                if (normalizeLyricsSourceName(config.name) !in reservedNames) {
+                    database.lyricsSourceConfigDao().upsert(config.toEntity())
+                }
             }
             return
         }
@@ -519,11 +523,26 @@ class DefaultSettingsRepository(
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {
+        assertUniqueLyricsSourceName(
+            name = config.name,
+            currentDirectId = config.id,
+        )
         database.lyricsSourceConfigDao().upsert(config.toEntity())
     }
 
-    override suspend fun importWorkflowLyricsSource(rawJson: String): WorkflowLyricsSourceConfig {
+    override suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String?): WorkflowLyricsSourceConfig {
         val config = parseWorkflowLyricsSourceConfig(rawJson)
+        if (editingId != null && config.id != editingId) {
+            error("Workflow 源 id 不支持修改。")
+        }
+        assertSourceIdAvailable(
+            sourceId = config.id,
+            currentWorkflowId = editingId,
+        )
+        assertUniqueLyricsSourceName(
+            name = config.name,
+            currentWorkflowId = config.id,
+        )
         database.workflowLyricsSourceConfigDao().upsert(config.toEntity())
         return config
     }
@@ -577,9 +596,44 @@ class DefaultSettingsRepository(
         }
     }
 
+    private suspend fun assertUniqueLyricsSourceName(
+        name: String,
+        currentDirectId: String? = null,
+        currentWorkflowId: String? = null,
+    ) {
+        val normalizedTarget = normalizeLyricsSourceName(name)
+        if (normalizedTarget.isBlank()) {
+            error("歌词源名称不能为空。")
+        }
+        val directConflict = database.lyricsSourceConfigDao().getAll().any { entity ->
+            entity.id != currentDirectId && normalizeLyricsSourceName(entity.name) == normalizedTarget
+        }
+        val workflowConflict = database.workflowLyricsSourceConfigDao().getAll().any { entity ->
+            entity.id != currentWorkflowId && normalizeLyricsSourceName(entity.name) == normalizedTarget
+        }
+        if (directConflict || workflowConflict) {
+            error("歌词源名称已存在。")
+        }
+    }
+
+    private suspend fun assertSourceIdAvailable(
+        sourceId: String,
+        currentWorkflowId: String? = null,
+    ) {
+        val hasDirectConflict = database.lyricsSourceConfigDao().getAll().any { it.id == sourceId }
+        val hasWorkflowConflict = database.workflowLyricsSourceConfigDao().getAll().any { it.id == sourceId && it.id != currentWorkflowId }
+        if (hasDirectConflict || hasWorkflowConflict) {
+            error("歌词源 id 已存在。")
+        }
+    }
+
     private companion object {
         val BUILT_IN_LRCLIB_SOURCE_IDS = setOf("lrclib-synced", "lrclib-plain")
     }
+}
+
+private fun normalizeLyricsSourceName(name: String): String {
+    return name.trim().lowercase()
 }
 
 class DefaultLyricsRepository(

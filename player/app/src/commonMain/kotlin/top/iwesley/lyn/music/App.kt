@@ -130,6 +130,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -1121,126 +1122,150 @@ private fun SettingsTab(
     onSettingsIntent: (SettingsIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    Box(
+        modifier = modifier.fillMaxSize(),
     ) {
-        SectionTitle(title = "歌词 API", subtitle = "声明式适配 JSON / XML / LRC / 纯文本返回。")
         state.message?.let { message ->
-            BannerCard(message = message, onDismiss = { onSettingsIntent(SettingsIntent.ClearMessage) })
+            LaunchedEffect(message) {
+                delay(2_500)
+                onSettingsIntent(SettingsIntent.ClearMessage)
+            }
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Samba 播放", fontWeight = FontWeight.Bold)
-                Text(
-                    "打开后会先缓存到本地再播放；关闭后桌面端直接返回 SMB 播放链接。移动端当前仍回退到缓存。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            SectionTitle(title = "歌词 API", subtitle = "声明式适配 JSON / XML / LRC / 纯文本返回。")
+            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Samba 播放", fontWeight = FontWeight.Bold)
+                    Text(
+                        "打开后会先缓存到本地再播放；关闭后桌面端直接返回 SMB 播放链接。移动端当前仍回退到缓存。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("使用本地缓存播放", fontWeight = FontWeight.Medium)
+                        Switch(
+                            checked = state.useSambaCache,
+                            onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
+                        )
+                    }
+                }
+            }
+            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    OutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        EnumSelector(label = "Method", values = RequestMethod.entries, selected = state.method, onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) }, modifier = Modifier.weight(1f))
+                        EnumSelector(label = "Format", values = LyricsResponseFormat.entries, selected = state.responseFormat, onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    OutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    OutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    OutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    OutlinedTextField(
+                        value = state.priority,
+                        onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
+                        label = { Text("优先级") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("启用歌词源", fontWeight = FontWeight.Medium)
+                        Switch(checked = state.enabled, onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) })
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.Save else SettingsIntent.CreateNew) }) {
+                            Text(if (state.editingId != null) "保存" else "新建")
+                        }
+                        OutlinedButton(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.CreateNew else SettingsIntent.SelectConfig(null)) }) {
+                            Text(if (state.editingId != null) "新建" else "清空")
+                        }
+                        if (state.editingId != null) {
+                            TextButton(onClick = { onSettingsIntent(SettingsIntent.Delete) }) { Text("删除") }
+                        }
+                    }
+                }
+            }
+            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Workflow JSON", fontWeight = FontWeight.Bold)
+                    Text(
+                        "用于新建或编辑多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前仍直接编辑原始 JSON。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = state.workflowJsonInput,
+                        onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
+                        label = { Text("Workflow JSON") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        minLines = 10,
+                        maxLines = 18,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.ImportWorkflow else SettingsIntent.CreateNewWorkflow) }) {
+                            Text(if (state.editingWorkflowId != null) "保存 Workflow" else "新建 Workflow")
+                        }
+                        if (state.editingWorkflowId != null || state.workflowJsonInput.isNotBlank()) {
+                            OutlinedButton(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.CreateNewWorkflow else SettingsIntent.ViewWorkflow(null)) }) {
+                                Text(if (state.editingWorkflowId != null) "新建 Workflow" else "清空编辑")
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionTitle(title = "已有配置", subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。")
+            if (state.sources.isEmpty()) {
+                EmptyStateCard(
+                    title = "还没有歌词源",
+                    body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("使用本地缓存播放", fontWeight = FontWeight.Medium)
-                    Switch(
-                        checked = state.useSambaCache,
-                        onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
+            } else {
+                state.sources.forEach { source ->
+                    LyricsSourceCard(
+                        source = source,
+                        onClick = {
+                            when (source) {
+                                is LyricsSourceConfig -> onSettingsIntent(SettingsIntent.SelectConfig(source))
+                                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> onSettingsIntent(SettingsIntent.ViewWorkflow(source))
+                            }
+                        },
+                        onToggleEnabled = {
+                            onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
+                        },
+                        onDelete = {
+                            onSettingsIntent(SettingsIntent.DeleteSource(source.id))
+                        },
                     )
                 }
             }
         }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                OutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    EnumSelector(label = "Method", values = RequestMethod.entries, selected = state.method, onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) }, modifier = Modifier.weight(1f))
-                    EnumSelector(label = "Format", values = LyricsResponseFormat.entries, selected = state.responseFormat, onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) }, modifier = Modifier.weight(1f))
-                }
-                OutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                OutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                OutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                OutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                OutlinedTextField(
-                    value = state.priority,
-                    onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
-                    label = { Text("优先级") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("启用歌词源", fontWeight = FontWeight.Medium)
-                    Switch(checked = state.enabled, onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) })
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { onSettingsIntent(SettingsIntent.Save) }) { Text("保存") }
-                    OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.SelectConfig(null)) }) { Text("新建") }
-                    if (state.editingId != null) {
-                        TextButton(onClick = { onSettingsIntent(SettingsIntent.Delete) }) { Text("删除") }
-                    }
-                }
-            }
-        }
-        ElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Workflow JSON 导入", fontWeight = FontWeight.Bold)
-                Text(
-                    "用于导入多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前只支持粘贴一个 provider 的 JSON 文件。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = state.workflowJsonInput,
-                    onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
-                    label = { Text("Workflow JSON") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    minLines = 10,
-                    maxLines = 18,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { onSettingsIntent(SettingsIntent.ImportWorkflow) }) { Text("导入 Workflow") }
-                    if (state.viewingWorkflowId != null) {
-                        OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ViewWorkflow(null)) }) { Text("清空查看") }
-                    }
-                }
-            }
-        }
-
-        SectionTitle(title = "已有配置", subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。")
-        if (state.sources.isEmpty()) {
-            EmptyStateCard(
-                title = "还没有歌词源",
-                body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
+        state.message?.let { message ->
+            ToastCard(
+                message = message,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .navigationBarsPadding(),
             )
-        } else {
-            state.sources.forEach { source ->
-                LyricsSourceCard(
-                    source = source,
-                    onClick = {
-                        when (source) {
-                            is LyricsSourceConfig -> onSettingsIntent(SettingsIntent.SelectConfig(source))
-                            is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> onSettingsIntent(SettingsIntent.ViewWorkflow(source))
-                        }
-                    },
-                    onToggleEnabled = {
-                        onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
-                    },
-                    onDelete = {
-                        onSettingsIntent(SettingsIntent.DeleteSource(source.id))
-                    },
-                )
-            }
         }
     }
 }
@@ -3554,6 +3579,29 @@ private fun BannerCard(
             Text(message, modifier = Modifier.weight(1f))
             TextButton(onClick = onDismiss) { Text("关闭") }
         }
+    }
+}
+
+@Composable
+private fun ToastCard(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.widthIn(max = 420.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF1F1A17).copy(alpha = 0.94f),
+        ),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

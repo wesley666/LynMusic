@@ -96,6 +96,19 @@ fun parseWorkflowLyricsSourceConfig(rawJson: String): WorkflowLyricsSourceConfig
     return config
 }
 
+fun rewriteWorkflowLyricsSourceId(
+    rawJson: String,
+    newId: String,
+): String {
+    val root = workflowJson.parseToJsonElement(rawJson.trim()).jsonObjectOrThrow("workflow root")
+    val updatedRoot = JsonObject(
+        root.toMutableMap().apply {
+            put("id", JsonPrimitive(newId))
+        },
+    )
+    return prettyWorkflowJson.encodeToString(JsonElement.serializer(), updatedRoot)
+}
+
 fun validateWorkflowLyricsSourceConfig(config: WorkflowLyricsSourceConfig) {
     require(config.id.isNotBlank()) { "workflow.id 不能为空。" }
     require(config.name.isNotBlank()) { "workflow.name 不能为空。" }
