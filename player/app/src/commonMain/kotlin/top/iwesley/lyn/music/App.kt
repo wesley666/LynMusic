@@ -1414,6 +1414,7 @@ private fun PlayerOverlay(
                 }
                 if (state.isLyricsShareVisible) {
                     LyricsShareOverlay(
+                        platform = platform,
                         state = state,
                         onPlayerIntent = onPlayerIntent,
                         modifier = Modifier.fillMaxSize(),
@@ -2072,6 +2073,7 @@ private fun manualWorkflowCandidatePreview(candidate: top.iwesley.lyn.music.core
 
 @Composable
 private fun LyricsShareOverlay(
+    platform: PlatformDescriptor,
     state: PlayerState,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
@@ -2112,7 +2114,8 @@ private fun LyricsShareOverlay(
                     .padding(22.dp),
             ) {
                 val wideLayout = maxWidth >= 980.dp
-                val compactActions = maxWidth < 760.dp
+                val narrowActions = maxWidth < 760.dp
+                val mobileActions = isMobilePlaybackPlatform(platform)
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -2199,37 +2202,52 @@ private fun LyricsShareOverlay(
                             )
                         }
                     }
-                    if (compactActions) {
-                        Column(
+                    if (mobileActions) {
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (narrowActions) 8.dp else 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
+                                modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                contentPadding = PaddingValues(
+                                    horizontal = if (narrowActions) 8.dp else 16.dp,
+                                    vertical = 12.dp,
+                                ),
                             ) {
-                                Text("清空")
+                                Text("清空", maxLines = 1)
                             }
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
                                 enabled = exportActionsEnabled,
+                                modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                contentPadding = PaddingValues(
+                                    horizontal = if (narrowActions) 8.dp else 16.dp,
+                                    vertical = 12.dp,
+                                ),
                             ) {
-                                Text(if (state.isShareCopying) "复制中..." else "复制图片")
+                                Text(if (state.isShareCopying) "复制中..." else "复制图片", maxLines = 1)
                             }
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
                                 enabled = exportActionsEnabled,
+                                modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color(0xFFEEE0C8),
                                     contentColor = Color(0xFF3C2E24),
                                     disabledContainerColor = Color.White.copy(alpha = 0.12f),
                                     disabledContentColor = secondaryTextColor,
                                 ),
+                                contentPadding = PaddingValues(
+                                    horizontal = if (narrowActions) 8.dp else 16.dp,
+                                    vertical = 12.dp,
+                                ),
                             ) {
-                                Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                                Text(if (state.isShareSaving) "保存中..." else "保存到本地", maxLines = 1)
                             }
                         }
                     } else {
