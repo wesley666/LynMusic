@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -1318,7 +1319,14 @@ private fun PlayerOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    TextButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) { Text("收起") }
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "收起播放页",
+                            tint = Color.White.copy(alpha = 0.92f),
+                            modifier = Modifier.size(34.dp),
+                        )
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2571,6 +2579,7 @@ private fun PlayerBottomControls(
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val favoriteTint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.96f)
     val modeButtonSize = 42.dp
     val modeIconSize = 22.dp
     val skipButtonSize = 45.dp
@@ -2682,7 +2691,7 @@ private fun PlayerBottomControls(
                                 FavoriteToggleButton(
                                     isFavorite = isFavorite,
                                     onClick = onToggleFavorite,
-                                    tint = Color.White.copy(alpha = 0.96f),
+                                    tint = favoriteTint,
                                 )
                                 Box(modifier = Modifier.weight(1f)) {
                                     PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
@@ -2725,7 +2734,7 @@ private fun PlayerBottomControls(
                             FavoriteToggleButton(
                                 isFavorite = isFavorite,
                                 onClick = onToggleFavorite,
-                                tint = Color.White.copy(alpha = 0.96f),
+                                tint = favoriteTint,
                             )
                         }
                     }
