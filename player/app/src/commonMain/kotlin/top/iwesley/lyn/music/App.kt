@@ -1301,125 +1301,110 @@ private fun PlayerOverlay(
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF232325),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
-                            Color(0xFF232325),
-                        ),
-                        radius = 1400f,
-                    ),
-                ),
-        ) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val wide = maxWidth >= 980.dp
-                val useTapToRevealLyrics =
-                    isMobilePlaybackPlatform(platform) &&
-                        (maxWidth < 820.dp || maxHeight < 860.dp)
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 26.dp, vertical = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val wide = maxWidth >= 980.dp
+            val useTapToRevealLyrics =
+                isMobilePlaybackPlatform(platform) &&
+                    (maxWidth < 820.dp || maxHeight < 860.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 26.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
+                    TextButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) { Text("收起") }
                     Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        TextButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) { Text("收起") }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                playbackModeIcon(state.snapshot.mode),
-                                null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                            )
-                            Text(
-                                modeLabel(state.snapshot.mode),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
-                            )
-                        }
+                        Icon(
+                            playbackModeIcon(state.snapshot.mode),
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                        )
+                        Text(
+                            modeLabel(state.snapshot.mode),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f),
+                        )
                     }
-                    if (useTapToRevealLyrics) {
-                        MobilePlayerPrimaryPane(
+                }
+                if (useTapToRevealLyrics) {
+                    MobilePlayerPrimaryPane(
+                        state = state,
+                        track = track,
+                        onPlayerIntent = onPlayerIntent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                } else if (wide) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(34.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlayerInfoPane(
+                            snapshot = state.snapshot,
+                            track = track,
+                            modifier = Modifier
+                                .weight(0.46f)
+                                .fillMaxHeight(),
+                        )
+                        PlayerLyricsPane(
                             state = state,
                             track = track,
                             onPlayerIntent = onPlayerIntent,
                             modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
+                                .weight(0.54f)
+                                .fillMaxHeight(),
                         )
-                    } else if (wide) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(34.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PlayerInfoPane(
-                                snapshot = state.snapshot,
-                                track = track,
-                                modifier = Modifier
-                                    .weight(0.46f)
-                                    .fillMaxHeight(),
-                            )
-                            PlayerLyricsPane(
-                                state = state,
-                                track = track,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier
-                                    .weight(0.54f)
-                                    .fillMaxHeight(),
-                            )
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(24.dp),
-                        ) {
-                            PlayerInfoPane(
-                                snapshot = state.snapshot,
-                                track = track,
-                                modifier = Modifier.fillMaxWidth(),
-                                compact = true,
-                            )
-                            PlayerLyricsPane(
-                                state = state,
-                                track = track,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier.weight(1f),
-                                compact = true,
-                            )
-                        }
                     }
-                    PlayerBottomControls(
-                        snapshot = state.snapshot,
-                        track = track,
-                        wide = wide,
-                        isFavorite = isFavorite,
-                        onToggleFavorite = onToggleFavorite,
-                        onOpenQueue = onOpenQueue,
-                        onPlayerIntent = onPlayerIntent,
-                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
+                        PlayerInfoPane(
+                            snapshot = state.snapshot,
+                            track = track,
+                            modifier = Modifier.fillMaxWidth(),
+                            compact = true,
+                        )
+                        PlayerLyricsPane(
+                            state = state,
+                            track = track,
+                            onPlayerIntent = onPlayerIntent,
+                            modifier = Modifier.weight(1f),
+                            compact = true,
+                        )
+                    }
                 }
-                if (state.isLyricsShareVisible) {
-                    LyricsShareOverlay(
-                        platform = platform,
-                        state = state,
-                        onPlayerIntent = onPlayerIntent,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                PlayerBottomControls(
+                    snapshot = state.snapshot,
+                    track = track,
+                    wide = wide,
+                    isFavorite = isFavorite,
+                    onToggleFavorite = onToggleFavorite,
+                    onOpenQueue = onOpenQueue,
+                    onPlayerIntent = onPlayerIntent,
+                )
+            }
+            if (state.isLyricsShareVisible) {
+                LyricsShareOverlay(
+                    platform = platform,
+                    state = state,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
