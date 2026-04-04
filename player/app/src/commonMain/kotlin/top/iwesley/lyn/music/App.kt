@@ -2249,7 +2249,7 @@ private fun ManualLyricsSearchResultsPane(
                                             )
                                             candidate.durationSeconds?.let { seconds ->
                                                 Text(
-                                                    "${seconds}s",
+                                                    formatLyricsCandidateDuration(seconds),
                                                     color = secondaryTextColor,
                                                 )
                                             }
@@ -2323,7 +2323,7 @@ private fun manualLyricsCandidateMetadata(candidate: LyricsSearchCandidate): Str
         }
         candidate.durationSeconds?.takeIf { it > 0 }?.let {
             if (isNotEmpty()) append(" · ")
-            append("${it}s")
+            append(formatLyricsCandidateDuration(it))
         }
         candidate.itemId?.takeIf { it.isNotBlank() }?.let {
             if (isNotEmpty()) append(" · ")
@@ -3902,6 +3902,20 @@ private fun formatDuration(durationMs: Long): String {
     val minutesPart = seconds / 60
     val secondsPart = seconds % 60
     return minutesPart.toString().padStart(2, '0') + ":" + secondsPart.toString().padStart(2, '0')
+}
+
+private fun formatLyricsCandidateDuration(durationSeconds: Int): String {
+    val totalSeconds = durationSeconds.coerceAtLeast(0)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return buildString {
+        append(hours.toString().padStart(2, '0'))
+        append(':')
+        append(minutes.toString().padStart(2, '0'))
+        append(':')
+        append(seconds.toString().padStart(2, '0'))
+    }
 }
 
 private fun trackDisplayFormat(track: Track): String {
