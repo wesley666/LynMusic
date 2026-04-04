@@ -1462,6 +1462,13 @@ private fun PlayerOverlay(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            if (state.isManualLyricsSearchVisible) {
+                ManualLyricsSearchOverlay(
+                    state = state,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -1840,18 +1847,133 @@ private fun PlayerLyricsPane(
                 }
             }
         }
-        if (state.isManualLyricsSearchVisible) {
-            ManualLyricsSearchOverlay(
-                state = state,
-                onPlayerIntent = onPlayerIntent,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
     }
 }
 
 @Composable
 private fun ManualLyricsSearchOverlay(
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primaryTextColor = Color.White.copy(alpha = 0.96f)
+    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.68f))
+                .clickable { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
+        )
+        Card(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(
+                    fraction = if (state.snapshot.currentTrack != null) 0.96f else 1f,
+                )
+                .fillMaxHeight(0.92f)
+                .widthIn(max = 1040.dp)
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { },
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B19)),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        ) {
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(22.dp),
+            ) {
+                val wideLayout = maxWidth >= 980.dp
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "手动搜索歌词",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = primaryTextColor,
+                            )
+                            Text(
+                                buildString {
+                                    append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                                    state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }?.let {
+                                        append(" · ")
+                                        append(it)
+                                    }
+                                },
+                                color = secondaryTextColor,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) }) {
+                            Text("关闭", color = primaryTextColor)
+                        }
+                    }
+                    if (wideLayout) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            ManualLyricsSearchFormPane(
+                                state = state,
+                                onPlayerIntent = onPlayerIntent,
+                                modifier = Modifier
+                                    .weight(0.42f)
+                                    .fillMaxHeight(),
+                            )
+                            ManualLyricsSearchResultsPane(
+                                state = state,
+                                onPlayerIntent = onPlayerIntent,
+                                modifier = Modifier
+                                    .weight(0.58f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(18.dp),
+                        ) {
+                            ManualLyricsSearchFormPane(
+                                state = state,
+                                onPlayerIntent = onPlayerIntent,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.42f),
+                            )
+                            ManualLyricsSearchResultsPane(
+                                state = state,
+                                onPlayerIntent = onPlayerIntent,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(0.58f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualLyricsSearchFormPane(
     state: PlayerState,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
@@ -1869,232 +1991,296 @@ private fun ManualLyricsSearchOverlay(
         focusedPlaceholderColor = secondaryTextColor,
         unfocusedPlaceholderColor = secondaryTextColor,
     )
-    Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.62f))
-                .clickable { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionTitle(
+            title = "搜索条件",
+            subtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
         )
         Card(
             modifier = Modifier
-                .align(Alignment.Center)
                 .fillMaxWidth()
-                .widthIn(max = 620.dp)
-                .padding(horizontal = 20.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { },
+                .weight(1f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF2A2A2D)),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
         ) {
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .fillMaxSize()
+                    .padding(18.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                val stackedFields = maxWidth < 560.dp
+                val buttonSpacing = if (stackedFields) 8.dp else 10.dp
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "手动搜索歌词",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryTextColor,
-                        )
-                        Text(
-                            "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
-                            color = secondaryTextColor,
-                        )
-                    }
-                    TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) }) {
-                        Text("关闭", color = primaryTextColor)
-                    }
-                }
-                OutlinedTextField(
-                    value = state.manualLyricsTitle,
-                    onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
-                    label = { Text("标题") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    singleLine = true,
-                    colors = textFieldColors,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
-                        value = state.manualLyricsArtistName,
-                        onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
-                        label = { Text("歌手") },
-                        modifier = Modifier.weight(1f),
+                        value = state.manualLyricsTitle,
+                        onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
+                        label = { Text("标题") },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         singleLine = true,
                         colors = textFieldColors,
                     )
-                    OutlinedTextField(
-                        value = state.manualLyricsAlbumTitle,
-                        onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
-                        label = { Text("专辑") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        singleLine = true,
-                        colors = textFieldColors,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedButton(
-                        onClick = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
-                    ) {
-                        Text("取消")
+                    if (stackedFields) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = state.manualLyricsArtistName,
+                                onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
+                                label = { Text("歌手") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                singleLine = true,
+                                colors = textFieldColors,
+                            )
+                            OutlinedTextField(
+                                value = state.manualLyricsAlbumTitle,
+                                onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
+                                label = { Text("专辑") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                singleLine = true,
+                                colors = textFieldColors,
+                            )
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = state.manualLyricsArtistName,
+                                onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
+                                label = { Text("歌手") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                                singleLine = true,
+                                colors = textFieldColors,
+                            )
+                            OutlinedTextField(
+                                value = state.manualLyricsAlbumTitle,
+                                onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
+                                label = { Text("专辑") },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(18.dp),
+                                singleLine = true,
+                                colors = textFieldColors,
+                            )
+                        }
                     }
-                    Spacer(Modifier.width(10.dp))
-                    Button(
-                        onClick = { onPlayerIntent(PlayerIntent.SearchManualLyrics) },
-                        enabled = !state.isManualLyricsSearchLoading && state.manualLyricsTitle.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.14f),
-                            contentColor = primaryTextColor,
-                            disabledContainerColor = Color.White.copy(alpha = 0.08f),
-                            disabledContentColor = secondaryTextColor,
-                        ),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(buttonSpacing),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(if (state.isManualLyricsSearchLoading) "搜索中..." else "搜索")
+                        OutlinedButton(
+                            onClick = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                        ) {
+                            Text("取消", maxLines = 1)
+                        }
+                        Button(
+                            onClick = { onPlayerIntent(PlayerIntent.SearchManualLyrics) },
+                            enabled = !state.isManualLyricsSearchLoading && state.manualLyricsTitle.isNotBlank(),
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.14f),
+                                contentColor = primaryTextColor,
+                                disabledContainerColor = Color.White.copy(alpha = 0.08f),
+                                disabledContentColor = secondaryTextColor,
+                            ),
+                        ) {
+                            Text(if (state.isManualLyricsSearchLoading) "搜索中..." else "搜索", maxLines = 1)
+                        }
+                    }
+                    state.manualLyricsError?.let { error ->
+                        ElevatedCard(
+                            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)),
+                            shape = RoundedCornerShape(18.dp),
+                        ) {
+                            Text(
+                                text = error,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
                     }
                 }
-                state.manualLyricsError?.let { error ->
-                    ElevatedCard(
-                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)),
-                        shape = RoundedCornerShape(18.dp),
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualLyricsSearchResultsPane(
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primaryTextColor = Color.White.copy(alpha = 0.96f)
+    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SectionTitle(
+            title = "搜索结果",
+            subtitle = when {
+                state.isManualLyricsSearchLoading -> "正在请求已启用的歌词源。"
+                state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> "点选任一结果即可直接应用到当前歌曲。"
+                state.hasManualLyricsSearchResult -> "当前没有可解析结果，可以继续调整搜索条件。"
+                else -> "直接歌词结果和 Workflow 歌曲候选会显示在这里。"
+            },
+        )
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+        ) {
+            when {
+                state.isManualLyricsSearchLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(18.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = error,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
-                }
-                when {
-                    state.isManualLyricsSearchLoading -> {
                         Text(
                             "正在请求已启用的歌词源...",
                             color = secondaryTextColor,
                         )
                     }
+                }
 
-                    state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 320.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            if (state.manualLyricsResults.isNotEmpty()) {
-                                Text("直接歌词结果", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
-                                state.manualLyricsResults.forEach { candidate ->
-                                    ElevatedCard(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) },
-                                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
-                                        shape = RoundedCornerShape(20.dp),
+                state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (state.manualLyricsResults.isNotEmpty()) {
+                            Text("直接歌词结果", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                            state.manualLyricsResults.forEach { candidate ->
+                                ElevatedCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate)) },
+                                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
+                                    shape = RoundedCornerShape(20.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    candidate.sourceName,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = primaryTextColor,
-                                                )
-                                                Text(
-                                                    "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
-                                                    color = secondaryTextColor,
-                                                )
-                                            }
                                             Text(
-                                                manualLyricsPreview(candidate),
-                                                color = primaryTextColor.copy(alpha = 0.84f),
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
+                                                candidate.sourceName,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = primaryTextColor,
+                                            )
+                                            Text(
+                                                "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
+                                                color = secondaryTextColor,
                                             )
                                         }
+                                        Text(
+                                            manualLyricsPreview(candidate),
+                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                 }
                             }
-                            if (state.manualWorkflowSongResults.isNotEmpty()) {
-                                Text("Workflow 歌曲候选", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
-                                state.manualWorkflowSongResults.forEach { candidate ->
-                                    ElevatedCard(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate)) },
-                                        colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
-                                        shape = RoundedCornerShape(20.dp),
+                        }
+                        if (state.manualWorkflowSongResults.isNotEmpty()) {
+                            Text("Workflow 歌曲候选", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                            state.manualWorkflowSongResults.forEach { candidate ->
+                                ElevatedCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate)) },
+                                    colors = CardDefaults.elevatedCardColors(containerColor = Color.White.copy(alpha = 0.06f)),
+                                    shape = RoundedCornerShape(20.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
                                         ) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                Text(
-                                                    candidate.sourceName,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = primaryTextColor,
-                                                )
-                                                candidate.durationSeconds?.let { seconds ->
-                                                    Text(
-                                                        "${seconds}s",
-                                                        color = secondaryTextColor,
-                                                    )
-                                                }
-                                            }
                                             Text(
-                                                candidate.title,
+                                                candidate.sourceName,
                                                 style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.SemiBold,
                                                 color = primaryTextColor,
-                                                fontWeight = FontWeight.Medium,
                                             )
-                                            Text(
-                                                manualWorkflowCandidatePreview(candidate),
-                                                color = primaryTextColor.copy(alpha = 0.84f),
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                                            candidate.durationSeconds?.let { seconds ->
+                                                Text(
+                                                    "${seconds}s",
+                                                    color = secondaryTextColor,
+                                                )
+                                            }
                                         }
+                                        Text(
+                                            candidate.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = primaryTextColor,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                        Text(
+                                            manualWorkflowCandidatePreview(candidate),
+                                            color = primaryTextColor.copy(alpha = 0.84f),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
                                     }
                                 }
                             }
                         }
                     }
+                }
 
-                    state.hasManualLyricsSearchResult -> {
+                state.hasManualLyricsSearchResult -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(18.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         EmptyStateCard(
                             title = "没有找到可用歌词",
                             body = "当前已启用歌词源都没有返回可解析结果，可以继续修改标题、歌手或专辑再试。",
+                        )
+                    }
+                }
+
+                else -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(18.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EmptyStateCard(
+                            title = "准备搜索",
+                            body = "修改搜索条件后点击搜索，结果会显示在这里。",
                         )
                     }
                 }
