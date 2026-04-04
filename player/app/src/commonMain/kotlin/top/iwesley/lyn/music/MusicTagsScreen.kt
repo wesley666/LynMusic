@@ -357,14 +357,14 @@ private fun MusicTagsEditorPane(
                                     bitmap = previewBitmap,
                                     contentDescription = "新封面预览",
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
+                                    contentScale = ContentScale.Fit,
                                 )
 
                                 artworkBitmap != null -> androidx.compose.foundation.Image(
                                     bitmap = artworkBitmap,
                                     contentDescription = "歌曲封面",
                                     modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
+                                    contentScale = ContentScale.Fit,
                                 )
 
                                 else -> {
