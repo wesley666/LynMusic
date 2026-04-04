@@ -172,6 +172,11 @@ data class LyricsSearchCandidate(
     val sourceId: String,
     val sourceName: String,
     val document: LyricsDocument,
+    val itemId: String? = null,
+    val title: String? = null,
+    val artistName: String? = null,
+    val albumTitle: String? = null,
+    val durationSeconds: Int? = null,
 )
 
 sealed interface LyricsSourceDefinition {

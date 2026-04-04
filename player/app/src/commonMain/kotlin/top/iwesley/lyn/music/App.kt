@@ -2196,6 +2196,22 @@ private fun ManualLyricsSearchResultsPane(
                                                 color = secondaryTextColor,
                                             )
                                         }
+                                        candidate.title?.takeIf { it.isNotBlank() }?.let { title ->
+                                            Text(
+                                                title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = primaryTextColor,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        }
+                                        manualLyricsCandidateMetadata(candidate)?.let { metadata ->
+                                            Text(
+                                                metadata,
+                                                color = secondaryTextColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
                                         Text(
                                             manualLyricsPreview(candidate),
                                             color = primaryTextColor.copy(alpha = 0.84f),
@@ -2296,6 +2312,25 @@ private fun manualLyricsPreview(candidate: LyricsSearchCandidate): String {
         .take(2)
         .joinToString(" / ")
         .ifBlank { "歌词内容为空" }
+}
+
+private fun manualLyricsCandidateMetadata(candidate: LyricsSearchCandidate): String? {
+    return buildString {
+        candidate.artistName?.takeIf { it.isNotBlank() }?.let { append(it) }
+        candidate.albumTitle?.takeIf { it.isNotBlank() }?.let {
+            if (isNotEmpty()) append(" · ")
+            append(it)
+        }
+        candidate.durationSeconds?.takeIf { it > 0 }?.let {
+            if (isNotEmpty()) append(" · ")
+            append("${it}s")
+        }
+        candidate.itemId?.takeIf { it.isNotBlank() }?.let {
+            if (isNotEmpty()) append(" · ")
+            append("ID ")
+            append(it)
+        }
+    }.takeIf { it.isNotBlank() }
 }
 
 private fun manualWorkflowCandidatePreview(candidate: top.iwesley.lyn.music.core.model.WorkflowSongCandidate): String {

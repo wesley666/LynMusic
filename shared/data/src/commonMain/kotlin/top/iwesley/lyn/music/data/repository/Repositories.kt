@@ -67,7 +67,8 @@ import top.iwesley.lyn.music.domain.extractWorkflowSongCandidates
 import top.iwesley.lyn.music.domain.extractWorkflowStepCapture
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.parseCachedLyrics
-import top.iwesley.lyn.music.domain.parseLyricsPayload
+import top.iwesley.lyn.music.domain.ParsedLyricsPayload
+import top.iwesley.lyn.music.domain.parseLyricsPayloadResult
 import top.iwesley.lyn.music.domain.parsePlainText
 import top.iwesley.lyn.music.domain.parseLrc
 import top.iwesley.lyn.music.domain.scoreWorkflowSongCandidate
@@ -547,11 +548,27 @@ class DefaultSettingsRepository(
     private fun sanitizeBuiltInLrclibConfig(config: LyricsSourceConfigEntity): LyricsSourceConfigEntity? {
         if (!config.isBuiltInLrclib()) return null
         val sanitizedQuery = sanitizeLrclibQueryTemplate(config.queryTemplate)
-        return if (sanitizedQuery == config.queryTemplate) null else config.copy(queryTemplate = sanitizedQuery)
+        val sanitizedExtractor = config.expectedBuiltInLrclibExtractor()
+        return if (sanitizedQuery == config.queryTemplate && sanitizedExtractor == config.extractor) {
+            null
+        } else {
+            config.copy(
+                queryTemplate = sanitizedQuery,
+                extractor = sanitizedExtractor,
+            )
+        }
     }
 
     private fun LyricsSourceConfigEntity.isBuiltInLrclib(): Boolean {
         return id in BUILT_IN_LRCLIB_SOURCE_IDS && urlTemplate.startsWith(LRCLIB_BASE_URL)
+    }
+
+    private fun LyricsSourceConfigEntity.expectedBuiltInLrclibExtractor(): String {
+        return when (id) {
+            "lrclib-synced" -> LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
+            "lrclib-plain" -> LRCLIB_PLAIN_JSON_MAP_EXTRACTOR
+            else -> extractor
+        }
     }
 
     private companion object {
@@ -618,12 +635,12 @@ class DefaultLyricsRepository(
 
         for (source in sources) {
             val result = when (source) {
-                is LyricsSourceConfig -> requestDirectLyricsDocument(
+                is LyricsSourceConfig -> requestDirectLyricsResult(
                     track = track,
                     config = source,
                     requestType = "auto",
-                )?.let { document ->
-                    ResolvedLyricsResult(document = document)
+                )?.let { parsed ->
+                    ResolvedLyricsResult(document = parsed.document)
                 }
 
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
@@ -671,15 +688,20 @@ class DefaultLyricsRepository(
             return emptyList()
         }
         return configs.mapNotNull { config ->
-            requestDirectLyricsDocument(
+            requestDirectLyricsResult(
                 track = track,
                 config = config,
                 requestType = "manual",
-            )?.let { document ->
+            )?.let { parsed ->
                 LyricsSearchCandidate(
                     sourceId = config.id,
                     sourceName = config.name,
-                    document = document,
+                    document = parsed.document,
+                    itemId = parsed.itemId,
+                    title = parsed.title,
+                    artistName = parsed.artistName,
+                    albumTitle = parsed.albumTitle,
+                    durationSeconds = parsed.durationSeconds,
                 )
             }
         }
@@ -794,11 +816,11 @@ class DefaultLyricsRepository(
         return database.workflowLyricsSourceConfigDao().getEnabled().mapNotNull { it.toDomainOrNull() }
     }
 
-    private suspend fun requestDirectLyricsDocument(
+    private suspend fun requestDirectLyricsResult(
         track: Track,
         config: LyricsSourceConfig,
         requestType: String,
-    ): LyricsDocument? {
+    ): ParsedLyricsPayload? {
         val trackLabel = track.logIdentity()
         val request = buildLyricsRequest(config, track)
         logger.debug(LYRICS_LOG_TAG) {
@@ -820,14 +842,14 @@ class DefaultLyricsRepository(
             "$requestType-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
                 "elapsedMs=${now() - startedAt} bodyPreview=${response.body.logPreview()}"
         }
-        val document = parseLyricsPayload(config, response.body)
-        if (document == null) {
+        val parsed = parseLyricsPayloadResult(config, response.body)
+        if (parsed == null) {
             logger.warn(LYRICS_LOG_TAG) {
                 "$requestType-parse-miss track=$trackLabel source=${config.id} status=${response.statusCode} " +
                     "extractor=${config.extractor}"
             }
         }
-        return document
+        return parsed
     }
 
     private suspend fun requestWorkflowLyricsDocument(
@@ -1212,7 +1234,7 @@ fun defaultLyricsSourceConfigs(): List<LyricsSourceConfig> {
             urlTemplate = LRCLIB_GET_URL,
             queryTemplate = LRCLIB_DEFAULT_QUERY_TEMPLATE,
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = "json:syncedLyrics",
+            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
             priority = 100,
             enabled = true,
         ),
@@ -1223,7 +1245,7 @@ fun defaultLyricsSourceConfigs(): List<LyricsSourceConfig> {
             urlTemplate = LRCLIB_GET_URL,
             queryTemplate = LRCLIB_DEFAULT_QUERY_TEMPLATE,
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = "json:plainLyrics",
+            extractor = LRCLIB_PLAIN_JSON_MAP_EXTRACTOR,
             priority = 90,
             enabled = true,
         ),
@@ -1243,4 +1265,6 @@ fun sanitizeLrclibQueryTemplate(template: String): String {
 private const val LRCLIB_BASE_URL = "https://lrclib.net/"
 private const val LRCLIB_GET_URL = "${LRCLIB_BASE_URL}api/get"
 private const val LRCLIB_DEFAULT_QUERY_TEMPLATE = "track_name={title}&artist_name={artist}"
+const val LRCLIB_SYNCED_JSON_MAP_EXTRACTOR = "json-map:lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
+const val LRCLIB_PLAIN_JSON_MAP_EXTRACTOR = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
 private val LRCLIB_REMOVED_QUERY_KEYS = setOf("album_name", "duration")

@@ -101,6 +101,58 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertEquals(requestCountAfterManualSearch, httpClient.requestCount)
     }
 
+    @Test
+    fun `manual search exposes metadata mapped by json map extractor`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            lyricsSourceConfig(
+                id = "source-mapped",
+                name = "映射源",
+                priority = 20,
+                urlTemplate = "https://lyrics.example/mapped",
+                responseFormat = LyricsResponseFormat.JSON,
+                extractor = "json-map:[0]|lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+            ),
+        )
+        val httpClient = FakeLyricsHttpClient(
+            mapOf(
+                "https://lyrics.example/mapped" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            [
+                              {
+                                "id": "song-42",
+                                "trackName": "映射标题",
+                                "artistName": "映射歌手",
+                                "albumName": "映射专辑",
+                                "duration": "201",
+                                "syncedLyrics": "[00:01.00]第一句\n[00:02.00]第二句"
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidate = repository.searchLyricsCandidates(sampleTrack()).single()
+
+        assertEquals("source-mapped", candidate.sourceId)
+        assertEquals("song-42", candidate.itemId)
+        assertEquals("映射标题", candidate.title)
+        assertEquals("映射歌手", candidate.artistName)
+        assertEquals("映射专辑", candidate.albumTitle)
+        assertEquals(201, candidate.durationSeconds)
+        assertTrue(candidate.document.isSynced)
+    }
+
     private fun createTestDatabase(): LynMusicDatabase {
         val path = Files.createTempFile("lynmusic-lyrics-manual", ".db")
         return buildLynMusicDatabase(

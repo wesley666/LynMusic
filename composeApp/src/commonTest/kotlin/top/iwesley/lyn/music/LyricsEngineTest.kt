@@ -8,9 +8,12 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.repository.defaultLyricsSourceConfigs
+import top.iwesley.lyn.music.data.repository.LRCLIB_PLAIN_JSON_MAP_EXTRACTOR
+import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.sanitizeLrclibQueryTemplate
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.parseLyricsPayload
+import top.iwesley.lyn.music.domain.parseLyricsPayloadResult
 
 class LyricsEngineTest {
 
@@ -121,14 +124,46 @@ class LyricsEngineTest {
     }
 
     @Test
+    fun `json map extractor can parse lyrics metadata from array item`() {
+        val config = LyricsSourceConfig(
+            id = "cfg",
+            name = "Mapped",
+            urlTemplate = "https://lyrics.example/search",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-map:[0]|lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+        )
+        val payload = """
+            [
+              {
+                "id": "song-42",
+                "trackName": "Blue Sky",
+                "artistName": "Nova",
+                "albumName": "Horizons",
+                "duration": "218",
+                "syncedLyrics": "[00:01.00]hello\n[00:03.50]world"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = parseLyricsPayloadResult(config, payload)
+
+        assertEquals(2, parsed?.document?.lines?.size)
+        assertEquals("song-42", parsed?.itemId)
+        assertEquals("Blue Sky", parsed?.title)
+        assertEquals("Nova", parsed?.artistName)
+        assertEquals("Horizons", parsed?.albumTitle)
+        assertEquals(218, parsed?.durationSeconds)
+    }
+
+    @Test
     fun `default lyrics sources include lrclib synced and plain`() {
         val configs = defaultLyricsSourceConfigs()
 
         assertEquals(2, configs.size)
         assertEquals("lrclib-synced", configs[0].id)
-        assertEquals("json:syncedLyrics", configs[0].extractor)
+        assertEquals(LRCLIB_SYNCED_JSON_MAP_EXTRACTOR, configs[0].extractor)
         assertEquals("lrclib-plain", configs[1].id)
-        assertEquals("json:plainLyrics", configs[1].extractor)
+        assertEquals(LRCLIB_PLAIN_JSON_MAP_EXTRACTOR, configs[1].extractor)
         assertTrue(configs.all { it.urlTemplate == "https://lrclib.net/api/get" })
         assertTrue(configs.all { it.queryTemplate == "track_name={title}&artist_name={artist}" })
     }

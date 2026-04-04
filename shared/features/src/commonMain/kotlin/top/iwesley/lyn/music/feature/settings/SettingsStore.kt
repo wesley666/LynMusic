@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.mvi.BaseStore
+import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
 
 data class SettingsState(
@@ -23,7 +24,7 @@ data class SettingsState(
     val queryTemplate: String = "",
     val bodyTemplate: String = "",
     val responseFormat: LyricsResponseFormat = LyricsResponseFormat.JSON,
-    val extractor: String = "text",
+    val extractor: String = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
     val priority: String = "0",
     val enabled: Boolean = true,
     val workflowJsonInput: String = "",
