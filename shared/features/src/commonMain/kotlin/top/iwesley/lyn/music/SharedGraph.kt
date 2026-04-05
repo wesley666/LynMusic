@@ -122,6 +122,7 @@ fun buildSharedGraph(
         favoritesStore = FavoritesStore(favoritesRepository, importSourceRepository, scope),
         musicTagsStore = MusicTagsStore(
             repository = musicTagsRepository,
+            lyricsRepository = lyricsRepository,
             editorPlatformService = runtimeServices.audioTagEditorPlatformService,
             storeScope = scope,
         ),

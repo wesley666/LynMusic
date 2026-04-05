@@ -183,6 +183,10 @@ private class NoopQueueLyricsRepository : LyricsRepository {
 
     override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> = emptyList()
 
+    override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
+        error("Not used in queue tests")
+    }
+
     override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
         error("Not used in queue tests")
     }

@@ -335,6 +335,13 @@ private class FakeLyricsRepository(
         return workflowResults
     }
 
+    override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
+        return ResolvedLyricsResult(
+            document = appliedDocument ?: error("No applied document configured"),
+            artworkLocator = candidate.imageUrl,
+        )
+    }
+
     override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
         appliedTrackId = trackId
         appliedCandidate = candidate

@@ -5,10 +5,15 @@ import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
+import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.mvi.BaseStore
+import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.MusicTagSaveResult
 import top.iwesley.lyn.music.data.repository.MusicTagsRepository
+import top.iwesley.lyn.music.domain.serializeLyricsDocument
 
 data class MusicTagsRowMetadata(
     val tagLabel: String? = null,
@@ -40,6 +45,18 @@ data class MusicTagsDraft(
     val clearArtwork: Boolean = false,
 )
 
+data class MusicTagsLyricsSearchState(
+    val isVisible: Boolean = false,
+    val title: String = "",
+    val artistName: String = "",
+    val albumTitle: String = "",
+    val isLoading: Boolean = false,
+    val hasResult: Boolean = false,
+    val directResults: List<LyricsSearchCandidate> = emptyList(),
+    val workflowResults: List<WorkflowSongCandidate> = emptyList(),
+    val error: String? = null,
+)
+
 data class MusicTagsState(
     val tracks: List<Track> = emptyList(),
     val rowMetadata: Map<String, MusicTagsRowMetadata> = emptyMap(),
@@ -53,6 +70,7 @@ data class MusicTagsState(
     val isLoadingSelected: Boolean = false,
     val isRefreshing: Boolean = false,
     val isSaving: Boolean = false,
+    val onlineLyricsSearch: MusicTagsLyricsSearchState = MusicTagsLyricsSearchState(),
     val pendingTrackAction: MusicTagsPendingTrackAction? = null,
     val showDiscardChangesDialog: Boolean = false,
     val message: String? = null,
@@ -79,6 +97,14 @@ sealed interface MusicTagsIntent {
     data class DiscNumberChanged(val value: String) : MusicTagsIntent
     data class EmbeddedLyricsChanged(val value: String) : MusicTagsIntent
     data class CompilationChanged(val value: Boolean) : MusicTagsIntent
+    data object OpenOnlineLyricsSearch : MusicTagsIntent
+    data object DismissOnlineLyricsSearch : MusicTagsIntent
+    data class OnlineLyricsTitleChanged(val value: String) : MusicTagsIntent
+    data class OnlineLyricsArtistChanged(val value: String) : MusicTagsIntent
+    data class OnlineLyricsAlbumChanged(val value: String) : MusicTagsIntent
+    data object SearchOnlineLyrics : MusicTagsIntent
+    data class ApplyOnlineLyricsCandidate(val candidate: LyricsSearchCandidate) : MusicTagsIntent
+    data class ApplyOnlineWorkflowSongCandidate(val candidate: WorkflowSongCandidate) : MusicTagsIntent
     data object PickArtwork : MusicTagsIntent
     data object ClearArtwork : MusicTagsIntent
     data object ResetDraft : MusicTagsIntent
@@ -93,6 +119,7 @@ sealed interface MusicTagsEffect {
 
 class MusicTagsStore(
     private val repository: MusicTagsRepository,
+    private val lyricsRepository: LyricsRepository,
     private val editorPlatformService: AudioTagEditorPlatformService,
     private val storeScope: CoroutineScope,
 ) : BaseStore<MusicTagsState, MusicTagsIntent, MusicTagsEffect>(
@@ -100,6 +127,7 @@ class MusicTagsStore(
     scope = storeScope,
 ) {
     private var selectedLoadVersion = 0L
+    private var onlineLyricsSearchVersion = 0L
 
     init {
         storeScope.launch {
@@ -126,6 +154,7 @@ class MusicTagsStore(
                             canEditSelected = false,
                             canWriteSelected = false,
                             isLoadingSelected = false,
+                            onlineLyricsSearch = MusicTagsLyricsSearchState(),
                         )
                     }
                 }
@@ -160,6 +189,9 @@ class MusicTagsStore(
             MusicTagsIntent.ResetDraft -> resetDraft()
             MusicTagsIntent.RefreshSelected -> refreshSelectedTrack()
             MusicTagsIntent.Save -> saveSelectedTrack()
+            MusicTagsIntent.OpenOnlineLyricsSearch -> openOnlineLyricsSearch()
+            MusicTagsIntent.DismissOnlineLyricsSearch -> dismissOnlineLyricsSearch()
+            MusicTagsIntent.SearchOnlineLyrics -> searchOnlineLyrics()
             MusicTagsIntent.PickArtwork -> pickArtwork()
             MusicTagsIntent.ClearArtwork -> updateDraft {
                 copy(
@@ -183,6 +215,11 @@ class MusicTagsStore(
             is MusicTagsIntent.DiscNumberChanged -> updateDraft { copy(discNumber = intent.value) }
             is MusicTagsIntent.EmbeddedLyricsChanged -> updateDraft { copy(embeddedLyrics = intent.value) }
             is MusicTagsIntent.CompilationChanged -> updateDraft { copy(isCompilation = intent.value) }
+            is MusicTagsIntent.OnlineLyricsTitleChanged -> updateOnlineLyricsSearch { copy(title = intent.value) }
+            is MusicTagsIntent.OnlineLyricsArtistChanged -> updateOnlineLyricsSearch { copy(artistName = intent.value) }
+            is MusicTagsIntent.OnlineLyricsAlbumChanged -> updateOnlineLyricsSearch { copy(albumTitle = intent.value) }
+            is MusicTagsIntent.ApplyOnlineLyricsCandidate -> applyOnlineLyricsCandidate(intent.candidate)
+            is MusicTagsIntent.ApplyOnlineWorkflowSongCandidate -> applyOnlineWorkflowSongCandidate(intent.candidate)
         }
     }
 
@@ -281,10 +318,12 @@ class MusicTagsStore(
                 canWriteSelected = false,
                 isLoadingSelected = true,
                 isRefreshing = false,
+                onlineLyricsSearch = MusicTagsLyricsSearchState(),
                 pendingTrackAction = null,
                 message = null,
             )
         }
+        invalidateOnlineLyricsSearch()
         val canEdit = repository.canEdit(track)
         val canWrite = repository.canWrite(track)
         val result = if (canEdit) repository.readTags(track) else Result.failure(IllegalStateException("当前歌曲不支持标签读取。"))
@@ -364,6 +403,161 @@ class MusicTagsStore(
             .onFailure { throwable ->
                 updateState { it.copy(message = throwable.message ?: "选择封面失败。") }
             }
+    }
+
+    private suspend fun openOnlineLyricsSearch() {
+        val current = state.value
+        if (!current.canWriteSelected || current.selectedTrack == null) return
+        invalidateOnlineLyricsSearch()
+        updateState {
+            it.copy(
+                onlineLyricsSearch = MusicTagsLyricsSearchState(
+                    isVisible = true,
+                    title = current.draft.title,
+                    artistName = current.draft.artistName,
+                    albumTitle = current.draft.albumTitle,
+                ),
+                message = null,
+            )
+        }
+    }
+
+    private suspend fun dismissOnlineLyricsSearch() {
+        invalidateOnlineLyricsSearch()
+        updateState { it.copy(onlineLyricsSearch = MusicTagsLyricsSearchState()) }
+    }
+
+    private suspend fun searchOnlineLyrics() {
+        val current = state.value
+        val selectedTrack = current.selectedTrack ?: return
+        val searchState = current.onlineLyricsSearch
+        val title = searchState.title.trim()
+        if (title.isBlank()) {
+            updateState {
+                it.copy(
+                    onlineLyricsSearch = searchState.copy(
+                        isLoading = false,
+                        hasResult = false,
+                        directResults = emptyList(),
+                        workflowResults = emptyList(),
+                        error = "标题不能为空",
+                    ),
+                )
+            }
+            return
+        }
+        val searchTrack = selectedTrack.copy(
+            title = title,
+            artistName = searchState.artistName.trim().ifBlank { null },
+            albumTitle = searchState.albumTitle.trim().ifBlank { null },
+        )
+        val requestVersion = ++onlineLyricsSearchVersion
+        updateState {
+            it.copy(
+                onlineLyricsSearch = searchState.copy(
+                    isLoading = true,
+                    hasResult = false,
+                    directResults = emptyList(),
+                    workflowResults = emptyList(),
+                    error = null,
+                ),
+                message = null,
+            )
+        }
+        val directResult = runCatching {
+            lyricsRepository.searchLyricsCandidates(
+                track = searchTrack,
+                includeTrackProvidedCandidate = false,
+            )
+        }
+        val workflowResult = runCatching { lyricsRepository.searchWorkflowSongCandidates(searchTrack) }
+        if (requestVersion != onlineLyricsSearchVersion || state.value.selectedTrackId != selectedTrack.id) return
+        updateState { latest ->
+            latest.copy(
+                onlineLyricsSearch = latest.onlineLyricsSearch.copy(
+                    isLoading = false,
+                    hasResult = true,
+                    directResults = directResult.getOrDefault(emptyList()),
+                    workflowResults = workflowResult.getOrDefault(emptyList()),
+                    error = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
+                ),
+            )
+        }
+    }
+
+    private suspend fun applyOnlineLyricsCandidate(candidate: LyricsSearchCandidate) {
+        applySearchImport(
+            documentText = serializeLyricsDocument(candidate.document),
+            title = candidate.title,
+            artistName = candidate.artistName,
+            albumTitle = candidate.albumTitle,
+            artworkLocator = candidate.artworkLocator,
+        )
+    }
+
+    private suspend fun applyOnlineWorkflowSongCandidate(candidate: WorkflowSongCandidate) {
+        val searchTrack = state.value.selectedTrack?.let(::buildOnlineSearchTrack) ?: return
+        val resolved = runCatching {
+            lyricsRepository.resolveWorkflowSongCandidate(searchTrack, candidate)
+        }.getOrElse { throwable ->
+            updateState { it.copy(message = throwable.message ?: "在线歌词获取失败。") }
+            return
+        }
+        applySearchImport(
+            documentText = serializeLyricsDocument(resolved.document),
+            title = candidate.title,
+            artistName = candidate.artists.joinToString(" / ").ifBlank { null },
+            albumTitle = candidate.album,
+            artworkLocator = resolved.artworkLocator,
+        )
+    }
+
+    private suspend fun applySearchImport(
+        documentText: String,
+        title: String?,
+        artistName: String?,
+        albumTitle: String?,
+        artworkLocator: String?,
+    ) {
+        val artworkImport = loadArtworkForDraft(artworkLocator)
+        updateState { current ->
+            val nextDraft = current.draft.copy(
+                title = title?.trim()?.takeIf { it.isNotBlank() } ?: current.draft.title,
+                artistName = artistName?.trim()?.takeIf { it.isNotBlank() } ?: current.draft.artistName,
+                albumTitle = albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: current.draft.albumTitle,
+                embeddedLyrics = documentText,
+                pendingArtworkBytes = artworkImport.bytes ?: current.draft.pendingArtworkBytes,
+                clearArtwork = if (artworkImport.bytes != null) false else current.draft.clearArtwork,
+            )
+            current.copy(
+                draft = nextDraft,
+                isDirty = current.selectedSnapshot?.let { nextDraft.isDirtyComparedTo(it) } ?: false,
+                onlineLyricsSearch = MusicTagsLyricsSearchState(),
+                message = artworkImport.message ?: "已写入编辑器，点击保存可写回文件。",
+            )
+        }
+    }
+
+    private fun buildOnlineSearchTrack(selectedTrack: Track): Track {
+        val searchState = state.value.onlineLyricsSearch
+        return selectedTrack.copy(
+            title = searchState.title.trim().ifBlank { selectedTrack.title },
+            artistName = searchState.artistName.trim().ifBlank { selectedTrack.artistName },
+            albumTitle = searchState.albumTitle.trim().ifBlank { selectedTrack.albumTitle },
+        )
+    }
+
+    private suspend fun loadArtworkForDraft(locator: String?): ImportedArtworkResult {
+        val normalizedLocator = normalizeArtworkLocator(locator)?.trim().orEmpty()
+        if (normalizedLocator.isBlank()) return ImportedArtworkResult()
+        return editorPlatformService.loadArtworkBytes(normalizedLocator).fold(
+            onSuccess = { bytes ->
+                bytes?.takeIf { it.isNotEmpty() }?.let { ImportedArtworkResult(bytes = it) } ?: ImportedArtworkResult()
+            },
+            onFailure = { throwable ->
+                ImportedArtworkResult(message = "已写入编辑器，封面导入失败：${throwable.message ?: "读取失败。"}")
+            },
+        )
     }
 
     private suspend fun resetDraft() {
@@ -471,7 +665,33 @@ class MusicTagsStore(
             )
         }
     }
+
+    private fun updateOnlineLyricsSearch(
+        transform: MusicTagsLyricsSearchState.() -> MusicTagsLyricsSearchState,
+    ) {
+        updateState { current ->
+            current.copy(
+                onlineLyricsSearch = current.onlineLyricsSearch
+                    .transform()
+                    .copy(
+                        hasResult = false,
+                        directResults = emptyList(),
+                        workflowResults = emptyList(),
+                        error = null,
+                    ),
+            )
+        }
+    }
+
+    private fun invalidateOnlineLyricsSearch() {
+        onlineLyricsSearchVersion += 1L
+    }
 }
+
+private data class ImportedArtworkResult(
+    val bytes: ByteArray? = null,
+    val message: String? = null,
+)
 
 private fun AudioTagSnapshot.toDraft(): MusicTagsDraft {
     return MusicTagsDraft(

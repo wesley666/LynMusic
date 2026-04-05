@@ -2039,120 +2039,38 @@ private fun ManualLyricsSearchOverlay(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val primaryTextColor = Color.White.copy(alpha = 0.96f)
-    val secondaryTextColor = Color.White.copy(alpha = 0.72f)
-    Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.68f))
-                .clickable { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
-        )
-        Card(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(
-                    fraction = if (state.snapshot.currentTrack != null) 0.96f else 1f,
-                )
-                .fillMaxHeight(0.92f)
-                .widthIn(max = 1040.dp)
-                .padding(horizontal = 20.dp, vertical = 24.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { },
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B19)),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-        ) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(22.dp),
-            ) {
-                val wideLayout = maxWidth >= 980.dp
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "手动搜索歌词",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = primaryTextColor,
-                            )
-                            Text(
-                                buildString {
-                                    append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
-                                    state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }?.let {
-                                        append(" · ")
-                                        append(it)
-                                    }
-                                },
-                                color = secondaryTextColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) }) {
-                            Text("关闭", color = primaryTextColor)
-                        }
-                    }
-                    if (wideLayout) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
-                            ManualLyricsSearchFormPane(
-                                state = state,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier
-                                    .weight(0.42f)
-                                    .fillMaxHeight(),
-                            )
-                            ManualLyricsSearchResultsPane(
-                                state = state,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier
-                                    .weight(0.58f)
-                                    .fillMaxHeight(),
-                            )
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
-                            ManualLyricsSearchFormPane(
-                                state = state,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(0.42f),
-                            )
-                            ManualLyricsSearchResultsPane(
-                                state = state,
-                                onPlayerIntent = onPlayerIntent,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(0.58f),
-                            )
-                        }
-                    }
+    LyricsSearchOverlayDialog(
+        state = LyricsSearchDialogState(
+            headerTitle = "手动搜索歌词",
+            headerSubtitle = buildString {
+                append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }?.let {
+                    append(" · ")
+                    append(it)
                 }
-            }
-        }
-    }
+            },
+            title = state.manualLyricsTitle,
+            artistName = state.manualLyricsArtistName,
+            albumTitle = state.manualLyricsAlbumTitle,
+            isLoading = state.isManualLyricsSearchLoading,
+            hasResult = state.hasManualLyricsSearchResult,
+            directResults = state.manualLyricsResults,
+            workflowResults = state.manualWorkflowSongResults,
+            error = state.manualLyricsError,
+        ),
+        strings = LyricsSearchDialogStrings(
+            formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
+            resultsAppliedSubtitle = "点选任一结果即可直接应用到当前歌曲。",
+        ),
+        onDismiss = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
+        onTitleChanged = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
+        onArtistChanged = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
+        onAlbumChanged = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
+        onSearch = { onPlayerIntent(PlayerIntent.SearchManualLyrics) },
+        onApplyDirectCandidate = { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(it)) },
+        onApplyWorkflowCandidate = { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(it)) },
+        modifier = modifier,
+    )
 }
 
 @Composable

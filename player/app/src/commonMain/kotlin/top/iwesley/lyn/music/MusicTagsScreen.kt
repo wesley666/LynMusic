@@ -141,6 +141,40 @@ fun MusicTagsTab(
                     },
                 )
             }
+            if (state.onlineLyricsSearch.isVisible) {
+                LyricsSearchOverlayDialog(
+                    state = LyricsSearchDialogState(
+                        headerTitle = "在线搜索歌词",
+                        headerSubtitle = buildString {
+                            append(state.draft.title.ifBlank { state.selectedTrack?.title ?: "当前编辑器" })
+                            state.draft.artistName.takeIf { it.isNotBlank() }?.let {
+                                append(" · ")
+                                append(it)
+                            }
+                        },
+                        title = state.onlineLyricsSearch.title,
+                        artistName = state.onlineLyricsSearch.artistName,
+                        albumTitle = state.onlineLyricsSearch.albumTitle,
+                        isLoading = state.onlineLyricsSearch.isLoading,
+                        hasResult = state.onlineLyricsSearch.hasResult,
+                        directResults = state.onlineLyricsSearch.directResults,
+                        workflowResults = state.onlineLyricsSearch.workflowResults,
+                        error = state.onlineLyricsSearch.error,
+                    ),
+                    strings = LyricsSearchDialogStrings(
+                        formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
+                        resultsAppliedSubtitle = "点选任一结果即可写入当前编辑器。",
+                    ),
+                    onDismiss = { onMusicTagsIntent(MusicTagsIntent.DismissOnlineLyricsSearch) },
+                    onTitleChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsTitleChanged(it)) },
+                    onArtistChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsArtistChanged(it)) },
+                    onAlbumChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsAlbumChanged(it)) },
+                    onSearch = { onMusicTagsIntent(MusicTagsIntent.SearchOnlineLyrics) },
+                    onApplyDirectCandidate = { onMusicTagsIntent(MusicTagsIntent.ApplyOnlineLyricsCandidate(it)) },
+                    onApplyWorkflowCandidate = { onMusicTagsIntent(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(it)) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             state.message?.let { message ->
                 Box(
                     modifier = Modifier
@@ -378,6 +412,15 @@ private fun MusicTagsEditorPane(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
                 ) {
+                    if (!readOnly && state.canWriteSelected) {
+                        TextButton(
+                            onClick = { onMusicTagsIntent(MusicTagsIntent.OpenOnlineLyricsSearch) },
+                            enabled = !state.isLoadingSelected && !state.isSaving && !state.isRefreshing,
+                        ) {
+                            Text("在线搜索")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     TextButton(
                         onClick = { onMusicTagsIntent(MusicTagsIntent.RefreshSelected) },
                         enabled = !state.isLoadingSelected && !state.isSaving && !state.isRefreshing,

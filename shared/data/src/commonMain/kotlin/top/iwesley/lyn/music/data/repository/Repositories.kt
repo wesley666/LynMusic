@@ -106,6 +106,7 @@ interface LyricsRepository {
     suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean = true): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
     suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
+    suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult
     suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult
 }
 
@@ -951,6 +952,21 @@ class DefaultLyricsRepository(
         return AppliedWorkflowLyricsResult(
             document = document,
             artworkLocator = cachedArtworkLocator,
+        )
+    }
+
+    override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
+        val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
+            ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
+        val document = fetchWorkflowLyricsForCandidate(
+            track = track,
+            config = config,
+            candidate = candidate,
+            requestType = "tag-import",
+        ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
+        return ResolvedLyricsResult(
+            document = document.copy(rawPayload = serializeLyricsDocument(document)),
+            artworkLocator = normalizeArtworkLocator(candidate.imageUrl),
         )
     }
 

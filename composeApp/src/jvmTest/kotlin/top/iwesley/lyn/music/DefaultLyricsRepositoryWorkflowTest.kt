@@ -231,6 +231,80 @@ class DefaultLyricsRepositoryWorkflowTest {
     }
 
     @Test
+    fun `resolve workflow candidate returns lyrics without caching or updating artwork`() = runTest {
+        val database = createTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-oiapi",
+                name = "Workflow OIAPI",
+                priority = 80,
+                enabled = true,
+                rawJson = WORKFLOW_JSON,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = SEARCH_JSON),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = LYRICS_JSON),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-resolve",
+            sourceId = "local-1",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = "file:///music/rain.mp3",
+            relativePath = "rain.mp3",
+            artworkLocator = "/tmp/original-art.jpg",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = track.artworkLocator,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val candidate = repository.searchWorkflowSongCandidates(track).first()
+        val resolved = repository.resolveWorkflowSongCandidate(track, candidate)
+        val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
+        val storedTrack = database.trackDao().getByIds(listOf(track.id)).single()
+
+        assertEquals("workflow-oiapi", resolved.document.sourceId)
+        assertEquals("Hello workflow", resolved.document.lines.first().text)
+        assertEquals(1_000L, resolved.document.lines.first().timestampMs)
+        assertEquals("https://img.test/rain.jpg", resolved.artworkLocator)
+        assertTrue(cachedRows.isEmpty())
+        assertEquals("/tmp/original-art.jpg", storedTrack.artworkLocator)
+    }
+
+    @Test
     fun `musicmatch workflow sample search and subtitle payload can be applied`() = runTest {
         val database = createTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(

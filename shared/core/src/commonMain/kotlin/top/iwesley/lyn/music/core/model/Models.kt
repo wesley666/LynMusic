@@ -371,12 +371,15 @@ object UnsupportedAudioTagGateway : AudioTagGateway {
 
 interface AudioTagEditorPlatformService {
     suspend fun pickArtworkBytes(): Result<ByteArray?>
+    suspend fun loadArtworkBytes(locator: String): Result<ByteArray?>
 }
 
 object UnsupportedAudioTagEditorPlatformService : AudioTagEditorPlatformService {
     private val error = IllegalStateException("当前平台暂不支持选择封面。")
 
     override suspend fun pickArtworkBytes(): Result<ByteArray?> = Result.failure(error)
+
+    override suspend fun loadArtworkBytes(locator: String): Result<ByteArray?> = Result.failure(error)
 }
 
 interface NavidromeLocatorResolver {

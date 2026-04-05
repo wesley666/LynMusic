@@ -10,6 +10,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
 import java.io.File
 import java.net.URI
+import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ArrayDeque
@@ -47,6 +48,7 @@ import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
@@ -64,9 +66,11 @@ import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.joinSambaPath
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.warn
@@ -274,6 +278,31 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
                 null
             } else {
                 chooser.selectedFile?.toPath()?.let(Files::readAllBytes)
+            }
+        }
+    }
+
+    override suspend fun loadArtworkBytes(locator: String): Result<ByteArray?> {
+        return runCatching {
+            val rawTarget = normalizeArtworkLocator(locator)?.trim().orEmpty()
+            if (rawTarget.isBlank()) {
+                null
+            } else {
+                val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
+                    NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
+                } else {
+                    rawTarget
+                }
+                when {
+                    target.isBlank() -> null
+                    target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
+                        URL(target).openStream().use { it.readBytes() }
+
+                    target.startsWith("file://", ignoreCase = true) ->
+                        Files.readAllBytes(Path.of(URI(target)))
+
+                    else -> Files.readAllBytes(Path.of(target))
+                }
             }
         }
     }
