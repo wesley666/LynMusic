@@ -84,7 +84,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -668,7 +667,7 @@ private fun LibraryTab(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.query,
                     onValueChange = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
                     label = { Text("搜索歌曲 / 艺人 / 专辑") },
@@ -777,7 +776,7 @@ private fun FavoritesTab(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.query,
                     onValueChange = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
                     label = { Text("搜索喜欢的歌曲 / 艺人 / 专辑") },
@@ -1008,14 +1007,14 @@ private fun SourcesTab(
                 if (!state.capabilities.supportsNavidromeImport) {
                     Text("当前平台暂未开放应用内 Navidrome 导入。")
                 }
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.navidromeLabel,
                     onValueChange = { onImportIntent(ImportIntent.NavidromeLabelChanged(it)) },
                     label = { Text("名称") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                 )
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.navidromeBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
                     label = { Text("服务器地址") },
@@ -1023,14 +1022,14 @@ private fun SourcesTab(
                     shape = RoundedCornerShape(18.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.navidromeUsername,
                         onValueChange = { onImportIntent(ImportIntent.NavidromeUsernameChanged(it)) },
                         label = { Text("用户名") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                     )
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.navidromePassword,
                         onValueChange = { onImportIntent(ImportIntent.NavidromePasswordChanged(it)) },
                         label = { Text("密码") },
@@ -1057,10 +1056,10 @@ private fun SourcesTab(
                 if (!state.capabilities.supportsSambaImport) {
                     Text("当前平台建议通过系统 Files 挂载 SMB 后，再用本地文件夹方式接入。")
                 }
-                OutlinedTextField(value = state.sambaLabel, onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                ImeAwareOutlinedTextField(value = state.sambaLabel, onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) }, label = { Text("名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(value = state.sambaServer, onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) }, label = { Text("服务器地址") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(value = state.sambaServer, onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) }, label = { Text("服务器地址") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(
                         value = state.sambaPort,
                         onValueChange = { onImportIntent(ImportIntent.SambaPortChanged(it)) },
                         label = { Text("端口") },
@@ -1069,7 +1068,7 @@ private fun SourcesTab(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.sambaPath,
                     onValueChange = { onImportIntent(ImportIntent.SambaPathChanged(it)) },
                     label = { Text("路径（Share/子目录）") },
@@ -1077,8 +1076,8 @@ private fun SourcesTab(
                     shape = RoundedCornerShape(18.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(value = state.sambaUsername, onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) }, label = { Text("用户名") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(value = state.sambaPassword, onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) }, label = { Text("密码（选填）") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.sambaUsername, onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) }, label = { Text("用户名") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.sambaPassword, onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) }, label = { Text("密码（选填）") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp))
                 }
                 Button(
                     onClick = { onImportIntent(ImportIntent.AddSambaSource) },
@@ -1099,14 +1098,14 @@ private fun SourcesTab(
                 if (!state.capabilities.supportsWebDavImport) {
                     Text("当前平台暂未开放应用内 WebDAV 导入。")
                 }
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.webDavLabel,
                     onValueChange = { onImportIntent(ImportIntent.WebDavLabelChanged(it)) },
                     label = { Text("名称") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                 )
-                OutlinedTextField(
+                ImeAwareOutlinedTextField(
                     value = state.webDavRootUrl,
                     onValueChange = { onImportIntent(ImportIntent.WebDavRootUrlChanged(it)) },
                     label = { Text("根 URL") },
@@ -1114,14 +1113,14 @@ private fun SourcesTab(
                     shape = RoundedCornerShape(18.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.webDavUsername,
                         onValueChange = { onImportIntent(ImportIntent.WebDavUsernameChanged(it)) },
                         label = { Text("用户名（选填）") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                     )
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.webDavPassword,
                         onValueChange = { onImportIntent(ImportIntent.WebDavPasswordChanged(it)) },
                         label = { Text("密码（选填）") },
@@ -1235,7 +1234,7 @@ private fun SettingsTab(
                             )
                         }
                     }
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.lrcApiUrl,
                         onValueChange = { onSettingsIntent(SettingsIntent.LrcApiUrlChanged(it)) },
                         label = { Text("LrcAPI 请求地址") },
@@ -1284,7 +1283,7 @@ private fun SettingsTab(
                             )
                         }
                     }
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.musicmatchUserToken,
                         onValueChange = { onSettingsIntent(SettingsIntent.MusicmatchUserTokenChanged(it)) },
                         label = { Text("Musicmatch usertoken") },
@@ -1309,17 +1308,17 @@ private fun SettingsTab(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    OutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         EnumSelector(label = "Method", values = RequestMethod.entries, selected = state.method, onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) }, modifier = Modifier.weight(1f))
                         EnumSelector(label = "Format", values = LyricsResponseFormat.entries, selected = state.responseFormat, onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) }, modifier = Modifier.weight(1f))
                     }
-                    OutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(
                         value = state.priority,
                         onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
                         label = { Text("优先级") },
@@ -1354,7 +1353,7 @@ private fun SettingsTab(
                         "用于新建或编辑多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前仍直接编辑原始 JSON。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.workflowJsonInput,
                         onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
                         label = { Text("Workflow JSON") },
@@ -2120,7 +2119,7 @@ private fun ManualLyricsSearchFormPane(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = state.manualLyricsTitle,
                         onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
                         label = { Text("标题") },
@@ -2131,7 +2130,7 @@ private fun ManualLyricsSearchFormPane(
                     )
                     if (stackedFields) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = state.manualLyricsArtistName,
                                 onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
                                 label = { Text("歌手") },
@@ -2140,7 +2139,7 @@ private fun ManualLyricsSearchFormPane(
                                 singleLine = true,
                                 colors = textFieldColors,
                             )
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = state.manualLyricsAlbumTitle,
                                 onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
                                 label = { Text("专辑") },
@@ -2152,7 +2151,7 @@ private fun ManualLyricsSearchFormPane(
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = state.manualLyricsArtistName,
                                 onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
                                 label = { Text("歌手") },
@@ -2161,7 +2160,7 @@ private fun ManualLyricsSearchFormPane(
                                 singleLine = true,
                                 colors = textFieldColors,
                             )
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = state.manualLyricsAlbumTitle,
                                 onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
                                 label = { Text("专辑") },

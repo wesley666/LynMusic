@@ -32,7 +32,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -274,7 +273,7 @@ private fun LyricsSearchFormPane(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    OutlinedTextField(
+                    ImeAwareOutlinedTextField(
                         value = title,
                         onValueChange = onTitleChanged,
                         label = { Text("标题") },
@@ -285,7 +284,7 @@ private fun LyricsSearchFormPane(
                     )
                     if (stackedFields) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = artistName,
                                 onValueChange = onArtistChanged,
                                 label = { Text("歌手") },
@@ -294,7 +293,7 @@ private fun LyricsSearchFormPane(
                                 singleLine = true,
                                 colors = textFieldColors,
                             )
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = albumTitle,
                                 onValueChange = onAlbumChanged,
                                 label = { Text("专辑") },
@@ -306,7 +305,7 @@ private fun LyricsSearchFormPane(
                         }
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = artistName,
                                 onValueChange = onArtistChanged,
                                 label = { Text("歌手") },
@@ -315,7 +314,7 @@ private fun LyricsSearchFormPane(
                                 singleLine = true,
                                 colors = textFieldColors,
                             )
-                            OutlinedTextField(
+                            ImeAwareOutlinedTextField(
                                 value = albumTitle,
                                 onValueChange = onAlbumChanged,
                                 label = { Text("专辑") },

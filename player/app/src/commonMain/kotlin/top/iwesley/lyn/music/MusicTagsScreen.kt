@@ -43,7 +43,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -398,6 +397,7 @@ private fun MusicTagsEditorPane(
             )
         } else {
             val scrollState = rememberScrollState()
+            val fieldResetKey = selectedTrack.id
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -476,18 +476,21 @@ private fun MusicTagsEditorPane(
                         value = state.draft.title,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.TitleChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "艺术家",
                         value = state.draft.artistName,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ArtistChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "专辑",
                         value = state.draft.albumTitle,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.AlbumChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         MusicTagsField(
@@ -496,6 +499,7 @@ private fun MusicTagsEditorPane(
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.YearChanged(it)) },
                             modifier = Modifier.weight(1f),
+                            resetKey = fieldResetKey,
                         )
                         MusicTagsField(
                             label = "音轨",
@@ -503,6 +507,7 @@ private fun MusicTagsEditorPane(
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.TrackNumberChanged(it)) },
                             modifier = Modifier.weight(1f),
+                            resetKey = fieldResetKey,
                         )
                         MusicTagsField(
                             label = "光盘编号",
@@ -510,6 +515,7 @@ private fun MusicTagsEditorPane(
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.DiscNumberChanged(it)) },
                             modifier = Modifier.weight(1f),
+                            resetKey = fieldResetKey,
                         )
                     }
                     MusicTagsField(
@@ -517,6 +523,7 @@ private fun MusicTagsEditorPane(
                         value = state.draft.genre,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.GenreChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "注释",
@@ -524,18 +531,21 @@ private fun MusicTagsEditorPane(
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.CommentChanged(it)) },
                         minLines = 3,
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "专辑艺术家",
                         value = state.draft.albumArtist,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.AlbumArtistChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "作曲家",
                         value = state.draft.composer,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ComposerChanged(it)) },
+                        resetKey = fieldResetKey,
                     )
                     MusicTagsField(
                         label = "嵌入歌词",
@@ -543,6 +553,7 @@ private fun MusicTagsEditorPane(
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.EmbeddedLyricsChanged(it)) },
                         minLines = 8,
+                        resetKey = fieldResetKey,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -829,8 +840,9 @@ private fun MusicTagsField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier.fillMaxWidth(),
     minLines: Int = 1,
+    resetKey: Any? = null,
 ) {
-    OutlinedTextField(
+    ImeAwareOutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         readOnly = readOnly,
@@ -838,6 +850,7 @@ private fun MusicTagsField(
         modifier = modifier,
         minLines = minLines,
         shape = RoundedCornerShape(18.dp),
+        resetKey = resetKey,
     )
 }
 
