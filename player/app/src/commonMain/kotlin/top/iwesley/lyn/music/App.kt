@@ -94,6 +94,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -1493,6 +1494,10 @@ private fun SourcesTab(
                     Switch(
                         checked = state.webDavAllowInsecureTls,
                         onCheckedChange = { onImportIntent(ImportIntent.WebDavAllowInsecureTlsChanged(it)) },
+                        colors = SwitchDefaults.colors(
+                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                            uncheckedBorderColor = shellColors.cardBorder,
+                        ),
                     )
                 }
                 Button(
@@ -1671,6 +1676,10 @@ private fun SettingsTab(
                         Switch(
                             checked = state.useSambaCache,
                             onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
+                            colors = SwitchDefaults.colors(
+                                uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                                uncheckedBorderColor = shellColors.cardBorder,
+                            ),
                         )
                     }
                 }
@@ -1800,7 +1809,14 @@ private fun SettingsTab(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("启用歌词源", fontWeight = FontWeight.Medium)
-                        Switch(checked = state.enabled, onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) })
+                        Switch(
+                            checked = state.enabled,
+                            onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) },
+                            colors = SwitchDefaults.colors(
+                                uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                                uncheckedBorderColor = shellColors.cardBorder,
+                            ),
+                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.Save else SettingsIntent.CreateNew) }) {
