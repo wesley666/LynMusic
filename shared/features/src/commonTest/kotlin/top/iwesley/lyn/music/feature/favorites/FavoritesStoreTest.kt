@@ -33,8 +33,9 @@ class FavoritesStoreTest {
             favoriteTrackIds = setOf("track-local-1", "track-nav-1"),
         )
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = FavoritesStore(favoritesRepository, importSourceRepository, scope)
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
 
@@ -55,8 +56,9 @@ class FavoritesStoreTest {
             favoriteTrackIds = setOf("track-local-1", "track-nav-1"),
         )
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = FavoritesStore(favoritesRepository, importSourceRepository, scope)
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
@@ -80,8 +82,9 @@ class FavoritesStoreTest {
             favoriteTrackIds = tracks.mapTo(linkedSetOf()) { it.id },
         )
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = FavoritesStore(favoritesRepository, importSourceRepository, scope)
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(FavoritesIntent.ToggleFavorite(tracks.first()))
@@ -101,8 +104,9 @@ class FavoritesStoreTest {
             favoriteTrackIds = setOf("track-local-1", "track-nav-1"),
         )
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = FavoritesStore(favoritesRepository, importSourceRepository, scope)
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
@@ -133,8 +137,9 @@ class FavoritesStoreTest {
         val importSourceRepository = FakeImportSourceRepository(
             listOf(sampleSource("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录")),
         )
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        FavoritesStore(favoritesRepository, importSourceRepository, scope)
+        FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         assertEquals(0, favoritesRepository.refreshCalls)
@@ -152,6 +157,31 @@ class FavoritesStoreTest {
         )
         advanceUntilIdle()
         assertEquals(2, favoritesRepository.refreshCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `favorites source filter loads from persisted preferences and updates them on change`() = runTest {
+        val favoritesRepository = FakeFavoritesRepository(
+            tracks = sampleFavoriteTracks(),
+            favoriteTrackIds = setOf("track-local-1", "track-nav-1"),
+        )
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore(
+            favoritesSourceFilter = LibrarySourceFilter.NAVIDROME,
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
+
+        advanceUntilIdle()
+        assertEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
+        assertEquals(listOf("track-nav-1"), store.state.value.filteredTracks.map { it.id })
+
+        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.ALL))
+        advanceUntilIdle()
+
+        assertEquals(LibrarySourceFilter.ALL, preferencesStore.favoritesSourceFilter.value)
+        assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
         scope.cancel()
     }
 }
@@ -223,6 +253,22 @@ private class FakeImportSourceRepository(
     override suspend fun rescanSource(sourceId: String): Result<Unit> = Result.success(Unit)
 
     override suspend fun deleteSource(sourceId: String): Result<Unit> = Result.success(Unit)
+}
+
+private class FakeLibrarySourceFilterPreferencesStore(
+    librarySourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    favoritesSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+) : top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore {
+    override val librarySourceFilter = MutableStateFlow(librarySourceFilter)
+    override val favoritesSourceFilter = MutableStateFlow(favoritesSourceFilter)
+
+    override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        librarySourceFilter.value = filter
+    }
+
+    override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
+        favoritesSourceFilter.value = filter
+    }
 }
 
 private fun sampleFavoriteTracks(): List<Track> {

@@ -79,6 +79,8 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
@@ -132,6 +134,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             importSourceGateway = JvmImportSourceGateway(logger, navidromeHttpClient),
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
+            librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
             audioTagGateway = JvmAudioTagGateway(
@@ -175,25 +178,46 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
     }
 }
 
-private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore {
+private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, LibrarySourceFilterPreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
     private val mutableUseSambaCache = MutableStateFlow(readUseSambaCache())
+    private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
+    private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
+    override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         val properties = loadProperties()
         properties.setProperty(KEY_USE_SAMBA_CACHE, enabled.toString())
-        settingsFile.outputStream().use { output ->
-            properties.store(output, "LynMusic settings")
-        }
+        persistProperties(properties)
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        val properties = loadProperties()
+        properties.setProperty(KEY_LIBRARY_SOURCE_FILTER, filter.name)
+        persistProperties(properties)
+        mutableLibrarySourceFilter.value = filter
+    }
+
+    override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
+        val properties = loadProperties()
+        properties.setProperty(KEY_FAVORITES_SOURCE_FILTER, filter.name)
+        persistProperties(properties)
+        mutableFavoritesSourceFilter.value = filter
     }
 
     private fun readUseSambaCache(): Boolean {
         return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: true
+    }
+
+    private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
+        val name = loadProperties().getProperty(key)
+        return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
     }
 
     private fun loadProperties(): Properties {
@@ -202,6 +226,12 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             settingsFile.inputStream().use { input -> properties.load(input) }
         }
         return properties
+    }
+
+    private fun persistProperties(properties: Properties) {
+        settingsFile.outputStream().use { output ->
+            properties.store(output, "LynMusic settings")
+        }
     }
 }
 
@@ -1163,6 +1193,8 @@ private fun joinSegments(left: String, right: String): String {
 }
 
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
+private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val MAX_RECENT_VLC_LOGS = 8
 
 private fun buildSambaCacheFileName(sourceId: String, remotePath: String): String {

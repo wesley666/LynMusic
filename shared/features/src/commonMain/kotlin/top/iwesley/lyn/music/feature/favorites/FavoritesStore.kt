@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 
 data class FavoritesState(
     val query: String = "",
@@ -42,6 +43,7 @@ sealed interface FavoritesEffect
 class FavoritesStore(
     private val favoritesRepository: FavoritesRepository,
     private val importSourceRepository: ImportSourceRepository,
+    private val preferencesStore: LibrarySourceFilterPreferencesStore,
     private val storeScope: CoroutineScope,
 ) : BaseStore<FavoritesState, FavoritesIntent, FavoritesEffect>(
     initialState = FavoritesState(),
@@ -55,10 +57,12 @@ class FavoritesStore(
                 favoritesRepository.favoriteTracks,
                 favoritesRepository.favoriteTrackIds,
                 importSourceRepository.observeSources(),
-            ) { tracks, favoriteTrackIds, sources ->
+                preferencesStore.favoritesSourceFilter,
+            ) { tracks, favoriteTrackIds, sources, selectedSourceFilter ->
                 FavoritesSnapshot(
                     tracks = tracks,
                     favoriteTrackIds = favoriteTrackIds,
+                    selectedSourceFilter = selectedSourceFilter,
                     sourceTypesById = sources.associate { it.source.id to it.source.type },
                     availableSourceFilters = buildAvailableSourceFilters(sources),
                     navidromeSourceIds = sources
@@ -73,6 +77,7 @@ class FavoritesStore(
                         state.copy(
                             tracks = snapshot.tracks,
                             favoriteTrackIds = snapshot.favoriteTrackIds,
+                            selectedSourceFilter = snapshot.selectedSourceFilter,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
                         ),
@@ -90,9 +95,7 @@ class FavoritesStore(
                 deriveState(state.copy(query = intent.query))
             }
 
-            is FavoritesIntent.SourceFilterChanged -> updateState { state ->
-                deriveState(state.copy(selectedSourceFilter = intent.filter))
-            }
+            is FavoritesIntent.SourceFilterChanged -> preferencesStore.setFavoritesSourceFilter(intent.filter)
 
             is FavoritesIntent.ToggleFavorite -> {
                 favoritesRepository.toggleFavorite(intent.track)
@@ -192,6 +195,7 @@ class FavoritesStore(
     private data class FavoritesSnapshot(
         val tracks: List<Track>,
         val favoriteTrackIds: Set<String>,
+        val selectedSourceFilter: LibrarySourceFilter,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,
         val navidromeSourceIds: Set<String>,

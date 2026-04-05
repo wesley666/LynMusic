@@ -32,8 +32,9 @@ class LibraryStoreTest {
         val tracks = sampleTracks()
         val libraryRepository = FakeLibraryRepository(tracks)
         val importSourceRepository = FakeImportSourceRepository()
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
 
@@ -59,8 +60,9 @@ class LibraryStoreTest {
                 sampleSource("dav-1", ImportSourceType.WEBDAV, "WebDAV 曲库"),
             ),
         )
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
 
@@ -79,8 +81,9 @@ class LibraryStoreTest {
     fun `source type filter only keeps matching tracks`() = runTest {
         val libraryRepository = FakeLibraryRepository(sampleTracks())
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.LOCAL_FOLDER))
@@ -98,8 +101,9 @@ class LibraryStoreTest {
     fun `search query intersects with selected source filter`() = runTest {
         val libraryRepository = FakeLibraryRepository(sampleTracks())
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.WEBDAV))
@@ -119,8 +123,9 @@ class LibraryStoreTest {
     fun `visible counts follow current filtered tracks`() = runTest {
         val libraryRepository = FakeLibraryRepository(sampleTracks())
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.LOCAL_FOLDER))
@@ -137,8 +142,9 @@ class LibraryStoreTest {
     fun `selected filter falls back to all when source type disappears`() = runTest {
         val libraryRepository = FakeLibraryRepository(sampleTracks())
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val store = LibraryStore(libraryRepository, importSourceRepository, scope)
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
         store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.LOCAL_FOLDER))
@@ -170,6 +176,28 @@ class LibraryStoreTest {
             state.availableSourceFilters,
         )
         assertEquals(listOf("track-webdav-1"), state.filteredTracks.map { it.id })
+        scope.cancel()
+    }
+
+    @Test
+    fun `selected source filter loads from persisted preferences and updates them on change`() = runTest {
+        val libraryRepository = FakeLibraryRepository(sampleTracks())
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore(
+            librarySourceFilter = LibrarySourceFilter.WEBDAV,
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = LibraryStore(libraryRepository, importSourceRepository, preferencesStore, scope)
+
+        advanceUntilIdle()
+        assertEquals(LibrarySourceFilter.WEBDAV, store.state.value.selectedSourceFilter)
+        assertEquals(listOf("track-webdav-1"), store.state.value.filteredTracks.map { it.id })
+
+        store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.LOCAL_FOLDER))
+        advanceUntilIdle()
+
+        assertEquals(LibrarySourceFilter.LOCAL_FOLDER, preferencesStore.librarySourceFilter.value)
+        assertEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
         scope.cancel()
     }
 }
@@ -219,6 +247,22 @@ private class FakeImportSourceRepository(
     override suspend fun rescanSource(sourceId: String): Result<Unit> = Result.success(Unit)
 
     override suspend fun deleteSource(sourceId: String): Result<Unit> = Result.success(Unit)
+}
+
+private class FakeLibrarySourceFilterPreferencesStore(
+    librarySourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    favoritesSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+) : LibrarySourceFilterPreferencesStore {
+    override val librarySourceFilter = MutableStateFlow(librarySourceFilter)
+    override val favoritesSourceFilter = MutableStateFlow(favoritesSourceFilter)
+
+    override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        librarySourceFilter.value = filter
+    }
+
+    override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
+        favoritesSourceFilter.value = filter
+    }
 }
 
 private fun sampleTracks(): List<Track> {

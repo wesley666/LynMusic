@@ -44,6 +44,8 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
@@ -103,6 +105,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             importSourceGateway = IosImportSourceGateway(navidromeHttpClient),
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
+            librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
             audioTagGateway = UnsupportedAudioTagGateway,
@@ -213,17 +216,36 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
     }
 }
 
-private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore {
+private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, LibrarySourceFilterPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) true else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
     )
+    private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
+    private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
+    override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         defaults.setBool(enabled, KEY_USE_SAMBA_CACHE)
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        defaults.setObject(filter.name, KEY_LIBRARY_SOURCE_FILTER)
+        mutableLibrarySourceFilter.value = filter
+    }
+
+    override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
+        defaults.setObject(filter.name, KEY_FAVORITES_SOURCE_FILTER)
+        mutableFavoritesSourceFilter.value = filter
+    }
+
+    private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
+        val name = defaults.stringForKey(key)
+        return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
     }
 }
 
@@ -294,3 +316,5 @@ private fun NSData.toUtf8String(): String {
 
 private const val IOS_KEYCHAIN_SERVICE = "top.iwesley.lyn.music.credentials"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
+private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"

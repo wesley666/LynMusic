@@ -72,6 +72,8 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
@@ -117,6 +119,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             importSourceGateway = AndroidImportSourceGateway(activity, logger, navidromeHttpClient),
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
+            librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
             audioTagGateway = AndroidAudioTagGateway(
@@ -234,18 +237,41 @@ private class AndroidCredentialStore(
 
 private class AndroidAppPreferencesStore(
     context: Context,
-) : PlaybackPreferencesStore, SambaCachePreferencesStore {
+) : PlaybackPreferencesStore, SambaCachePreferencesStore, LibrarySourceFilterPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
         preferences.getBoolean(KEY_USE_SAMBA_CACHE, true),
     )
+    private val mutableLibrarySourceFilter = MutableStateFlow(
+        readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER),
+    )
+    private val mutableFavoritesSourceFilter = MutableStateFlow(
+        readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER),
+    )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
+    override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_USE_SAMBA_CACHE, enabled).apply()
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
+        preferences.edit().putString(KEY_LIBRARY_SOURCE_FILTER, filter.name).apply()
+        mutableLibrarySourceFilter.value = filter
+    }
+
+    override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
+        preferences.edit().putString(KEY_FAVORITES_SOURCE_FILTER, filter.name).apply()
+        mutableFavoritesSourceFilter.value = filter
+    }
+
+    private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
+        val name = preferences.getString(key, null)
+        return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
     }
 }
 
@@ -1039,6 +1065,8 @@ private fun storeAndroidRemoteArtwork(
 private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
+private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val CREDENTIAL_KEY_ALIAS = "lynmusic.credentials.master"
 private const val AES_TRANSFORMATION = "AES/GCM/NoPadding"

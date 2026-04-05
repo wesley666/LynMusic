@@ -44,6 +44,7 @@ sealed interface LibraryEffect
 class LibraryStore(
     private val repository: LibraryRepository,
     private val importSourceRepository: ImportSourceRepository,
+    private val preferencesStore: LibrarySourceFilterPreferencesStore,
     scope: CoroutineScope,
 ) : BaseStore<LibraryState, LibraryIntent, LibraryEffect>(
     initialState = LibraryState(),
@@ -56,11 +57,13 @@ class LibraryStore(
                 repository.albums,
                 repository.artists,
                 importSourceRepository.observeSources(),
-            ) { tracks, albums, artists, sources ->
+                preferencesStore.librarySourceFilter,
+            ) { tracks, albums, artists, sources, selectedSourceFilter ->
                 LibrarySnapshot(
                     tracks = tracks,
                     albums = albums,
                     artists = artists,
+                    selectedSourceFilter = selectedSourceFilter,
                     sourceTypesById = sources.associate { it.source.id to it.source.type },
                     availableSourceFilters = buildAvailableSourceFilters(sources.map { it.source.type }),
                 )
@@ -71,6 +74,7 @@ class LibraryStore(
                             tracks = snapshot.tracks,
                             albums = snapshot.albums,
                             artists = snapshot.artists,
+                            selectedSourceFilter = snapshot.selectedSourceFilter,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
                         ),
@@ -86,9 +90,7 @@ class LibraryStore(
                 deriveState(state.copy(query = intent.query))
             }
 
-            is LibraryIntent.SourceFilterChanged -> updateState { state ->
-                deriveState(state.copy(selectedSourceFilter = intent.filter))
-            }
+            is LibraryIntent.SourceFilterChanged -> preferencesStore.setLibrarySourceFilter(intent.filter)
         }
     }
 
@@ -162,6 +164,7 @@ class LibraryStore(
         val tracks: List<Track>,
         val albums: List<Album>,
         val artists: List<Artist>,
+        val selectedSourceFilter: LibrarySourceFilter,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,
     )

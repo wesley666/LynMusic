@@ -28,6 +28,7 @@ import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
@@ -37,6 +38,7 @@ data class SharedRuntimeServices(
     val importSourceGateway: ImportSourceGateway,
     val secureCredentialStore: SecureCredentialStore,
     val sambaCachePreferencesStore: SambaCachePreferencesStore,
+    val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
@@ -118,8 +120,18 @@ fun buildSharedGraph(
     return SharedGraph(
         platform = platform,
         database = database,
-        libraryStore = LibraryStore(libraryRepository, importSourceRepository, scope),
-        favoritesStore = FavoritesStore(favoritesRepository, importSourceRepository, scope),
+        libraryStore = LibraryStore(
+            repository = libraryRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
+            scope = scope,
+        ),
+        favoritesStore = FavoritesStore(
+            favoritesRepository = favoritesRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
+            storeScope = scope,
+        ),
         musicTagsStore = MusicTagsStore(
             repository = musicTagsRepository,
             lyricsRepository = lyricsRepository,
