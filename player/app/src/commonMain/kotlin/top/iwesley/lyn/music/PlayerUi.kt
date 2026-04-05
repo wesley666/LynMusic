@@ -1,0 +1,1173 @@
+package top.iwesley.lyn.music
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.absoluteValue
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.feature.player.PlayerState
+import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
+import top.iwesley.lyn.music.ui.heroGlow
+
+@Composable
+internal fun PlayerDrawerHost(
+    visible: Boolean,
+    platform: PlatformDescriptor,
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.fillMaxSize(),
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(
+                    durationMillis = 320,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) + fadeIn(
+                animationSpec = tween(
+                    durationMillis = 320,
+                    easing = FastOutSlowInEasing,
+                ),
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(
+                    durationMillis = 260,
+                    easing = FastOutLinearInEasing,
+                ),
+            ) + fadeOut(
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = FastOutLinearInEasing,
+                ),
+            ),
+        ) {
+            PlayerOverlay(
+                platform = platform,
+                state = state,
+                onPlayerIntent = onPlayerIntent,
+                isFavorite = isFavorite,
+                onToggleFavorite = onToggleFavorite,
+                onOpenQueue = onOpenQueue,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun MiniPlayerBarVisibility(
+    visible: Boolean,
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    compact: Boolean = false,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(
+            initialOffsetY = { fullHeight -> fullHeight },
+            animationSpec = tween(
+                durationMillis = 220,
+                delayMillis = 110,
+                easing = FastOutSlowInEasing,
+            ),
+        ) + fadeIn(
+            animationSpec = tween(
+                durationMillis = 160,
+                delayMillis = 110,
+                easing = FastOutSlowInEasing,
+            ),
+        ),
+        exit = slideOutVertically(
+            targetOffsetY = { fullHeight -> fullHeight },
+            animationSpec = tween(
+                durationMillis = 150,
+                easing = FastOutLinearInEasing,
+            ),
+        ) + fadeOut(
+            animationSpec = tween(
+                durationMillis = 110,
+                easing = FastOutLinearInEasing,
+            ),
+        ),
+    ) {
+        MiniPlayerBar(
+            state = state,
+            onPlayerIntent = onPlayerIntent,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
+            onOpenQueue = onOpenQueue,
+            compact = compact,
+        )
+    }
+}
+
+@Composable
+internal fun QueueDrawer(
+    state: PlayerState,
+    compact: Boolean,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (state.snapshot.currentTrack == null) return
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
+        if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
+            listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
+        }
+    }
+    AnimatedVisibility(
+        visible = state.isQueueVisible,
+        modifier = modifier,
+        enter = fadeIn(animationSpec = tween(durationMillis = 220)),
+        exit = fadeOut(animationSpec = tween(durationMillis = 180)),
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.42f))
+                    .clickable { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+            )
+            Card(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(if (compact) 340.dp else 420.dp),
+                shape = RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp, vertical = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("播放队列", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                "${state.snapshot.queue.size} 首 · ${modeLabel(state.snapshot.mode)}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) }) {
+                            Text("关闭")
+                        }
+                    }
+                    if (state.snapshot.queue.isEmpty()) {
+                        EmptyStateCard(
+                            title = "当前没有播放队列",
+                            body = "从曲库或喜欢页播放歌曲后，这里会显示当前队列。",
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            itemsIndexed(state.snapshot.queue, key = { _, item -> item.id }) { index, track ->
+                                QueueTrackRow(
+                                    track = track,
+                                    index = index,
+                                    isCurrent = index == state.snapshot.currentIndex,
+                                    isPlaying = index == state.snapshot.currentIndex && state.snapshot.isPlaying,
+                                    onClick = { onPlayerIntent(PlayerIntent.PlayQueueIndex(index)) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerBar(
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    compact: Boolean = false,
+) {
+    if (state.snapshot.currentTrack == null) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = if (compact) 0.dp else 18.dp, vertical = 12.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(28.dp),
+            )
+            .clickable { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        VinylPlaceholder(
+            vinylSize = 50.dp,
+            artworkLocator = state.snapshot.currentDisplayArtworkLocator,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = state.snapshot.currentDisplayTitle,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = state.snapshot.currentDisplayArtistName ?: "未知艺人",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        FavoriteToggleButton(
+            isFavorite = isFavorite,
+            onClick = onToggleFavorite,
+        )
+        QueueToggleButton(onClick = onOpenQueue)
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
+            Icon(Icons.Rounded.SkipPrevious, contentDescription = null)
+        }
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
+            Icon(
+                imageVector = if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                contentDescription = null,
+                modifier = Modifier.size(34.dp),
+            )
+        }
+        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
+            Icon(Icons.Rounded.SkipNext, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun PlayerOverlay(
+    platform: PlatformDescriptor,
+    state: PlayerState,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+) {
+    val track = state.snapshot.currentTrack ?: return
+    val defaultBackgroundColor = Color(0xFF232325)
+    val playbackStatusColor = Color.White.copy(alpha = 0.6f)
+    val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
+    val artworkPalette = rememberVinylArtworkPalette(
+        artworkBitmap = artworkBitmap,
+        enabled = true,
+    )
+    val backgroundTopTint by animateColorAsState(
+        targetValue = artworkPalette?.innerGlowColor?.copy(alpha = 0.22f) ?: Color.Transparent,
+        label = "player-background-top-tint",
+    )
+    val backgroundMidTint by animateColorAsState(
+        targetValue = artworkPalette?.glowColor?.copy(alpha = 0.18f) ?: Color.Transparent,
+        label = "player-background-mid-tint",
+    )
+    val backgroundAccentTint by animateColorAsState(
+        targetValue = artworkPalette?.rimColor?.copy(alpha = 0.12f) ?: Color.Transparent,
+        label = "player-background-accent-tint",
+    )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = defaultBackgroundColor,
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                backgroundTopTint,
+                                backgroundMidTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                backgroundAccentTint,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+            val wide = maxWidth >= 980.dp
+            val useTapToRevealLyrics =
+                isMobilePlaybackPlatform(platform) &&
+                    (maxWidth < 820.dp || maxHeight < 860.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 26.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    IconButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "收起播放页",
+                            tint = Color.White.copy(alpha = 0.92f),
+                            modifier = Modifier.size(34.dp),
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = playbackModeIcon(state.snapshot.mode),
+                            contentDescription = null,
+                            tint = playbackStatusColor,
+                        )
+                        Text(
+                            text = modeLabel(state.snapshot.mode),
+                            color = playbackStatusColor,
+                        )
+                    }
+                }
+                if (useTapToRevealLyrics) {
+                    MobilePlayerPrimaryPane(
+                        state = state,
+                        track = track,
+                        onPlayerIntent = onPlayerIntent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                } else if (wide) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(34.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PlayerInfoPane(
+                            snapshot = state.snapshot,
+                            track = track,
+                            modifier = Modifier
+                                .weight(0.46f)
+                                .fillMaxHeight(),
+                        )
+                        PlayerLyricsPane(
+                            state = state,
+                            track = track,
+                            onPlayerIntent = onPlayerIntent,
+                            modifier = Modifier
+                                .weight(0.54f)
+                                .fillMaxHeight(),
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(24.dp),
+                    ) {
+                        PlayerInfoPane(
+                            snapshot = state.snapshot,
+                            track = track,
+                            modifier = Modifier.fillMaxWidth(),
+                            compact = true,
+                        )
+                        PlayerLyricsPane(
+                            state = state,
+                            track = track,
+                            onPlayerIntent = onPlayerIntent,
+                            modifier = Modifier.weight(1f),
+                            compact = true,
+                        )
+                    }
+                }
+                PlayerBottomControls(
+                    snapshot = state.snapshot,
+                    track = track,
+                    wide = wide,
+                    isFavorite = isFavorite,
+                    onToggleFavorite = onToggleFavorite,
+                    onOpenQueue = onOpenQueue,
+                    onPlayerIntent = onPlayerIntent,
+                )
+            }
+            if (state.isLyricsShareVisible) {
+                LyricsShareOverlay(
+                    platform = platform,
+                    state = state,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (state.isManualLyricsSearchVisible) {
+                ManualLyricsSearchOverlay(
+                    state = state,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobilePlayerPrimaryPane(
+    state: PlayerState,
+    track: Track,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
+
+    if (lyricsVisible) {
+        Column(
+            modifier = modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = { lyricsVisible = false }) {
+                    Text("回到唱片")
+                }
+            }
+            PlayerLyricsPane(
+                state = state,
+                track = track,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier.weight(1f),
+                compact = true,
+            )
+        }
+        return
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(30.dp))
+            .clickable { lyricsVisible = true },
+    ) {
+        PlayerInfoPane(
+            snapshot = state.snapshot,
+            track = track,
+            modifier = Modifier.fillMaxSize(),
+            compact = true,
+        )
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.34f)),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = state.snapshot.currentDisplayTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White.copy(alpha = 0.96f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = state.snapshot.currentDisplayArtistName ?: "未知艺人",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                AssistChip(
+                    onClick = { lyricsVisible = true },
+                    label = { Text(if (state.isLyricsLoading) "正在准备歌词" else "点按唱片区查看歌词") },
+                    leadingIcon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
+                )
+            }
+        }
+    }
+}
+
+internal fun isMobilePlaybackPlatform(platform: PlatformDescriptor): Boolean {
+    return platform.name == "Android" || platform.name == "iPhone / iPad"
+}
+
+@Composable
+private fun PlayerInfoPane(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(),
+        )
+        VinylPlaceholder(
+            vinylSize = if (compact) 250.dp else 420.dp,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
+            spinning = snapshot.isPlaying,
+            enableArtworkTint = true,
+            modifier = Modifier.align(Alignment.Center),
+        )
+    }
+}
+
+@Composable
+private fun PlayerBottomControls(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+    wide: Boolean,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val favoriteTint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.96f)
+    val modeButtonSize = 42.dp
+    val modeIconSize = 22.dp
+    val skipButtonSize = 45.dp
+    val skipIconSize = 27.dp
+    val playButtonSize = 60.dp
+    val playIconSize = 42.dp
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.16f),
+                                colors.heroGlow.copy(alpha = 0.12f),
+                                colors.surface.copy(alpha = 0.08f),
+                            ),
+                        ),
+                    ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 5.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = formatDuration(snapshot.positionMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = formatDuration(snapshot.durationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                    if (wide) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = buildString {
+                                    append(snapshot.currentDisplayTitle)
+                                    append("  ")
+                                    append(snapshot.currentDisplayArtistName ?: "未知艺人")
+                                    append("  ")
+                                    append(track.sourceId.substringBefore('-').uppercase())
+                                },
+                                modifier = Modifier.weight(0.30f),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row(
+                                modifier = Modifier.weight(0.40f),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
+                                    Icon(
+                                        imageVector = playbackModeIcon(snapshot.mode),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(modeIconSize),
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                    )
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.SkipPrevious,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(skipIconSize),
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                    )
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
+                                    Icon(
+                                        imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(playIconSize),
+                                        tint = Color.White.copy(alpha = 0.96f),
+                                    )
+                                }
+                                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.SkipNext,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(skipIconSize),
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.weight(0.30f),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                QueueToggleButton(
+                                    onClick = onOpenQueue,
+                                    tint = Color.White.copy(alpha = 0.96f),
+                                )
+                                FavoriteToggleButton(
+                                    isFavorite = isFavorite,
+                                    onClick = onToggleFavorite,
+                                    tint = favoriteTint,
+                                )
+                                Box(modifier = Modifier.weight(1f)) {
+                                    PlaybackVolume(snapshot, onPlayerIntent, sliderWidthFraction = 0.5f)
+                                }
+                            }
+                        }
+                    } else {
+                        PlaybackVolume(snapshot, onPlayerIntent)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.CycleMode) }, modifier = Modifier.size(modeButtonSize)) {
+                                Icon(
+                                    imageVector = playbackModeIcon(snapshot.mode),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(modeIconSize),
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                )
+                            }
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(skipButtonSize)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SkipPrevious,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(skipIconSize),
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                )
+                            }
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(playButtonSize)) {
+                                Icon(
+                                    imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(playIconSize),
+                                    tint = Color.White.copy(alpha = 0.96f),
+                                )
+                            }
+                            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(skipButtonSize)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SkipNext,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(skipIconSize),
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                )
+                            }
+                            QueueToggleButton(
+                                onClick = onOpenQueue,
+                                tint = Color.White.copy(alpha = 0.96f),
+                            )
+                            FavoriteToggleButton(
+                                isFavorite = isFavorite,
+                                onClick = onToggleFavorite,
+                                tint = favoriteTint,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        PlaybackProgress(
+            snapshot = snapshot,
+            onPlayerIntent = onPlayerIntent,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = 5.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            showTimeLabels = false,
+            floating = true,
+        )
+    }
+}
+
+@Composable
+private fun QueueToggleButton(
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+            contentDescription = "播放队列",
+            tint = tint,
+        )
+    }
+}
+
+@Composable
+private fun PlaybackProgress(
+    snapshot: PlaybackSnapshot,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+    showTimeLabels: Boolean = true,
+    floating: Boolean = false,
+) {
+    val duration = snapshot.durationMs.coerceAtLeast(1L)
+    val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val particles = remember { mutableStateListOf<ProgressFlowerParticle>() }
+    var lastEmissionFraction by remember { mutableStateOf(progressFraction) }
+    var lastEmissionNanos by remember { mutableStateOf(0L) }
+    var animationFrameNanos by remember { mutableStateOf(0L) }
+    LaunchedEffect(snapshot.positionMs, snapshot.isPlaying, duration) {
+        val currentFraction = progressFraction
+        if (currentFraction < lastEmissionFraction) {
+            lastEmissionFraction = currentFraction
+            lastEmissionNanos = 0L
+            return@LaunchedEffect
+        }
+        if (!snapshot.isPlaying || duration <= 1L || currentFraction <= 0f) {
+            lastEmissionFraction = currentFraction
+            return@LaunchedEffect
+        }
+        val now = withFrameNanos { it }
+        val movedEnough = currentFraction - lastEmissionFraction >= 0.018f
+        val throttled = lastEmissionNanos == 0L || now - lastEmissionNanos >= 240_000_000L
+        if (movedEnough && throttled) {
+            val seed = (now % Int.MAX_VALUE.toLong()).toInt().absoluteValue
+            repeat(3) { index ->
+                particles += buildProgressFlowerParticle(
+                    progressFraction = currentFraction,
+                    seed = seed + index * 97,
+                    bornAtNanos = now,
+                )
+            }
+            lastEmissionFraction = currentFraction
+            lastEmissionNanos = now
+        }
+    }
+    LaunchedEffect(particles.size) {
+        if (particles.isEmpty()) return@LaunchedEffect
+        while (particles.isNotEmpty()) {
+            withFrameNanos { now ->
+                animationFrameNanos = now
+                particles.removeAll { particle -> now - particle.bornAtNanos >= FLOWER_PARTICLE_LIFETIME_NANOS }
+            }
+        }
+    }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (floating) 12.dp else 22.dp),
+        ) {
+            val thumbInsetPx = with(LocalDensity.current) { if (floating) 6.dp.toPx() else 8.dp.toPx() }
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (floating) 0.dp else 4.dp),
+            ) {
+                particles.forEach { particle ->
+                    drawProgressFlowerParticle(
+                        particle = particle,
+                        nowNanos = animationFrameNanos,
+                        thumbInsetPx = thumbInsetPx,
+                    )
+                }
+            }
+            Slider(
+                modifier = Modifier
+                    .align(if (floating) Alignment.Center else Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .graphicsLayer(scaleY = if (floating) 0.36f else 0.44f),
+                colors = playerSliderColors(),
+                value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
+                onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
+                valueRange = 0f..duration.toFloat(),
+            )
+        }
+        if (showTimeLabels) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = formatDuration(snapshot.positionMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+                Text(
+                    text = formatDuration(snapshot.durationMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaybackVolume(
+    snapshot: PlaybackSnapshot,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    sliderWidthFraction: Float = 1f,
+) {
+    val volume = snapshot.volume.coerceIn(0f, 1f)
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.GraphicEq,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    text = "音量",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                )
+            }
+            Text(
+                text = "${(volume * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+            )
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Slider(
+                modifier = Modifier
+                    .fillMaxWidth(sliderWidthFraction.coerceIn(0.2f, 1f))
+                    .height(8.dp)
+                    .graphicsLayer(scaleY = 0.44f),
+                colors = playerSliderColors(),
+                value = volume,
+                onValueChange = { onPlayerIntent(PlayerIntent.SetVolume(it)) },
+                valueRange = 0f..1f,
+            )
+        }
+    }
+}
+
+@Composable
+private fun playerSliderColors() = SliderDefaults.colors(
+    thumbColor = Color.White.copy(alpha = 0.98f),
+    activeTrackColor = Color.White.copy(alpha = 0.96f),
+    inactiveTrackColor = Color.White.copy(alpha = 0.24f),
+    activeTickColor = Color.White.copy(alpha = 0.96f),
+    inactiveTickColor = Color.White.copy(alpha = 0.24f),
+)
+
+private data class ProgressFlowerParticle(
+    val progressFraction: Float,
+    val bornAtNanos: Long,
+    val driftX: Float,
+    val liftY: Float,
+    val sway: Float,
+    val bloomRadius: Float,
+    val colorIndex: Int,
+    val rotationOffset: Float,
+)
+
+private fun buildProgressFlowerParticle(
+    progressFraction: Float,
+    seed: Int,
+    bornAtNanos: Long,
+): ProgressFlowerParticle {
+    val normalized = seed.absoluteValue
+    return ProgressFlowerParticle(
+        progressFraction = progressFraction,
+        bornAtNanos = bornAtNanos,
+        driftX = (((normalized % 24) - 12).toFloat()) * 2.1f,
+        liftY = 22f + (normalized % 32).toFloat(),
+        sway = 6f + (normalized % 9).toFloat(),
+        bloomRadius = 3.6f + ((normalized % 4).toFloat() * 0.8f),
+        colorIndex = normalized % FLOWER_PARTICLE_COLORS.size,
+        rotationOffset = (normalized % 360).toFloat() * (PI.toFloat() / 180f),
+    )
+}
+
+private fun DrawScope.drawProgressFlowerParticle(
+    particle: ProgressFlowerParticle,
+    nowNanos: Long,
+    thumbInsetPx: Float,
+) {
+    if (nowNanos <= particle.bornAtNanos) return
+    val age = ((nowNanos - particle.bornAtNanos).toFloat() / FLOWER_PARTICLE_LIFETIME_NANOS.toFloat()).coerceIn(0f, 1f)
+    if (age >= 1f) return
+    val easeOut = 1f - (1f - age) * (1f - age)
+    val usableWidth = (size.width - thumbInsetPx * 2f).coerceAtLeast(0f)
+    val baseX = thumbInsetPx + usableWidth * particle.progressFraction
+    val baseY = size.height - 8.dp.toPx()
+    val swayOffset = sin((age * 1.8f + particle.rotationOffset) * PI.toFloat()) * particle.sway
+    val center = Offset(
+        x = baseX + particle.driftX * easeOut + swayOffset,
+        y = baseY - particle.liftY * easeOut,
+    )
+    val petalColor = FLOWER_PARTICLE_COLORS[particle.colorIndex].copy(alpha = (1f - age) * 0.92f)
+    val petalOrbit = particle.bloomRadius * 1.55f
+    val rotation = particle.rotationOffset + age * 2.4f
+    repeat(5) { index ->
+        val angle = rotation + index * ((2f * PI.toFloat()) / 5f)
+        val petalCenter = Offset(
+            x = center.x + cos(angle) * petalOrbit,
+            y = center.y + sin(angle) * petalOrbit,
+        )
+        drawCircle(
+            color = petalColor,
+            radius = particle.bloomRadius,
+            center = petalCenter,
+        )
+    }
+    drawCircle(
+        color = Color(0xFFFFF2A8).copy(alpha = (1f - age) * 0.98f),
+        radius = particle.bloomRadius * 0.82f,
+        center = center,
+    )
+}
+
+private val FLOWER_PARTICLE_COLORS = listOf(
+    Color(0xFFFF5D9E),
+    Color(0xFFFFB341),
+    Color(0xFF7DFF93),
+    Color(0xFF68D5FF),
+    Color(0xFFC792FF),
+)
+
+private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
+
+@Composable
+private fun QueueTrackRow(
+    track: Track,
+    index: Int,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (isCurrent) {
+                Icon(
+                    imageVector = Icons.Rounded.GraphicEq,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else {
+                Text(
+                    text = (index + 1).toString().padStart(2, '0'),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = buildString {
+                        append(track.artistName ?: "未知艺人")
+                        if (isCurrent) {
+                            append(if (isPlaying) " · 正在播放" else " · 当前歌曲")
+                        }
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = formatDuration(track.durationMs),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 42.dp)
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f)),
+        )
+    }
+}
