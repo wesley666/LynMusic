@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -143,6 +144,8 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.Album
+import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
@@ -171,6 +174,9 @@ import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.LibraryStore
+import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
+import top.iwesley.lyn.music.feature.library.libraryAlbumId
+import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.player.PlayerStore
@@ -657,8 +663,204 @@ private fun LibraryTab(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    LibraryBrowserTab(
+        state = LibraryBrowserPageState(
+            query = state.query,
+            tracks = state.tracks,
+            filteredTracks = state.filteredTracks,
+            filteredAlbums = state.filteredAlbums,
+            filteredArtists = state.filteredArtists,
+            selectedSourceFilter = state.selectedSourceFilter,
+            availableSourceFilters = state.availableSourceFilters,
+            favoriteTrackIds = favoritesState.favoriteTrackIds,
+            message = favoritesState.message,
+        ),
+        strings = LibraryBrowserStrings(
+            searchLabel = "搜索歌曲 / 艺人 / 专辑",
+            sectionTitle = "你的曲库",
+            sectionSubtitle = "支持本地文件夹、Samba、WebDAV、Navidrome 与自定义歌词联动。",
+            songsIcon = Icons.Rounded.LibraryMusic,
+            emptyCollectionTitle = "曲库还是空的",
+            emptyCollectionBody = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
+            emptyFilterBody = "试试切回“全部来源”、更换过滤项，或调整搜索词。",
+            emptySearchBody = "试试调整搜索词，或切换来源过滤。",
+            trackLabel = "歌曲",
+            albumLabel = "专辑",
+            artistLabel = "艺人",
+        ),
+        onSearchChanged = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
+        onSourceFilterChanged = { onLibraryIntent(LibraryIntent.SourceFilterChanged(it)) },
+        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
+        onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
+        onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun FavoritesTab(
+    state: FavoritesState,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LibraryBrowserTab(
+        state = LibraryBrowserPageState(
+            query = state.query,
+            tracks = state.tracks,
+            filteredTracks = state.filteredTracks,
+            filteredAlbums = state.filteredAlbums,
+            filteredArtists = state.filteredArtists,
+            selectedSourceFilter = state.selectedSourceFilter,
+            availableSourceFilters = state.availableSourceFilters,
+            favoriteTrackIds = state.favoriteTrackIds,
+            message = state.message,
+        ),
+        strings = LibraryBrowserStrings(
+            searchLabel = "搜索喜欢的歌曲 / 艺人 / 专辑",
+            sectionTitle = "我的喜欢",
+            sectionSubtitle = "本地来源保存在本地，Navidrome 来源会和服务器收藏双向同步。",
+            songsIcon = Icons.Rounded.Favorite,
+            emptyCollectionTitle = "还没有喜欢的歌曲",
+            emptyCollectionBody = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
+            emptyFilterBody = "试试切回“全部来源”、更换过滤项，或去其他来源里添加喜欢。",
+            emptySearchBody = "试试调整搜索词，或切换来源过滤。",
+            trackLabel = "喜欢的歌曲",
+            albumLabel = "喜欢的专辑",
+            artistLabel = "喜欢的艺人",
+        ),
+        onSearchChanged = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
+        onSourceFilterChanged = { onFavoritesIntent(FavoritesIntent.SourceFilterChanged(it)) },
+        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
+        onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
+        onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
+        modifier = modifier,
+    )
+}
+
+private data class LibraryBrowserPageState(
+    val query: String,
+    val tracks: List<Track>,
+    val filteredTracks: List<Track>,
+    val filteredAlbums: List<Album>,
+    val filteredArtists: List<Artist>,
+    val selectedSourceFilter: LibrarySourceFilter,
+    val availableSourceFilters: List<LibrarySourceFilter>,
+    val favoriteTrackIds: Set<String>,
+    val message: String?,
+)
+
+private data class LibraryBrowserStrings(
+    val searchLabel: String,
+    val sectionTitle: String,
+    val sectionSubtitle: String,
+    val songsIcon: ImageVector,
+    val emptyCollectionTitle: String,
+    val emptyCollectionBody: String,
+    val emptyFilterBody: String,
+    val emptySearchBody: String,
+    val trackLabel: String,
+    val albumLabel: String,
+    val artistLabel: String,
+)
+
+private enum class LibraryBrowserRootView {
+    Tracks,
+    Albums,
+    Artists,
+}
+
+@Composable
+private fun LibraryBrowserTab(
+    state: LibraryBrowserPageState,
+    strings: LibraryBrowserStrings,
+    onSearchChanged: (String) -> Unit,
+    onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+    onToggleFavorite: (Track) -> Unit,
+    onDismissMessage: () -> Unit,
+    onPlayTracks: (List<Track>, Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val listState = rememberLazyListState()
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
+    var rootView by rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
+    var selectedArtistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedAlbumId by rememberSaveable { mutableStateOf<String?>(null) }
+    val tracksByArtistId = remember(state.filteredTracks) {
+        state.filteredTracks.groupBy(Track::artistLibraryIdOrNull)
+    }
+    val tracksByAlbumId = remember(state.filteredTracks) {
+        state.filteredTracks.groupBy(Track::albumLibraryIdOrNull)
+    }
+    val artistAlbumCountById = remember(tracksByArtistId) {
+        tracksByArtistId.entries
+            .mapNotNull { (artistId, tracks) ->
+                artistId?.let { it to deriveVisibleAlbums(tracks).size }
+            }
+            .toMap()
+    }
+    val selectedArtist = remember(state.filteredArtists, selectedArtistId) {
+        state.filteredArtists.firstOrNull { it.id == selectedArtistId }
+    }
+    val artistTracks = remember(tracksByArtistId, selectedArtistId) {
+        tracksByArtistId[selectedArtistId].orEmpty().sortedWith(ARTIST_DETAIL_TRACK_COMPARATOR)
+    }
+    val artistAlbums = remember(artistTracks) {
+        deriveVisibleAlbums(artistTracks)
+    }
+    val selectedAlbum = remember(state.filteredAlbums, artistAlbums, selectedAlbumId, selectedArtistId) {
+        when {
+            selectedAlbumId == null -> null
+            selectedArtistId != null -> artistAlbums.firstOrNull { it.id == selectedAlbumId }
+            else -> state.filteredAlbums.firstOrNull { it.id == selectedAlbumId }
+        }
+    }
+    val albumTracks = remember(tracksByAlbumId, artistTracks, selectedAlbumId, selectedArtistId) {
+        when {
+            selectedAlbumId == null -> emptyList()
+            selectedArtistId != null -> artistTracks.filter { it.albumLibraryIdOrNull() == selectedAlbumId }
+            else -> tracksByAlbumId[selectedAlbumId].orEmpty()
+        }.sortedWith(ALBUM_DETAIL_TRACK_COMPARATOR)
+    }
+
+    LaunchedEffect(
+        rootView,
+        state.filteredAlbums,
+        state.filteredArtists,
+        selectedArtistId,
+        selectedAlbumId,
+        artistAlbums,
+    ) {
+        when (rootView) {
+            LibraryBrowserRootView.Tracks -> {
+                if (selectedArtistId != null) selectedArtistId = null
+                if (selectedAlbumId != null) selectedAlbumId = null
+            }
+
+            LibraryBrowserRootView.Albums -> {
+                if (selectedArtistId != null) selectedArtistId = null
+                if (selectedAlbumId != null && state.filteredAlbums.none { it.id == selectedAlbumId }) {
+                    selectedAlbumId = null
+                }
+            }
+
+            LibraryBrowserRootView.Artists -> {
+                if (selectedArtistId != null && state.filteredArtists.none { it.id == selectedArtistId }) {
+                    selectedArtistId = null
+                    selectedAlbumId = null
+                } else if (selectedAlbumId != null && artistAlbums.none { it.id == selectedAlbumId }) {
+                    selectedAlbumId = null
+                }
+            }
+        }
+    }
+
+    fun selectRootView(view: LibraryBrowserRootView) {
+        rootView = view
+        selectedArtistId = null
+        selectedAlbumId = null
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -669,8 +871,8 @@ private fun LibraryTab(
             item {
                 ImeAwareOutlinedTextField(
                     value = state.query,
-                    onValueChange = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
-                    label = { Text("搜索歌曲 / 艺人 / 专辑") },
+                    onValueChange = onSearchChanged,
+                    label = { Text(strings.searchLabel) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
                 )
@@ -691,7 +893,7 @@ private fun LibraryTab(
                                 text = { Text(librarySourceFilterMenuLabel(filter)) },
                                 onClick = {
                                     sourceFilterMenuExpanded = false
-                                    onLibraryIntent(LibraryIntent.SourceFilterChanged(filter))
+                                    onSourceFilterChanged(filter)
                                 },
                             )
                         }
@@ -700,52 +902,212 @@ private fun LibraryTab(
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(title = "歌曲", value = state.filteredTracks.size.toString(), icon = Icons.Rounded.LibraryMusic, modifier = Modifier.weight(1f))
-                    StatCard(title = "专辑", value = state.visibleAlbumCount.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
-                    StatCard(title = "艺人", value = state.visibleArtistCount.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
+                    StatCard(
+                        title = "歌曲",
+                        value = state.filteredTracks.size.toString(),
+                        icon = strings.songsIcon,
+                        selected = rootView == LibraryBrowserRootView.Tracks,
+                        onClick = { selectRootView(LibraryBrowserRootView.Tracks) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatCard(
+                        title = "专辑",
+                        value = state.filteredAlbums.size.toString(),
+                        icon = Icons.Rounded.Album,
+                        selected = rootView == LibraryBrowserRootView.Albums,
+                        onClick = { selectRootView(LibraryBrowserRootView.Albums) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatCard(
+                        title = "艺人",
+                        value = state.filteredArtists.size.toString(),
+                        icon = Icons.Rounded.Tune,
+                        selected = rootView == LibraryBrowserRootView.Artists,
+                        onClick = { selectRootView(LibraryBrowserRootView.Artists) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
-            favoritesState.message?.let { message ->
+            state.message?.let { message ->
                 item {
                     BannerCard(
                         message = message,
-                        onDismiss = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
+                        onDismiss = onDismissMessage,
                     )
                 }
             }
-            item {
-                SectionTitle(title = "你的曲库", subtitle = "支持本地文件夹、Samba、WebDAV、Navidrome 与自定义歌词联动。")
-            }
-            if (state.filteredTracks.isEmpty()) {
-                item {
-                    when {
-                        state.tracks.isEmpty() -> EmptyStateCard(
-                            title = "曲库还是空的",
-                            body = "先到“来源”页导入本地文件夹、Samba、WebDAV 或 Navidrome，扫描完成后会出现在这里。",
-                        )
-
-                        state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
-                            title = "当前来源下没有歌曲",
-                            body = "试试切回“全部来源”、更换过滤项，或调整搜索词。",
-                        )
-
-                        else -> EmptyStateCard(
-                            title = "没有匹配的歌曲",
-                            body = "试试调整搜索词，或切换来源过滤。",
+            when {
+                selectedAlbum != null -> {
+                    item {
+                        DetailBackButton(onClick = { selectedAlbumId = null })
+                    }
+                    item {
+                        DetailSummaryCard(
+                            title = selectedAlbum.title,
+                            subtitle = selectedAlbum.artistName ?: "未知艺人",
+                            supportingText = "${albumTracks.size} 首歌曲",
+                            artworkLocator = albumTracks.firstOrNull()?.artworkLocator,
                         )
                     }
+                    item {
+                        SectionTitle(title = "歌曲", subtitle = "当前专辑下的可见歌曲。")
+                    }
+                    if (albumTracks.isEmpty()) {
+                        item {
+                            EmptyStateCard(
+                                title = "这个专辑暂时没有歌曲",
+                                body = "当前筛选结果里已经没有这个专辑的可见歌曲。",
+                            )
+                        }
+                    } else {
+                        itemsIndexed(albumTracks, key = { _, item -> item.id }) { index, track ->
+                            TrackRow(
+                                track = track,
+                                index = index,
+                                isFavorite = track.id in state.favoriteTrackIds,
+                                onToggleFavorite = { onToggleFavorite(track) },
+                                onClick = {
+                                    onPlayTracks(albumTracks, index)
+                                },
+                            )
+                        }
+                    }
                 }
-            } else {
-                itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
-                    TrackRow(
-                        track = track,
-                        index = index,
-                        isFavorite = track.id in favoritesState.favoriteTrackIds,
-                        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(track)) },
-                        onClick = {
-                            onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
-                        },
-                    )
+
+                rootView == LibraryBrowserRootView.Artists && selectedArtist != null -> {
+                    item {
+                        DetailBackButton(
+                            onClick = {
+                                selectedArtistId = null
+                                selectedAlbumId = null
+                            },
+                        )
+                    }
+                    item {
+                        DetailSummaryCard(
+                            title = selectedArtist.name,
+                            subtitle = "${artistTracks.size} 首歌曲 · ${artistAlbums.size} 张专辑",
+                            supportingText = "当前筛选结果中的艺人详情",
+                            artworkLocator = artistTracks.firstOrNull()?.artworkLocator,
+                        )
+                    }
+                    item {
+                        SectionTitle(title = "专辑", subtitle = "当前艺人下的可见专辑。")
+                    }
+                    if (artistAlbums.isEmpty()) {
+                        item {
+                            EmptyStateCard(
+                                title = "这个艺人下暂无专辑信息",
+                                body = "当前艺人的可见歌曲还没有可用的专辑标签。",
+                            )
+                        }
+                    } else {
+                        items(artistAlbums, key = { it.id }) { album ->
+                            AlbumRow(
+                                album = album,
+                                artworkLocator = artistTracks.firstOrNull { it.albumLibraryIdOrNull() == album.id }?.artworkLocator,
+                                onClick = { selectedAlbumId = album.id },
+                            )
+                        }
+                    }
+                    item {
+                        SectionTitle(title = "歌曲", subtitle = "当前艺人下的可见歌曲。")
+                    }
+                    if (artistTracks.isEmpty()) {
+                        item {
+                            EmptyStateCard(
+                                title = "这个艺人暂时没有歌曲",
+                                body = "当前筛选结果里已经没有这个艺人的可见歌曲。",
+                            )
+                        }
+                    } else {
+                        itemsIndexed(artistTracks, key = { _, item -> item.id }) { index, track ->
+                            TrackRow(
+                                track = track,
+                                index = index,
+                                isFavorite = track.id in state.favoriteTrackIds,
+                                onToggleFavorite = { onToggleFavorite(track) },
+                                onClick = {
+                                    onPlayTracks(artistTracks, index)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                else -> {
+                    val currentItemCount = when (rootView) {
+                        LibraryBrowserRootView.Tracks -> state.filteredTracks.size
+                        LibraryBrowserRootView.Albums -> state.filteredAlbums.size
+                        LibraryBrowserRootView.Artists -> state.filteredArtists.size
+                    }
+                    val currentLabel = when (rootView) {
+                        LibraryBrowserRootView.Tracks -> strings.trackLabel
+                        LibraryBrowserRootView.Albums -> strings.albumLabel
+                        LibraryBrowserRootView.Artists -> strings.artistLabel
+                    }
+                    item {
+                        SectionTitle(title = strings.sectionTitle, subtitle = strings.sectionSubtitle)
+                    }
+                    if (currentItemCount == 0) {
+                        item {
+                            when {
+                                state.tracks.isEmpty() -> EmptyStateCard(
+                                    title = strings.emptyCollectionTitle,
+                                    body = strings.emptyCollectionBody,
+                                )
+
+                                state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
+                                    title = "当前来源下没有$currentLabel",
+                                    body = strings.emptyFilterBody,
+                                )
+
+                                else -> EmptyStateCard(
+                                    title = "没有匹配的$currentLabel",
+                                    body = strings.emptySearchBody,
+                                )
+                            }
+                        }
+                    } else {
+                        when (rootView) {
+                            LibraryBrowserRootView.Tracks -> {
+                                itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
+                                    TrackRow(
+                                        track = track,
+                                        index = index,
+                                        isFavorite = track.id in state.favoriteTrackIds,
+                                        onToggleFavorite = { onToggleFavorite(track) },
+                                        onClick = {
+                                            onPlayTracks(state.filteredTracks, index)
+                                        },
+                                    )
+                                }
+                            }
+
+                            LibraryBrowserRootView.Albums -> {
+                                items(state.filteredAlbums, key = { it.id }) { album ->
+                                    AlbumRow(
+                                        album = album,
+                                        artworkLocator = tracksByAlbumId[album.id].orEmpty().firstOrNull()?.artworkLocator,
+                                        onClick = { selectedAlbumId = album.id },
+                                    )
+                                }
+                            }
+
+                            LibraryBrowserRootView.Artists -> {
+                                items(state.filteredArtists, key = { it.id }) { artist ->
+                                    ArtistRow(
+                                        artist = artist,
+                                        albumCount = artistAlbumCountById[artist.id] ?: 0,
+                                        onClick = {
+                                            selectedArtistId = artist.id
+                                            selectedAlbumId = null
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -759,113 +1121,26 @@ private fun LibraryTab(
     }
 }
 
-@Composable
-private fun FavoritesTab(
-    state: FavoritesState,
-    onFavoritesIntent: (FavoritesIntent) -> Unit,
-    onPlayerIntent: (PlayerIntent) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val listState = rememberLazyListState()
-    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
-    Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            item {
-                ImeAwareOutlinedTextField(
-                    value = state.query,
-                    onValueChange = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
-                    label = { Text("搜索喜欢的歌曲 / 艺人 / 专辑") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                )
-            }
-            item {
-                Box {
-                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
-                        Icon(Icons.Rounded.Tune, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
-                    }
-                    DropdownMenu(
-                        expanded = sourceFilterMenuExpanded,
-                        onDismissRequest = { sourceFilterMenuExpanded = false },
-                    ) {
-                        state.availableSourceFilters.forEach { filter ->
-                            DropdownMenuItem(
-                                text = { Text(librarySourceFilterMenuLabel(filter)) },
-                                onClick = {
-                                    sourceFilterMenuExpanded = false
-                                    onFavoritesIntent(FavoritesIntent.SourceFilterChanged(filter))
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(title = "歌曲", value = state.filteredTracks.size.toString(), icon = Icons.Rounded.Favorite, modifier = Modifier.weight(1f))
-                    StatCard(title = "专辑", value = state.visibleAlbumCount.toString(), icon = Icons.Rounded.Album, modifier = Modifier.weight(1f))
-                    StatCard(title = "艺人", value = state.visibleArtistCount.toString(), icon = Icons.Rounded.Tune, modifier = Modifier.weight(1f))
-                }
-            }
-            state.message?.let { message ->
-                item {
-                    BannerCard(
-                        message = message,
-                        onDismiss = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
-                    )
-                }
-            }
-            item {
-                SectionTitle(title = "我的喜欢", subtitle = "本地来源保存在本地，Navidrome 来源会和服务器收藏双向同步。")
-            }
-            if (state.filteredTracks.isEmpty()) {
-                item {
-                    when {
-                        state.tracks.isEmpty() -> EmptyStateCard(
-                            title = "还没有喜欢的歌曲",
-                            body = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
-                        )
+private val ALBUM_DETAIL_TRACK_COMPARATOR = compareBy<Track>(
+    { it.discNumber ?: Int.MAX_VALUE },
+    { it.trackNumber ?: Int.MAX_VALUE },
+    { it.title.lowercase() },
+)
 
-                        state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
-                            title = "当前来源下没有喜欢的歌曲",
-                            body = "试试切回“全部来源”、更换过滤项，或去其他来源里添加喜欢。",
-                        )
+private val ARTIST_DETAIL_TRACK_COMPARATOR = compareBy<Track>(
+    { it.albumTitle.orEmpty().lowercase() },
+    { it.discNumber ?: Int.MAX_VALUE },
+    { it.trackNumber ?: Int.MAX_VALUE },
+    { it.title.lowercase() },
+)
 
-                        else -> EmptyStateCard(
-                            title = "没有匹配的喜欢歌曲",
-                            body = "试试调整搜索词，或切换来源过滤。",
-                        )
-                    }
-                }
-            } else {
-                itemsIndexed(state.filteredTracks, key = { _, item -> item.id }) { index, track ->
-                    TrackRow(
-                        track = track,
-                        index = index,
-                        isFavorite = true,
-                        onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(track)) },
-                        onClick = {
-                            onPlayerIntent(PlayerIntent.PlayTracks(state.filteredTracks, index))
-                        },
-                    )
-                }
-            }
-        }
-        LibraryFastScrollbar(
-            listState = listState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 8.dp, top = 20.dp, bottom = 20.dp),
-        )
-    }
+private fun Track.artistLibraryIdOrNull(): String? {
+    return artistName?.trim()?.takeIf { it.isNotBlank() }?.let(::libraryArtistId)
+}
+
+private fun Track.albumLibraryIdOrNull(): String? {
+    val title = albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    return libraryAlbumId(artistName, title)
 }
 
 private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String {
@@ -3636,6 +3911,170 @@ private fun QueueTrackRow(
 }
 
 @Composable
+private fun DetailBackButton(
+    onClick: () -> Unit,
+) {
+    TextButton(onClick = onClick) {
+        Text("返回")
+    }
+}
+
+@Composable
+private fun DetailSummaryCard(
+    title: String,
+    subtitle: String,
+    supportingText: String,
+    artworkLocator: String?,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TrackArtworkThumbnail(
+                artworkLocator = artworkLocator,
+                modifier = Modifier.size(68.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = supportingText,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumRow(
+    album: Album,
+    artworkLocator: String?,
+    onClick: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            TrackArtworkThumbnail(artworkLocator = artworkLocator)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = album.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = album.artistName ?: "未知艺人",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "${album.trackCount} 首",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 88.dp)
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f)),
+        )
+    }
+}
+
+@Composable
+private fun ArtistRow(
+    artist: Artist,
+    albumCount: Int,
+    onClick: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                    .border(
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Tune,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = artist.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "${artist.trackCount} 首歌曲 · $albumCount 张专辑",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 88.dp)
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f)),
+        )
+    }
+}
+
+@Composable
 private fun TrackRow(
     track: Track,
     index: Int,
@@ -3937,12 +4376,30 @@ private fun StatCard(
     title: String,
     value: String,
     icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            } else {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+            },
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+            } else {
+                Color.White.copy(alpha = 0.06f)
+            },
+        ),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

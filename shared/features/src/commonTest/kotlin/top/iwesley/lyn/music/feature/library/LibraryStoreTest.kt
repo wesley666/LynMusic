@@ -41,6 +41,10 @@ class LibraryStoreTest {
         assertEquals(listOf(LibrarySourceFilter.ALL), state.availableSourceFilters)
         assertEquals(LibrarySourceFilter.ALL, state.selectedSourceFilter)
         assertEquals(tracks.map { it.id }, state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf(2, 1), state.filteredAlbums.map { it.trackCount })
+        assertEquals(listOf("Artist A", "Artist B"), state.filteredArtists.map { it.name })
+        assertEquals(listOf(2, 1), state.filteredArtists.map { it.trackCount })
         assertEquals(2, state.visibleAlbumCount)
         assertEquals(2, state.visibleArtistCount)
         scope.cancel()
@@ -85,6 +89,8 @@ class LibraryStoreTest {
         val state = store.state.value
         assertEquals(LibrarySourceFilter.LOCAL_FOLDER, state.selectedSourceFilter)
         assertEquals(listOf("track-local-1", "track-local-2"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album One"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist A"), state.filteredArtists.map { it.name })
         scope.cancel()
     }
 
@@ -102,6 +108,8 @@ class LibraryStoreTest {
 
         val state = store.state.value
         assertEquals(listOf("track-webdav-1"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist B"), state.filteredArtists.map { it.name })
         assertEquals(1, state.visibleAlbumCount)
         assertEquals(1, state.visibleArtistCount)
         scope.cancel()
@@ -269,37 +277,9 @@ private fun sampleSource(id: String, type: ImportSourceType, label: String): Sou
 }
 
 private fun artistsFrom(tracks: List<Track>): List<Artist> {
-    return tracks.mapNotNull { it.artistName?.trim()?.takeIf { name -> name.isNotBlank() } }
-        .groupingBy { it }
-        .eachCount()
-        .entries
-        .map { (artistName, trackCount) ->
-            Artist(
-                id = "artist:${artistName.lowercase()}",
-                name = artistName,
-                trackCount = trackCount,
-            )
-        }
-        .sortedBy { it.name }
+    return deriveVisibleArtists(tracks)
 }
 
 private fun albumsFrom(tracks: List<Track>): List<Album> {
-    return tracks.mapNotNull { track ->
-        val albumTitle = track.albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        Triple(track.artistName, albumTitle, track.artistName.orEmpty().trim().lowercase() + ":" + albumTitle.lowercase())
-    }.groupingBy { it.third }
-        .eachCount()
-        .map { (key, trackCount) ->
-            val album = tracks.first { track ->
-                val albumTitle = track.albumTitle?.trim()?.takeIf { it.isNotBlank() }
-                albumTitle != null && track.artistName.orEmpty().trim().lowercase() + ":" + albumTitle.lowercase() == key
-            }
-            Album(
-                id = "album:$key",
-                title = album.albumTitle.orEmpty(),
-                artistName = album.artistName,
-                trackCount = trackCount,
-            )
-        }
-        .sortedBy { it.title }
+    return deriveVisibleAlbums(tracks)
 }

@@ -41,6 +41,8 @@ class FavoritesStoreTest {
         val state = store.state.value
         assertEquals(setOf("track-local-1", "track-nav-1"), state.favoriteTrackIds)
         assertEquals(2, state.filteredTracks.size)
+        assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist A", "Artist B"), state.filteredArtists.map { it.name })
         assertEquals(2, state.visibleAlbumCount)
         assertEquals(2, state.visibleArtistCount)
         scope.cancel()
@@ -63,8 +65,32 @@ class FavoritesStoreTest {
 
         val state = store.state.value
         assertEquals(listOf("track-nav-1"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist B"), state.filteredArtists.map { it.name })
         assertEquals(1, state.visibleAlbumCount)
         assertEquals(1, state.visibleArtistCount)
+        scope.cancel()
+    }
+
+    @Test
+    fun `removing favorite track removes matching album and artist from derived lists`() = runTest {
+        val tracks = sampleFavoriteTracks()
+        val favoritesRepository = FakeFavoritesRepository(
+            tracks = tracks,
+            favoriteTrackIds = tracks.mapTo(linkedSetOf()) { it.id },
+        )
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(FavoritesIntent.ToggleFavorite(tracks.first()))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(setOf("track-nav-1"), state.favoriteTrackIds)
+        assertEquals(listOf("Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist B"), state.filteredArtists.map { it.name })
         scope.cancel()
     }
 

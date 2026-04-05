@@ -3,18 +3,24 @@ package top.iwesley.lyn.music.feature.favorites
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.Album
+import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.FavoritesRepository
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
+import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 
 data class FavoritesState(
     val query: String = "",
     val tracks: List<Track> = emptyList(),
     val filteredTracks: List<Track> = emptyList(),
+    val filteredAlbums: List<Album> = emptyList(),
+    val filteredArtists: List<Artist> = emptyList(),
     val favoriteTrackIds: Set<String> = emptySet(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
@@ -123,11 +129,15 @@ class FavoritesStore(
             selectedSourceFilter = selectedSourceFilter,
             sourceTypesById = state.sourceTypesById,
         )
+        val filteredAlbums = deriveVisibleAlbums(filteredTracks)
+        val filteredArtists = deriveVisibleArtists(filteredTracks)
         return state.copy(
             selectedSourceFilter = selectedSourceFilter,
             filteredTracks = filteredTracks,
-            visibleAlbumCount = countVisibleAlbums(filteredTracks),
-            visibleArtistCount = countVisibleArtists(filteredTracks),
+            filteredAlbums = filteredAlbums,
+            filteredArtists = filteredArtists,
+            visibleAlbumCount = filteredAlbums.size,
+            visibleArtistCount = filteredArtists.size,
         )
     }
 
@@ -156,19 +166,6 @@ class FavoritesStore(
     ): Boolean {
         if (selectedSourceFilter == LibrarySourceFilter.ALL) return true
         return sourceTypesById[track.sourceId]?.toLibrarySourceFilter() == selectedSourceFilter
-    }
-
-    private fun countVisibleAlbums(tracks: List<Track>): Int {
-        return tracks.mapNotNull { track ->
-            val albumTitle = track.albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            track.artistName.orEmpty().trim().lowercase() to albumTitle.lowercase()
-        }.distinct().size
-    }
-
-    private fun countVisibleArtists(tracks: List<Track>): Int {
-        return tracks.mapNotNull { it.artistName?.trim()?.takeIf { name -> name.isNotBlank() }?.lowercase() }
-            .distinct()
-            .size
     }
 
     private fun buildAvailableSourceFilters(sources: List<SourceWithStatus>): List<LibrarySourceFilter> {

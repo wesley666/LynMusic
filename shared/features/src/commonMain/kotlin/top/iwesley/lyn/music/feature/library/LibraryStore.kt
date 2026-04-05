@@ -25,6 +25,8 @@ data class LibraryState(
     val filteredTracks: List<Track> = emptyList(),
     val albums: List<Album> = emptyList(),
     val artists: List<Artist> = emptyList(),
+    val filteredAlbums: List<Album> = emptyList(),
+    val filteredArtists: List<Artist> = emptyList(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
     val visibleAlbumCount: Int = 0,
@@ -100,11 +102,15 @@ class LibraryStore(
             selectedSourceFilter = selectedSourceFilter,
             sourceTypesById = state.sourceTypesById,
         )
+        val filteredAlbums = deriveVisibleAlbums(filteredTracks)
+        val filteredArtists = deriveVisibleArtists(filteredTracks)
         return state.copy(
             selectedSourceFilter = selectedSourceFilter,
             filteredTracks = filteredTracks,
-            visibleAlbumCount = countVisibleAlbums(filteredTracks),
-            visibleArtistCount = countVisibleArtists(filteredTracks),
+            filteredAlbums = filteredAlbums,
+            filteredArtists = filteredArtists,
+            visibleAlbumCount = filteredAlbums.size,
+            visibleArtistCount = filteredArtists.size,
         )
     }
 
@@ -133,19 +139,6 @@ class LibraryStore(
     ): Boolean {
         if (selectedSourceFilter == LibrarySourceFilter.ALL) return true
         return sourceTypesById[track.sourceId]?.toLibrarySourceFilter() == selectedSourceFilter
-    }
-
-    private fun countVisibleAlbums(tracks: List<Track>): Int {
-        return tracks.mapNotNull { track ->
-            val albumTitle = track.albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            track.artistName.orEmpty().trim().lowercase() to albumTitle.lowercase()
-        }.distinct().size
-    }
-
-    private fun countVisibleArtists(tracks: List<Track>): Int {
-        return tracks.mapNotNull { it.artistName?.trim()?.takeIf { name -> name.isNotBlank() }?.lowercase() }
-            .distinct()
-            .size
     }
 
     private fun buildAvailableSourceFilters(types: List<ImportSourceType>): List<LibrarySourceFilter> {
