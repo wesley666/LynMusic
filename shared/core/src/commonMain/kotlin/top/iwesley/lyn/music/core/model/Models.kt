@@ -262,6 +262,7 @@ data class WorkflowLyricsStepConfig(
     val fallbackPayloadPath: String? = null,
     val format: LyricsResponseFormat = LyricsResponseFormat.LRC,
     val transforms: List<WorkflowLyricsTransform> = emptyList(),
+    val extractor: String = "text",
 )
 
 data class WorkflowLyricsConfig(

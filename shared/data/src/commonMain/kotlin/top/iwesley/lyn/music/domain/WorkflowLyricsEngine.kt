@@ -11,8 +11,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
+import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowCandidateEnrichmentConfig
@@ -47,7 +49,7 @@ private val SELECTION_KEYS = setOf("titleWeight", "artistWeight", "albumWeight",
 private val ENRICHMENT_KEYS = setOf("steps")
 private val ENRICHMENT_STEP_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "capture")
 private val LYRICS_KEYS = setOf("steps")
-private val STEP_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "capture", "payloadPath", "fallbackPayloadPath", "format", "transforms")
+private val STEP_KEYS = setOf("method", "url", "queryTemplate", "bodyTemplate", "headersTemplate", "responseFormat", "capture", "payloadPath", "fallbackPayloadPath", "format", "transforms", "extractor")
 private val OPTIONAL_FIELDS_KEYS = setOf("coverUrlField")
 private val REQUIRED_SEARCH_MAPPING_KEYS = setOf("id", "title", "artists")
 private val TRACK_TEMPLATE_VARIABLES = setOf(
@@ -277,8 +279,8 @@ fun extractWorkflowLyricsPayload(
     val extracted = when (step.request.responseFormat) {
         LyricsResponseFormat.JSON -> {
             val root = workflowJson.parseToJsonElement(payload)
-            extractJsonStrings(root, step.payloadPath.orEmpty()).firstOrNull()
-                ?: extractJsonStrings(root, step.fallbackPayloadPath.orEmpty()).firstOrNull()
+            extractJsonPayload(root, step.payloadPath.orEmpty())
+                ?: extractJsonPayload(root, step.fallbackPayloadPath.orEmpty())
         }
 
         LyricsResponseFormat.XML -> {
@@ -291,6 +293,31 @@ fun extractWorkflowLyricsPayload(
     } ?: return null
     return applyWorkflowTransforms(extracted, step.transforms)
         .takeIf { it.isNotBlank() }
+}
+
+fun parseWorkflowLyricsDocument(
+    sourceId: String,
+    sourceName: String,
+    step: WorkflowLyricsStepConfig,
+    payload: String,
+): LyricsDocument? {
+    val config = LyricsSourceConfig(
+        id = sourceId,
+        name = sourceName,
+        urlTemplate = "",
+        responseFormat = step.format,
+        extractor = step.extractor,
+    )
+    parseLyricsPayloadResults(config, payload).firstOrNull()?.document?.let { return it }
+    if (step.format != LyricsResponseFormat.JSON) return null
+    val fallbackLines = parseLrc(payload).ifEmpty { parsePlainText(payload) }
+    if (fallbackLines.isEmpty()) return null
+    return LyricsDocument(
+        lines = fallbackLines,
+        offsetMs = 0L,
+        sourceId = sourceId,
+        rawPayload = payload,
+    )
 }
 
 fun scoreWorkflowSongCandidate(
@@ -317,12 +344,20 @@ fun selectBestWorkflowSongCandidate(
     candidates: List<WorkflowSongCandidate>,
     selection: WorkflowSelectionConfig,
 ): WorkflowSongCandidate? {
+    return rankWorkflowSongCandidates(track, candidates, selection).firstOrNull()
+}
+
+fun rankWorkflowSongCandidates(
+    track: Track,
+    candidates: List<WorkflowSongCandidate>,
+    selection: WorkflowSelectionConfig,
+): List<WorkflowSongCandidate> {
     return candidates
         .take(selection.maxCandidates.coerceAtLeast(1))
         .map { it to scoreWorkflowSongCandidate(track, it, selection) }
         .filter { (_, score) -> score >= selection.minScore }
-        .maxByOrNull { it.second }
-        ?.first
+        .sortedByDescending { it.second }
+        .map { it.first }
 }
 
 private fun JsonObject.toWorkflowSearchConfig(): WorkflowSearchConfig {
@@ -382,6 +417,7 @@ private fun JsonObject.toWorkflowLyricsStepConfig(index: Int): WorkflowLyricsSte
         fallbackPayloadPath = stringOrNull("fallbackPayloadPath"),
         format = enumOrDefault("format", LyricsResponseFormat.LRC),
         transforms = enumListOrEmpty("transforms"),
+        extractor = stringOrDefault("extractor", "text"),
     )
 }
 
@@ -620,6 +656,19 @@ private fun extractJsonValues(
         }
 
         else -> emptyList()
+    }
+}
+
+private fun extractJsonPayload(root: JsonElement, path: String): String? {
+    return extractJsonValues(root, path)
+        .firstOrNull()
+        ?.toPayloadString()
+}
+
+private fun JsonElement.toPayloadString(): String? {
+    return when (this) {
+        is JsonPrimitive -> contentOrNull
+        else -> workflowJson.encodeToString(JsonElement.serializer(), this)
     }
 }
 

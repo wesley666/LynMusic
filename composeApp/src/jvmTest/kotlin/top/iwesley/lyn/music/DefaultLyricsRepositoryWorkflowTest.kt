@@ -2,10 +2,13 @@ package top.iwesley.lyn.music
 
 import androidx.room.Room
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.absolutePathString
+import kotlin.io.path.exists
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
@@ -19,6 +22,8 @@ import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
+import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
+import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
 
 class DefaultLyricsRepositoryWorkflowTest {
 
@@ -169,6 +174,155 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals("https://img.kugou.test/cover.jpg", candidates.single().imageUrl)
     }
 
+    @Test
+    fun `workflow auto lyrics retries next ranked candidate when best match has no lyrics`() = runTest {
+        val database = createTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-fallback",
+                name = "Workflow Fallback",
+                priority = 80,
+                enabled = true,
+                rawJson = WORKFLOW_JSON,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            responses = mapOf(
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = SEARCH_JSON_WITH_FALLBACK),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = """{"data":{"content":""}}"""),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=12&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = """{"data":{"content":"[00:01.00]Fallback hit"}}"""),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-fallback",
+            sourceId = "local-1",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = "file:///music/rain.mp3",
+            relativePath = "rain.mp3",
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals("Fallback hit", resolved.document.lines.single().text)
+        assertEquals(
+            listOf(
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json",
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json",
+                "https://oiapi.net/api/QQMusicLyric?id=12&format=lrc&type=json",
+            ),
+            httpClient.requestedUrls,
+        )
+    }
+
+    @Test
+    fun `musicmatch workflow sample search and subtitle payload can be applied`() = runTest {
+        val database = createTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = MANAGED_MUSICMATCH_SOURCE_ID,
+                name = "Musicmatch",
+                priority = 95,
+                enabled = true,
+                rawJson = buildManagedMusicmatchWorkflowJson("token-123"),
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            handler = { request ->
+                when {
+                    request.url.startsWith("https://apic-desktop.musixmatch.com/ws/1.1/track.search?") -> {
+                        assertTrue(request.url.contains("q_track=%E7%A8%BB%E9%A6%99"))
+                        assertTrue(request.url.contains("q_artist=Jay%20Chou"))
+                        Result.success(
+                            LyricsHttpResponse(
+                                statusCode = 200,
+                                body = loadDebugDoc("track_search.json"),
+                            ),
+                        )
+                    }
+
+                    request.url.startsWith("https://apic-desktop.musixmatch.com/ws/1.1/track.subtitle.get?") -> {
+                        assertTrue(request.url.contains("track_id=271320435"))
+                        Result.success(
+                            LyricsHttpResponse(
+                                statusCode = 200,
+                                body = loadDebugDoc("track_subsititute.json"),
+                            ),
+                        )
+                    }
+
+                    else -> Result.failure(IllegalArgumentException("Unexpected request: ${request.url}"))
+                }
+            },
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-mxm",
+            sourceId = "local-1",
+            title = "稻香",
+            artistName = "Jay Chou",
+            albumTitle = "魔杰座",
+            durationMs = 223_000L,
+            mediaLocator = "file:///music/rice-field.mp3",
+            relativePath = "rice-field.mp3",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val candidates = repository.searchWorkflowSongCandidates(track)
+        val applied = repository.applyWorkflowSongCandidate(track.id, candidates.first())
+        val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
+
+        assertTrue(candidates.isNotEmpty())
+        assertEquals("271320435", candidates.first().id)
+        assertEquals("稻香", candidates.first().title)
+        assertEquals("Jay Chou", candidates.first().artists.single())
+        assertEquals("Musicmatch", candidates.first().sourceName)
+        assertTrue(applied.document.isSynced)
+        assertEquals("對這個世界 如果你有太多的抱怨", applied.document.lines.first().text)
+        assertEquals(30_880, applied.document.lines.first().timestampMs)
+        assertEquals(listOf(MANAGED_MUSICMATCH_SOURCE_ID), cachedRows.map { it.sourceId })
+    }
+
     private fun createTestDatabase(): LynMusicDatabase {
         val path = Files.createTempFile("lynmusic-lyrics-workflow", ".db")
         return buildLynMusicDatabase(
@@ -184,12 +338,28 @@ private class FakeArtworkCacheStore(
 }
 
 private class WorkflowHttpClient(
-    private val responses: Map<String, Result<LyricsHttpResponse>>,
+    private val responses: Map<String, Result<LyricsHttpResponse>> = emptyMap(),
+    private val handler: ((LyricsRequest) -> Result<LyricsHttpResponse>)? = null,
 ) : LyricsHttpClient {
+    val requestedUrls = mutableListOf<String>()
+
     override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+        requestedUrls += request.url
         return responses[request.url]
+            ?: handler?.invoke(request)
             ?: Result.failure(IllegalArgumentException("Unexpected request: ${request.url}"))
     }
+}
+
+private fun loadDebugDoc(name: String): String {
+    val candidates = listOf(
+        Path.of("debug_doc", name),
+        Path.of(System.getProperty("user.dir"), "debug_doc", name),
+        Path.of(System.getProperty("user.dir"), "..", "debug_doc", name),
+    )
+    val path = candidates.firstOrNull { it.exists() }
+        ?: error("Missing debug doc: $name")
+    return Files.readString(path)
 }
 
 private const val WORKFLOW_JSON = """
@@ -312,6 +482,29 @@ private const val SEARCH_JSON = """
       "album": "Album 1",
       "duration": 181,
       "image": "https://img.test/other.jpg"
+    }
+  ]
+}
+"""
+
+private const val SEARCH_JSON_WITH_FALLBACK = """
+{
+  "data": [
+    {
+      "id": 11,
+      "name": "Rain",
+      "singer": ["Jay"],
+      "album": "Album 1",
+      "duration": 181,
+      "image": "https://img.test/rain.jpg"
+    },
+    {
+      "id": 12,
+      "name": "Rain",
+      "singer": ["Jay"],
+      "album": "Album 2",
+      "duration": 181,
+      "image": "https://img.test/fallback.jpg"
     }
   ]
 }

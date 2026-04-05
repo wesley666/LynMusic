@@ -69,11 +69,12 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.parseCachedLyrics
 import top.iwesley.lyn.music.domain.ParsedLyricsPayload
 import top.iwesley.lyn.music.domain.parseLyricsPayloadResults
+import top.iwesley.lyn.music.domain.parseWorkflowLyricsDocument
 import top.iwesley.lyn.music.domain.parsePlainText
 import top.iwesley.lyn.music.domain.parseLrc
+import top.iwesley.lyn.music.domain.rankWorkflowSongCandidates
 import top.iwesley.lyn.music.domain.scoreWorkflowSongCandidate
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
-import top.iwesley.lyn.music.domain.selectBestWorkflowSongCandidate
 import top.iwesley.lyn.music.domain.validateWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.mergeWorkflowCandidateCapture
 import top.iwesley.lyn.music.domain.workflowCandidateVariables
@@ -883,10 +884,10 @@ class DefaultLyricsRepository(
     ): List<ParsedLyricsPayload> {
         val trackLabel = track.logIdentity()
         val request = buildLyricsRequest(config, track)
-        logger.debug(LYRICS_LOG_TAG) {
-            "$requestType-request track=$trackLabel source=${config.id} method=${request.method.name} " +
-                "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
-        }
+        logger.logLyricsHttpRequest(
+            context = "$requestType-request track=$trackLabel source=${config.id}",
+            request = request,
+        )
         val startedAt = now()
         val response = httpClient.request(request).fold(
             onSuccess = { it },
@@ -898,10 +899,11 @@ class DefaultLyricsRepository(
                 null
             },
         ) ?: return emptyList()
-        logger.debug(LYRICS_LOG_TAG) {
-            "$requestType-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
-                "elapsedMs=${now() - startedAt} bodyPreview=${response.body.logPreview()}"
-        }
+        logger.logLyricsHttpResponse(
+            context = "$requestType-response track=$trackLabel source=${config.id}",
+            response = response,
+            elapsedMs = now() - startedAt,
+        )
         val parsed = parseLyricsPayloadResults(config, response.body)
         if (parsed.isEmpty()) {
             logger.warn(LYRICS_LOG_TAG) {
@@ -918,22 +920,34 @@ class DefaultLyricsRepository(
         requestType: String,
     ): ResolvedLyricsResult? {
         val candidates = searchWorkflowCandidates(track, config, requestType)
-        val candidate = selectBestWorkflowSongCandidate(track, candidates, config.selection)
-        if (candidate == null) {
+        val rankedCandidates = rankWorkflowSongCandidates(track, candidates, config.selection)
+        if (rankedCandidates.isEmpty()) {
             logger.warn(LYRICS_LOG_TAG) {
                 "$requestType-workflow-select-miss track=${track.logIdentity()} source=${config.id} candidates=${candidates.size}"
             }
             return null
         }
-        logger.debug(LYRICS_LOG_TAG) {
-            "$requestType-workflow-select-hit track=${track.logIdentity()} source=${config.id} candidate=${candidate.id} coverUrl=${candidate.imageUrl.orEmpty()}"
+        for (candidate in rankedCandidates) {
+            logger.debug(LYRICS_LOG_TAG) {
+                "$requestType-workflow-select-hit track=${track.logIdentity()} source=${config.id} candidate=${candidate.id} coverUrl=${candidate.imageUrl.orEmpty()}"
+            }
+            val document = fetchWorkflowLyricsForCandidate(track, config, candidate, requestType)
+            if (document == null) {
+                logger.warn(LYRICS_LOG_TAG) {
+                    "$requestType-workflow-candidate-miss track=${track.logIdentity()} source=${config.id} candidate=${candidate.id}"
+                }
+                continue
+            }
+            val artworkLocator = cacheWorkflowArtwork(track.id, candidate)
+            return ResolvedLyricsResult(
+                document = document,
+                artworkLocator = artworkLocator,
+            )
         }
-        val document = fetchWorkflowLyricsForCandidate(track, config, candidate, requestType) ?: return null
-        val artworkLocator = cacheWorkflowArtwork(track.id, candidate)
-        return ResolvedLyricsResult(
-            document = document,
-            artworkLocator = artworkLocator,
-        )
+        logger.warn(LYRICS_LOG_TAG) {
+            "$requestType-workflow-lyrics-miss track=${track.logIdentity()} source=${config.id} tried=${rankedCandidates.joinToString(",") { it.id }}"
+        }
+        return null
     }
 
     private suspend fun searchWorkflowCandidates(
@@ -944,10 +958,10 @@ class DefaultLyricsRepository(
         val variables = workflowTrackVariables(track)
         val request = buildWorkflowRequest(config.search.request, variables)
         val trackLabel = track.logIdentity()
-        logger.debug(LYRICS_LOG_TAG) {
-            "$requestType-workflow-search track=$trackLabel source=${config.id} method=${request.method.name} " +
-                "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
-        }
+        logger.logLyricsHttpRequest(
+            context = "$requestType-workflow-search track=$trackLabel source=${config.id}",
+            request = request,
+        )
         val startedAt = now()
         val response = httpClient.request(request).fold(
             onSuccess = { it },
@@ -958,6 +972,11 @@ class DefaultLyricsRepository(
                 null
             },
         ) ?: return emptyList()
+        logger.logLyricsHttpResponse(
+            context = "$requestType-workflow-search-response track=$trackLabel source=${config.id}",
+            response = response,
+            elapsedMs = now() - startedAt,
+        )
         val candidates = runCatching {
             extractWorkflowSongCandidates(config, response.body)
         }.getOrElse { throwable ->
@@ -967,8 +986,7 @@ class DefaultLyricsRepository(
             emptyList()
         }
         logger.debug(LYRICS_LOG_TAG) {
-            "$requestType-workflow-search-response track=$trackLabel source=${config.id} status=${response.statusCode} " +
-                "elapsedMs=${now() - startedAt} candidates=${candidates.size}"
+            "$requestType-workflow-search-candidates track=$trackLabel source=${config.id} candidates=${candidates.size}"
         }
         val limitedCandidates = candidates.take(config.selection.maxCandidates.coerceAtLeast(1))
         if (config.enrichment.steps.isEmpty()) return limitedCandidates
@@ -995,10 +1013,10 @@ class DefaultLyricsRepository(
         config.enrichment.steps.forEachIndexed { index, step ->
             val requestVariables = workflowTrackVariables(track) + workflowCandidateVariables(enrichedCandidate)
             val request = buildWorkflowRequest(step.request, requestVariables)
-            logger.debug(LYRICS_LOG_TAG) {
-                "$requestType-workflow-enrichment track=$trackLabel source=${config.id} step=$index candidate=${candidate.id} " +
-                    "method=${request.method.name} url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
-            }
+            logger.logLyricsHttpRequest(
+                context = "$requestType-workflow-enrichment track=$trackLabel source=${config.id} step=$index candidate=${candidate.id}",
+                request = request,
+            )
             val startedAt = now()
             val response = httpClient.request(request).fold(
                 onSuccess = { it },
@@ -1009,6 +1027,11 @@ class DefaultLyricsRepository(
                     null
                 },
             ) ?: return@forEachIndexed
+            logger.logLyricsHttpResponse(
+                context = "$requestType-workflow-enrichment-response track=$trackLabel source=${config.id} step=$index candidate=${candidate.id}",
+                response = response,
+                elapsedMs = now() - startedAt,
+            )
             val capture = runCatching {
                 extractWorkflowEnrichmentStepCapture(step, response.body)
             }.getOrElse { throwable ->
@@ -1046,10 +1069,10 @@ class DefaultLyricsRepository(
                 }
             }
             val request = buildWorkflowRequest(step.request, requestVariables)
-            logger.debug(LYRICS_LOG_TAG) {
-                "$requestType-workflow-step track=$trackLabel source=${config.id} step=$index method=${request.method.name} " +
-                    "url=${request.url} headers=${request.headers.headerNames()} bodyLength=${request.body?.length ?: 0}"
-            }
+            logger.logLyricsHttpRequest(
+                context = "$requestType-workflow-step track=$trackLabel source=${config.id} step=$index candidate=${candidate.id}",
+                request = request,
+            )
             val startedAt = now()
             val response = httpClient.request(request).fold(
                 onSuccess = { it },
@@ -1060,6 +1083,11 @@ class DefaultLyricsRepository(
                     null
                 },
             ) ?: return null
+            logger.logLyricsHttpResponse(
+                context = "$requestType-workflow-step-response track=$trackLabel source=${config.id} step=$index candidate=${candidate.id}",
+                response = response,
+                elapsedMs = now() - startedAt,
+            )
             val capture = runCatching {
                 extractWorkflowStepCapture(step, response.body)
             }.getOrElse { throwable ->
@@ -1083,17 +1111,11 @@ class DefaultLyricsRepository(
             }
         }
         val payload = finalPayload?.trim().takeIf { !it.isNullOrBlank() } ?: return null
-        val lines = when (config.lyrics.steps.last().format) {
-            LyricsResponseFormat.LRC -> parseLrc(payload)
-            LyricsResponseFormat.TEXT -> parsePlainText(payload)
-            else -> parseLrc(payload).ifEmpty { parsePlainText(payload) }
-        }
-        if (lines.isEmpty()) return null
-        return LyricsDocument(
-            lines = lines,
-            offsetMs = 0L,
+        return parseWorkflowLyricsDocument(
             sourceId = config.id,
-            rawPayload = payload,
+            sourceName = config.name,
+            step = config.lyrics.steps.last(),
+            payload = payload,
         )
     }
 
@@ -1142,13 +1164,55 @@ private fun Track.logIdentity(): String {
     return "\"$title\" by $artist (#$id)"
 }
 
-private fun Map<String, String>.headerNames(): String {
-    return keys.sorted().joinToString(",").ifBlank { "-" }
+private fun DiagnosticLogger.logLyricsHttpRequest(
+    context: String,
+    request: top.iwesley.lyn.music.core.model.LyricsRequest,
+) {
+    info(LYRICS_LOG_TAG) {
+        buildString {
+            append(context)
+            append(" method=")
+            append(request.method.name)
+            append('\n')
+            append("url: ")
+            append(request.url)
+            append('\n')
+            append("headers:\n")
+            append(request.headers.formatHeaderBlock())
+            append('\n')
+            append("body:\n")
+            append(request.body?.ifBlank { "<empty>" } ?: "<empty>")
+        }
+    }
 }
 
-private fun String.logPreview(limit: Int = 240): String {
-    val sanitized = replace("\n", "\\n")
-    return if (sanitized.length <= limit) sanitized else sanitized.take(limit) + "..."
+private fun DiagnosticLogger.logLyricsHttpResponse(
+    context: String,
+    response: top.iwesley.lyn.music.core.model.LyricsHttpResponse,
+    elapsedMs: Long,
+) {
+    info(LYRICS_LOG_TAG) {
+        buildString {
+            append(context)
+            append(" status=")
+            append(response.statusCode)
+            append(" elapsedMs=")
+            append(elapsedMs)
+            append('\n')
+            append("body:\n")
+            append(response.body.ifBlank { "<empty>" })
+        }
+    }
+}
+
+private fun Map<String, String>.formatHeaderBlock(): String {
+    return if (isEmpty()) {
+        "<empty>"
+    } else {
+        entries
+            .sortedBy { it.key.lowercase() }
+            .joinToString("\n") { (key, value) -> "$key: $value" }
+    }
 }
 
 fun TrackEntity.toDomain(): Track {

@@ -1212,6 +1212,54 @@ private fun SettingsTab(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    Text("Musicmatch", fontWeight = FontWeight.Bold)
+                    Text(
+                        "专用入口只维护 usertoken，保存后会自动生成保留的 Workflow 歌词源。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (state.hasMusicmatchSource) "已保存到歌词源列表" else "尚未配置",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (state.hasMusicmatchSource) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("Workflow") },
+                                leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = state.musicmatchUserToken,
+                        onValueChange = { onSettingsIntent(SettingsIntent.MusicmatchUserTokenChanged(it)) },
+                        label = { Text("Musicmatch usertoken") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveMusicmatch) }) {
+                            Text("保存 Musicmatch")
+                        }
+                        if (state.hasMusicmatchSource || state.musicmatchUserToken.isNotBlank()) {
+                            OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ClearMusicmatch) }) {
+                                Text("清除 Musicmatch")
+                            }
+                        }
+                    }
+                }
+            }
+            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     OutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
                     OutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1294,7 +1342,13 @@ private fun SettingsTab(
                         onClick = {
                             when (source) {
                                 is LyricsSourceConfig -> onSettingsIntent(SettingsIntent.SelectConfig(source))
-                                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> onSettingsIntent(SettingsIntent.ViewWorkflow(source))
+                                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
+                                    if (top.iwesley.lyn.music.domain.isManagedMusicmatchSource(source)) {
+                                        onSettingsIntent(SettingsIntent.SelectMusicmatch(source))
+                                    } else {
+                                        onSettingsIntent(SettingsIntent.ViewWorkflow(source))
+                                    }
+                                }
                             }
                         },
                         onToggleEnabled = {

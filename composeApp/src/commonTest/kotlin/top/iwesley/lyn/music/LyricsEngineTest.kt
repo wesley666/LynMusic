@@ -75,6 +75,40 @@ class LyricsEngineTest {
     }
 
     @Test
+    fun `json lines extractor supports nested time paths`() {
+        val config = LyricsSourceConfig(
+            id = "cfg",
+            name = "Nested JSON",
+            urlTemplate = "https://lyrics.example",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-lines:time.total,text",
+        )
+        val payload = """
+            [
+              {
+                "text": "第一句",
+                "time": {
+                  "total": 30.88
+                }
+              },
+              {
+                "text": "第二句",
+                "time": {
+                  "total": 34.24
+                }
+              }
+            ]
+        """.trimIndent()
+
+        val lyrics = parseLyricsPayload(config, payload)
+
+        assertEquals(2, lyrics?.lines?.size)
+        assertEquals(30_880, lyrics?.lines?.first()?.timestampMs)
+        assertEquals("第一句", lyrics?.lines?.first()?.text)
+        assertEquals(34_240, lyrics?.lines?.last()?.timestampMs)
+    }
+
+    @Test
     fun `xml payload can extract embedded lrc block`() {
         val config = LyricsSourceConfig(
             id = "cfg",

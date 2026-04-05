@@ -23,6 +23,8 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
 import top.iwesley.lyn.music.core.model.WorkflowRequestConfig
 import top.iwesley.lyn.music.core.model.WorkflowSearchConfig
 import top.iwesley.lyn.music.data.repository.SettingsRepository
+import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
+import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -172,6 +174,65 @@ class SettingsStoreTest {
         assertEquals(2, state.sources.size)
         scope.cancel()
     }
+
+    @Test
+    fun `saving musicmatch token creates managed workflow source`() = runTest {
+        val repository = FakeSettingsRepository(emptyList())
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.MusicmatchUserTokenChanged("token-123"))
+        store.dispatch(SettingsIntent.SaveMusicmatch)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        val managed = repository.currentSources()
+            .filterIsInstance<WorkflowLyricsSourceConfig>()
+            .single()
+
+        assertEquals("Musicmatch 已保存。", state.message)
+        assertEquals("token-123", state.musicmatchUserToken)
+        assertEquals(true, state.hasMusicmatchSource)
+        assertEquals(MANAGED_MUSICMATCH_SOURCE_ID, managed.id)
+        scope.cancel()
+    }
+
+    @Test
+    fun `clearing musicmatch removes managed workflow source`() = runTest {
+        val repository = FakeSettingsRepository(listOf(sampleMusicmatchSource()))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ClearMusicmatch)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("", state.musicmatchUserToken)
+        assertEquals(false, state.hasMusicmatchSource)
+        assertEquals(emptyList(), repository.currentSources())
+        scope.cancel()
+    }
+
+    @Test
+    fun `viewing managed musicmatch workflow keeps raw workflow editor closed`() = runTest {
+        val musicmatch = sampleMusicmatchSource()
+        val repository = FakeSettingsRepository(listOf(musicmatch))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ViewWorkflow(musicmatch))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("token-123", state.musicmatchUserToken)
+        assertEquals(true, state.hasMusicmatchSource)
+        assertEquals(null, state.editingWorkflowId)
+        assertEquals("", state.workflowJsonInput)
+        scope.cancel()
+    }
 }
 
 private class FakeSettingsRepository(
@@ -202,11 +263,7 @@ private class FakeSettingsRepository(
 
     override suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String?): WorkflowLyricsSourceConfig {
         val parsed = parseWorkflowLyricsSourceConfig(rawJson)
-        val config = sampleWorkflowSource(
-            id = parsed.id,
-            name = parsed.name,
-            rawJson = parsed.rawJson,
-        )
+        val config = parsed
         if (editingId != null && config.id != editingId) {
             error("Workflow 源 id 不支持修改。")
         }
@@ -280,6 +337,10 @@ private fun sampleWorkflowSource(
         ),
         rawJson = rawJson,
     )
+}
+
+private fun sampleMusicmatchSource(): WorkflowLyricsSourceConfig {
+    return parseWorkflowLyricsSourceConfig(buildManagedMusicmatchWorkflowJson("token-123"))
 }
 
 private fun workflowJson(

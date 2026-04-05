@@ -29,7 +29,7 @@ data class ParsedLyricsPayload(
     val durationSeconds: Int? = null,
 )
 
-private data class ExtractedLyricsPayload(
+internal data class ExtractedLyricsPayload(
     val lines: List<LyricsLine>,
     val itemId: String? = null,
     val title: String? = null,
@@ -73,12 +73,11 @@ fun parseLyricsPayloadResults(
     config: LyricsSourceConfig,
     payload: String,
 ): List<ParsedLyricsPayload> {
-    val extracted = when (config.responseFormat) {
-        LyricsResponseFormat.LRC -> listOf(ExtractedLyricsPayload(lines = parseLrc(payload)))
-        LyricsResponseFormat.TEXT -> listOf(ExtractedLyricsPayload(lines = parsePlainText(payload)))
-        LyricsResponseFormat.JSON -> parseJsonPayloads(config.extractor, payload)
-        LyricsResponseFormat.XML -> listOf(ExtractedLyricsPayload(lines = parseXmlPayload(config.extractor, payload)))
-    }
+    val extracted = extractLyricsPayloadCandidates(
+        responseFormat = config.responseFormat,
+        extractor = config.extractor,
+        payload = payload,
+    )
     return extracted.mapNotNull { candidate ->
         candidate.lines.takeIf { it.isNotEmpty() }?.let { lines ->
             ParsedLyricsPayload(
@@ -95,6 +94,19 @@ fun parseLyricsPayloadResults(
                 durationSeconds = candidate.durationSeconds,
             )
         }
+    }
+}
+
+internal fun extractLyricsPayloadCandidates(
+    responseFormat: LyricsResponseFormat,
+    extractor: String,
+    payload: String,
+): List<ExtractedLyricsPayload> {
+    return when (responseFormat) {
+        LyricsResponseFormat.LRC -> listOf(ExtractedLyricsPayload(lines = parseLrc(payload)))
+        LyricsResponseFormat.TEXT -> listOf(ExtractedLyricsPayload(lines = parsePlainText(payload)))
+        LyricsResponseFormat.JSON -> parseJsonPayloads(extractor, payload)
+        LyricsResponseFormat.XML -> listOf(ExtractedLyricsPayload(lines = parseXmlPayload(extractor, payload)))
     }
 }
 
@@ -132,18 +144,21 @@ private fun parseJsonPayloads(extractor: String, payload: String): List<Extracte
 
         extractor.startsWith("json-lines:") -> {
             val normalized = extractor.removePrefix("json-lines:")
-            val (arrayPath, mapping) = normalized.split('|', limit = 2).let {
-                it.firstOrNull().orEmpty() to it.getOrElse(1) { "time,text" }
+            val (arrayPath, mapping) = when {
+                '|' in normalized -> normalized.split('|', limit = 2).let {
+                    it.firstOrNull().orEmpty() to it.getOrElse(1) { "time,text" }
+                }
+                ',' in normalized -> "" to normalized
+                else -> normalized to "time,text"
             }
             val fields = mapping.split(',').map { it.trim() }
             val timeField = fields.getOrNull(0).orEmpty()
             val textField = fields.getOrNull(1).orEmpty()
             listOf(ExtractedLyricsPayload(
                 lines = extractJsonArray(root, arrayPath).mapNotNull { item ->
-                    val obj = item as? JsonObject ?: return@mapNotNull null
-                    val text = obj[textField]?.jsonPrimitiveContent() ?: return@mapNotNull null
+                    val text = extractJsonValue(item, textField)?.jsonPrimitiveContent() ?: return@mapNotNull null
                     LyricsLine(
-                        timestampMs = parseFlexibleTimestamp(obj[timeField]?.jsonPrimitiveContent()),
+                        timestampMs = parseFlexibleTimestamp(extractJsonValue(item, timeField)?.jsonPrimitiveContent()),
                         text = text,
                     )
                 },

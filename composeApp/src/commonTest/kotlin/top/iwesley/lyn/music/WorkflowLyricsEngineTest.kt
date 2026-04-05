@@ -5,12 +5,19 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsTransform
 import top.iwesley.lyn.music.core.model.WorkflowRequestConfig
+import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
+import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_NAME
+import top.iwesley.lyn.music.domain.MUSICMATCH_LYRICS_EXTRACTOR
+import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
+import top.iwesley.lyn.music.domain.extractManagedMusicmatchUserToken
 import top.iwesley.lyn.music.domain.extractWorkflowLyricsPayload
 import top.iwesley.lyn.music.domain.extractWorkflowSongCandidates
 import top.iwesley.lyn.music.domain.mergeWorkflowCandidateCapture
+import top.iwesley.lyn.music.domain.parseWorkflowLyricsDocument
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 class WorkflowLyricsEngineTest {
@@ -91,6 +98,51 @@ class WorkflowLyricsEngineTest {
         val payload = extractWorkflowLyricsPayload(config.lyrics.steps.last(), OIAPI_LRC_JSON)
 
         assertTrue(payload?.contains("[ti:晴天]") == true)
+    }
+
+    @Test
+    fun `musicmatch managed workflow parses token and json subtitle lines`() {
+        val rawJson = buildManagedMusicmatchWorkflowJson("token-123")
+        val config = parseWorkflowLyricsSourceConfig(rawJson)
+
+        val payload = extractWorkflowLyricsPayload(config.lyrics.steps.last(), MUSICMATCH_SUBTITLE_JSON)
+        val document = payload?.let {
+            parseWorkflowLyricsDocument(
+                sourceId = config.id,
+                sourceName = config.name,
+                step = config.lyrics.steps.last(),
+                payload = it,
+            )
+        }
+
+        assertEquals(MANAGED_MUSICMATCH_SOURCE_ID, config.id)
+        assertEquals(MANAGED_MUSICMATCH_SOURCE_NAME, config.name)
+        assertEquals("token-123", extractManagedMusicmatchUserToken(rawJson))
+        assertEquals(LyricsResponseFormat.JSON, config.lyrics.steps.last().format)
+        assertEquals(MUSICMATCH_LYRICS_EXTRACTOR, config.lyrics.steps.last().extractor)
+        assertEquals(2, document?.lines?.size)
+        assertEquals(30_880, document?.lines?.first()?.timestampMs)
+        assertEquals("對這個世界 如果你有太多的抱怨", document?.lines?.first()?.text)
+    }
+
+    @Test
+    fun `musicmatch managed workflow also accepts lrc subtitle payload`() {
+        val rawJson = buildManagedMusicmatchWorkflowJson("token-123")
+        val config = parseWorkflowLyricsSourceConfig(rawJson)
+
+        val document = parseWorkflowLyricsDocument(
+            sourceId = config.id,
+            sourceName = config.name,
+            step = config.lyrics.steps.last(),
+            payload = """
+                [00:30.88] 對這個世界 如果你有太多的抱怨
+                [00:34.24] 跌倒了就不敢繼續往前走
+            """.trimIndent(),
+        )
+
+        assertEquals(2, document?.lines?.size)
+        assertEquals(30_880, document?.lines?.first()?.timestampMs)
+        assertEquals("對這個世界 如果你有太多的抱怨", document?.lines?.first()?.text)
     }
 
     @Test
@@ -368,6 +420,21 @@ private const val OIAPI_LRC_JSON = """
   "data": {
     "content": "[ti:晴天]\n[00:01.00]第一句",
     "format": "lrc"
+  }
+}
+"""
+
+private const val MUSICMATCH_SUBTITLE_JSON = """
+{
+  "message": {
+    "header": {
+      "status_code": 200
+    },
+    "body": {
+      "subtitle": {
+        "subtitle_body": "[{\"text\":\"對這個世界 如果你有太多的抱怨\",\"time\":{\"total\":30.88,\"minutes\":0,\"seconds\":30,\"hundredths\":88}},{\"text\":\"跌倒了就不敢繼續往前走\",\"time\":{\"total\":34.24,\"minutes\":0,\"seconds\":34,\"hundredths\":24}}]"
+      }
+    }
   }
 }
 """

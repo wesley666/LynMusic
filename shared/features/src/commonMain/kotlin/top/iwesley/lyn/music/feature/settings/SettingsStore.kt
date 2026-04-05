@@ -12,12 +12,18 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
+import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
+import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
+import top.iwesley.lyn.music.domain.extractManagedMusicmatchUserToken
+import top.iwesley.lyn.music.domain.isManagedMusicmatchSource
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = true,
+    val musicmatchUserToken: String = "",
+    val hasMusicmatchSource: Boolean = false,
     val editingId: String? = null,
     val name: String = "",
     val method: RequestMethod = RequestMethod.GET,
@@ -37,7 +43,9 @@ data class SettingsState(
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
+    data class SelectMusicmatch(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
     data class ViewWorkflow(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
+    data class MusicmatchUserTokenChanged(val value: String) : SettingsIntent
     data class NameChanged(val value: String) : SettingsIntent
     data class MethodChanged(val value: RequestMethod) : SettingsIntent
     data class UrlChanged(val value: String) : SettingsIntent
@@ -52,6 +60,8 @@ sealed interface SettingsIntent {
     data object ImportWorkflow : SettingsIntent
     data object CreateNew : SettingsIntent
     data object CreateNewWorkflow : SettingsIntent
+    data object SaveMusicmatch : SettingsIntent
+    data object ClearMusicmatch : SettingsIntent
     data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
     data class DeleteSource(val sourceId: String) : SettingsIntent
     data object Save : SettingsIntent
@@ -71,8 +81,19 @@ class SettingsStore(
     init {
         scope.launch {
             repository.lyricsSources.collect { sources ->
+                val managedMusicmatch = sources
+                    .filterIsInstance<WorkflowLyricsSourceConfig>()
+                    .firstOrNull(::isManagedMusicmatchSource)
                 updateState { state ->
-                    state.copy(sources = sources)
+                    state.copy(
+                        sources = sources,
+                        musicmatchUserToken = when {
+                            managedMusicmatch != null -> extractManagedMusicmatchUserToken(managedMusicmatch.rawJson).orEmpty()
+                            state.hasMusicmatchSource -> ""
+                            else -> state.musicmatchUserToken
+                        },
+                        hasMusicmatchSource = managedMusicmatch != null,
+                    )
                 }
             }
         }
@@ -94,21 +115,47 @@ class SettingsStore(
                 intent.config?.toState() ?: if (it.editingId != null) {
                     it.copy(
                         editingId = null,
+                        musicmatchUserToken = it.musicmatchUserToken,
+                        hasMusicmatchSource = it.hasMusicmatchSource,
                         message = null,
                     )
                 } else {
                     SettingsState(
                         sources = it.sources,
                         useSambaCache = it.useSambaCache,
+                        musicmatchUserToken = it.musicmatchUserToken,
+                        hasMusicmatchSource = it.hasMusicmatchSource,
                         workflowJsonInput = it.workflowJsonInput,
                         editingWorkflowId = it.editingWorkflowId,
                     )
                 }
             }
 
+            is SettingsIntent.SelectMusicmatch -> updateState {
+                it.copy(
+                    editingId = null,
+                    musicmatchUserToken = intent.config?.rawJson?.let(::extractManagedMusicmatchUserToken).orEmpty(),
+                    hasMusicmatchSource = intent.config != null,
+                    workflowJsonInput = "",
+                    editingWorkflowId = null,
+                    message = null,
+                )
+            }
+
             is SettingsIntent.ViewWorkflow -> updateState {
-                when (val config = intent.config) {
-                    null -> {
+                val config = intent.config
+                when {
+                    config != null && isManagedMusicmatchSource(config) -> {
+                        it.copy(
+                            musicmatchUserToken = extractManagedMusicmatchUserToken(config.rawJson).orEmpty(),
+                            hasMusicmatchSource = true,
+                            workflowJsonInput = "",
+                            editingWorkflowId = null,
+                            message = null,
+                        )
+                    }
+
+                    config == null -> {
                         if (it.editingWorkflowId != null) {
                             it.copy(
                                 editingWorkflowId = null,
@@ -123,15 +170,17 @@ class SettingsStore(
                     }
 
                     else -> {
+                        val workflow = config
                         it.copy(
-                            editingWorkflowId = config.id,
-                            workflowJsonInput = config.rawJson,
+                            editingWorkflowId = workflow.id,
+                            workflowJsonInput = workflow.rawJson,
                             message = null,
                         )
                     }
                 }
             }
 
+            is SettingsIntent.MusicmatchUserTokenChanged -> updateState { it.copy(musicmatchUserToken = intent.value) }
             is SettingsIntent.NameChanged -> updateState { it.copy(name = intent.value) }
             is SettingsIntent.MethodChanged -> updateState { it.copy(method = intent.value) }
             is SettingsIntent.UrlChanged -> updateState { it.copy(urlTemplate = intent.value) }
@@ -218,6 +267,43 @@ class SettingsStore(
                 }
             }
 
+            SettingsIntent.SaveMusicmatch -> {
+                val userToken = state.value.musicmatchUserToken.trim()
+                if (userToken.isBlank()) {
+                    updateState { it.copy(message = "请填写 Musicmatch usertoken。") }
+                    return
+                }
+                val saved = runCatching {
+                    repository.saveWorkflowLyricsSource(
+                        rawJson = buildManagedMusicmatchWorkflowJson(userToken),
+                        editingId = MANAGED_MUSICMATCH_SOURCE_ID.takeIf { state.value.hasMusicmatchSource },
+                    )
+                }
+                updateState { currentState ->
+                    currentState.copy(
+                        musicmatchUserToken = userToken,
+                        hasMusicmatchSource = if (saved.isSuccess) true else currentState.hasMusicmatchSource,
+                        message = saved.fold(
+                            onSuccess = { "Musicmatch 已保存。" },
+                            onFailure = { error -> error.message ?: "Musicmatch 保存失败。" },
+                        ),
+                    )
+                }
+            }
+
+            SettingsIntent.ClearMusicmatch -> {
+                if (state.value.hasMusicmatchSource) {
+                    repository.deleteLyricsSource(MANAGED_MUSICMATCH_SOURCE_ID)
+                }
+                updateState {
+                    it.copy(
+                        musicmatchUserToken = "",
+                        hasMusicmatchSource = false,
+                        message = "Musicmatch 已清除。",
+                    )
+                }
+            }
+
             is SettingsIntent.ToggleSourceEnabled -> {
                 repository.setLyricsSourceEnabled(intent.sourceId, intent.enabled)
                 updateState {
@@ -230,16 +316,21 @@ class SettingsStore(
                 updateState {
                     val shouldClearDirect = it.editingId == intent.sourceId
                     val shouldClearWorkflow = it.editingWorkflowId == intent.sourceId
+                    val shouldClearMusicmatch = intent.sourceId == MANAGED_MUSICMATCH_SOURCE_ID
                     if (shouldClearDirect) {
                         SettingsState(
                             sources = it.sources,
                             useSambaCache = it.useSambaCache,
+                            musicmatchUserToken = if (shouldClearMusicmatch) "" else it.musicmatchUserToken,
+                            hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
                             editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
                             message = "歌词源已删除。",
                         )
                     } else {
                         it.copy(
+                            musicmatchUserToken = if (shouldClearMusicmatch) "" else it.musicmatchUserToken,
+                            hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
                             editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
                             message = "歌词源已删除。",
@@ -269,6 +360,8 @@ class SettingsStore(
                     SettingsState(
                         sources = it.sources,
                         useSambaCache = it.useSambaCache,
+                        musicmatchUserToken = it.musicmatchUserToken,
+                        hasMusicmatchSource = it.hasMusicmatchSource,
                         workflowJsonInput = it.workflowJsonInput,
                         editingWorkflowId = it.editingWorkflowId,
                         message = "歌词源已删除。",
@@ -304,6 +397,8 @@ class SettingsStore(
         return SettingsState(
             sources = sources,
             useSambaCache = state.value.useSambaCache,
+            musicmatchUserToken = state.value.musicmatchUserToken,
+            hasMusicmatchSource = state.value.hasMusicmatchSource,
             editingId = id,
             name = name,
             method = method,
