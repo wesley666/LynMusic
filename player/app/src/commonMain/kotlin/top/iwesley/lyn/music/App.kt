@@ -1531,6 +1531,11 @@ private fun SettingsTab(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    val settingsFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = shellColors.cardBorder,
+        unfocusedBorderColor = shellColors.cardBorder,
+        disabledBorderColor = shellColors.cardBorder,
+    )
     val selectedThemeTextPalette = remember(state.selectedTheme, state.textPalettePreferences) {
         resolveAppThemeTextPalette(
             themeId = state.selectedTheme,
@@ -1614,6 +1619,7 @@ private fun SettingsTab(
                             previewArgb = parseThemeHexColor(state.customBackgroundHex)
                                 ?: state.customThemeTokens.backgroundArgb,
                             onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeBackgroundChanged(it)) },
+                            colors = settingsFieldColors,
                         )
                         ThemeColorField(
                             label = "主色",
@@ -1621,6 +1627,7 @@ private fun SettingsTab(
                             previewArgb = parseThemeHexColor(state.customAccentHex)
                                 ?: state.customThemeTokens.accentArgb,
                             onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeAccentChanged(it)) },
+                            colors = settingsFieldColors,
                         )
                         ThemeColorField(
                             label = "选中 / 落焦色",
@@ -1628,6 +1635,7 @@ private fun SettingsTab(
                             previewArgb = parseThemeHexColor(state.customFocusHex)
                                 ?: state.customThemeTokens.focusArgb,
                             onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeFocusChanged(it)) },
+                            colors = settingsFieldColors,
                         )
                         state.themeInputError?.let { error ->
                             Text(
@@ -1702,6 +1710,7 @@ private fun SettingsTab(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         singleLine = true,
+                        colors = settingsFieldColors,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { onSettingsIntent(SettingsIntent.SaveLrcApi) }) {
@@ -1751,6 +1760,7 @@ private fun SettingsTab(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         singleLine = true,
+                        colors = settingsFieldColors,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { onSettingsIntent(SettingsIntent.SaveMusicmatch) }) {
@@ -1769,16 +1779,16 @@ private fun SettingsTab(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    ImeAwareOutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    ImeAwareOutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
+                    ImeAwareOutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         EnumSelector(label = "Method", values = RequestMethod.entries, selected = state.method, onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) }, modifier = Modifier.weight(1f))
                         EnumSelector(label = "Format", values = LyricsResponseFormat.entries, selected = state.responseFormat, onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) }, modifier = Modifier.weight(1f))
                     }
-                    ImeAwareOutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    ImeAwareOutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    ImeAwareOutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
-                    ImeAwareOutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp))
+                    ImeAwareOutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
+                    ImeAwareOutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
+                    ImeAwareOutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
+                    ImeAwareOutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
                     ImeAwareOutlinedTextField(
                         value = state.priority,
                         onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
@@ -1786,6 +1796,7 @@ private fun SettingsTab(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = settingsFieldColors,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("启用歌词源", fontWeight = FontWeight.Medium)
@@ -1824,6 +1835,7 @@ private fun SettingsTab(
                         shape = RoundedCornerShape(18.dp),
                         minLines = 10,
                         maxLines = 18,
+                        colors = settingsFieldColors,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.ImportWorkflow else SettingsIntent.CreateNewWorkflow) }) {
@@ -1993,6 +2005,7 @@ private fun ThemeColorField(
     value: String,
     previewArgb: Int,
     onValueChange: (String) -> Unit,
+    colors: androidx.compose.material3.TextFieldColors,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -2010,6 +2023,7 @@ private fun ThemeColorField(
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(18.dp),
             singleLine = true,
+            colors = colors,
         )
     }
 }
