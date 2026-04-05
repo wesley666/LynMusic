@@ -20,6 +20,9 @@ import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.LyricsCacheEntity
+import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
+import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -106,6 +109,66 @@ class PlaybackRepositoriesTest {
             assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
             assertEquals(loadCountBeforeCompletion + 1, gateway.loadCalls.size)
             assertEquals("track-2", gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `restore queue and live refresh use manual artwork override`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val trackEntity = TrackEntity(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "First Song",
+            artistId = null,
+            artistName = "Artist A",
+            albumId = null,
+            albumTitle = "Album A",
+            durationMs = 180_000L,
+            trackNumber = null,
+            discNumber = null,
+            mediaLocator = "file:///music/track-1.mp3",
+            relativePath = "First Song.mp3",
+            artworkLocator = "/tmp/original.jpg",
+            sizeBytes = 0L,
+            modifiedAt = 0L,
+        )
+        database.trackDao().upsertAll(listOf(trackEntity))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = "track-1",
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "manual line",
+                updatedAt = 1L,
+                artworkLocator = "/tmp/manual.jpg",
+            ),
+        )
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-1",
+                currentIndex = 0,
+                positionMs = 0L,
+                mode = PlaybackMode.ORDER.name,
+                updatedAt = 1L,
+            ),
+        )
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+            assertEquals("/tmp/manual.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
+            assertEquals("/tmp/manual.jpg", gateway.loadCalls.single().track.artworkLocator)
+
+            database.lyricsCacheDao().deleteByTrackIdAndSourceId("track-1", MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+            database.trackDao().upsertAll(listOf(trackEntity.copy(modifiedAt = 1L)))
+            advanceUntilIdle()
+
+            assertEquals("/tmp/original.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
         } finally {
             repository.close()
             scope.cancel()

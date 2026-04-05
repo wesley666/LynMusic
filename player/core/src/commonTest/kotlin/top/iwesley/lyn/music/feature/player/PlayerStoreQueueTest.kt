@@ -14,12 +14,13 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
-import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
+import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
@@ -94,6 +95,44 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `manual apply uses repository returned artwork locator`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val lyricsRepository = RecordingQueueLyricsRepository(
+            applyResult = AppliedLyricsResult(
+                document = LyricsDocument(
+                    lines = listOf(LyricsLine(timestampMs = null, text = "manual line")),
+                    sourceId = "direct-source",
+                    rawPayload = "manual line",
+                ),
+                artworkLocator = "/tmp/cache/manual.jpg",
+            ),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(
+            PlayerIntent.ApplyManualLyricsCandidate(
+                LyricsSearchCandidate(
+                    sourceId = "direct-source",
+                    sourceName = "Direct",
+                    document = LyricsDocument(
+                        lines = listOf(LyricsLine(timestampMs = null, text = "candidate line")),
+                        sourceId = "direct-source",
+                        rawPayload = "candidate line",
+                    ),
+                    artworkLocator = "https://img.example.com/raw.jpg",
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("/tmp/cache/manual.jpg", playbackRepository.lastArtworkOverride)
+        assertEquals("/tmp/cache/manual.jpg", store.state.value.snapshot.currentTrack?.artworkLocator)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -130,6 +169,8 @@ private class FakeQueuePlaybackRepository(
         private set
     var lastPlayStartIndex: Int? = null
         private set
+    var lastArtworkOverride: String? = null
+        private set
 
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
@@ -164,7 +205,14 @@ private class FakeQueuePlaybackRepository(
 
     override suspend fun cycleMode() = Unit
 
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) = Unit
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+        lastArtworkOverride = artworkLocator
+        val currentIndex = mutableSnapshot.value.currentIndex
+        val currentTrack = mutableSnapshot.value.currentTrack ?: return
+        val updatedQueue = mutableSnapshot.value.queue.toMutableList()
+        updatedQueue[currentIndex] = currentTrack.copy(artworkLocator = artworkLocator ?: currentTrack.artworkLocator)
+        mutableSnapshot.value = mutableSnapshot.value.copy(queue = updatedQueue)
+    }
 
     override suspend fun close() = Unit
 }
@@ -177,7 +225,7 @@ private class NoopQueueLyricsRepository : LyricsRepository {
         includeTrackProvidedCandidate: Boolean,
     ): List<LyricsSearchCandidate> = emptyList()
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
         error("Not used in queue tests")
     }
 
@@ -187,7 +235,32 @@ private class NoopQueueLyricsRepository : LyricsRepository {
         error("Not used in queue tests")
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+        error("Not used in queue tests")
+    }
+}
+
+private class RecordingQueueLyricsRepository(
+    private val applyResult: AppliedLyricsResult,
+) : LyricsRepository {
+    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = null
+
+    override suspend fun searchLyricsCandidates(
+        track: Track,
+        includeTrackProvidedCandidate: Boolean,
+    ): List<LyricsSearchCandidate> = emptyList()
+
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+        return applyResult
+    }
+
+    override suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate> = emptyList()
+
+    override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
+        error("Not used in queue tests")
+    }
+
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
         error("Not used in queue tests")
     }
 }

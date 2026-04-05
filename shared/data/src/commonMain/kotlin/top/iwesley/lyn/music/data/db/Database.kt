@@ -125,6 +125,7 @@ data class LyricsCacheEntity(
     val sourceId: String,
     val rawPayload: String,
     val updatedAt: Long,
+    val artworkLocator: String? = null,
 )
 
 @Dao
@@ -322,6 +323,15 @@ interface LyricsCacheDao {
     @Query("SELECT * FROM lyrics_cache WHERE trackId = :trackId ORDER BY updatedAt DESC")
     suspend fun getByTrack(trackId: String): List<LyricsCacheEntity>
 
+    @Query("SELECT * FROM lyrics_cache WHERE trackId = :trackId AND sourceId = :sourceId LIMIT 1")
+    suspend fun getByTrackIdAndSourceId(trackId: String, sourceId: String): LyricsCacheEntity?
+
+    @Query("SELECT * FROM lyrics_cache WHERE trackId IN (:trackIds) AND sourceId = :sourceId")
+    suspend fun getByTrackIdsAndSourceId(trackIds: List<String>, sourceId: String): List<LyricsCacheEntity>
+
+    @Query("SELECT * FROM lyrics_cache WHERE sourceId = :sourceId ORDER BY updatedAt DESC, trackId ASC")
+    fun observeBySourceId(sourceId: String): Flow<List<LyricsCacheEntity>>
+
     @Query("DELETE FROM lyrics_cache WHERE trackId = :trackId AND sourceId = :sourceId")
     suspend fun deleteByTrackIdAndSourceId(trackId: String, sourceId: String)
 
@@ -348,7 +358,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 5,
+    version = 6,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -377,6 +387,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_2_3)
         .addMigrations(MIGRATION_3_4)
         .addMigrations(MIGRATION_4_5)
+        .addMigrations(MIGRATION_5_6)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -429,6 +440,17 @@ val MIGRATION_4_5: Migration = object : Migration(4, 5) {
                 remoteSongId TEXT,
                 favoritedAt INTEGER NOT NULL
             )
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            ALTER TABLE lyrics_cache
+            ADD COLUMN artworkLocator TEXT
             """.trimIndent(),
         )
     }

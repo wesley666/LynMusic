@@ -104,10 +104,10 @@ interface ImportSourceRepository {
 interface LyricsRepository {
     suspend fun getLyrics(track: Track): ResolvedLyricsResult?
     suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean = true): List<LyricsSearchCandidate>
-    suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument
+    suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult
     suspend fun searchWorkflowSongCandidates(track: Track): List<WorkflowSongCandidate>
     suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult
-    suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult
+    suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult
 }
 
 data class ResolvedLyricsResult(
@@ -115,7 +115,7 @@ data class ResolvedLyricsResult(
     val artworkLocator: String? = null,
 )
 
-data class AppliedWorkflowLyricsResult(
+data class AppliedLyricsResult(
     val document: LyricsDocument,
     val artworkLocator: String? = null,
 )
@@ -135,9 +135,13 @@ interface SettingsRepository {
 class RoomLibraryRepository(
     private val database: LynMusicDatabase,
 ) : LibraryRepository {
-    override val tracks: Flow<List<Track>> = database.trackDao()
-        .observeAll()
-        .map { entities -> entities.map { it.toDomain() } }
+    override val tracks: Flow<List<Track>> = combine(
+        database.trackDao().observeAll(),
+        database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+    ) { entities, overrides ->
+        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+        entities.map { entity -> entity.toDomain(artworkOverrides[entity.id]) }
+    }
 
     override val artists: Flow<List<Artist>> = database.artistDao()
         .observeAll()
@@ -150,8 +154,11 @@ class RoomLibraryRepository(
     override suspend fun getTracksByIds(trackIds: List<String>): List<Track> {
         if (trackIds.isEmpty()) return emptyList()
         val items = database.trackDao().getByIds(trackIds)
+        val artworkOverrides = manualArtworkOverridesByTrackId(
+            database.lyricsCacheDao().getByTrackIdsAndSourceId(trackIds, MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+        )
         val byId = items.associateBy { it.id }
-        return trackIds.mapNotNull { byId[it]?.toDomain() }
+        return trackIds.mapNotNull { trackId -> byId[trackId]?.toDomain(artworkOverrides[trackId]) }
     }
 }
 
@@ -654,15 +661,20 @@ class DefaultLyricsRepository(
     override suspend fun getLyrics(track: Track): ResolvedLyricsResult? {
         val trackLabel = track.logIdentity()
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
+        cachedRows
+            .firstOrNull { it.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID }
+            ?.let(::resolveCachedLyrics)
+            ?.let { resolved ->
+                logCacheHit(trackLabel, resolved.document)
+                return resolved
+            }
         if (parseNavidromeSongLocator(track.mediaLocator) != null) {
             cachedRows
                 .firstOrNull { it.sourceId == NAVIDROME_LYRICS_SOURCE_ID }
-                ?.let { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
-                ?.let { cached ->
-                    logger.debug(LYRICS_LOG_TAG) {
-                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
-                    }
-                    return ResolvedLyricsResult(document = cached)
+                ?.let(::resolveCachedLyrics)
+                ?.let { resolved ->
+                    logCacheHit(trackLabel, resolved.document)
+                    return resolved
                 }
             requestNavidromeLyricsDocument(track)?.let { navidromeLyrics ->
                 storeLyricsDocument(track.id, navidromeLyrics)
@@ -674,22 +686,18 @@ class DefaultLyricsRepository(
             cachedRows
                 .firstNotNullOfOrNull { cache ->
                     cache.takeUnless { it.sourceId == NAVIDROME_LYRICS_SOURCE_ID }
-                        ?.let { parseCachedLyrics(it.sourceId, it.rawPayload) }
+                        ?.let(::resolveCachedLyrics)
                 }
-                ?.let { cached ->
-                    logger.debug(LYRICS_LOG_TAG) {
-                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
-                    }
-                    return ResolvedLyricsResult(document = cached)
+                ?.let { resolved ->
+                    logCacheHit(trackLabel, resolved.document)
+                    return resolved
                 }
         } else {
             cachedRows
-                .firstNotNullOfOrNull { cache -> parseCachedLyrics(cache.sourceId, cache.rawPayload) }
-                ?.let { cached ->
-                    logger.debug(LYRICS_LOG_TAG) {
-                        "cache-hit track=$trackLabel source=${cached.sourceId} synced=${cached.isSynced} lines=${cached.lines.size}"
-                    }
-                    return ResolvedLyricsResult(document = cached)
+                .firstNotNullOfOrNull(::resolveCachedLyrics)
+                ?.let { resolved ->
+                    logCacheHit(trackLabel, resolved.document)
+                    return resolved
                 }
         }
 
@@ -814,32 +822,41 @@ class DefaultLyricsRepository(
         return candidates
     }
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
-        val cachedRawPayload = serializeLyricsDocument(candidate.document)
-        database.lyricsCacheDao().upsert(
-            LyricsCacheEntity(
-                trackId = trackId,
-                sourceId = candidate.sourceId,
-                rawPayload = cachedRawPayload,
-                updatedAt = now(),
-            ),
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+        val appliedDocument = parseCachedLyrics(
+            candidate.sourceId,
+            serializeLyricsDocument(candidate.document),
+        ) ?: candidate.document.copy(
+            sourceId = candidate.sourceId,
+            rawPayload = serializeLyricsDocument(candidate.document),
         )
-        if (candidate.isTrackProvided) {
+        val artworkLocator = if (candidate.isTrackProvided) {
+            database.lyricsCacheDao().deleteByTrackIdAndSourceId(trackId, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+            storeLyricsDocument(trackId, appliedDocument)
             normalizeArtworkLocator(candidate.artworkLocator)
-                ?.takeIf { it.isNotBlank() }
-                ?.let { artworkLocator ->
-                    database.trackDao().updateArtworkLocator(trackId, artworkLocator)
-                }
+        } else {
+            val cachedArtworkLocator = cacheArtworkLocator(
+                trackId = trackId,
+                sourceKey = candidate.sourceId,
+                candidateKey = candidate.itemId ?: candidate.title ?: "manual",
+                sourceLocator = candidate.artworkLocator,
+            )
+            storeLyricsDocument(
+                trackId = trackId,
+                document = appliedDocument,
+                cacheSourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                artworkLocator = cachedArtworkLocator,
+            )
+            cachedArtworkLocator
         }
         logger.info(LYRICS_LOG_TAG) {
             "manual-apply track=$trackId source=${candidate.sourceId} synced=${candidate.document.isSynced} " +
-                "lines=${candidate.document.lines.size}"
+                "lines=${candidate.document.lines.size} artworkLocator=${artworkLocator.orEmpty()}"
         }
-        return parseCachedLyrics(candidate.sourceId, cachedRawPayload)
-            ?: candidate.document.copy(
-                sourceId = candidate.sourceId,
-                rawPayload = cachedRawPayload,
-            )
+        return AppliedLyricsResult(
+            document = appliedDocument,
+            artworkLocator = artworkLocator,
+        )
     }
 
     private suspend fun buildTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
@@ -923,7 +940,7 @@ class DefaultLyricsRepository(
         )
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
         val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
             ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
         val document = fetchWorkflowLyricsForCandidate(
@@ -942,15 +959,26 @@ class DefaultLyricsRepository(
             candidate = candidate,
             requestType = "manual",
         ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
-        storeLyricsDocument(trackId, document)
-        val cachedArtworkLocator = cacheWorkflowArtwork(trackId, candidate)
+        val appliedDocument = document.copy(rawPayload = serializeLyricsDocument(document))
+        val cachedArtworkLocator = cacheArtworkLocator(
+            trackId = trackId,
+            sourceKey = candidate.sourceId,
+            candidateKey = candidate.id,
+            sourceLocator = candidate.imageUrl,
+        )
+        storeLyricsDocument(
+            trackId = trackId,
+            document = appliedDocument,
+            cacheSourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+            artworkLocator = cachedArtworkLocator,
+        )
         logger.info(LYRICS_LOG_TAG) {
             "manual-workflow-apply track=$trackId source=${candidate.sourceId} synced=${document.isSynced} " +
                 "lines=${document.lines.size} coverUrl=${candidate.imageUrl.orEmpty()} " +
                 "artworkLocator=${cachedArtworkLocator.orEmpty()}"
         }
-        return AppliedWorkflowLyricsResult(
-            document = document,
+        return AppliedLyricsResult(
+            document = appliedDocument,
             artworkLocator = cachedArtworkLocator,
         )
     }
@@ -970,26 +998,63 @@ class DefaultLyricsRepository(
         )
     }
 
-    private suspend fun cacheWorkflowArtwork(trackId: String, candidate: WorkflowSongCandidate): String? {
-        val sourceLocator = normalizeArtworkLocator(candidate.imageUrl)?.trim().orEmpty()
-        if (sourceLocator.isBlank()) return null
+    private suspend fun cacheArtworkLocator(
+        trackId: String,
+        sourceKey: String,
+        candidateKey: String,
+        sourceLocator: String?,
+    ): String? {
+        val normalizedLocator = normalizeArtworkLocator(sourceLocator)?.trim().orEmpty()
+        if (normalizedLocator.isBlank()) return null
+        val cacheKey = buildString {
+            append(trackId)
+            append('_')
+            append(sourceKey)
+            append('_')
+            append(candidateKey)
+        }
         val cachedLocator = runCatching {
             artworkCacheStore.cache(
-                locator = sourceLocator,
-                cacheKey = "${trackId}_${candidate.sourceId}_${candidate.id}",
+                locator = normalizedLocator,
+                cacheKey = cacheKey,
             )
         }.onFailure { throwable ->
             logger.error(LYRICS_LOG_TAG, throwable) {
-                "workflow-artwork-cache-failed track=$trackId source=${candidate.sourceId} candidate=${candidate.id} url=$sourceLocator"
+                "artwork-cache-failed track=$trackId source=$sourceKey candidate=$candidateKey url=$normalizedLocator"
             }
         }.getOrNull()?.takeIf { it.isNotBlank() }
         if (cachedLocator != null) {
-            database.trackDao().updateArtworkLocator(trackId, cachedLocator)
             logger.debug(LYRICS_LOG_TAG) {
-                "workflow-artwork-cache-hit track=$trackId source=${candidate.sourceId} candidate=${candidate.id} locator=$cachedLocator"
+                "artwork-cache-hit track=$trackId source=$sourceKey candidate=$candidateKey locator=$cachedLocator"
             }
         }
-        return cachedLocator
+        return cachedLocator ?: normalizedLocator
+    }
+
+    private fun resolveCachedLyrics(row: LyricsCacheEntity): ResolvedLyricsResult? {
+        return parseCachedLyrics(row.sourceId, row.rawPayload)?.let { cached ->
+            ResolvedLyricsResult(
+                document = cached,
+                artworkLocator = normalizeArtworkLocator(row.artworkLocator),
+            )
+        }
+    }
+
+    private fun logCacheHit(trackLabel: String, document: LyricsDocument) {
+        logger.debug(LYRICS_LOG_TAG) {
+            "cache-hit track=$trackLabel source=${document.sourceId} synced=${document.isSynced} lines=${document.lines.size}"
+        }
+    }
+
+    private suspend fun cacheWorkflowArtwork(trackId: String, candidate: WorkflowSongCandidate): String? {
+        val sourceLocator = normalizeArtworkLocator(candidate.imageUrl)?.trim().orEmpty()
+        if (sourceLocator.isBlank()) return null
+        return cacheArtworkLocator(
+            trackId = trackId,
+            sourceKey = candidate.sourceId,
+            candidateKey = candidate.id,
+            sourceLocator = sourceLocator,
+        )
     }
 
     private suspend fun enabledLyricsSources(): List<LyricsSourceDefinition> {
@@ -1247,13 +1312,19 @@ class DefaultLyricsRepository(
         )
     }
 
-    private suspend fun storeLyricsDocument(trackId: String, document: LyricsDocument) {
+    private suspend fun storeLyricsDocument(
+        trackId: String,
+        document: LyricsDocument,
+        cacheSourceId: String = document.sourceId,
+        artworkLocator: String? = null,
+    ) {
         database.lyricsCacheDao().upsert(
             LyricsCacheEntity(
                 trackId = trackId,
-                sourceId = document.sourceId,
+                sourceId = cacheSourceId,
                 rawPayload = serializeLyricsDocument(document),
                 updatedAt = now(),
+                artworkLocator = normalizeArtworkLocator(artworkLocator),
             ),
         )
     }
@@ -1262,6 +1333,7 @@ class DefaultLyricsRepository(
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
+const val MANUAL_LYRICS_OVERRIDE_SOURCE_ID = "manual-override"
 internal const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
 
 private fun newId(prefix: String): String = "$prefix-${now()}-${Random.nextInt(1000, 9999)}"
@@ -1347,7 +1419,15 @@ private fun Map<String, String>.formatHeaderBlock(): String {
     }
 }
 
-fun TrackEntity.toDomain(): Track {
+fun manualArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<String, String> {
+    return rows.mapNotNull { row ->
+        normalizeArtworkLocator(row.artworkLocator)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { row.trackId to it }
+    }.toMap()
+}
+
+fun TrackEntity.toDomain(artworkOverrideLocator: String? = null): Track {
     return Track(
         id = id,
         sourceId = sourceId,
@@ -1359,7 +1439,7 @@ fun TrackEntity.toDomain(): Track {
         discNumber = discNumber,
         mediaLocator = mediaLocator,
         relativePath = relativePath,
-        artworkLocator = artworkLocator,
+        artworkLocator = artworkOverrideLocator?.takeIf { it.isNotBlank() } ?: artworkLocator,
         sizeBytes = sizeBytes,
         modifiedAt = modifiedAt,
     )

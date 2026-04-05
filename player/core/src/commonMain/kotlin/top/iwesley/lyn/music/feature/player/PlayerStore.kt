@@ -428,8 +428,9 @@ class PlayerStore(
     private suspend fun applyManualLyricsCandidate(candidate: LyricsSearchCandidate) {
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
-        val document = lyricsRepository.applyLyricsCandidate(track.id, candidate)
-        val artworkLocator = normalizeArtworkLocator(candidate.artworkLocator)
+        val result = lyricsRepository.applyLyricsCandidate(track.id, candidate)
+        val document = result.document
+        val artworkLocator = result.artworkLocator
         if (!artworkLocator.isNullOrBlank()) {
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }
@@ -452,7 +453,7 @@ class PlayerStore(
         val snapshot = state.value.snapshot
         val result = lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
         val document = result.document
-        val artworkLocator = result.artworkLocator ?: normalizeArtworkLocator(candidate.imageUrl)
+        val artworkLocator = result.artworkLocator
         if (!artworkLocator.isNullOrBlank()) {
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }

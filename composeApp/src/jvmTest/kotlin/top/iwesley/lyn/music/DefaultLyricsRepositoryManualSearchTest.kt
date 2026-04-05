@@ -26,6 +26,7 @@ import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
+import top.iwesley.lyn.music.data.repository.MANUAL_LYRICS_OVERRIDE_SOURCE_ID
 
 class DefaultLyricsRepositoryManualSearchTest {
 
@@ -79,8 +80,8 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertTrue(candidates.first().isTrackProvided)
         assertEquals("/tmp/tag-cover.jpg", candidates.first().artworkLocator)
         assertEquals("标签标题", candidates.first().title)
-        assertEquals("embedded-tag", applied.sourceId)
-        assertEquals("/tmp/tag-cover.jpg", storedTrack.artworkLocator)
+        assertEquals("embedded-tag", applied.document.sourceId)
+        assertEquals(null, storedTrack.artworkLocator)
     }
 
     @Test
@@ -151,14 +152,14 @@ class DefaultLyricsRepositoryManualSearchTest {
         val applied = repository.applyLyricsCandidate(track.id, candidates.last())
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
 
-        assertEquals("source-plain", applied.sourceId)
-        assertEquals(listOf("source-plain"), cachedRows.map { it.sourceId })
+        assertEquals("source-plain", applied.document.sourceId)
+        assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
 
         val requestCountAfterManualSearch = httpClient.requestCount
         val cached = repository.getLyrics(track.copy(title = "不会再次发请求"))
 
         assertNotNull(cached)
-        assertEquals("source-plain", cached.document.sourceId)
+        assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, cached.document.sourceId)
         assertEquals(requestCountAfterManualSearch, httpClient.requestCount)
     }
 

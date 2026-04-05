@@ -48,8 +48,12 @@ class RoomFavoritesRepository(
     override val favoriteTracks: Flow<List<Track>> = combine(
         favoriteRows,
         database.trackDao().observeAll(),
-    ) { favorites, tracks ->
-        val trackById = tracks.associate { it.id to it.toDomain() }
+        database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+    ) { favorites, tracks, overrides ->
+        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+        val trackById = tracks.associate { track ->
+            track.id to track.toDomain(artworkOverrides[track.id])
+        }
         favorites.mapNotNull { trackById[it.trackId] }
     }
 

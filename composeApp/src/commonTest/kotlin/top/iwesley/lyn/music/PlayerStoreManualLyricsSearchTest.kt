@@ -22,7 +22,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
-import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
+import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
@@ -342,16 +342,19 @@ private class FakeLyricsRepository(
         )
     }
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
         appliedTrackId = trackId
         appliedCandidate = candidate
-        return appliedDocument ?: candidate.document
+        return AppliedLyricsResult(
+            document = appliedDocument ?: candidate.document,
+            artworkLocator = candidate.artworkLocator,
+        )
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
         appliedTrackId = trackId
         appliedWorkflowCandidate = candidate
-        return AppliedWorkflowLyricsResult(
+        return AppliedLyricsResult(
             document = appliedDocument ?: error("No applied document configured"),
             artworkLocator = candidate.imageUrl,
         )

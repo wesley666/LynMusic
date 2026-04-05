@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -47,14 +48,21 @@ class DefaultPlaybackRepository(
             restoreQueue()
         }
         scope.launch {
-            database.trackDao().observeAll().collect { entities ->
-                val tracksById = entities.associateBy { it.id }
+            combine(
+                database.trackDao().observeAll(),
+                database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+            ) { entities, overrides ->
+                val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+                entities.associate { entity ->
+                    entity.id to entity.toDomain(artworkOverrides[entity.id])
+                }
+            }.collect { tracksById ->
                 var snapshotChanged = false
                 var currentTrackChanged = false
                 mutableSnapshot.update { snapshot ->
                     if (snapshot.queue.isEmpty()) return@update snapshot
                     val updatedQueue = snapshot.queue.mapIndexed { index, track ->
-                        val updated = tracksById[track.id]?.toDomain() ?: track
+                        val updated = tracksById[track.id] ?: track
                         if (updated != track) {
                             snapshotChanged = true
                             if (index == snapshot.currentIndex) {
@@ -249,9 +257,12 @@ class DefaultPlaybackRepository(
         val persisted = database.playbackQueueSnapshotDao().get() ?: return
         val ids = persisted.queueTrackIds.split(',').filter { it.isNotBlank() }
         if (ids.isEmpty()) return
+        val artworkOverrides = manualArtworkOverridesByTrackId(
+            database.lyricsCacheDao().getByTrackIdsAndSourceId(ids, MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
+        )
         val tracks = database.trackDao().getByIds(ids)
             .associateBy { it.id }
-            .let { indexed -> ids.mapNotNull { indexed[it]?.toDomain() } }
+            .let { indexed -> ids.mapNotNull { trackId -> indexed[trackId]?.toDomain(artworkOverrides[trackId]) } }
         if (tracks.isEmpty()) return
         val index = persisted.currentIndex.coerceIn(0, tracks.lastIndex)
         val mode = persisted.mode.toPlaybackMode()

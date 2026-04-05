@@ -25,7 +25,7 @@ import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
-import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
+import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.MusicTagSaveResult
 import top.iwesley.lyn.music.data.repository.MusicTagsRepository
@@ -650,7 +650,7 @@ private class FakeMusicTagsLyricsRepository(
         return searchResults
     }
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
         error("Not used in music tags tests")
     }
 
@@ -665,7 +665,7 @@ private class FakeMusicTagsLyricsRepository(
         return resolvedWorkflowResult.getOrThrow()
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
         error("Not used in music tags tests")
     }
 }

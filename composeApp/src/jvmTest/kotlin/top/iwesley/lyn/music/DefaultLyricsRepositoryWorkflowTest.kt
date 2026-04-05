@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
+import top.iwesley.lyn.music.data.repository.MANUAL_LYRICS_OVERRIDE_SOURCE_ID
 import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
 import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
 
@@ -125,8 +126,8 @@ class DefaultLyricsRepositoryWorkflowTest {
 
         assertEquals("workflow-oiapi", applied.document.sourceId)
         assertEquals("/tmp/lynmusic-artwork-cache/rain.jpg", applied.artworkLocator)
-        assertEquals(listOf("workflow-oiapi"), cachedRows.map { it.sourceId })
-        assertEquals("/tmp/lynmusic-artwork-cache/rain.jpg", storedTrack.artworkLocator)
+        assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
+        assertEquals(null, storedTrack.artworkLocator)
     }
 
     @Test
@@ -394,7 +395,7 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertTrue(applied.document.isSynced)
         assertEquals("對這個世界 如果你有太多的抱怨", applied.document.lines.first().text)
         assertEquals(30_880, applied.document.lines.first().timestampMs)
-        assertEquals(listOf(MANAGED_MUSICMATCH_SOURCE_ID), cachedRows.map { it.sourceId })
+        assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
     }
 
     private fun createTestDatabase(): LynMusicDatabase {

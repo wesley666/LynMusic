@@ -28,7 +28,7 @@ import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
-import top.iwesley.lyn.music.data.repository.AppliedWorkflowLyricsResult
+import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
@@ -417,7 +417,7 @@ private class FakeLyricsShareRepository(
         includeTrackProvidedCandidate: Boolean,
     ): List<LyricsSearchCandidate> = emptyList()
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): LyricsDocument {
+    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
         error("Not used in lyrics share tests")
     }
 
@@ -427,7 +427,7 @@ private class FakeLyricsShareRepository(
         error("Not used in lyrics share tests")
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedWorkflowLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
         error("Not used in lyrics share tests")
     }
 }
