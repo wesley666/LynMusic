@@ -1212,6 +1212,55 @@ private fun SettingsTab(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    Text("LrcAPI", fontWeight = FontWeight.Bold)
+                    Text(
+                        "专用入口只维护请求地址，保存后会自动生成保留的 Direct 歌词源。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (state.hasLrcApiSource) "已保存到歌词源列表" else "尚未配置",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        if (state.hasLrcApiSource) {
+                            AssistChip(
+                                onClick = {},
+                                label = { Text("Direct") },
+                                leadingIcon = { Icon(Icons.Rounded.CloudSync, null) },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = state.lrcApiUrl,
+                        onValueChange = { onSettingsIntent(SettingsIntent.LrcApiUrlChanged(it)) },
+                        label = { Text("LrcAPI 请求地址") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        singleLine = true,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveLrcApi) }) {
+                            Text("保存 LrcAPI")
+                        }
+                        OutlinedButton(
+                            onClick = { onSettingsIntent(SettingsIntent.ClearLrcApi) },
+                            enabled = state.hasLrcApiSource,
+                        ) {
+                            Text("清除 LrcAPI")
+                        }
+                    }
+                }
+            }
+            ElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
                     Text("Musicmatch", fontWeight = FontWeight.Bold)
                     Text(
                         "专用入口只维护 usertoken，保存后会自动生成保留的 Workflow 歌词源。",
@@ -1341,7 +1390,13 @@ private fun SettingsTab(
                         source = source,
                         onClick = {
                             when (source) {
-                                is LyricsSourceConfig -> onSettingsIntent(SettingsIntent.SelectConfig(source))
+                                is LyricsSourceConfig -> {
+                                    if (top.iwesley.lyn.music.domain.isManagedLrcApiSource(source)) {
+                                        onSettingsIntent(SettingsIntent.SelectLrcApi(source))
+                                    } else {
+                                        onSettingsIntent(SettingsIntent.SelectConfig(source))
+                                    }
+                                }
                                 is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
                                     if (top.iwesley.lyn.music.domain.isManagedMusicmatchSource(source)) {
                                         onSettingsIntent(SettingsIntent.SelectMusicmatch(source))
@@ -2464,11 +2519,6 @@ private fun manualLyricsCandidateMetadata(candidate: LyricsSearchCandidate): Str
         candidate.durationSeconds?.takeIf { it > 0 }?.let {
             if (isNotEmpty()) append(" · ")
             append(formatLyricsCandidateDuration(it))
-        }
-        candidate.itemId?.takeIf { it.isNotBlank() }?.let {
-            if (isNotEmpty()) append(" · ")
-            append("ID ")
-            append(it)
         }
     }.takeIf { it.isNotBlank() }
 }

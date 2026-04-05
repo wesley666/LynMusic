@@ -23,6 +23,8 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
 import top.iwesley.lyn.music.core.model.WorkflowRequestConfig
 import top.iwesley.lyn.music.core.model.WorkflowSearchConfig
 import top.iwesley.lyn.music.data.repository.SettingsRepository
+import top.iwesley.lyn.music.domain.MANAGED_LRCAPI_SOURCE_ID
+import top.iwesley.lyn.music.domain.buildManagedLrcApiConfig
 import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
 import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
@@ -199,6 +201,70 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `saving lrcapi address creates managed direct source`() = runTest {
+        val repository = FakeSettingsRepository(emptyList())
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LrcApiUrlChanged("https://lyrics.example/jsonapi"))
+        store.dispatch(SettingsIntent.SaveLrcApi)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        val managed = repository.currentSources()
+            .filterIsInstance<LyricsSourceConfig>()
+            .single()
+
+        assertEquals("LrcAPI 已保存。", state.message)
+        assertEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
+        assertEquals(true, state.hasLrcApiSource)
+        assertEquals(MANAGED_LRCAPI_SOURCE_ID, managed.id)
+        assertEquals("LrcAPI", managed.name)
+        assertEquals(110, managed.priority)
+        assertEquals("title={title}&artist={artist}", managed.queryTemplate)
+        assertEquals("json-map:lyrics=lyrics|lrc,title=title,artist=artist,album=album,durationSeconds=duration,id=id,coverUrl=cover", managed.extractor)
+        assertEquals(true, managed.enabled)
+        scope.cancel()
+    }
+
+    @Test
+    fun `clearing lrcapi removes managed direct source`() = runTest {
+        val repository = FakeSettingsRepository(listOf(sampleLrcApiSource()))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ClearLrcApi)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("", state.lrcApiUrl)
+        assertEquals(false, state.hasLrcApiSource)
+        assertEquals(emptyList(), repository.currentSources())
+        scope.cancel()
+    }
+
+    @Test
+    fun `selecting managed lrcapi keeps direct editor closed and backfills dedicated card`() = runTest {
+        val lrcApi = sampleLrcApiSource(urlTemplate = "https://lyrics.example/jsonapi")
+        val repository = FakeSettingsRepository(listOf(lrcApi))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.SelectConfig(lrcApi))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
+        assertEquals(true, state.hasLrcApiSource)
+        assertEquals(null, state.editingId)
+        assertEquals("", state.workflowJsonInput)
+        scope.cancel()
+    }
+
+    @Test
     fun `clearing musicmatch removes managed workflow source`() = runTest {
         val repository = FakeSettingsRepository(listOf(sampleMusicmatchSource()))
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
@@ -231,6 +297,23 @@ class SettingsStoreTest {
         assertEquals(true, state.hasMusicmatchSource)
         assertEquals(null, state.editingWorkflowId)
         assertEquals("", state.workflowJsonInput)
+        scope.cancel()
+    }
+
+    @Test
+    fun `deleting managed lrcapi source resets dedicated card state`() = runTest {
+        val repository = FakeSettingsRepository(listOf(sampleLrcApiSource(urlTemplate = "https://lyrics.example/jsonapi")))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.DeleteSource(MANAGED_LRCAPI_SOURCE_ID))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("", state.lrcApiUrl)
+        assertEquals(false, state.hasLrcApiSource)
+        assertEquals("歌词源已删除。", state.message)
         scope.cancel()
     }
 }
@@ -341,6 +424,12 @@ private fun sampleWorkflowSource(
 
 private fun sampleMusicmatchSource(): WorkflowLyricsSourceConfig {
     return parseWorkflowLyricsSourceConfig(buildManagedMusicmatchWorkflowJson("token-123"))
+}
+
+private fun sampleLrcApiSource(
+    urlTemplate: String = "https://lyrics.example/jsonapi",
+): LyricsSourceConfig {
+    return buildManagedLrcApiConfig(urlTemplate)
 }
 
 private fun workflowJson(

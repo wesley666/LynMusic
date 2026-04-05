@@ -201,7 +201,7 @@ class DefaultLyricsRepositoryManualSearchTest {
                 priority = 20,
                 urlTemplate = "https://lyrics.example/mapped",
                 responseFormat = LyricsResponseFormat.JSON,
-                extractor = "json-map:[0]|lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+                extractor = "json-map:[0]|lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id,coverUrl=cover",
             ),
         )
         val httpClient = FakeLyricsHttpClient(
@@ -217,7 +217,8 @@ class DefaultLyricsRepositoryManualSearchTest {
                                 "artistName": "映射歌手",
                                 "albumName": "映射专辑",
                                 "duration": "201.0",
-                                "syncedLyrics": "[00:01.00]第一句\n[00:02.00]第二句"
+                                "syncedLyrics": "[00:01.00]第一句\n[00:02.00]第二句",
+                                "cover": "https://img.example.com/mapped.jpg"
                               }
                             ]
                         """.trimIndent(),
@@ -240,7 +241,57 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertEquals("映射歌手", candidate.artistName)
         assertEquals("映射专辑", candidate.albumTitle)
         assertEquals(201, candidate.durationSeconds)
+        assertEquals("https://img.example.com/mapped.jpg", candidate.artworkLocator)
         assertTrue(candidate.document.isSynced)
+    }
+
+    @Test
+    fun `auto direct lyrics can return artwork locator from json map cover field`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            lyricsSourceConfig(
+                id = "source-lrcapi",
+                name = "LrcAPI",
+                priority = 110,
+                urlTemplate = "https://api.lrc.cx/jsonapi",
+                responseFormat = LyricsResponseFormat.JSON,
+                extractor = "json-map:[0]|lyrics=lyrics,title=title,artist=artist,album=album,id=id,coverUrl=cover",
+            ),
+        )
+        val track = sampleTrack()
+        val httpClient = FakeLyricsHttpClient(
+            mapOf(
+                "https://api.lrc.cx/jsonapi" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            [
+                              {
+                                "id": "song-1",
+                                "title": "原始标题",
+                                "artist": "原始歌手",
+                                "album": "原始专辑",
+                                "cover": "https://img.example.com/lrcapi.jpg",
+                                "lyrics": "[00:01.00]第一句"
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals("source-lrcapi", resolved.document.sourceId)
+        assertEquals("https://img.example.com/lrcapi.jpg", resolved.artworkLocator)
     }
 
     @Test

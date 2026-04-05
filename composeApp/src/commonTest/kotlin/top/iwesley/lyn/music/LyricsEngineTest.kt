@@ -197,7 +197,7 @@ class LyricsEngineTest {
             name = "Mapped",
             urlTemplate = "https://lyrics.example/search",
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+            extractor = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id,coverUrl=cover",
         )
         val payload = """
             [
@@ -207,7 +207,8 @@ class LyricsEngineTest {
                 "artistName": "Nova",
                 "albumName": "Horizons",
                 "duration": 218.0,
-                "plainLyrics": "hello"
+                "plainLyrics": "hello",
+                "cover": "https://img.example.com/blue-sky.jpg"
               },
               {
                 "id": "song-2",
@@ -215,7 +216,8 @@ class LyricsEngineTest {
                 "artistName": "Nova",
                 "albumName": "Horizons",
                 "duration": 221.3,
-                "plainLyrics": "world"
+                "plainLyrics": "world",
+                "cover": ""
               }
             ]
         """.trimIndent()
@@ -226,9 +228,113 @@ class LyricsEngineTest {
         assertEquals("song-1", parsed[0].itemId)
         assertEquals("Blue Sky", parsed[0].title)
         assertEquals(218, parsed[0].durationSeconds)
+        assertEquals("https://img.example.com/blue-sky.jpg", parsed[0].artworkLocator)
         assertEquals("song-2", parsed[1].itemId)
         assertEquals("Night Drive", parsed[1].title)
         assertEquals(221, parsed[1].durationSeconds)
+        assertEquals(null, parsed[1].artworkLocator)
+    }
+
+    @Test
+    fun `json map extractor can parse lrcapi style payload with cover and mixed lyrics formats`() {
+        val config = LyricsSourceConfig(
+            id = "managed-lrcapi",
+            name = "LrcAPI",
+            urlTemplate = "https://api.lrc.cx/jsonapi",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-map:lyrics=lyrics|lrc,title=title,artist=artist,album=album,durationSeconds=duration,id=id,coverUrl=cover",
+        )
+        val payload = """
+            [
+              {
+                "album": "魔鬼的情诗",
+                "artist": "陈升",
+                "cover": "",
+                "duration": 312,
+                "id": "95245987644134159528983016213969260445",
+                "lyrics": "別讓我哭\n\n因為有山 才能依偎著雲",
+                "source": "lrclib",
+                "title": "别让我哭"
+              },
+              {
+                "album": "国语歌曲精华60",
+                "artist": "林全杰",
+                "cover": "https://p2.music.126.net/knNOB-JbjalGScjDIOIrrw==/109951167790254711.jpg",
+                "duration": 326,
+                "id": "59402190333159901765762989026506192433",
+                "lrc": "[00:42.085]因为有山 才能依偎着云\n[00:48.269]然而它们可以生活在一起",
+                "source": "netease",
+                "title": "别让我哭"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = parseLyricsPayloadResults(config, payload)
+
+        assertEquals(2, parsed.size)
+        assertEquals(false, parsed[0].document.isSynced)
+        assertEquals(true, parsed[1].document.isSynced)
+        assertEquals(312, parsed[0].durationSeconds)
+        assertEquals(326, parsed[1].durationSeconds)
+        assertEquals(null, parsed[0].artworkLocator)
+        assertEquals(
+            "https://p2.music.126.net/knNOB-JbjalGScjDIOIrrw==/109951167790254711.jpg",
+            parsed[1].artworkLocator,
+        )
+    }
+
+    @Test
+    fun `json map extractor can fallback lyrics across multiple fields`() {
+        val config = LyricsSourceConfig(
+            id = "cfg",
+            name = "Fallback Lyrics",
+            urlTemplate = "https://lyrics.example/search",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-map:lyrics=lyrics|syncedLyrics|plainLyrics,title=title",
+        )
+        val payload = """
+            {
+              "title": "Blue Sky",
+              "lyrics": "",
+              "syncedLyrics": "",
+              "plainLyrics": "第一句\n第二句"
+            }
+        """.trimIndent()
+
+        val parsed = parseLyricsPayloadResult(config, payload)
+
+        assertEquals("Blue Sky", parsed?.title)
+        assertEquals(false, parsed?.document?.isSynced)
+        assertEquals(listOf("第一句", "第二句"), parsed?.document?.lines?.map { it.text })
+    }
+
+    @Test
+    fun `json map extractor supports lyrics fallback with root path syntax`() {
+        val config = LyricsSourceConfig(
+            id = "cfg",
+            name = "Fallback Root",
+            urlTemplate = "https://lyrics.example/search",
+            responseFormat = LyricsResponseFormat.JSON,
+            extractor = "json-map:[0]|lyrics=lyrics|syncedLyrics|plainLyrics,title=title,id=id",
+        )
+        val payload = """
+            [
+              {
+                "id": "song-1",
+                "title": "Blue Sky",
+                "lyrics": "",
+                "syncedLyrics": "[00:01.00]hello\n[00:03.50]world",
+                "plainLyrics": "plain"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = parseLyricsPayloadResult(config, payload)
+
+        assertEquals("song-1", parsed?.itemId)
+        assertEquals("Blue Sky", parsed?.title)
+        assertEquals(true, parsed?.document?.isSynced)
+        assertEquals(listOf("hello", "world"), parsed?.document?.lines?.map { it.text })
     }
 
     @Test

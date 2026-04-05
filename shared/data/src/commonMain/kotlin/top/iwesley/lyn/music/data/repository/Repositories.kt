@@ -705,7 +705,10 @@ class DefaultLyricsRepository(
                     config = source,
                     requestType = "auto",
                 ).firstOrNull()?.let { parsed ->
-                    ResolvedLyricsResult(document = parsed.document)
+                    ResolvedLyricsResult(
+                        document = parsed.document,
+                        artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
+                    )
                 }
 
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
@@ -778,7 +781,7 @@ class DefaultLyricsRepository(
                     artistName = parsed.artistName,
                     albumTitle = parsed.albumTitle,
                     durationSeconds = parsed.durationSeconds,
-                    artworkLocator = null,
+                    artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
                     isTrackProvided = false,
                 )
             }

@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 
 private val json = Json {
     ignoreUnknownKeys = true
@@ -27,6 +28,7 @@ data class ParsedLyricsPayload(
     val artistName: String? = null,
     val albumTitle: String? = null,
     val durationSeconds: Int? = null,
+    val artworkLocator: String? = null,
 )
 
 internal data class ExtractedLyricsPayload(
@@ -36,9 +38,10 @@ internal data class ExtractedLyricsPayload(
     val artistName: String? = null,
     val albumTitle: String? = null,
     val durationSeconds: Int? = null,
+    val artworkLocator: String? = null,
 )
 
-private val JSON_MAP_ALLOWED_KEYS = setOf("lyrics", "title", "artist", "album", "durationSeconds", "id")
+private val JSON_MAP_ALLOWED_KEYS = setOf("lyrics", "title", "artist", "album", "durationSeconds", "id", "coverUrl")
 
 fun buildLyricsRequest(config: LyricsSourceConfig, track: Track): LyricsRequest {
     val url = appendQuery(
@@ -92,6 +95,7 @@ fun parseLyricsPayloadResults(
                 artistName = candidate.artistName,
                 albumTitle = candidate.albumTitle,
                 durationSeconds = candidate.durationSeconds,
+                artworkLocator = candidate.artworkLocator,
             )
         }
     }
@@ -180,8 +184,11 @@ private fun parseJsonMappedPayloads(
     root: JsonElement,
     spec: String,
 ): List<ExtractedLyricsPayload> {
-    val (rootPath, mappingSpec) = if ('|' in spec) {
-        spec.split('|', limit = 2).let { it.firstOrNull().orEmpty() to it.getOrElse(1) { "" } }
+    val rootSeparator = spec.indexOf('|').takeIf { separatorIndex ->
+        separatorIndex >= 0 && '=' !in spec.substring(0, separatorIndex)
+    }
+    val (rootPath, mappingSpec) = if (rootSeparator != null) {
+        spec.substring(0, rootSeparator).trim() to spec.substring(rootSeparator + 1)
     } else {
         "" to spec
     }
@@ -208,18 +215,59 @@ private fun parseJsonMappedCandidate(
     mappings: Map<String, String>,
 ): ExtractedLyricsPayload {
     val lyricsPayload = mappings["lyrics"]
-        ?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent() }
+        ?.let { path -> extractFirstMappedContent(target, path) }
         .orEmpty()
     return ExtractedLyricsPayload(
         lines = parseLrc(lyricsPayload).ifEmpty { parsePlainText(lyricsPayload) },
-        itemId = mappings["id"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
-        title = mappings["title"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
-        artistName = mappings["artist"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
-        albumTitle = mappings["album"]?.let { path -> extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.takeIf(String::isNotEmpty) },
+        itemId = mappings["id"]?.let { path -> extractFirstMappedText(target, path) },
+        title = mappings["title"]?.let { path -> extractFirstMappedText(target, path) },
+        artistName = mappings["artist"]?.let { path -> extractFirstMappedText(target, path) },
+        albumTitle = mappings["album"]?.let { path -> extractFirstMappedText(target, path) },
         durationSeconds = mappings["durationSeconds"]?.let { path ->
-            extractJsonValue(target, path)?.jsonPrimitiveContent()?.trim()?.toDurationSecondsOrNull()
+            extractFirstMappedDurationSeconds(target, path)
+        },
+        artworkLocator = mappings["coverUrl"]?.let { path ->
+            extractFirstMappedText(target, path)?.let(::normalizeArtworkLocator)
         },
     )
+}
+
+private fun extractFirstMappedContent(
+    target: JsonElement,
+    pathSpec: String,
+): String? {
+    return pathSpec.split('|')
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .mapNotNull { path -> extractJsonValue(target, path)?.jsonPrimitiveContent() }
+        .firstOrNull { it.isNotBlank() }
+}
+
+private fun extractFirstMappedText(
+    target: JsonElement,
+    pathSpec: String,
+): String? {
+    return extractFirstMappedContent(target, pathSpec)
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+}
+
+private fun extractFirstMappedDurationSeconds(
+    target: JsonElement,
+    pathSpec: String,
+): Int? {
+    return pathSpec.split('|')
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .mapNotNull { path ->
+            extractJsonValue(target, path)
+                ?.jsonPrimitiveContent()
+                ?.trim()
+                ?.toDurationSecondsOrNull()
+        }
+        .firstOrNull()
 }
 
 private fun String.toDurationSecondsOrNull(): Int? {

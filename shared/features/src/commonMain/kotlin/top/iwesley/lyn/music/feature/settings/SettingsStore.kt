@@ -12,9 +12,13 @@ import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
+import top.iwesley.lyn.music.domain.MANAGED_LRCAPI_SOURCE_ID
 import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
+import top.iwesley.lyn.music.domain.buildManagedLrcApiConfig
 import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
+import top.iwesley.lyn.music.domain.extractManagedLrcApiUrl
 import top.iwesley.lyn.music.domain.extractManagedMusicmatchUserToken
+import top.iwesley.lyn.music.domain.isManagedLrcApiSource
 import top.iwesley.lyn.music.domain.isManagedMusicmatchSource
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
@@ -22,6 +26,8 @@ import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = true,
+    val lrcApiUrl: String = "",
+    val hasLrcApiSource: Boolean = false,
     val musicmatchUserToken: String = "",
     val hasMusicmatchSource: Boolean = false,
     val editingId: String? = null,
@@ -43,8 +49,10 @@ data class SettingsState(
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
+    data class SelectLrcApi(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectMusicmatch(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
     data class ViewWorkflow(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
+    data class LrcApiUrlChanged(val value: String) : SettingsIntent
     data class MusicmatchUserTokenChanged(val value: String) : SettingsIntent
     data class NameChanged(val value: String) : SettingsIntent
     data class MethodChanged(val value: RequestMethod) : SettingsIntent
@@ -60,6 +68,8 @@ sealed interface SettingsIntent {
     data object ImportWorkflow : SettingsIntent
     data object CreateNew : SettingsIntent
     data object CreateNewWorkflow : SettingsIntent
+    data object SaveLrcApi : SettingsIntent
+    data object ClearLrcApi : SettingsIntent
     data object SaveMusicmatch : SettingsIntent
     data object ClearMusicmatch : SettingsIntent
     data class ToggleSourceEnabled(val sourceId: String, val enabled: Boolean) : SettingsIntent
@@ -81,12 +91,21 @@ class SettingsStore(
     init {
         scope.launch {
             repository.lyricsSources.collect { sources ->
+                val managedLrcApi = sources
+                    .filterIsInstance<LyricsSourceConfig>()
+                    .firstOrNull(::isManagedLrcApiSource)
                 val managedMusicmatch = sources
                     .filterIsInstance<WorkflowLyricsSourceConfig>()
                     .firstOrNull(::isManagedMusicmatchSource)
                 updateState { state ->
                     state.copy(
                         sources = sources,
+                        lrcApiUrl = when {
+                            managedLrcApi != null -> extractManagedLrcApiUrl(managedLrcApi).orEmpty()
+                            state.hasLrcApiSource -> ""
+                            else -> state.lrcApiUrl
+                        },
+                        hasLrcApiSource = managedLrcApi != null,
                         musicmatchUserToken = when {
                             managedMusicmatch != null -> extractManagedMusicmatchUserToken(managedMusicmatch.rawJson).orEmpty()
                             state.hasMusicmatchSource -> ""
@@ -112,28 +131,43 @@ class SettingsStore(
             }
 
             is SettingsIntent.SelectConfig -> updateState {
-                intent.config?.toState() ?: if (it.editingId != null) {
-                    it.copy(
-                        editingId = null,
-                        musicmatchUserToken = it.musicmatchUserToken,
-                        hasMusicmatchSource = it.hasMusicmatchSource,
-                        message = null,
-                    )
-                } else {
-                    SettingsState(
-                        sources = it.sources,
-                        useSambaCache = it.useSambaCache,
-                        musicmatchUserToken = it.musicmatchUserToken,
-                        hasMusicmatchSource = it.hasMusicmatchSource,
-                        workflowJsonInput = it.workflowJsonInput,
-                        editingWorkflowId = it.editingWorkflowId,
-                    )
+                val config = intent.config
+                when {
+                    config != null && isManagedLrcApiSource(config) -> it.enterLrcApiState(config)
+                    config != null -> config.toState()
+                    it.editingId != null -> {
+                        it.copy(
+                            editingId = null,
+                            lrcApiUrl = it.lrcApiUrl,
+                            hasLrcApiSource = it.hasLrcApiSource,
+                            musicmatchUserToken = it.musicmatchUserToken,
+                            hasMusicmatchSource = it.hasMusicmatchSource,
+                            message = null,
+                        )
+                    }
+
+                    else -> {
+                        SettingsState(
+                            sources = it.sources,
+                            useSambaCache = it.useSambaCache,
+                            lrcApiUrl = it.lrcApiUrl,
+                            hasLrcApiSource = it.hasLrcApiSource,
+                            musicmatchUserToken = it.musicmatchUserToken,
+                            hasMusicmatchSource = it.hasMusicmatchSource,
+                            workflowJsonInput = it.workflowJsonInput,
+                            editingWorkflowId = it.editingWorkflowId,
+                        )
+                    }
                 }
             }
+
+            is SettingsIntent.SelectLrcApi -> updateState { it.enterLrcApiState(intent.config) }
 
             is SettingsIntent.SelectMusicmatch -> updateState {
                 it.copy(
                     editingId = null,
+                    lrcApiUrl = it.lrcApiUrl,
+                    hasLrcApiSource = it.hasLrcApiSource,
                     musicmatchUserToken = intent.config?.rawJson?.let(::extractManagedMusicmatchUserToken).orEmpty(),
                     hasMusicmatchSource = intent.config != null,
                     workflowJsonInput = "",
@@ -147,6 +181,8 @@ class SettingsStore(
                 when {
                     config != null && isManagedMusicmatchSource(config) -> {
                         it.copy(
+                            lrcApiUrl = it.lrcApiUrl,
+                            hasLrcApiSource = it.hasLrcApiSource,
                             musicmatchUserToken = extractManagedMusicmatchUserToken(config.rawJson).orEmpty(),
                             hasMusicmatchSource = true,
                             workflowJsonInput = "",
@@ -180,6 +216,7 @@ class SettingsStore(
                 }
             }
 
+            is SettingsIntent.LrcApiUrlChanged -> updateState { it.copy(lrcApiUrl = intent.value) }
             is SettingsIntent.MusicmatchUserTokenChanged -> updateState { it.copy(musicmatchUserToken = intent.value) }
             is SettingsIntent.NameChanged -> updateState { it.copy(name = intent.value) }
             is SettingsIntent.MethodChanged -> updateState { it.copy(method = intent.value) }
@@ -267,6 +304,40 @@ class SettingsStore(
                 }
             }
 
+            SettingsIntent.SaveLrcApi -> {
+                val url = state.value.lrcApiUrl.trim()
+                if (url.isBlank()) {
+                    updateState { it.copy(message = "请填写 LrcAPI 请求地址。") }
+                    return
+                }
+                val saved = runCatching {
+                    repository.saveLyricsSource(buildManagedLrcApiConfig(url))
+                }
+                updateState { currentState ->
+                    currentState.copy(
+                        lrcApiUrl = url,
+                        hasLrcApiSource = if (saved.isSuccess) true else currentState.hasLrcApiSource,
+                        message = saved.fold(
+                            onSuccess = { "LrcAPI 已保存。" },
+                            onFailure = { error -> error.message ?: "LrcAPI 保存失败。" },
+                        ),
+                    )
+                }
+            }
+
+            SettingsIntent.ClearLrcApi -> {
+                if (state.value.hasLrcApiSource) {
+                    repository.deleteLyricsSource(MANAGED_LRCAPI_SOURCE_ID)
+                }
+                updateState {
+                    it.copy(
+                        lrcApiUrl = "",
+                        hasLrcApiSource = false,
+                        message = "LrcAPI 已清除。",
+                    )
+                }
+            }
+
             SettingsIntent.SaveMusicmatch -> {
                 val userToken = state.value.musicmatchUserToken.trim()
                 if (userToken.isBlank()) {
@@ -316,11 +387,14 @@ class SettingsStore(
                 updateState {
                     val shouldClearDirect = it.editingId == intent.sourceId
                     val shouldClearWorkflow = it.editingWorkflowId == intent.sourceId
+                    val shouldClearLrcApi = intent.sourceId == MANAGED_LRCAPI_SOURCE_ID
                     val shouldClearMusicmatch = intent.sourceId == MANAGED_MUSICMATCH_SOURCE_ID
                     if (shouldClearDirect) {
                         SettingsState(
                             sources = it.sources,
                             useSambaCache = it.useSambaCache,
+                            lrcApiUrl = if (shouldClearLrcApi) "" else it.lrcApiUrl,
+                            hasLrcApiSource = if (shouldClearLrcApi) false else it.hasLrcApiSource,
                             musicmatchUserToken = if (shouldClearMusicmatch) "" else it.musicmatchUserToken,
                             hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
@@ -329,6 +403,8 @@ class SettingsStore(
                         )
                     } else {
                         it.copy(
+                            lrcApiUrl = if (shouldClearLrcApi) "" else it.lrcApiUrl,
+                            hasLrcApiSource = if (shouldClearLrcApi) false else it.hasLrcApiSource,
                             musicmatchUserToken = if (shouldClearMusicmatch) "" else it.musicmatchUserToken,
                             hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
@@ -360,6 +436,8 @@ class SettingsStore(
                     SettingsState(
                         sources = it.sources,
                         useSambaCache = it.useSambaCache,
+                        lrcApiUrl = it.lrcApiUrl,
+                        hasLrcApiSource = it.hasLrcApiSource,
                         musicmatchUserToken = it.musicmatchUserToken,
                         hasMusicmatchSource = it.hasMusicmatchSource,
                         workflowJsonInput = it.workflowJsonInput,
@@ -391,12 +469,14 @@ class SettingsStore(
     }
 
     private fun LyricsSourceConfig.toState(
-        sources: List<LyricsSourceDefinition> = state.value.sources,
-        message: String? = null,
+            sources: List<LyricsSourceDefinition> = state.value.sources,
+            message: String? = null,
     ): SettingsState {
         return SettingsState(
             sources = sources,
             useSambaCache = state.value.useSambaCache,
+            lrcApiUrl = state.value.lrcApiUrl,
+            hasLrcApiSource = state.value.hasLrcApiSource,
             musicmatchUserToken = state.value.musicmatchUserToken,
             hasMusicmatchSource = state.value.hasMusicmatchSource,
             editingId = id,
@@ -425,6 +505,17 @@ class SettingsStore(
         return rewriteWorkflowLyricsSourceId(
             rawJson = rawJson,
             newId = newLyricsSourceId("workflow"),
+        )
+    }
+
+    private fun SettingsState.enterLrcApiState(config: LyricsSourceConfig?): SettingsState {
+        return copy(
+            editingId = null,
+            lrcApiUrl = config?.let(::extractManagedLrcApiUrl).orEmpty(),
+            hasLrcApiSource = config != null,
+            workflowJsonInput = "",
+            editingWorkflowId = null,
+            message = null,
         )
     }
 }
