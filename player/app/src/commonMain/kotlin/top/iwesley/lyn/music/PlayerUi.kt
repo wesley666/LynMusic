@@ -41,6 +41,8 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Tune
@@ -559,19 +561,54 @@ private fun PlayerOverlay(
                             modifier = Modifier.size(34.dp),
                         )
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = playbackModeIcon(state.snapshot.mode),
-                            contentDescription = null,
-                            tint = playbackStatusColor,
-                        )
-                        Text(
-                            text = modeLabel(state.snapshot.mode),
-                            color = playbackStatusColor,
-                        )
+                    if (wide) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = playbackModeIcon(state.snapshot.mode),
+                                contentDescription = null,
+                                tint = playbackStatusColor,
+                            )
+                            Text(
+                                text = modeLabel(state.snapshot.mode),
+                                color = playbackStatusColor,
+                            )
+                        }
+                    } else {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                enabled = state.lyrics != null && !state.isLyricsLoading,
+                                modifier = Modifier.size(52.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = "分享歌词",
+                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                        Color.White.copy(alpha = 0.92f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.42f)
+                                    },
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                modifier = Modifier.size(52.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = "手动搜索",
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        }
                     }
                 }
                 if (useTapToRevealLyrics) {
@@ -662,23 +699,16 @@ private fun MobilePlayerPrimaryPane(
     var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
 
     if (lyricsVisible) {
-        Column(
-            modifier = modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .clickable { lyricsVisible = false },
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = { lyricsVisible = false }) {
-                    Text("回到唱片")
-                }
-            }
             PlayerLyricsPane(
                 state = state,
                 track = track,
                 onPlayerIntent = onPlayerIntent,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 compact = true,
             )
         }

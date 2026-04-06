@@ -66,7 +66,9 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -2189,7 +2191,6 @@ internal fun PlayerLyricsPane(
     val listState = rememberLazyListState()
     val lyricsPrimaryTextColor = Color.White
     val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
-    val lyricsButtonBorder = BorderStroke(1.dp, Color.White.copy(alpha = 0.32f))
     LaunchedEffect(state.highlightedLineIndex, state.lyrics?.sourceId, state.lyrics?.isSynced) {
         val lyrics = state.lyrics ?: return@LaunchedEffect
         if (!lyrics.isSynced) return@LaunchedEffect
@@ -2214,78 +2215,81 @@ internal fun PlayerLyricsPane(
                 .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = if (compact) 8.dp else 14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    state.snapshot.currentDisplayTitle,
-                    style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = lyricsPrimaryTextColor,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}    来源：${track.sourceId.substringBefore('-').uppercase()}",
-                    color = lyricsSecondaryTextColor,
-                    maxLines = if (compact) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    track.relativePath,
-                    color = lyricsSecondaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
-                    color = lyricsSecondaryTextColor,
-                    maxLines = if (compact) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (state.isLyricsLoading) {
+            if (!compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "正在请求歌词...",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = lyricsSecondaryTextColor,
+                        state.snapshot.currentDisplayTitle,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = lyricsPrimaryTextColor,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}    来源：${track.sourceId.substringBefore('-').uppercase()}",
+                        color = lyricsSecondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        track.relativePath,
+                        color = lyricsSecondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
+                        color = lyricsSecondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                Spacer(Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                        enabled = state.lyrics != null && !state.isLyricsLoading,
-                        shape = RoundedCornerShape(18.dp),
-                        border = lyricsButtonBorder,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = lyricsSecondaryTextColor,
-                            disabledContentColor = lyricsSecondaryTextColor.copy(alpha = 0.45f),
-                        ),
-                    ) {
-                        Text("分享歌词")
-                    }
-                    OutlinedButton(
-                        onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                        shape = RoundedCornerShape(18.dp),
-                        border = lyricsButtonBorder,
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = lyricsSecondaryTextColor,
-                            disabledContentColor = lyricsSecondaryTextColor.copy(alpha = 0.45f),
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Rounded.Tune,
-                            null,
-                            modifier = Modifier.size(16.dp),
-                            tint = lyricsSecondaryTextColor,
+            }
+            if (!compact || state.isLyricsLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.isLyricsLoading) {
+                        Text(
+                            "正在请求歌词...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = lyricsSecondaryTextColor,
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text("手动搜索")
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (!compact) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                enabled = state.lyrics != null && !state.isLyricsLoading,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Share,
+                                    contentDescription = "分享歌词",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                        Color.White.copy(alpha = 0.92f)
+                                    } else {
+                                        lyricsSecondaryTextColor.copy(alpha = 0.45f)
+                                    },
+                                )
+                            }
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = "手动搜索",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                )
+                            }
+                        }
                     }
                 }
             }
