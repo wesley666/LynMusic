@@ -542,7 +542,6 @@ private fun MobileShell(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            HeroHeader(platform = platform, snapshot = playerState.snapshot)
             TabContent(
                 selectedTab = selectedTab,
                 platform = platform,
@@ -596,10 +595,16 @@ private fun DesktopShell(
                 .width(260.dp)
                 .fillMaxHeight()
                 .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            HeroHeader(platform = platform, snapshot = playerState.snapshot, compact = true)
-            DesktopNav(selectedTab = selectedTab, onTabSelected = onTabSelected)
+            HeroHeader()
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                DesktopNav(selectedTab = selectedTab, onTabSelected = onTabSelected)
+            }
         }
 
         Column(
@@ -708,50 +713,13 @@ private fun DesktopNav(
 }
 
 @Composable
-private fun HeroHeader(
-    platform: PlatformDescriptor,
-    snapshot: PlaybackSnapshot,
-    compact: Boolean = false,
-) {
-    val colors = MaterialTheme.colorScheme
-    val shellColors = mainShellColors
-    Card(
+private fun HeroHeader() {
+    Text(
+        text = "LynMusic",
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = FontWeight.ExtraBold,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
-        border = BorderStroke(1.dp, shellColors.cardBorder),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(if (compact) 18.dp else 22.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "LynMusic",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-                Text(
-                    text = "本地音乐与自定义歌词 API 的多端播放器",
-                    color = shellColors.secondaryText,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MainShellAssistChip(
-                        onClick = {},
-                        label = { Text(platform.name) },
-                        leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
-                    )
-                    MainShellAssistChip(
-                        onClick = {},
-                        label = { Text(snapshot.queue.size.toString() + " 首队列") },
-                        leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
-                    )
-                }
-            }
-        }
-    }
+    )
 }
 
 @Composable
