@@ -387,6 +387,8 @@ fun App(component: LynMusicAppComponent) {
                         visible = playerState.isExpanded,
                         platform = component.platform,
                         state = playerState,
+                        lyricsShareThemeTokens = shellThemeTokens,
+                        lyricsShareTextPalette = shellTextPalette,
                         onPlayerIntent = component.playerStore::dispatch,
                         isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
                         onToggleFavorite = {
@@ -3018,21 +3020,22 @@ internal fun LyricsShareOverlay(
     modifier: Modifier = Modifier,
 ) {
     val lyrics = state.lyrics ?: return
+    val shellColors = mainShellColors
     val previewBitmap = rememberPlatformImageBitmap(state.sharePreviewBytes)
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
     val artworkTintTheme = rememberVinylArtworkPalette(
         artworkBitmap = artworkBitmap,
         enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
     )?.toArtworkTintTheme()
-    val primaryTextColor = Color.White.copy(alpha = 0.96f)
-    val secondaryTextColor = Color.White.copy(alpha = 0.74f)
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = shellColors.secondaryText
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
     val exportActionsEnabled = state.selectedLyricsLineIndices.isNotEmpty() && !state.isShareSaving && !state.isShareCopying
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.68f))
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.68f))
                 .clickable { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
         )
         Card(
@@ -3049,8 +3052,8 @@ internal fun LyricsShareOverlay(
                     indication = null,
                 ) { },
             shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF201B19)),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -3099,8 +3102,11 @@ internal fun LyricsShareOverlay(
                                     onPlayerIntent(PlayerIntent.LyricsShareTemplateChanged(it))
                                 },
                             )
-                            TextButton(onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) }) {
-                                Text("关闭", color = primaryTextColor)
+                            TextButton(
+                                onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                            ) {
+                                Text("关闭")
                             }
                         }
                     }
@@ -3169,7 +3175,7 @@ internal fun LyricsShareOverlay(
                                 onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                                 contentPadding = PaddingValues(
                                     horizontal = if (narrowActions) 8.dp else 16.dp,
                                     vertical = 12.dp,
@@ -3181,7 +3187,7 @@ internal fun LyricsShareOverlay(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
                                 enabled = exportActionsEnabled,
                                 modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                                 contentPadding = PaddingValues(
                                     horizontal = if (narrowActions) 8.dp else 16.dp,
                                     vertical = 12.dp,
@@ -3194,10 +3200,10 @@ internal fun LyricsShareOverlay(
                                 enabled = exportActionsEnabled,
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFEEE0C8),
-                                    contentColor = Color(0xFF3C2E24),
-                                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                                    disabledContentColor = secondaryTextColor,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    disabledContainerColor = shellColors.navContainer,
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                                 contentPadding = PaddingValues(
                                     horizontal = if (narrowActions) 8.dp else 16.dp,
@@ -3216,7 +3222,7 @@ internal fun LyricsShareOverlay(
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                             ) {
                                 Text("清空")
                             }
@@ -3224,7 +3230,7 @@ internal fun LyricsShareOverlay(
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
                                 enabled = exportActionsEnabled,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                             ) {
                                 Text(if (state.isShareCopying) "复制中..." else "复制图片")
                             }
@@ -3233,10 +3239,10 @@ internal fun LyricsShareOverlay(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
                                 enabled = exportActionsEnabled,
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFEEE0C8),
-                                    contentColor = Color(0xFF3C2E24),
-                                    disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                                    disabledContentColor = secondaryTextColor,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    disabledContainerColor = shellColors.navContainer,
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             ) {
                                 Text(if (state.isShareSaving) "保存中..." else "保存到本地")
@@ -3256,6 +3262,7 @@ private fun LyricsShareSelectionPane(
     onToggle: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -3269,7 +3276,8 @@ private fun LyricsShareSelectionPane(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.05f)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -3295,10 +3303,11 @@ private fun LyricsShareTemplateToggle(
     onTemplateChanged: (LyricsShareTemplate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.08f))
+            .background(MaterialTheme.colorScheme.background)
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -3309,8 +3318,8 @@ private fun LyricsShareTemplateToggle(
                 onClick = { onTemplateChanged(template) },
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.textButtonColors(
-                    containerColor = if (selected) Color.White.copy(alpha = 0.14f) else Color.Transparent,
-                    contentColor = if (selected) Color.White else Color.White.copy(alpha = 0.68f),
+                    containerColor = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent,
+                    contentColor = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             ) {
@@ -3332,17 +3341,18 @@ private fun LyricsShareSelectableLine(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     val normalized = text.trim()
     val enabled = normalized.isNotEmpty()
     val containerColor = when {
-        !enabled -> Color.White.copy(alpha = 0.04f)
-        selected -> Color(0xFFF4E4BF)
-        else -> Color.White.copy(alpha = 0.08f)
+        !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        selected -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.surface
     }
     val contentColor = when {
-        !enabled -> Color.White.copy(alpha = 0.28f)
-        selected -> Color(0xFF3C2E24)
-        else -> Color.White.copy(alpha = 0.9f)
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+        selected -> MaterialTheme.colorScheme.onSecondary
+        else -> MaterialTheme.colorScheme.onSurface
     }
     Card(
         modifier = Modifier
@@ -3350,7 +3360,7 @@ private fun LyricsShareSelectableLine(
             .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, if (selected) Color(0xFFD0B57C) else Color.White.copy(alpha = 0.05f)),
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardBorder),
     ) {
         Row(
             modifier = Modifier
@@ -3380,6 +3390,7 @@ private fun LyricsSharePreviewPane(
     artworkTintTheme: ArtworkTintTheme?,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     val shareCardModel = state.shareCardModel
     Column(
         modifier = modifier,
@@ -3394,7 +3405,8 @@ private fun LyricsSharePreviewPane(
                 .fillMaxWidth()
                 .weight(1f),
             shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0E5D5)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
         ) {
             Box(
                 modifier = Modifier
@@ -3437,20 +3449,20 @@ private fun LyricsSharePreviewPane(
                     }
                 }
                 if (state.isShareRendering && shareCardModel != null) {
-                    Card(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.56f)),
-                    ) {
-                        Text(
-                            text = "更新预览中",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            color = Color.White.copy(alpha = 0.92f),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
+                        Card(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
+                        ) {
+                            Text(
+                                text = "更新预览中",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
                 }
             }
         }

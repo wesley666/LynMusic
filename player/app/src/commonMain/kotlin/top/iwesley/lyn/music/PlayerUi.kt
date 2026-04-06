@@ -94,12 +94,15 @@ import kotlin.math.absoluteValue
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import top.iwesley.lyn.music.core.model.AppThemeTextPalette
+import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
+import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.heroGlow
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -108,6 +111,8 @@ internal fun PlayerDrawerHost(
     visible: Boolean,
     platform: PlatformDescriptor,
     state: PlayerState,
+    lyricsShareThemeTokens: AppThemeTokens,
+    lyricsShareTextPalette: AppThemeTextPalette,
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
@@ -150,6 +155,8 @@ internal fun PlayerDrawerHost(
             PlayerOverlay(
                 platform = platform,
                 state = state,
+                lyricsShareThemeTokens = lyricsShareThemeTokens,
+                lyricsShareTextPalette = lyricsShareTextPalette,
                 onPlayerIntent = onPlayerIntent,
                 isFavorite = isFavorite,
                 onToggleFavorite = onToggleFavorite,
@@ -600,6 +607,8 @@ private fun MiniPlayerProgressScrubber(
 private fun PlayerOverlay(
     platform: PlatformDescriptor,
     state: PlayerState,
+    lyricsShareThemeTokens: AppThemeTokens,
+    lyricsShareTextPalette: AppThemeTextPalette,
     onPlayerIntent: (PlayerIntent) -> Unit,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
@@ -798,12 +807,17 @@ private fun PlayerOverlay(
                 )
             }
             if (state.isLyricsShareVisible) {
-                LyricsShareOverlay(
-                    platform = platform,
-                    state = state,
-                    onPlayerIntent = onPlayerIntent,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                LynMusicTheme(
+                    themeTokens = lyricsShareThemeTokens,
+                    textPalette = lyricsShareTextPalette,
+                ) {
+                    LyricsShareOverlay(
+                        platform = platform,
+                        state = state,
+                        onPlayerIntent = onPlayerIntent,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
