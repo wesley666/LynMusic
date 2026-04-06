@@ -300,6 +300,12 @@ data class WorkflowSongCandidate(
     val extraFields: Map<String, String> = emptyMap(),
 )
 
+enum class LyricsSearchApplyMode {
+    FULL,
+    LYRICS_ONLY,
+    ARTWORK_ONLY,
+}
+
 data class LyricsRequest(
     val method: RequestMethod,
     val url: String,

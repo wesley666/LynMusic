@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
@@ -70,8 +71,14 @@ sealed interface PlayerIntent {
     data class ManualLyricsArtistChanged(val value: String) : PlayerIntent
     data class ManualLyricsAlbumChanged(val value: String) : PlayerIntent
     data object SearchManualLyrics : PlayerIntent
-    data class ApplyManualLyricsCandidate(val candidate: LyricsSearchCandidate) : PlayerIntent
-    data class ApplyWorkflowSongCandidate(val candidate: WorkflowSongCandidate) : PlayerIntent
+    data class ApplyManualLyricsCandidate(
+        val candidate: LyricsSearchCandidate,
+        val mode: LyricsSearchApplyMode = LyricsSearchApplyMode.FULL,
+    ) : PlayerIntent
+    data class ApplyWorkflowSongCandidate(
+        val candidate: WorkflowSongCandidate,
+        val mode: LyricsSearchApplyMode = LyricsSearchApplyMode.FULL,
+    ) : PlayerIntent
     data object OpenLyricsShare : PlayerIntent
     data object DismissLyricsShare : PlayerIntent
     data class LyricsShareTemplateChanged(val template: LyricsShareTemplate) : PlayerIntent
@@ -182,8 +189,8 @@ class PlayerStore(
             is PlayerIntent.ManualLyricsArtistChanged -> updateManualLyricsForm(artistName = intent.value)
             is PlayerIntent.ManualLyricsAlbumChanged -> updateManualLyricsForm(albumTitle = intent.value)
             PlayerIntent.SearchManualLyrics -> searchManualLyrics()
-            is PlayerIntent.ApplyManualLyricsCandidate -> applyManualLyricsCandidate(intent.candidate)
-            is PlayerIntent.ApplyWorkflowSongCandidate -> applyWorkflowSongCandidate(intent.candidate)
+            is PlayerIntent.ApplyManualLyricsCandidate -> applyManualLyricsCandidate(intent.candidate, intent.mode)
+            is PlayerIntent.ApplyWorkflowSongCandidate -> applyWorkflowSongCandidate(intent.candidate, intent.mode)
             PlayerIntent.OpenLyricsShare -> openLyricsShare()
             PlayerIntent.DismissLyricsShare -> dismissLyricsShare()
             is PlayerIntent.LyricsShareTemplateChanged -> updateLyricsShareTemplate(intent.template)
@@ -434,18 +441,21 @@ class PlayerStore(
         }
     }
 
-    private suspend fun applyManualLyricsCandidate(candidate: LyricsSearchCandidate) {
+    private suspend fun applyManualLyricsCandidate(
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ) {
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
         val result = runCatching {
-            lyricsRepository.applyLyricsCandidate(track.id, candidate)
+            lyricsRepository.applyLyricsCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
-            updateState { it.copy(message = throwable.message ?: "歌词应用失败。") }
+            updateState { it.copy(message = throwable.message ?: applyFailureMessage(mode)) }
             return
         }
-        val document = result.document
+        val document = result.document ?: state.value.lyrics
         val artworkLocator = result.artworkLocator
-        if (!artworkLocator.isNullOrBlank()) {
+        if (mode != LyricsSearchApplyMode.LYRICS_ONLY && !artworkLocator.isNullOrBlank()) {
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }
         updateState {
@@ -463,18 +473,21 @@ class PlayerStore(
         }
     }
 
-    private suspend fun applyWorkflowSongCandidate(candidate: WorkflowSongCandidate) {
+    private suspend fun applyWorkflowSongCandidate(
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ) {
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
         val result = runCatching {
-            lyricsRepository.applyWorkflowSongCandidate(track.id, candidate)
+            lyricsRepository.applyWorkflowSongCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
-            updateState { it.copy(message = throwable.message ?: "歌词应用失败。") }
+            updateState { it.copy(message = throwable.message ?: applyFailureMessage(mode)) }
             return
         }
-        val document = result.document
+        val document = result.document ?: state.value.lyrics
         val artworkLocator = result.artworkLocator
-        if (!artworkLocator.isNullOrBlank()) {
+        if (mode != LyricsSearchApplyMode.LYRICS_ONLY && !artworkLocator.isNullOrBlank()) {
             playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
         }
         updateState {
@@ -624,6 +637,14 @@ class PlayerStore(
     private fun nextLyricsSharePreviewRequestId(): Long {
         currentSharePreviewRequestId += 1
         return currentSharePreviewRequestId
+    }
+
+    private fun applyFailureMessage(mode: LyricsSearchApplyMode): String {
+        return if (mode == LyricsSearchApplyMode.ARTWORK_ONLY) {
+            "封面应用失败。"
+        } else {
+            "歌词应用失败。"
+        }
     }
 
     private fun findHighlightedLine(lyrics: LyricsDocument?, positionMs: Long): Int {

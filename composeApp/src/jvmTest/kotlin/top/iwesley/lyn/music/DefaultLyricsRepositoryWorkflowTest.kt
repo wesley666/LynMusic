@@ -124,9 +124,12 @@ class DefaultLyricsRepositoryWorkflowTest {
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
         val storedTrack = database.trackDao().getByIds(listOf(track.id)).single()
 
-        assertEquals("workflow-oiapi", applied.document.sourceId)
+        assertEquals("workflow-oiapi", assertNotNull(applied.document).sourceId)
         assertEquals("/tmp/lynmusic-artwork-cache/rain.jpg", applied.artworkLocator)
-        assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
+        assertEquals(
+            setOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, "workflow-oiapi"),
+            cachedRows.map { it.sourceId }.toSet(),
+        )
         assertEquals(null, storedTrack.artworkLocator)
     }
 
@@ -392,9 +395,10 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals("稻香", candidates.first().title)
         assertEquals("Jay Chou", candidates.first().artists.single())
         assertEquals("Musicmatch", candidates.first().sourceName)
-        assertTrue(applied.document.isSynced)
-        assertEquals("對這個世界 如果你有太多的抱怨", applied.document.lines.first().text)
-        assertEquals(30_880, applied.document.lines.first().timestampMs)
+        val appliedDocument = assertNotNull(applied.document)
+        assertTrue(appliedDocument.isSynced)
+        assertEquals("對這個世界 如果你有太多的抱怨", appliedDocument.lines.first().text)
+        assertEquals(30_880, appliedDocument.lines.first().timestampMs)
         assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
     }
 

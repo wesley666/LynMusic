@@ -164,15 +164,19 @@ fun MusicTagsTab(
                     ),
                     strings = LyricsSearchDialogStrings(
                         formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
-                        resultsAppliedSubtitle = "点选任一结果即可写入当前编辑器。",
+                        resultsAppliedSubtitle = "点选任一结果后选择应用方式。",
                     ),
                     onDismiss = { onMusicTagsIntent(MusicTagsIntent.DismissOnlineLyricsSearch) },
                     onTitleChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsTitleChanged(it)) },
                     onArtistChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsArtistChanged(it)) },
                     onAlbumChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsAlbumChanged(it)) },
                     onSearch = { onMusicTagsIntent(MusicTagsIntent.SearchOnlineLyrics) },
-                    onApplyDirectCandidate = { onMusicTagsIntent(MusicTagsIntent.ApplyOnlineLyricsCandidate(it)) },
-                    onApplyWorkflowCandidate = { onMusicTagsIntent(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(it)) },
+                    onApplyDirectCandidate = { candidate, mode ->
+                        onMusicTagsIntent(MusicTagsIntent.ApplyOnlineLyricsCandidate(candidate, mode))
+                    },
+                    onApplyWorkflowCandidate = { candidate, mode ->
+                        onMusicTagsIntent(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(candidate, mode))
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

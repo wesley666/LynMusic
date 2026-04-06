@@ -80,7 +80,7 @@ class DefaultLyricsRepositoryManualSearchTest {
         assertTrue(candidates.first().isTrackProvided)
         assertEquals("/tmp/tag-cover.jpg", candidates.first().artworkLocator)
         assertEquals("标签标题", candidates.first().title)
-        assertEquals("embedded-tag", applied.document.sourceId)
+        assertEquals("embedded-tag", assertNotNull(applied.document).sourceId)
         assertEquals(null, storedTrack.artworkLocator)
     }
 
@@ -152,7 +152,7 @@ class DefaultLyricsRepositoryManualSearchTest {
         val applied = repository.applyLyricsCandidate(track.id, candidates.last())
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
 
-        assertEquals("source-plain", applied.document.sourceId)
+        assertEquals("source-plain", assertNotNull(applied.document).sourceId)
         assertEquals(listOf(MANUAL_LYRICS_OVERRIDE_SOURCE_ID), cachedRows.map { it.sourceId })
 
         val requestCountAfterManualSearch = httpClient.requestCount

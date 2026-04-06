@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -517,6 +518,231 @@ class MusicTagsStoreTest {
         assertTrue(state.isDirty)
     }
 
+    @Test
+    fun `apply direct lyrics only candidate only updates embedded lyrics`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val candidate = LyricsSearchCandidate(
+            sourceId = "direct-lrc",
+            sourceName = "Direct",
+            document = plainLyricsDocument("direct-lrc", "新歌词"),
+            title = "新标题",
+            artistName = "新歌手",
+            albumTitle = "新专辑",
+            artworkLocator = "https://cover.test/direct.jpg",
+        )
+        val store = createStore(repository, testScheduler)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(
+            MusicTagsIntent.ApplyOnlineLyricsCandidate(
+                candidate = candidate,
+                mode = LyricsSearchApplyMode.LYRICS_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("情歌", state.draft.title)
+        assertEquals("梁静茹", state.draft.artistName)
+        assertEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertEquals("新歌词", state.draft.embeddedLyrics)
+        assertNull(state.draft.pendingArtworkBytes)
+        assertFalse(state.onlineLyricsSearch.isVisible)
+        assertEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
+    }
+
+    @Test
+    fun `apply direct artwork only candidate only updates artwork`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val candidate = LyricsSearchCandidate(
+            sourceId = "direct-art",
+            sourceName = "Direct",
+            document = plainLyricsDocument("direct-art", "新歌词"),
+            title = "新标题",
+            artistName = "新歌手",
+            albumTitle = "新专辑",
+            artworkLocator = "https://cover.test/direct-only.jpg",
+        )
+        val editorService = FakeAudioTagEditorPlatformService(
+            loadArtworkResults = mapOf(candidate.artworkLocator!! to Result.success(byteArrayOf(9, 8, 7))),
+        )
+        val store = createStore(repository, testScheduler, editorService = editorService)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(
+            MusicTagsIntent.ApplyOnlineLyricsCandidate(
+                candidate = candidate,
+                mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("情歌", state.draft.title)
+        assertEquals("梁静茹", state.draft.artistName)
+        assertEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertEquals("旧歌词", state.draft.embeddedLyrics)
+        assertEquals(listOf<Byte>(9, 8, 7), state.draft.pendingArtworkBytes?.toList())
+        assertFalse(state.onlineLyricsSearch.isVisible)
+        assertEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
+    }
+
+    @Test
+    fun `apply workflow lyrics only candidate resolves lyrics and keeps metadata and artwork unchanged`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow",
+            id = "song-1",
+            title = "候选标题",
+            artists = listOf("甲", "乙"),
+            album = "候选专辑",
+            imageUrl = "https://cover.test/workflow.jpg",
+        )
+        val lyricsRepository = FakeMusicTagsLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            resolvedWorkflowResult = Result.success(
+                ResolvedLyricsResult(
+                    document = plainLyricsDocument("workflow-1", "工作流新歌词"),
+                    artworkLocator = workflowCandidate.imageUrl,
+                ),
+            ),
+        )
+        val store = createStore(repository, testScheduler, lyricsRepository = lyricsRepository)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(
+            MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(
+                candidate = workflowCandidate,
+                mode = LyricsSearchApplyMode.LYRICS_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(track.id, lyricsRepository.lastResolvedWorkflowTrack?.id)
+        assertEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
+        assertEquals("情歌", state.draft.title)
+        assertEquals("梁静茹", state.draft.artistName)
+        assertEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertEquals("工作流新歌词", state.draft.embeddedLyrics)
+        assertNull(state.draft.pendingArtworkBytes)
+        assertFalse(state.onlineLyricsSearch.isVisible)
+        assertEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
+    }
+
+    @Test
+    fun `apply workflow artwork only candidate skips resolve and only updates artwork`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow",
+            id = "song-1",
+            title = "候选标题",
+            artists = listOf("甲", "乙"),
+            album = "候选专辑",
+            imageUrl = "https://cover.test/workflow-only.jpg",
+        )
+        val lyricsRepository = FakeMusicTagsLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            resolvedWorkflowResult = Result.success(
+                ResolvedLyricsResult(
+                    document = plainLyricsDocument("workflow-1", "不应被使用"),
+                    artworkLocator = workflowCandidate.imageUrl,
+                ),
+            ),
+        )
+        val editorService = FakeAudioTagEditorPlatformService(
+            loadArtworkResults = mapOf(workflowCandidate.imageUrl!! to Result.success(byteArrayOf(6, 5, 4))),
+        )
+        val store = createStore(
+            repository,
+            testScheduler,
+            lyricsRepository = lyricsRepository,
+            editorService = editorService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(
+            MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(
+                candidate = workflowCandidate,
+                mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertNull(lyricsRepository.lastResolvedWorkflowTrack)
+        assertNull(lyricsRepository.lastResolvedWorkflowCandidate)
+        assertEquals("情歌", state.draft.title)
+        assertEquals("梁静茹", state.draft.artistName)
+        assertEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertEquals("旧歌词", state.draft.embeddedLyrics)
+        assertEquals(listOf<Byte>(6, 5, 4), state.draft.pendingArtworkBytes?.toList())
+        assertFalse(state.onlineLyricsSearch.isVisible)
+        assertEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
+    }
+
+    @Test
+    fun `artwork only import failure keeps search open and shows artwork failure message`() = runTest {
+        val track = sampleTrack()
+        val repository = FakeMusicTagsRepository(
+            tracks = listOf(track),
+            snapshots = mapOf(track.id to sampleSnapshot(embeddedLyrics = "旧歌词")),
+        )
+        val candidate = LyricsSearchCandidate(
+            sourceId = "direct-art",
+            sourceName = "Direct",
+            document = plainLyricsDocument("direct-art", "新歌词"),
+            artworkLocator = "https://cover.test/fail-only.jpg",
+        )
+        val editorService = FakeAudioTagEditorPlatformService(
+            loadArtworkResults = mapOf(candidate.artworkLocator!! to Result.failure(IllegalStateException("下载失败"))),
+        )
+        val store = createStore(repository, testScheduler, editorService = editorService)
+
+        advanceUntilIdle()
+        store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
+        advanceUntilIdle()
+        store.dispatch(
+            MusicTagsIntent.ApplyOnlineLyricsCandidate(
+                candidate = candidate,
+                mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertTrue(state.onlineLyricsSearch.isVisible)
+        assertEquals("旧歌词", state.draft.embeddedLyrics)
+        assertNull(state.draft.pendingArtworkBytes)
+        assertEquals("封面导入失败：下载失败", state.message)
+    }
+
     private fun createStore(
         repository: FakeMusicTagsRepository,
         scheduler: TestCoroutineScheduler,
@@ -650,7 +876,11 @@ private class FakeMusicTagsLyricsRepository(
         return searchResults
     }
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in music tags tests")
     }
 
@@ -665,7 +895,11 @@ private class FakeMusicTagsLyricsRepository(
         return resolvedWorkflowResult.getOrThrow()
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in music tags tests")
     }
 }

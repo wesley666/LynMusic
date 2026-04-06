@@ -36,7 +36,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,8 +48,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -84,13 +89,14 @@ internal fun LyricsSearchOverlayDialog(
     onArtistChanged: (String) -> Unit,
     onAlbumChanged: (String) -> Unit,
     onSearch: () -> Unit,
-    onApplyDirectCandidate: (LyricsSearchCandidate) -> Unit,
-    onApplyWorkflowCandidate: (WorkflowSongCandidate) -> Unit,
+    onApplyDirectCandidate: (LyricsSearchCandidate, LyricsSearchApplyMode) -> Unit,
+    onApplyWorkflowCandidate: (WorkflowSongCandidate, LyricsSearchApplyMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
     val primaryTextColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = shellColors.secondaryText
+    var pendingConfirmation by remember { mutableStateOf<LyricsSearchApplyConfirmation?>(null) }
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -172,8 +178,8 @@ internal fun LyricsSearchOverlayDialog(
                             LyricsSearchResultsPane(
                                 state = state,
                                 strings = strings,
-                                onApplyDirectCandidate = onApplyDirectCandidate,
-                                onApplyWorkflowCandidate = onApplyWorkflowCandidate,
+                                onApplyDirectCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Direct(it) },
+                                onApplyWorkflowCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Workflow(it) },
                                 modifier = Modifier
                                     .weight(0.58f)
                                     .fillMaxHeight(),
@@ -205,8 +211,8 @@ internal fun LyricsSearchOverlayDialog(
                             LyricsSearchResultsPane(
                                 state = state,
                                 strings = strings,
-                                onApplyDirectCandidate = onApplyDirectCandidate,
-                                onApplyWorkflowCandidate = onApplyWorkflowCandidate,
+                                onApplyDirectCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Direct(it) },
+                                onApplyWorkflowCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Workflow(it) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(0.58f),
@@ -215,6 +221,19 @@ internal fun LyricsSearchOverlayDialog(
                     }
                 }
             }
+        }
+        pendingConfirmation?.let { confirmation ->
+            LyricsSearchApplyConfirmationOverlay(
+                confirmation = confirmation,
+                onDismiss = { pendingConfirmation = null },
+                onApply = { mode ->
+                    pendingConfirmation = null
+                    when (confirmation) {
+                        is LyricsSearchApplyConfirmation.Direct -> onApplyDirectCandidate(confirmation.candidate, mode)
+                        is LyricsSearchApplyConfirmation.Workflow -> onApplyWorkflowCandidate(confirmation.candidate, mode)
+                    }
+                },
+            )
         }
     }
 }
@@ -572,6 +591,163 @@ private fun LyricsSearchResultsPane(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LyricsSearchApplyConfirmationOverlay(
+    confirmation: LyricsSearchApplyConfirmation,
+    onDismiss: () -> Unit,
+    onApply: (LyricsSearchApplyMode) -> Unit,
+) {
+    val shellColors = mainShellColors
+    val applyModes = lyricsSearchApplyModes(confirmation.artworkLocator)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.34f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .widthIn(max = 480.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { },
+            shape = RoundedCornerShape(26.dp),
+            colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
+            border = BorderStroke(1.dp, shellColors.cardBorder),
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    text = "确认应用方式",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LyricsSearchArtworkThumbnail(
+                        artworkLocator = confirmation.artworkLocator,
+                        modifier = Modifier.size(72.dp),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = confirmation.sourceName,
+                            color = shellColors.secondaryText,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            text = confirmation.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        confirmation.metadata?.let { metadata ->
+                            Text(
+                                text = metadata,
+                                color = shellColors.secondaryText,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = confirmation.preview,
+                    color = shellColors.secondaryText,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onApply(LyricsSearchApplyMode.FULL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("应用")
+                    }
+                    OutlinedButton(
+                        onClick = { onApply(LyricsSearchApplyMode.LYRICS_ONLY) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("仅应用歌词")
+                    }
+                    if (LyricsSearchApplyMode.ARTWORK_ONLY in applyModes) {
+                        OutlinedButton(
+                            onClick = { onApply(LyricsSearchApplyMode.ARTWORK_ONLY) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("仅应用封面")
+                        }
+                    }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("取消")
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun lyricsSearchApplyModes(artworkLocator: String?): List<LyricsSearchApplyMode> {
+    return buildList {
+        add(LyricsSearchApplyMode.FULL)
+        add(LyricsSearchApplyMode.LYRICS_ONLY)
+        if (!normalizeArtworkLocator(artworkLocator).isNullOrBlank()) {
+            add(LyricsSearchApplyMode.ARTWORK_ONLY)
+        }
+    }
+}
+
+private sealed interface LyricsSearchApplyConfirmation {
+    val sourceName: String
+    val title: String
+    val metadata: String?
+    val preview: String
+    val artworkLocator: String?
+
+    data class Direct(val candidate: LyricsSearchCandidate) : LyricsSearchApplyConfirmation {
+        override val sourceName: String = candidate.sourceName
+        override val title: String = candidate.title?.takeIf { it.isNotBlank() } ?: "歌词结果"
+        override val metadata: String? = buildString {
+            append(if (candidate.document.isSynced) "同步歌词" else "纯文本歌词")
+            append(" · ")
+            append(candidate.document.lines.size)
+            append(" 行")
+            lyricsSearchCandidateMetadata(candidate)?.let {
+                append(" · ")
+                append(it)
+            }
+        }
+        override val preview: String = lyricsSearchPreview(candidate)
+        override val artworkLocator: String? = candidate.artworkLocator
+    }
+
+    data class Workflow(val candidate: WorkflowSongCandidate) : LyricsSearchApplyConfirmation {
+        override val sourceName: String = candidate.sourceName
+        override val title: String = candidate.title
+        override val metadata: String? = workflowSearchPreview(candidate)
+        override val preview: String =
+            "“应用”或“仅应用歌词”会继续请求该候选的歌词内容。"
+        override val artworkLocator: String? = candidate.imageUrl
     }
 }
 

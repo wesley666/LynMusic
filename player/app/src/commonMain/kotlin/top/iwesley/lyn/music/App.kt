@@ -2298,15 +2298,19 @@ internal fun ManualLyricsSearchOverlay(
         ),
         strings = LyricsSearchDialogStrings(
             formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
-            resultsAppliedSubtitle = "点选任一结果即可直接应用到当前歌曲。",
+            resultsAppliedSubtitle = "点选任一结果后选择应用方式。",
         ),
         onDismiss = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
         onTitleChanged = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
         onArtistChanged = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
         onAlbumChanged = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
         onSearch = { onPlayerIntent(PlayerIntent.SearchManualLyrics) },
-        onApplyDirectCandidate = { onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(it)) },
-        onApplyWorkflowCandidate = { onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(it)) },
+        onApplyDirectCandidate = { candidate, mode ->
+            onPlayerIntent(PlayerIntent.ApplyManualLyricsCandidate(candidate, mode))
+        },
+        onApplyWorkflowCandidate = { candidate, mode ->
+            onPlayerIntent(PlayerIntent.ApplyWorkflowSongCandidate(candidate, mode))
+        },
         modifier = modifier,
     )
 }

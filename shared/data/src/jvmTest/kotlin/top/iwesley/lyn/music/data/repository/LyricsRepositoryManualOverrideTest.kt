@@ -21,6 +21,7 @@ import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
@@ -130,7 +131,7 @@ class LyricsRepositoryManualOverrideTest {
         assertNotNull(overrideRow)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, overrideRow.sourceId)
         assertEquals("/tmp/cache/manual.jpg", overrideRow.artworkLocator)
-        assertEquals("direct-source", applied.document.sourceId)
+        assertEquals("direct-source", assertNotNull(applied.document).sourceId)
         assertEquals("/tmp/cache/manual.jpg", applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
@@ -195,7 +196,7 @@ class LyricsRepositoryManualOverrideTest {
 
         assertNotNull(overrideRow)
         assertEquals("/tmp/cache/workflow.jpg", overrideRow.artworkLocator)
-        assertEquals("workflow-manual", applied.document.sourceId)
+        assertEquals("workflow-manual", assertNotNull(applied.document).sourceId)
         assertEquals("/tmp/cache/workflow.jpg", applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
@@ -295,7 +296,7 @@ class LyricsRepositoryManualOverrideTest {
         val libraryTrack = RoomLibraryRepository(database).getTracksByIds(listOf(track.id)).single()
 
         assertNull(overrideRow)
-        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, applied.document.sourceId)
+        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, assertNotNull(applied.document).sourceId)
         assertEquals(originalArtwork, applied.artworkLocator)
         assertNotNull(resolved)
         assertEquals(NAVIDROME_LYRICS_SOURCE_ID, resolved.document.sourceId)
@@ -355,6 +356,176 @@ class LyricsRepositoryManualOverrideTest {
         assertNotNull(resolved)
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
         assertEquals("manual line", resolved.document.lines.single().text)
+    }
+
+    @Test
+    fun `manual lyrics only apply preserves existing artwork override`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val track = navidromeTrack(artworkLocator = buildNavidromeCoverLocator("nav-source", "cover-original"))
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "old manual line",
+                updatedAt = 1L,
+                artworkLocator = "/tmp/cache/existing.jpg",
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val applied = repository.applyLyricsCandidate(
+            trackId = track.id,
+            candidate = top.iwesley.lyn.music.core.model.LyricsSearchCandidate(
+                sourceId = "direct-source",
+                sourceName = "Direct Source",
+                document = plainLyricsDocument("direct-source", "new manual line"),
+                itemId = "song-42",
+                artworkLocator = "https://img.example.com/new.jpg",
+                isTrackProvided = false,
+            ),
+            mode = LyricsSearchApplyMode.LYRICS_ONLY,
+        )
+
+        val overrideRow = database.lyricsCacheDao()
+            .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+        val resolved = repository.getLyrics(track)
+        val libraryTrack = RoomLibraryRepository(database).getTracksByIds(listOf(track.id)).single()
+
+        assertNotNull(overrideRow)
+        assertEquals("/tmp/cache/existing.jpg", overrideRow.artworkLocator)
+        assertEquals("new manual line", assertNotNull(resolved).document.lines.single().text)
+        assertEquals("/tmp/cache/existing.jpg", resolved.artworkLocator)
+        assertEquals("/tmp/cache/existing.jpg", applied.artworkLocator)
+        assertEquals("direct-source", assertNotNull(applied.document).sourceId)
+        assertEquals("/tmp/cache/existing.jpg", libraryTrack.artworkLocator)
+    }
+
+    @Test
+    fun `manual artwork only override updates artwork without shadowing cached source lyrics`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val track = navidromeTrack(artworkLocator = buildNavidromeCoverLocator("nav-source", "cover-original"))
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.favoriteTrackDao().upsert(
+            FavoriteTrackEntity(
+                trackId = track.id,
+                sourceId = track.sourceId,
+                remoteSongId = "song-1",
+                favoritedAt = 1L,
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = NAVIDROME_LYRICS_SOURCE_ID,
+                rawPayload = "[00:01.00]source line",
+                updatedAt = 2L,
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            artworkCacheStore = FakeArtworkCacheStore(
+                cached = mapOf("https://img.example.com/art-only.jpg" to "/tmp/cache/art-only.jpg"),
+            ),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val applied = repository.applyLyricsCandidate(
+            trackId = track.id,
+            candidate = top.iwesley.lyn.music.core.model.LyricsSearchCandidate(
+                sourceId = "direct-source",
+                sourceName = "Direct Source",
+                document = plainLyricsDocument("direct-source", "ignored line"),
+                itemId = "song-77",
+                artworkLocator = "https://img.example.com/art-only.jpg",
+                isTrackProvided = false,
+            ),
+            mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+        )
+
+        val overrideRow = database.lyricsCacheDao()
+            .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+        val resolved = repository.getLyrics(track)
+        val libraryTrack = RoomLibraryRepository(database).getTracksByIds(listOf(track.id)).single()
+        val favoriteTrack = RoomFavoritesRepository(
+            database = database,
+            secureCredentialStore = MapCredentialStore(),
+            httpClient = RecordingLyricsHttpClient(),
+            logger = NoopDiagnosticLogger,
+        ).favoriteTracks.first().single()
+
+        assertNotNull(overrideRow)
+        assertEquals("", overrideRow.rawPayload)
+        assertEquals("/tmp/cache/art-only.jpg", overrideRow.artworkLocator)
+        assertNull(applied.document)
+        assertEquals("/tmp/cache/art-only.jpg", applied.artworkLocator)
+        assertNotNull(resolved)
+        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("source line", resolved.document.lines.single().text)
+        assertEquals("/tmp/cache/art-only.jpg", resolved.artworkLocator)
+        assertEquals("/tmp/cache/art-only.jpg", libraryTrack.artworkLocator)
+        assertEquals("/tmp/cache/art-only.jpg", favoriteTrack.artworkLocator)
+    }
+
+    @Test
+    fun `track provided artwork only clears manual artwork override but keeps manual lyrics`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val originalArtwork = buildNavidromeCoverLocator("nav-source", "cover-original")
+        val track = navidromeTrack(artworkLocator = originalArtwork)
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "manual line",
+                updatedAt = 10L,
+                artworkLocator = "/tmp/cache/manual.jpg",
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val applied = repository.applyLyricsCandidate(
+            trackId = track.id,
+            candidate = top.iwesley.lyn.music.core.model.LyricsSearchCandidate(
+                sourceId = NAVIDROME_LYRICS_SOURCE_ID,
+                sourceName = "Navidrome",
+                document = syncedLyricsDocument(NAVIDROME_LYRICS_SOURCE_ID, "source line"),
+                artworkLocator = originalArtwork,
+                isTrackProvided = true,
+            ),
+            mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+        )
+
+        val overrideRow = database.lyricsCacheDao()
+            .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+        val resolved = repository.getLyrics(track)
+        val libraryTrack = RoomLibraryRepository(database).getTracksByIds(listOf(track.id)).single()
+
+        assertNotNull(overrideRow)
+        assertEquals("manual line", overrideRow.rawPayload)
+        assertNull(overrideRow.artworkLocator)
+        assertNull(applied.document)
+        assertEquals(originalArtwork, applied.artworkLocator)
+        assertNotNull(resolved)
+        assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("manual line", resolved.document.lines.single().text)
+        assertNull(resolved.artworkLocator)
+        assertEquals(originalArtwork, libraryTrack.artworkLocator)
     }
 }
 

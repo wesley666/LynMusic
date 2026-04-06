@@ -13,9 +13,11 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
@@ -155,6 +157,117 @@ class PlayerStoreManualLyricsSearchTest {
         assertTrue(state.isManualLyricsSearchVisible)
         assertEquals("歌词应用失败", state.message)
         assertEquals(null, state.lyrics)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual lyrics only apply updates lyrics and keeps current artwork`() = runTest {
+        val track = sampleTrack().copy(artworkLocator = "/tmp/original-cover.jpg")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val candidate = LyricsSearchCandidate(
+            sourceId = "manual-source",
+            sourceName = "手动源",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = 1_000L, text = "只更新歌词")),
+                sourceId = "manual-source",
+                rawPayload = "[00:01.00]只更新歌词",
+            ),
+            artworkLocator = "/tmp/new-cover.jpg",
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                metadataArtworkLocator = track.artworkLocator,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(searchResults = listOf(candidate))
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(
+            PlayerIntent.ApplyManualLyricsCandidate(
+                candidate = candidate,
+                mode = LyricsSearchApplyMode.LYRICS_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedMode)
+        assertEquals(candidate.document, state.lyrics)
+        assertEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertFalse(state.isManualLyricsSearchVisible)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual artwork only apply keeps current lyrics and updates artwork`() = runTest {
+        val currentLyrics = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = 500L, text = "当前歌词")),
+            sourceId = "current-source",
+            rawPayload = "[00:00.50]当前歌词",
+        )
+        val track = sampleTrack().copy(artworkLocator = "/tmp/original-cover.jpg")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val candidate = LyricsSearchCandidate(
+            sourceId = "manual-source",
+            sourceName = "手动源",
+            document = LyricsDocument(
+                lines = listOf(LyricsLine(timestampMs = 1_000L, text = "新歌词")),
+                sourceId = "manual-source",
+                rawPayload = "[00:01.00]新歌词",
+            ),
+            artworkLocator = "/tmp/artwork-only-cover.jpg",
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                metadataArtworkLocator = track.artworkLocator,
+                positionMs = 800L,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            searchResults = listOf(candidate),
+            resolvedLyrics = ResolvedLyricsResult(
+                document = currentLyrics,
+                artworkLocator = track.artworkLocator,
+            ),
+            applyResultsByMode = mapOf(
+                LyricsSearchApplyMode.ARTWORK_ONLY to AppliedLyricsResult(
+                    document = null,
+                    artworkLocator = candidate.artworkLocator,
+                ),
+            ),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        assertEquals(currentLyrics, store.state.value.lyrics)
+
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(
+            PlayerIntent.ApplyManualLyricsCandidate(
+                candidate = candidate,
+                mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedMode)
+        assertEquals(currentLyrics, state.lyrics)
+        assertEquals(0, state.highlightedLineIndex)
+        assertEquals("/tmp/artwork-only-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertFalse(state.isManualLyricsSearchVisible)
         scope.cancel()
     }
 
@@ -334,6 +447,122 @@ class PlayerStoreManualLyricsSearchTest {
         scope.cancel()
     }
 
+    @Test
+    fun `workflow lyrics only apply updates lyrics and keeps current artwork`() = runTest {
+        val track = sampleTrack().copy(artworkLocator = "/tmp/original-cover.jpg")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow 源",
+            id = "song-42",
+            title = "工作流标题",
+            artists = listOf("工作流歌手"),
+            imageUrl = "/tmp/new-workflow-cover.jpg",
+        )
+        val appliedDocument = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = 500L, text = "Workflow 只更新歌词")),
+            sourceId = "workflow-1",
+            rawPayload = "[00:00.50]Workflow 只更新歌词",
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                metadataArtworkLocator = track.artworkLocator,
+                positionMs = 700L,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            appliedDocument = appliedDocument,
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(
+            PlayerIntent.ApplyWorkflowSongCandidate(
+                candidate = workflowCandidate,
+                mode = LyricsSearchApplyMode.LYRICS_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedWorkflowMode)
+        assertEquals(appliedDocument, state.lyrics)
+        assertEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertFalse(state.isManualLyricsSearchVisible)
+        scope.cancel()
+    }
+
+    @Test
+    fun `workflow artwork only apply keeps current lyrics and updates artwork`() = runTest {
+        val currentLyrics = LyricsDocument(
+            lines = listOf(LyricsLine(timestampMs = 500L, text = "当前歌词")),
+            sourceId = "current-source",
+            rawPayload = "[00:00.50]当前歌词",
+        )
+        val track = sampleTrack().copy(artworkLocator = "/tmp/original-cover.jpg")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val workflowCandidate = WorkflowSongCandidate(
+            sourceId = "workflow-1",
+            sourceName = "Workflow 源",
+            id = "song-42",
+            title = "工作流标题",
+            artists = listOf("工作流歌手"),
+            imageUrl = "/tmp/workflow-artwork-only.jpg",
+        )
+        val playbackRepository = FakePlaybackRepository(
+            PlaybackSnapshot(
+                queue = listOf(track),
+                currentIndex = 0,
+                metadataArtworkLocator = track.artworkLocator,
+                positionMs = 800L,
+            ),
+        )
+        val lyricsRepository = FakeLyricsRepository(
+            workflowResults = listOf(workflowCandidate),
+            resolvedLyrics = ResolvedLyricsResult(
+                document = currentLyrics,
+                artworkLocator = track.artworkLocator,
+            ),
+            applyWorkflowResultsByMode = mapOf(
+                LyricsSearchApplyMode.ARTWORK_ONLY to AppliedLyricsResult(
+                    document = null,
+                    artworkLocator = workflowCandidate.imageUrl,
+                ),
+            ),
+        )
+        val store = PlayerStore(playbackRepository, lyricsRepository, scope)
+
+        advanceUntilIdle()
+        assertEquals(currentLyrics, store.state.value.lyrics)
+
+        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.SearchManualLyrics)
+        advanceUntilIdle()
+
+        store.dispatch(
+            PlayerIntent.ApplyWorkflowSongCandidate(
+                candidate = workflowCandidate,
+                mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedWorkflowMode)
+        assertEquals(currentLyrics, state.lyrics)
+        assertEquals(0, state.highlightedLineIndex)
+        assertEquals("/tmp/workflow-artwork-only.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertFalse(state.isManualLyricsSearchVisible)
+        scope.cancel()
+    }
+
     private fun sampleTrack(): Track {
         return Track(
             id = "track-1",
@@ -381,7 +610,10 @@ private class FakePlaybackRepository(
 private class FakeLyricsRepository(
     private val searchResults: List<LyricsSearchCandidate> = emptyList(),
     private val workflowResults: List<WorkflowSongCandidate> = emptyList(),
+    private val resolvedLyrics: ResolvedLyricsResult? = null,
     private val appliedDocument: LyricsDocument? = null,
+    private val applyResultsByMode: Map<LyricsSearchApplyMode, AppliedLyricsResult> = emptyMap(),
+    private val applyWorkflowResultsByMode: Map<LyricsSearchApplyMode, AppliedLyricsResult> = emptyMap(),
     private val applyError: Throwable? = null,
     private val applyWorkflowError: Throwable? = null,
 ) : LyricsRepository {
@@ -397,8 +629,12 @@ private class FakeLyricsRepository(
         private set
     var appliedWorkflowCandidate: WorkflowSongCandidate? = null
         private set
+    var appliedMode: LyricsSearchApplyMode? = null
+        private set
+    var appliedWorkflowMode: LyricsSearchApplyMode? = null
+        private set
 
-    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = null
+    override suspend fun getLyrics(track: Track): ResolvedLyricsResult? = resolvedLyrics
 
     override suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean): List<LyricsSearchCandidate> {
         lastSearchTrack = track
@@ -422,22 +658,32 @@ private class FakeLyricsRepository(
         )
     }
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         applyError?.let { throw it }
         appliedTrackId = trackId
         appliedCandidate = candidate
-        return AppliedLyricsResult(
-            document = appliedDocument ?: candidate.document,
+        appliedMode = mode
+        return applyResultsByMode[mode] ?: AppliedLyricsResult(
+            document = if (mode == LyricsSearchApplyMode.ARTWORK_ONLY) null else (appliedDocument ?: candidate.document),
             artworkLocator = candidate.artworkLocator,
         )
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         applyWorkflowError?.let { throw it }
         appliedTrackId = trackId
         appliedWorkflowCandidate = candidate
-        return AppliedLyricsResult(
-            document = appliedDocument ?: error("No applied document configured"),
+        appliedWorkflowMode = mode
+        return applyWorkflowResultsByMode[mode] ?: AppliedLyricsResult(
+            document = if (mode == LyricsSearchApplyMode.ARTWORK_ONLY) null else (appliedDocument ?: error("No applied document configured")),
             artworkLocator = candidate.imageUrl,
         )
     }

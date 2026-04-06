@@ -19,6 +19,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -417,7 +418,11 @@ private class FakeLyricsShareRepository(
         includeTrackProvidedCandidate: Boolean,
     ): List<LyricsSearchCandidate> = emptyList()
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in lyrics share tests")
     }
 
@@ -427,7 +432,11 @@ private class FakeLyricsShareRepository(
         error("Not used in lyrics share tests")
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in lyrics share tests")
     }
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
@@ -225,7 +226,11 @@ private class NoopQueueLyricsRepository : LyricsRepository {
         includeTrackProvidedCandidate: Boolean,
     ): List<LyricsSearchCandidate> = emptyList()
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in queue tests")
     }
 
@@ -235,7 +240,11 @@ private class NoopQueueLyricsRepository : LyricsRepository {
         error("Not used in queue tests")
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in queue tests")
     }
 }
@@ -250,7 +259,11 @@ private class RecordingQueueLyricsRepository(
         includeTrackProvidedCandidate: Boolean,
     ): List<LyricsSearchCandidate> = emptyList()
 
-    override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate): AppliedLyricsResult {
+    override suspend fun applyLyricsCandidate(
+        trackId: String,
+        candidate: LyricsSearchCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         return applyResult
     }
 
@@ -260,7 +273,11 @@ private class RecordingQueueLyricsRepository(
         error("Not used in queue tests")
     }
 
-    override suspend fun applyWorkflowSongCandidate(trackId: String, candidate: WorkflowSongCandidate): AppliedLyricsResult {
+    override suspend fun applyWorkflowSongCandidate(
+        trackId: String,
+        candidate: WorkflowSongCandidate,
+        mode: LyricsSearchApplyMode,
+    ): AppliedLyricsResult {
         error("Not used in queue tests")
     }
 }
