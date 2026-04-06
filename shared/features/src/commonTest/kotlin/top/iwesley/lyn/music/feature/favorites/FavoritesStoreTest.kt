@@ -161,6 +161,24 @@ class FavoritesStoreTest {
     }
 
     @Test
+    fun `manual refresh calls repository when navidrome source exists`() = runTest {
+        val favoritesRepository = FakeFavoritesRepository()
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
+
+        advanceUntilIdle()
+        assertEquals(1, favoritesRepository.refreshCalls)
+
+        store.dispatch(FavoritesIntent.Refresh)
+        advanceUntilIdle()
+
+        assertEquals(2, favoritesRepository.refreshCalls)
+        scope.cancel()
+    }
+
+    @Test
     fun `favorites source filter loads from persisted preferences and updates them on change`() = runTest {
         val favoritesRepository = FakeFavoritesRepository(
             tracks = sampleFavoriteTracks(),

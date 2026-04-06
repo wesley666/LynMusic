@@ -28,6 +28,8 @@ data class FavoritesState(
     val visibleAlbumCount: Int = 0,
     val visibleArtistCount: Int = 0,
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
+    val canRefreshRemote: Boolean = false,
+    val isRefreshing: Boolean = false,
     val message: String? = null,
 )
 
@@ -36,6 +38,7 @@ sealed interface FavoritesIntent {
     data class SourceFilterChanged(val filter: LibrarySourceFilter) : FavoritesIntent
     data class ToggleFavorite(val track: Track) : FavoritesIntent
     data class EnsureFavorite(val track: Track) : FavoritesIntent
+    data object Refresh : FavoritesIntent
     data object ClearMessage : FavoritesIntent
 }
 
@@ -81,6 +84,7 @@ class FavoritesStore(
                             selectedSourceFilter = snapshot.selectedSourceFilter,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
+                            canRefreshRemote = snapshot.navidromeSourceIds.isNotEmpty(),
                         ),
                     )
                 }
@@ -91,6 +95,7 @@ class FavoritesStore(
     override suspend fun handleIntent(intent: FavoritesIntent) {
         when (intent) {
             FavoritesIntent.ClearMessage -> updateState { it.copy(message = null) }
+            FavoritesIntent.Refresh -> refreshNavidromeFavorites(manual = true)
 
             is FavoritesIntent.SearchChanged -> updateState { state ->
                 deriveState(state.copy(query = intent.query))
@@ -125,12 +130,32 @@ class FavoritesStore(
         lastNavidromeSourceIds = navidromeSourceIds
         if (navidromeSourceIds.isEmpty()) return
         storeScope.launch {
-            favoritesRepository.refreshNavidromeFavorites()
-                .onSuccess { updateState { it.copy(message = null) } }
-                .onFailure { throwable ->
-                    setMessage("同步 Navidrome 喜欢失败: ${throwable.message.orEmpty()}")
-                }
+            refreshNavidromeFavorites(canRefreshRemote = true, manual = false)
         }
+    }
+
+    private suspend fun refreshNavidromeFavorites(
+        canRefreshRemote: Boolean = state.value.canRefreshRemote,
+        manual: Boolean,
+    ) {
+        if (state.value.isRefreshing || !canRefreshRemote) return
+        updateState { it.copy(isRefreshing = true, message = null) }
+        favoritesRepository.refreshNavidromeFavorites()
+            .onSuccess {
+                updateState { it.copy(isRefreshing = false, message = null) }
+            }
+            .onFailure { throwable ->
+                updateState {
+                    it.copy(
+                        isRefreshing = false,
+                        message = if (manual) {
+                            "刷新喜欢失败: ${throwable.message.orEmpty()}"
+                        } else {
+                            "同步 Navidrome 喜欢失败: ${throwable.message.orEmpty()}"
+                        },
+                    )
+                }
+            }
     }
 
     private fun deriveState(state: FavoritesState): FavoritesState {

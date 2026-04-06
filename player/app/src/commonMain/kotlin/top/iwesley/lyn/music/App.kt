@@ -899,6 +899,20 @@ private fun FavoritesTab(
         onSearchChanged = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
         onSourceFilterChanged = { onFavoritesIntent(FavoritesIntent.SourceFilterChanged(it)) },
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
+        actionButton = if (state.canRefreshRemote) {
+            {
+                OutlinedButton(
+                    onClick = { onFavoritesIntent(FavoritesIntent.Refresh) },
+                    enabled = !state.isRefreshing,
+                ) {
+                    Icon(Icons.Rounded.Sync, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (state.isRefreshing) "刷新中" else "刷新")
+                }
+            }
+        } else {
+            null
+        },
         onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
         modifier = modifier,
@@ -944,6 +958,7 @@ private fun LibraryBrowserTab(
     onSearchChanged: (String) -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onToggleFavorite: (Track) -> Unit,
+    actionButton: (@Composable () -> Unit)? = null,
     onDismissMessage: () -> Unit,
     onPlayTracks: (List<Track>, Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -1223,7 +1238,16 @@ private fun LibraryBrowserTab(
                         LibraryBrowserRootView.Artists -> strings.artistLabel
                     }
                     item {
-                        SectionTitle(title = strings.sectionTitle, subtitle = strings.sectionSubtitle)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                SectionTitle(title = strings.sectionTitle, subtitle = strings.sectionSubtitle)
+                            }
+                            actionButton?.invoke()
+                        }
                     }
                     if (currentItemCount == 0) {
                         item {
