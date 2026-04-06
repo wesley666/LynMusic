@@ -885,5 +885,10 @@ private fun formatLyricsSearchDuration(durationSeconds: Int): String {
     val safeSeconds = durationSeconds.coerceAtLeast(0)
     val minutes = safeSeconds / 60
     val seconds = safeSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
+    return buildString {
+        append(minutes)
+        append(':')
+        if (seconds < 10) append('0')
+        append(seconds)
+    }
 }

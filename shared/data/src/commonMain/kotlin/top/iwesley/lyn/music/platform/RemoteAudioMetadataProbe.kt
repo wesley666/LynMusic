@@ -677,7 +677,84 @@ internal enum class MetadataCharset {
     UTF8,
 }
 
-internal expect fun decodeMetadataBytes(bytes: ByteArray, charset: MetadataCharset): String
+internal fun decodeMetadataBytes(bytes: ByteArray, charset: MetadataCharset): String {
+    return when (charset) {
+        MetadataCharset.LATIN1 -> bytes.decodeLatin1()
+        MetadataCharset.UTF16 -> bytes.decodeUtf16WithBom(defaultBigEndian = true)
+        MetadataCharset.UTF16BE -> bytes.decodeUtf16BigEndian()
+        MetadataCharset.UTF8 -> bytes.decodeToString()
+    }
+}
+
+private fun ByteArray.decodeLatin1(): String {
+    return buildString(size) {
+        for (byte in this@decodeLatin1) {
+            append((byte.toInt() and 0xFF).toChar())
+        }
+    }
+}
+
+private fun ByteArray.decodeUtf16WithBom(defaultBigEndian: Boolean): String {
+    if (isEmpty()) return ""
+    var start = 0
+    var bigEndian = defaultBigEndian
+    if (size >= 2) {
+        val first = this[0].toInt() and 0xFF
+        val second = this[1].toInt() and 0xFF
+        when {
+            first == 0xFE && second == 0xFF -> {
+                start = 2
+                bigEndian = true
+            }
+
+            first == 0xFF && second == 0xFE -> {
+                start = 2
+                bigEndian = false
+            }
+        }
+    }
+    return decodeUtf16(startIndex = start, bigEndian = bigEndian)
+}
+
+private fun ByteArray.decodeUtf16BigEndian(): String {
+    return decodeUtf16(startIndex = 0, bigEndian = true)
+}
+
+private fun ByteArray.decodeUtf16(startIndex: Int, bigEndian: Boolean): String {
+    if (startIndex >= size) return ""
+    val safeLength = size - ((size - startIndex) % 2)
+    var index = startIndex
+    return buildString((safeLength - startIndex) / 2) {
+        while (index + 1 < safeLength) {
+            val unit = readUtf16Unit(index, bigEndian)
+            index += 2
+            when {
+                unit in 0xD800..0xDBFF && index + 1 < safeLength -> {
+                    val low = readUtf16Unit(index, bigEndian)
+                    if (low in 0xDC00..0xDFFF) {
+                        append(unit.toChar())
+                        append(low.toChar())
+                        index += 2
+                    } else {
+                        append(unit.toChar())
+                    }
+                }
+
+                else -> append(unit.toChar())
+            }
+        }
+    }
+}
+
+private fun ByteArray.readUtf16Unit(offset: Int, bigEndian: Boolean): Int {
+    val first = this[offset].toInt() and 0xFF
+    val second = this[offset + 1].toInt() and 0xFF
+    return if (bigEndian) {
+        (first shl 8) or second
+    } else {
+        (second shl 8) or first
+    }
+}
 
 private val ID3_MAGIC = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte())
 private val FLAC_MAGIC = byteArrayOf('f'.code.toByte(), 'L'.code.toByte(), 'a'.code.toByte(), 'C'.code.toByte())
