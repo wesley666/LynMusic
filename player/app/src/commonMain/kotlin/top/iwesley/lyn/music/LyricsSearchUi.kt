@@ -23,6 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -74,6 +77,7 @@ internal data class LyricsSearchDialogStrings(
     val idleBody: String = "修改搜索条件后点击搜索，结果会显示在这里。",
     val emptyBody: String = "当前已启用歌词源都没有返回可解析结果，可以继续修改标题、歌手或专辑再试。",
     val resultsPlaceholderSubtitle: String = "直接歌词结果和 Workflow 歌曲候选会显示在这里。",
+    val backLabel: String = "返回",
     val cancelLabel: String = "取消",
     val dismissLabel: String = "关闭",
     val searchIdleLabel: String = "搜索",
@@ -97,6 +101,7 @@ internal fun LyricsSearchOverlayDialog(
     val primaryTextColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = shellColors.secondaryText
     var pendingConfirmation by remember { mutableStateOf<LyricsSearchApplyConfirmation?>(null) }
+    var mobileScreen by remember { mutableStateOf(LyricsSearchMobileScreen.FORM) }
     Box(modifier = modifier) {
         Box(
             modifier = Modifier
@@ -125,34 +130,34 @@ internal fun LyricsSearchOverlayDialog(
                     .padding(22.dp),
             ) {
                 val wideLayout = maxWidth >= 980.dp
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                if (wideLayout) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                state.headerTitle,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = primaryTextColor,
-                            )
-                            Text(
-                                state.headerSubtitle,
-                                color = secondaryTextColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    state.headerTitle,
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = primaryTextColor,
+                                )
+                                Text(
+                                    state.headerSubtitle,
+                                    color = secondaryTextColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = onDismiss) {
+                                Text(strings.dismissLabel)
+                            }
                         }
-                        TextButton(onClick = onDismiss) {
-                            Text(strings.dismissLabel)
-                        }
-                    }
-                    if (wideLayout) {
                         Row(
                             modifier = Modifier
                                 .weight(1f)
@@ -185,13 +190,43 @@ internal fun LyricsSearchOverlayDialog(
                                     .fillMaxHeight(),
                             )
                         }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        if (mobileScreen == LyricsSearchMobileScreen.FORM) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        state.headerTitle,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = primaryTextColor,
+                                    )
+                                    Text(
+                                        state.headerSubtitle,
+                                        color = secondaryTextColor,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                IconButton(onClick = onDismiss) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = strings.dismissLabel,
+                                        tint = primaryTextColor,
+                                    )
+                                }
+                            }
                             LyricsSearchFormPane(
                                 title = state.title,
                                 artistName = state.artistName,
@@ -203,19 +238,46 @@ internal fun LyricsSearchOverlayDialog(
                                 onTitleChanged = onTitleChanged,
                                 onArtistChanged = onArtistChanged,
                                 onAlbumChanged = onAlbumChanged,
-                                onSearch = onSearch,
+                                onSearch = {
+                                    mobileScreen = LyricsSearchMobileScreen.RESULTS
+                                    onSearch()
+                                },
+                                showSectionTitle = false,
+                                showDismissButton = false,
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(0.42f),
+                                    .weight(1f)
+                                    .fillMaxWidth(),
                             )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                IconButton(onClick = { mobileScreen = LyricsSearchMobileScreen.FORM }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                        contentDescription = strings.backLabel,
+                                        tint = primaryTextColor,
+                                    )
+                                }
+                                IconButton(onClick = onDismiss) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = strings.dismissLabel,
+                                        tint = primaryTextColor,
+                                    )
+                                }
+                            }
                             LyricsSearchResultsPane(
                                 state = state,
                                 strings = strings,
                                 onApplyDirectCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Direct(it) },
                                 onApplyWorkflowCandidate = { pendingConfirmation = LyricsSearchApplyConfirmation.Workflow(it) },
+                                showSectionTitle = true,
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(0.58f),
+                                    .weight(1f)
+                                    .fillMaxWidth(),
                             )
                         }
                     }
@@ -251,6 +313,8 @@ private fun LyricsSearchFormPane(
     onArtistChanged: (String) -> Unit,
     onAlbumChanged: (String) -> Unit,
     onSearch: () -> Unit,
+    showSectionTitle: Boolean = true,
+    showDismissButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
@@ -271,10 +335,12 @@ private fun LyricsSearchFormPane(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        LyricsSearchSectionTitle(
-            title = "搜索条件",
-            subtitle = strings.formSubtitle,
-        )
+        if (showSectionTitle) {
+            LyricsSearchSectionTitle(
+                title = "搜索条件",
+                subtitle = strings.formSubtitle,
+            )
+        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -348,21 +414,32 @@ private fun LyricsSearchFormPane(
                             )
                         }
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(buttonSpacing),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
+                    if (showDismissButton) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(buttonSpacing),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(strings.cancelLabel, maxLines = 1)
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(strings.cancelLabel, maxLines = 1)
+                            }
+                            Button(
+                                onClick = onSearch,
+                                enabled = !isLoading && title.isNotBlank(),
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(),
+                            ) {
+                                Text(if (isLoading) strings.searchLoadingLabel else strings.searchIdleLabel, maxLines = 1)
+                            }
                         }
+                    } else {
                         Button(
                             onClick = onSearch,
                             enabled = !isLoading && title.isNotBlank(),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(),
                         ) {
                             Text(if (isLoading) strings.searchLoadingLabel else strings.searchIdleLabel, maxLines = 1)
@@ -394,6 +471,7 @@ private fun LyricsSearchResultsPane(
     strings: LyricsSearchDialogStrings,
     onApplyDirectCandidate: (LyricsSearchCandidate) -> Unit,
     onApplyWorkflowCandidate: (WorkflowSongCandidate) -> Unit,
+    showSectionTitle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
@@ -403,15 +481,17 @@ private fun LyricsSearchResultsPane(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        LyricsSearchSectionTitle(
-            title = "搜索结果",
-            subtitle = when {
-                state.isLoading -> "正在请求已启用的歌词源。"
-                state.directResults.isNotEmpty() || state.workflowResults.isNotEmpty() -> strings.resultsAppliedSubtitle
-                state.hasResult -> "当前没有可解析结果，可以继续调整搜索条件。"
-                else -> strings.resultsPlaceholderSubtitle
-            },
-        )
+        if (showSectionTitle) {
+            LyricsSearchSectionTitle(
+                title = "搜索结果",
+                subtitle = when {
+                    state.isLoading -> "正在请求已启用的歌词源。"
+                    state.directResults.isNotEmpty() || state.workflowResults.isNotEmpty() -> strings.resultsAppliedSubtitle
+                    state.hasResult -> "当前没有可解析结果，可以继续调整搜索条件。"
+                    else -> strings.resultsPlaceholderSubtitle
+                },
+            )
+        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -592,6 +672,11 @@ private fun LyricsSearchResultsPane(
             }
         }
     }
+}
+
+private enum class LyricsSearchMobileScreen {
+    FORM,
+    RESULTS,
 }
 
 @Composable
