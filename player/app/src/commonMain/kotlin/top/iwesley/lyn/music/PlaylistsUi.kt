@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -97,6 +99,7 @@ internal fun PlaylistAddDialog(
     onAddTarget: (PlaylistAddTarget) -> Unit,
     onCreatePlaylistAndAdd: (String) -> Unit,
 ) {
+    val shellColors = mainShellColors
     var selectedTargetId by remember(track.id, targets) {
         mutableStateOf(targets.firstOrNull { !it.alreadyContainsTrack }?.id)
     }
@@ -109,6 +112,12 @@ internal fun PlaylistAddDialog(
     )
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = shellColors.navContainer,
+        iconContentColor = MaterialTheme.colorScheme.primary,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("加入歌单") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -129,24 +138,47 @@ internal fun PlaylistAddDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     targets.forEach { target ->
+                        val disabled = target.alreadyContainsTrack
+                        val selected = selectedTargetId == target.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable(enabled = !target.alreadyContainsTrack) {
+                                .background(
+                                    when {
+                                        disabled -> shellColors.cardContainer.copy(alpha = 0.45f)
+                                        selected -> shellColors.selectedContainer
+                                        else -> shellColors.cardContainer.copy(alpha = 0.55f)
+                                    },
+                                )
+                                .clickable(enabled = !disabled) {
                                     selectedTargetId = target.id
                                 }
-                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             RadioButton(
-                                selected = selectedTargetId == target.id,
-                                onClick = if (target.alreadyContainsTrack) null else { { selectedTargetId = target.id } },
+                                selected = selected,
+                                onClick = if (disabled) null else { { selectedTargetId = target.id } },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    disabledSelectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                    disabledUnselectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                ),
                             )
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(target.name, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    text = if (target.alreadyContainsTrack) "已存在" else when (target.kind) {
+                                    text = target.name,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (disabled) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                )
+                                Text(
+                                    text = if (disabled) "已存在" else when (target.kind) {
                                         PlaylistKind.SYSTEM_LIKED -> "加入喜欢"
                                         PlaylistKind.USER -> "加入普通歌单"
                                     },
@@ -168,14 +200,20 @@ internal fun PlaylistAddDialog(
                 )
                 Button(
                     onClick = {
-                        onCreatePlaylistAndAdd(newPlaylistName)
-                        newPlaylistName = ""
-                    },
-                    enabled = newPlaylistName.trim().isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
+                    onCreatePlaylistAndAdd(newPlaylistName)
+                    newPlaylistName = ""
+                },
+                enabled = newPlaylistName.trim().isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                    disabledContainerColor = shellColors.cardContainer,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Icon(Icons.Rounded.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
                     Text("新建并加入")
                 }
             }
@@ -185,12 +223,15 @@ internal fun PlaylistAddDialog(
                 onClick = { selectedTarget?.let(onAddTarget) },
                 enabled = selectedTarget != null,
             ) {
-                Text("加入")
+                Text(
+                    text = "加入",
+                    color = if (selectedTarget != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )
@@ -520,14 +561,21 @@ private fun PlaylistNameDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
+    val shellColors = mainShellColors
     var name by rememberSaveable { mutableStateOf("") }
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = mainShellColors.cardBorder,
-        unfocusedBorderColor = mainShellColors.cardBorder,
-        disabledBorderColor = mainShellColors.cardBorder,
+        focusedBorderColor = shellColors.cardBorder,
+        unfocusedBorderColor = shellColors.cardBorder,
+        disabledBorderColor = shellColors.cardBorder,
     )
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = shellColors.navContainer,
+        iconContentColor = MaterialTheme.colorScheme.primary,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("新建歌单") },
         text = {
             ImeAwareOutlinedTextField(
@@ -544,12 +592,15 @@ private fun PlaylistNameDialog(
                 onClick = { onConfirm(name) },
                 enabled = name.trim().isNotBlank(),
             ) {
-                Text("创建")
+                Text(
+                    text = "创建",
+                    color = if (name.trim().isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )
