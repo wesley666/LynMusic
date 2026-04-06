@@ -3042,7 +3042,7 @@ private fun LyricsShareSelectionPane(
     ) {
         SectionTitle(
             title = "选句",
-            subtitle = "点选任意多句歌词，空白行不会加入分享图。",
+            subtitle = "",
         )
         Card(
             modifier = Modifier
@@ -3167,13 +3167,7 @@ private fun LyricsSharePreviewPane(
     ) {
         SectionTitle(
             title = "预览",
-            subtitle = when {
-                state.isShareRendering && previewBitmap != null -> "正在更新预览，旧图会暂时保留。"
-                state.isShareRendering -> "正在生成分享图片。"
-                state.selectedLyricsLineIndices.isEmpty() -> "请先选择至少一句歌词。"
-                state.hasFreshSharePreview -> "当前预览会用于复制和保存。"
-                else -> "选句后会自动刷新预览。"
-            },
+            subtitle = "",
         )
         Card(
             modifier = Modifier
