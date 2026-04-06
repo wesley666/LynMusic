@@ -21,7 +21,7 @@ fun main() = application {
         state = windowState,
     ) {
         SideEffect {
-            window.minimumSize = Dimension(1100, 720)
+            window.minimumSize = Dimension(1200, 720)
         }
         App(appComponent)
     }
