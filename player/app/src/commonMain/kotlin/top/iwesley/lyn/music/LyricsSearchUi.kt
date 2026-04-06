@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -615,8 +616,8 @@ private fun LyricsSearchApplyConfirmationOverlay(
     ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth(0.88f)
-                .widthIn(max = 480.dp)
+                .padding(horizontal = 24.dp)
+                .widthIn(min = 280.dp, max = 400.dp)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -674,32 +675,59 @@ private fun LyricsSearchApplyConfirmationOverlay(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { onApply(LyricsSearchApplyMode.FULL) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("应用")
-                    }
-                    OutlinedButton(
-                        onClick = { onApply(LyricsSearchApplyMode.LYRICS_ONLY) },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("仅应用歌词")
-                    }
-                    if (LyricsSearchApplyMode.ARTWORK_ONLY in applyModes) {
-                        OutlinedButton(
-                            onClick = { onApply(LyricsSearchApplyMode.ARTWORK_ONLY) },
-                            modifier = Modifier.fillMaxWidth(),
+                val actions = buildList<@Composable (Modifier) -> Unit> {
+                    add { modifier ->
+                        Button(
+                            onClick = { onApply(LyricsSearchApplyMode.FULL) },
+                            modifier = modifier,
                         ) {
-                            Text("仅应用封面")
+                            Text("应用")
                         }
                     }
-                    TextButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("取消")
+                    add { modifier ->
+                        OutlinedButton(
+                            onClick = { onApply(LyricsSearchApplyMode.LYRICS_ONLY) },
+                            modifier = modifier,
+                        ) {
+                            Text("仅应用歌词")
+                        }
+                    }
+                    if (LyricsSearchApplyMode.ARTWORK_ONLY in applyModes) {
+                        add { modifier ->
+                            OutlinedButton(
+                                onClick = { onApply(LyricsSearchApplyMode.ARTWORK_ONLY) },
+                                modifier = modifier,
+                            ) {
+                                Text("仅应用封面")
+                            }
+                        }
+                    }
+                    add { modifier ->
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = modifier,
+                        ) {
+                            Text("取消")
+                        }
+                    }
+                }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    actions.chunked(2).forEach { rowActions ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            rowActions.forEach { action ->
+                                action(Modifier.weight(1f))
+                            }
+                            repeat((2 - rowActions.size).coerceAtLeast(0)) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
