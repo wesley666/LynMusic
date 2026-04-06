@@ -178,6 +178,39 @@ class PlaylistsRepositoryTest {
             detail.tracks.map { it.track.id },
         )
     }
+
+    @Test
+    fun `refresh keeps updatedAt stable when remote playlist is unchanged`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        database.trackDao().upsertAll(listOf(navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1")))
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(
+                    "pa" to RemotePlaylistState(id = "pa", name = "Focus", songIds = mutableListOf("song-a1")),
+                ),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(mutableMapOf("cred-a" to "pass-a")),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromePlaylists().getOrThrow()
+        val firstPlaylist = repository.playlists.first().single()
+        while (now() <= firstPlaylist.updatedAt) {
+            Thread.sleep(1L)
+        }
+
+        repository.refreshNavidromePlaylists().getOrThrow()
+
+        val secondPlaylist = repository.playlists.first().single()
+        assertEquals(firstPlaylist.id, secondPlaylist.id)
+        assertEquals(firstPlaylist.updatedAt, secondPlaylist.updatedAt)
+        assertEquals(firstPlaylist.trackCount, secondPlaylist.trackCount)
+    }
 }
 
 private fun createPlaylistTestDatabase(): LynMusicDatabase {

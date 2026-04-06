@@ -316,11 +316,6 @@ fun App(component: LynMusicAppComponent) {
                     component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
                 }
             }
-            LaunchedEffect(selectedTab) {
-                if (selectedTab == AppTab.Playlists) {
-                    component.playlistsStore.dispatch(PlaylistsIntent.Refresh)
-                }
-            }
             val compact = maxWidth < 900.dp
             val shellColors = mainShellColors
             Box(

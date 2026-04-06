@@ -306,20 +306,32 @@ class RoomPlaylistRepository(
             resolvedSource = resolvedSource,
             remotePlaylistId = remotePlaylistId,
         )
-        database.playlistTrackDao().deleteByPlaylistIdAndSourceId(playlist.id, sourceId)
-        if (remoteEntries.isNotEmpty()) {
-            database.playlistTrackDao().upsertAll(
-                remoteEntries.mapIndexed { index, entry ->
-                    PlaylistTrackEntity(
-                        playlistId = playlist.id,
-                        trackId = navidromeTrackIdFor(sourceId, entry.songId),
-                        sourceId = sourceId,
-                        addedAt = now(),
-                        localOrdinal = null,
-                        remoteOrdinal = index,
-                    )
-                },
+        val currentRemoteTrackOrder = database.playlistTrackDao().getByPlaylistIdAndSourceId(playlist.id, sourceId)
+            .sortedBy { it.remoteOrdinal ?: Int.MAX_VALUE }
+            .map { RemotePlaylistTrackSnapshot(trackId = it.trackId, remoteOrdinal = it.remoteOrdinal ?: -1) }
+        val nextRemoteTrackOrder = remoteEntries.mapIndexed { index, entry ->
+            RemotePlaylistTrackSnapshot(
+                trackId = navidromeTrackIdFor(sourceId, entry.songId),
+                remoteOrdinal = index,
             )
+        }
+        val tracksChanged = currentRemoteTrackOrder != nextRemoteTrackOrder
+        if (tracksChanged) {
+            database.playlistTrackDao().deleteByPlaylistIdAndSourceId(playlist.id, sourceId)
+            if (remoteEntries.isNotEmpty()) {
+                database.playlistTrackDao().upsertAll(
+                    remoteEntries.mapIndexed { index, entry ->
+                        PlaylistTrackEntity(
+                            playlistId = playlist.id,
+                            trackId = navidromeTrackIdFor(sourceId, entry.songId),
+                            sourceId = sourceId,
+                            addedAt = now(),
+                            localOrdinal = null,
+                            remoteOrdinal = index,
+                        )
+                    },
+                )
+            }
         }
         database.playlistRemoteBindingDao().upsert(
             PlaylistRemoteBindingEntity(
@@ -330,7 +342,9 @@ class RoomPlaylistRepository(
                 lastSyncedAt = now(),
             ),
         )
-        touchPlaylist(playlist)
+        if (tracksChanged) {
+            touchPlaylist(playlist)
+        }
     }
 
     private suspend fun cleanupRemovedNavidromeSources(activeSourceIds: Set<String>) {
@@ -468,6 +482,11 @@ private data class NavidromePlaylistSummaryPayload(
 
 private data class NavidromePlaylistEntryPayload(
     val songId: String,
+)
+
+private data class RemotePlaylistTrackSnapshot(
+    val trackId: String,
+    val remoteOrdinal: Int,
 )
 
 private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject
