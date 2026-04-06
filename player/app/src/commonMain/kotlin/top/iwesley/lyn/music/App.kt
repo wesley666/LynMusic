@@ -77,6 +77,7 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -1537,11 +1538,51 @@ private fun SourcesTab(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    var pendingDeleteSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingDeleteSource = remember(state.sources, pendingDeleteSourceId) {
+        state.sources.firstOrNull { it.source.id == pendingDeleteSourceId }
+    }
+    LaunchedEffect(pendingDeleteSourceId, pendingDeleteSource) {
+        if (pendingDeleteSourceId != null && pendingDeleteSource == null) {
+            pendingDeleteSourceId = null
+        }
+    }
     val importFieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = shellColors.cardBorder,
         unfocusedBorderColor = shellColors.cardBorder,
         disabledBorderColor = shellColors.cardBorder,
     )
+    pendingDeleteSource?.let { source ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteSourceId = null },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = shellColors.cardContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("删除来源") },
+            text = { Text("确认删除“${source.source.label}”吗？已索引歌曲和相关缓存会一起移除。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteSourceId = null
+                        onImportIntent(ImportIntent.DeleteSource(source.source.id))
+                    },
+                    enabled = !state.isWorking,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingDeleteSourceId = null },
+                    enabled = !state.isWorking,
+                ) {
+                    Text("取消")
+                }
+            },
+        )
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1743,7 +1784,7 @@ private fun SourcesTab(
                     state = source,
                     enabled = !state.isWorking,
                     onRescan = { onImportIntent(ImportIntent.RescanSource(source.source.id)) },
-                    onDelete = { onImportIntent(ImportIntent.DeleteSource(source.source.id)) },
+                    onDelete = { pendingDeleteSourceId = source.source.id },
                 )
             }
         }
@@ -1757,11 +1798,68 @@ private fun SettingsTab(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    var pendingLyricsSourceDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingLyricsSourceDeleteName by rememberSaveable { mutableStateOf("") }
+    var pendingLyricsSourceDeleteUsesEditingAction by rememberSaveable { mutableStateOf(false) }
     val settingsFieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = shellColors.cardBorder,
         unfocusedBorderColor = shellColors.cardBorder,
         disabledBorderColor = shellColors.cardBorder,
     )
+    val activePendingLyricsSourceDeleteId = pendingLyricsSourceDeleteId?.takeIf { pendingId ->
+        pendingLyricsSourceDeleteUsesEditingAction || state.sources.any { it.id == pendingId }
+    }
+    LaunchedEffect(activePendingLyricsSourceDeleteId) {
+        if (pendingLyricsSourceDeleteId != null && activePendingLyricsSourceDeleteId == null) {
+            pendingLyricsSourceDeleteId = null
+            pendingLyricsSourceDeleteName = ""
+            pendingLyricsSourceDeleteUsesEditingAction = false
+        }
+    }
+    activePendingLyricsSourceDeleteId?.let { sourceId ->
+        AlertDialog(
+            onDismissRequest = {
+                pendingLyricsSourceDeleteId = null
+                pendingLyricsSourceDeleteName = ""
+                pendingLyricsSourceDeleteUsesEditingAction = false
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = shellColors.cardContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("删除歌词来源") },
+            text = { Text("确认删除“$pendingLyricsSourceDeleteName”吗？删除后将不再参与歌词搜索和匹配。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val useEditingAction = pendingLyricsSourceDeleteUsesEditingAction
+                        pendingLyricsSourceDeleteId = null
+                        pendingLyricsSourceDeleteName = ""
+                        pendingLyricsSourceDeleteUsesEditingAction = false
+                        if (useEditingAction) {
+                            onSettingsIntent(SettingsIntent.Delete)
+                        } else {
+                            onSettingsIntent(SettingsIntent.DeleteSource(sourceId))
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Text("删除")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingLyricsSourceDeleteId = null
+                        pendingLyricsSourceDeleteName = ""
+                        pendingLyricsSourceDeleteUsesEditingAction = false
+                    },
+                ) {
+                    Text("取消")
+                }
+            },
+        )
+    }
     val selectedThemeTextPalette = remember(state.selectedTheme, state.textPalettePreferences) {
         resolveAppThemeTextPalette(
             themeId = state.selectedTheme,
@@ -2047,7 +2145,16 @@ private fun SettingsTab(
                             Text(if (state.editingId != null) "新建" else "清空")
                         }
                         if (state.editingId != null) {
-                            TextButton(onClick = { onSettingsIntent(SettingsIntent.Delete) }) { Text("删除") }
+                            TextButton(
+                                onClick = {
+                                    pendingLyricsSourceDeleteId = state.editingId
+                                    pendingLyricsSourceDeleteName = state.name
+                                    pendingLyricsSourceDeleteUsesEditingAction = true
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Text("删除")
+                            }
                         }
                     }
                 }
@@ -2119,7 +2226,9 @@ private fun SettingsTab(
                             onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
                         },
                         onDelete = {
-                            onSettingsIntent(SettingsIntent.DeleteSource(source.id))
+                            pendingLyricsSourceDeleteId = source.id
+                            pendingLyricsSourceDeleteName = source.name
+                            pendingLyricsSourceDeleteUsesEditingAction = false
                         },
                     )
                 }
