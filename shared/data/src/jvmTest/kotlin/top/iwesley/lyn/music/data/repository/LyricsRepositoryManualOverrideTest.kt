@@ -5,6 +5,7 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.flow.first
@@ -200,6 +201,58 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
         assertEquals("workflow line", resolved.document.lines.single().text)
         assertEquals("/tmp/cache/workflow.jpg", libraryTrack.artworkLocator)
+    }
+
+    @Test
+    fun `manual workflow apply rejects json error payload`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val track = navidromeTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-json-error",
+                name = "Workflow Json Error",
+                priority = 50,
+                enabled = true,
+                rawJson = TEST_JSON_ERROR_WORKFLOW_JSON,
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/workflow-error?id=wf-404" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """{"message":{"header":{"status_code":404,"execute_time":0.0054500102996826,"instrumental":0},"body":{}}}""",
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val error = assertFailsWith<IllegalStateException> {
+            repository.applyWorkflowSongCandidate(
+                trackId = track.id,
+                candidate = WorkflowSongCandidate(
+                    id = "wf-404",
+                    sourceId = "workflow-json-error",
+                    sourceName = "Workflow Json Error",
+                    title = "Blue",
+                    artists = listOf("Artist A"),
+                    album = "Album A",
+                    durationSeconds = 215,
+                ),
+            )
+        }
+        val overrideRow = database.lyricsCacheDao()
+            .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+
+        assertEquals("Workflow lyrics source Workflow Json Error 没有返回可解析歌词。", error.message)
+        assertNull(overrideRow)
     }
 
     @Test
@@ -482,6 +535,51 @@ private const val TEST_WORKFLOW_JSON = """
   },
   "optionalFields": {
     "coverUrlField": "coverUrl"
+  }
+}
+"""
+
+private const val TEST_JSON_ERROR_WORKFLOW_JSON = """
+{
+  "id": "workflow-json-error",
+  "name": "Workflow Json Error",
+  "kind": "workflow",
+  "enabled": true,
+  "priority": 50,
+  "search": {
+    "method": "GET",
+    "url": "https://lyrics.example/search",
+    "queryTemplate": "title={title}",
+    "responseFormat": "json",
+    "resultPath": "data",
+    "mapping": {
+      "id": "id",
+      "title": "title",
+      "artists": "artist"
+    }
+  },
+  "selection": {
+    "titleWeight": 1.0,
+    "artistWeight": 0.0,
+    "albumWeight": 0.0,
+    "durationWeight": 0.0,
+    "durationToleranceSeconds": 3,
+    "minScore": 0.0,
+    "maxCandidates": 10
+  },
+  "lyrics": {
+    "steps": [
+      {
+        "method": "GET",
+        "url": "https://lyrics.example/workflow-error",
+        "queryTemplate": "id={candidate.id}",
+        "responseFormat": "json",
+        "payloadPath": "message.body",
+        "format": "json",
+        "extractor": "json-lines:time.total,text",
+        "transforms": ["trim"]
+      }
+    ]
   }
 }
 """

@@ -309,7 +309,7 @@ fun parseWorkflowLyricsDocument(
         extractor = step.extractor,
     )
     parseLyricsPayloadResults(config, payload).firstOrNull()?.document?.let { return it }
-    if (step.format != LyricsResponseFormat.JSON) return null
+    if (step.format != LyricsResponseFormat.JSON || isValidWorkflowJsonPayload(payload)) return null
     val fallbackLines = parseLrc(payload).ifEmpty { parsePlainText(payload) }
     if (fallbackLines.isEmpty()) return null
     return LyricsDocument(
@@ -318,6 +318,10 @@ fun parseWorkflowLyricsDocument(
         sourceId = sourceId,
         rawPayload = payload,
     )
+}
+
+private fun isValidWorkflowJsonPayload(payload: String): Boolean {
+    return runCatching { workflowJson.parseToJsonElement(payload) }.isSuccess
 }
 
 fun scoreWorkflowSongCandidate(
