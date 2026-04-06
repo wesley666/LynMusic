@@ -301,7 +301,9 @@ private fun MiniPlayerBar(
     onOpenQueue: () -> Unit,
     compact: Boolean = false,
 ) {
-    if (state.snapshot.currentTrack == null) return
+    val snapshot = state.snapshot
+    if (snapshot.currentTrack == null) return
+    val miniPlayerLyricsText = rememberMiniPlayerLyricsText(state)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -313,27 +315,70 @@ private fun MiniPlayerBar(
                 shape = RoundedCornerShape(28.dp),
             )
             .clickable { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         VinylPlaceholder(
             vinylSize = 50.dp,
-            artworkLocator = state.snapshot.currentDisplayArtworkLocator,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
         )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = state.snapshot.currentDisplayTitle,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = state.snapshot.currentDisplayArtistName ?: "未知艺人",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = snapshot.currentDisplayTitle,
+                    modifier = Modifier.widthIn(max = if (compact) 120.dp else 180.dp),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${formatDuration(snapshot.positionMs)}/${formatDuration(snapshot.durationMs)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.9f),
+                    maxLines = 1,
+                )
+            }
+            if (miniPlayerLyricsText != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = miniPlayerLyricsText,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.78f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    MiniPlayerProgressScrubber(
+                        snapshot = snapshot,
+                        onPlayerIntent = onPlayerIntent,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                MiniPlayerProgressScrubber(
+                    snapshot = snapshot,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         FavoriteToggleButton(
             isFavorite = isFavorite,
@@ -346,7 +391,7 @@ private fun MiniPlayerBar(
         }
         IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
             Icon(
-                imageVector = if (state.snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
                 contentDescription = null,
                 modifier = Modifier.size(34.dp),
             )
@@ -354,6 +399,74 @@ private fun MiniPlayerBar(
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
             Icon(Icons.Rounded.SkipNext, contentDescription = null)
         }
+    }
+}
+
+@Composable
+private fun rememberMiniPlayerLyricsText(state: PlayerState): String? {
+    return remember(
+        state.lyrics,
+        state.highlightedLineIndex,
+        state.isLyricsLoading,
+    ) {
+        val highlighted = state.lyrics
+            ?.lines
+            ?.getOrNull(state.highlightedLineIndex)
+            ?.text
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        if (highlighted != null) {
+            return@remember highlighted
+        }
+        val fallback = state.lyrics
+            ?.lines
+            ?.firstOrNull { line -> line.text.trim().isNotEmpty() }
+            ?.text
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        fallback ?: if (state.isLyricsLoading) "正在准备歌词" else null
+    }
+}
+
+@Composable
+private fun MiniPlayerPlaybackProgress(
+    snapshot: PlaybackSnapshot,
+    modifier: Modifier = Modifier,
+) {
+    val duration = snapshot.durationMs.coerceAtLeast(1L)
+    val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    RoundedSliderTrack(
+        progressFraction = progressFraction,
+        modifier = modifier.height(8.dp),
+        trackHeightPx = with(LocalDensity.current) { 3.dp.toPx() },
+    )
+}
+
+@Composable
+private fun MiniPlayerProgressScrubber(
+    snapshot: PlaybackSnapshot,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val duration = snapshot.durationMs.coerceAtLeast(1L)
+    Box(
+        modifier = modifier.height(8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        MiniPlayerPlaybackProgress(
+            snapshot = snapshot,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Slider(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .graphicsLayer(scaleY = 0.36f),
+            colors = transparentTrackSliderColors(),
+            value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
+            onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
+            valueRange = 0f..duration.toFloat(),
+        )
     }
 }
 
