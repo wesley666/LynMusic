@@ -132,9 +132,11 @@ fun buildWorkflowRequest(
     variables: Map<String, String>,
 ): LyricsRequest {
     val resolvedVariables = variables + workflowRuntimeVariables()
-    val url = appendWorkflowQuery(
-        interpolateWorkflowTemplate(request.url, resolvedVariables, encode = true),
-        interpolateWorkflowTemplate(request.queryTemplate, resolvedVariables, encode = true),
+    val url = normalizeWorkflowRequestUrl(
+        appendWorkflowQuery(
+            interpolateWorkflowTemplate(request.url, resolvedVariables, encode = true),
+            interpolateWorkflowTemplate(request.queryTemplate, resolvedVariables, encode = true),
+        ),
     )
     val headers = parseWorkflowHeaders(interpolateWorkflowTemplate(request.headersTemplate, resolvedVariables, encode = false))
     val body = interpolateWorkflowTemplate(request.bodyTemplate, resolvedVariables, encode = false).ifBlank { null }
@@ -519,6 +521,21 @@ private fun appendWorkflowQuery(url: String, query: String): String {
     if (query.isBlank()) return url
     val separator = if (url.contains('?')) "&" else "?"
     return "$url$separator$query"
+}
+
+private fun normalizeWorkflowRequestUrl(url: String): String {
+    if (url.none { it == ' ' || it == '\t' || it == '\n' || it == '\r' }) return url
+    return buildString(url.length) {
+        url.forEach { character ->
+            when (character) {
+                ' ' -> append("%20")
+                '\t' -> append("%09")
+                '\n' -> append("%0A")
+                '\r' -> append("%0D")
+                else -> append(character)
+            }
+        }
+    }
 }
 
 private fun parseWorkflowHeaders(headersTemplate: String): Map<String, String> {
