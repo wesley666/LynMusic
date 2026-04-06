@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -356,6 +358,7 @@ internal fun PlaylistsTab(
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun PlaylistListPane(
     playlists: List<PlaylistSummary>,
     selectedPlaylistId: String?,
@@ -381,25 +384,38 @@ private fun PlaylistListPane(
             )
         }
         item {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(onClick = onCreate) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("新建歌单")
+                    Text(
+                        text = "新建歌单",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 OutlinedButton(onClick = onRefresh) {
                     Icon(Icons.Rounded.Sync, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isRefreshing) "同步中" else "同步远端")
+                    Text(
+                        text = if (isRefreshing) "同步中" else "同步远端",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Box {
                     OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
                         Icon(Icons.Rounded.Tune, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text(playlistSourceFilterButtonLabel(selectedSourceFilter))
+                        Text(
+                            text = playlistSourceFilterButtonLabel(selectedSourceFilter),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     DropdownMenu(
                         expanded = sourceFilterMenuExpanded,
