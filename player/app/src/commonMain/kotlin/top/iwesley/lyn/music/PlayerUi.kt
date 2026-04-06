@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -702,7 +703,10 @@ private fun MobilePlayerPrimaryPane(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .clickable { lyricsVisible = false },
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { lyricsVisible = false },
         ) {
             PlayerLyricsPane(
                 state = state,
@@ -719,7 +723,10 @@ private fun MobilePlayerPrimaryPane(
         modifier = modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(30.dp))
-            .clickable { lyricsVisible = true },
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { lyricsVisible = true },
     ) {
         PlayerInfoPane(
             snapshot = state.snapshot,
