@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -412,10 +413,20 @@ private fun PlaylistSummaryCard(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(shellColors.navContainer),
+                    .background(
+                        if (selected) Color.Transparent else shellColors.navContainer,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null)
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.List,
+                    contentDescription = null,
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.onSecondary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -426,7 +437,11 @@ private fun PlaylistSummaryCard(
                 )
                 Text(
                     "${playlist.trackCount} 首歌曲",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onSecondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
