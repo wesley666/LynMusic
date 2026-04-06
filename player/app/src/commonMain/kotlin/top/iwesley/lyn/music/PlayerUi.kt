@@ -941,7 +941,7 @@ private fun PlaybackProgress(
                     )
                 }
             }
-            RoundedPlaybackTrack(
+            RoundedSliderTrack(
                 progressFraction = progressFraction,
                 modifier = Modifier
                     .align(sliderAlignment)
@@ -982,7 +982,7 @@ private fun PlaybackProgress(
 }
 
 @Composable
-private fun RoundedPlaybackTrack(
+private fun RoundedSliderTrack(
     progressFraction: Float,
     modifier: Modifier = Modifier,
     trackHeightPx: Float,
@@ -1049,12 +1049,20 @@ private fun PlaybackVolume(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
-            Slider(
-                modifier = Modifier
+            val sliderModifier =
+                Modifier
                     .fillMaxWidth(sliderWidthFraction.coerceIn(0.2f, 1f))
                     .height(8.dp)
+            RoundedSliderTrack(
+                progressFraction = volume,
+                modifier = sliderModifier,
+                trackHeightPx = with(LocalDensity.current) { 4.dp.toPx() },
+            )
+            Slider(
+                modifier = Modifier
+                    .then(sliderModifier)
                     .graphicsLayer(scaleY = 0.44f),
-                colors = playerSliderColors(),
+                colors = transparentTrackSliderColors(),
                 value = volume,
                 onValueChange = { onPlayerIntent(PlayerIntent.SetVolume(it)) },
                 valueRange = 0f..1f,
