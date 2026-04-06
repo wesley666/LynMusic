@@ -76,7 +76,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -304,6 +306,8 @@ private fun MiniPlayerBar(
     val snapshot = state.snapshot
     if (snapshot.currentTrack == null) return
     val miniPlayerLyricsText = rememberMiniPlayerLyricsText(state)
+    val miniPlayerActionTint = LocalContentColor.current.takeOrElse { MaterialTheme.colorScheme.onSurface }
+    val miniPlayerFavoriteTint = if (isFavorite) Color(0xFFE5484D) else miniPlayerActionTint
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -383,9 +387,10 @@ private fun MiniPlayerBar(
         FavoriteToggleButton(
             isFavorite = isFavorite,
             onClick = onToggleFavorite,
+            tint = miniPlayerFavoriteTint,
         )
-        AddToPlaylistButton(onClick = onOpenAddToPlaylist)
-        QueueToggleButton(onClick = onOpenQueue)
+        AddToPlaylistButton(onClick = onOpenAddToPlaylist, tint = miniPlayerActionTint)
+        QueueToggleButton(onClick = onOpenQueue, tint = miniPlayerActionTint)
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
             Icon(Icons.Rounded.SkipPrevious, contentDescription = null)
         }
