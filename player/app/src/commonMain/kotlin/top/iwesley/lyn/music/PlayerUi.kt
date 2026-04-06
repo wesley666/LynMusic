@@ -877,7 +877,7 @@ private fun PlayerInfoPane(
                 .fillMaxHeight(),
         )
         VinylPlaceholder(
-            vinylSize = if (compact) 250.dp else 420.dp,
+            vinylSize = if (compact) 300.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
             enableArtworkTint = true,
