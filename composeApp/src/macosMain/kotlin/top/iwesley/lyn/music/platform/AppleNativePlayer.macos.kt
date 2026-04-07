@@ -54,7 +54,7 @@ internal actual class AppleNativePlayer actual constructor(
         player.volume = volume.coerceIn(0f, 1f)
     }
 
-    actual fun isPlaying(): Boolean = player.timeControlStatus == AVPlayerTimeControlStatusPlaying
+    actual fun isPlaying(): Boolean = player.timeControlStatus != AVPlayerTimeControlStatusPaused
 
     actual fun positionMs(): Long = player.currentTime().toMillis()
 

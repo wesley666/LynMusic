@@ -986,7 +986,7 @@ private class AndroidPlaybackGateway(
         mutableState.update {
             val duration = player.duration.takeIf { value -> value > 0 } ?: 0L
             it.copy(
-                isPlaying = player.isPlaying,
+                isPlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING),
                 positionMs = player.currentPosition.coerceAtLeast(0L),
                 durationMs = if (duration > 0) duration else it.durationMs,
                 volume = player.volume,
