@@ -2459,7 +2459,7 @@ internal fun PlayerLyricsPane(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}    来源：${track.sourceId.substringBefore('-').uppercase()}",
+                        "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
                         color = lyricsSecondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
