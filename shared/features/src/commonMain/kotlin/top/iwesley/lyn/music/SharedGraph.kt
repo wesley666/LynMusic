@@ -63,6 +63,7 @@ class SharedGraph(
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
     val audioTagGateway: AudioTagGateway,
+    val logger: DiagnosticLogger,
     val scope: CoroutineScope,
 )
 
@@ -159,6 +160,7 @@ fun buildSharedGraph(
         settingsStore = SettingsStore(settingsRepository, scope),
         lyricsRepository = lyricsRepository,
         audioTagGateway = runtimeServices.audioTagGateway,
+        logger = runtimeServices.logger,
         scope = scope,
     )
 }

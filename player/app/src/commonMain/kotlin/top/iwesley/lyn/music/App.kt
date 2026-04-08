@@ -162,6 +162,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
+import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
@@ -223,6 +224,7 @@ import top.iwesley.lyn.music.ui.mainShellColors
 
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
+    val logger: DiagnosticLogger,
     val libraryStore: LibraryStore,
     val playlistsStore: PlaylistsStore,
     val favoritesStore: FavoritesStore,
@@ -257,6 +259,7 @@ fun buildPlayerAppComponent(
     )
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
+        logger = sharedGraph.logger,
         libraryStore = sharedGraph.libraryStore,
         playlistsStore = sharedGraph.playlistsStore,
         favoritesStore = sharedGraph.favoritesStore,
@@ -387,6 +390,7 @@ fun App(component: LynMusicAppComponent) {
                     PlayerDrawerHost(
                         visible = playerState.isExpanded,
                         platform = component.platform,
+                        logger = component.logger,
                         state = playerState,
                         lyricsShareThemeTokens = shellThemeTokens,
                         lyricsShareTextPalette = shellTextPalette,

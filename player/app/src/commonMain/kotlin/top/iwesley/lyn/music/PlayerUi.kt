@@ -96,9 +96,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
@@ -110,6 +112,7 @@ import top.iwesley.lyn.music.ui.mainShellColors
 internal fun PlayerDrawerHost(
     visible: Boolean,
     platform: PlatformDescriptor,
+    logger: DiagnosticLogger,
     state: PlayerState,
     lyricsShareThemeTokens: AppThemeTokens,
     lyricsShareTextPalette: AppThemeTextPalette,
@@ -154,6 +157,7 @@ internal fun PlayerDrawerHost(
         ) {
             PlayerOverlay(
                 platform = platform,
+                logger = logger,
                 state = state,
                 lyricsShareThemeTokens = lyricsShareThemeTokens,
                 lyricsShareTextPalette = lyricsShareTextPalette,
@@ -606,6 +610,7 @@ private fun MiniPlayerProgressScrubber(
 @Composable
 private fun PlayerOverlay(
     platform: PlatformDescriptor,
+    logger: DiagnosticLogger,
     state: PlayerState,
     lyricsShareThemeTokens: AppThemeTokens,
     lyricsShareTextPalette: AppThemeTextPalette,
@@ -669,8 +674,12 @@ private fun PlayerOverlay(
             val wide = maxWidth >= 980.dp
             val useTapToRevealLyrics =
                 isMobilePlaybackPlatform(platform) &&
-                    !wide &&
-                    (maxWidth < 820.dp || maxHeight < 860.dp)
+                    maxHeight >= maxWidth
+            LaunchedEffect(platform.name, maxWidth, maxHeight) {
+                logger.debug(PLAYER_UI_LOG_TAG) {
+                    "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"
+                }
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1489,6 +1498,7 @@ private val FLOWER_PARTICLE_COLORS = listOf(
 )
 
 private const val FLOWER_PARTICLE_LIFETIME_NANOS = 900_000_000L
+private const val PLAYER_UI_LOG_TAG = "PlayerUi"
 
 @Composable
 private fun QueueTrackRow(
