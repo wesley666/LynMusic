@@ -976,7 +976,6 @@ private fun PlayerInfoPane(
             vinylSize = if (compact) 300.dp else 420.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
-            enableArtworkTint = true,
             modifier = Modifier.align(Alignment.Center),
         )
     }
