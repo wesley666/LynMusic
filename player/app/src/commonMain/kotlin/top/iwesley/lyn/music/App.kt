@@ -1902,6 +1902,10 @@ private fun SettingsTab(
             AppThemeId.Custom,
         )
     }
+    var desktopSelectedSectionName by rememberSaveable { mutableStateOf(defaultDesktopSettingsSection().name) }
+    var mobileDetailSectionName by rememberSaveable { mutableStateOf<String?>(null) }
+    val desktopSelectedSection = resolveSettingsSection(desktopSelectedSectionName) ?: defaultDesktopSettingsSection()
+    val mobileNavigation = toSettingsMobileNavigation(mobileDetailSectionName)
     Box(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -1911,353 +1915,117 @@ private fun SettingsTab(
                 onSettingsIntent(SettingsIntent.ClearMessage)
             }
         }
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize(),
         ) {
-            SectionTitle(
-                title = "主题",
-                subtitle = "切换预置主题，自定义主界面颜色，并给每个主题单独选择黑字或白字。",
+            val desktopLayout = maxWidth >= 900.dp
+            PlatformBackHandler(
+                enabled = !desktopLayout && mobileNavigation is SettingsMobileNavigation.Detail,
+                onBack = { mobileDetailSectionName = null },
             )
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+
+            if (desktopLayout) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    themeDisplayOrder.chunked(2).forEach { rowThemes ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            rowThemes.forEach { themeId ->
-                                ThemePresetCard(
-                                    themeId = themeId,
-                                    selected = state.selectedTheme == themeId,
-                                    tokens = if (themeId == AppThemeId.Custom) state.customThemeTokens else presetThemeTokens(themeId),
-                                    textPalette = resolveAppThemeTextPalette(themeId, state.textPalettePreferences),
-                                    onClick = { onSettingsIntent(SettingsIntent.ThemeSelected(themeId)) },
-                                    modifier = Modifier.weight(1f),
+                    SettingsSectionListPane(
+                        selectedSection = desktopSelectedSection,
+                        desktop = true,
+                        onSectionSelected = { section ->
+                            desktopSelectedSectionName = section.name
+                        },
+                        modifier = Modifier
+                            .width(280.dp)
+                            .fillMaxHeight(),
+                    )
+                    when (desktopSelectedSection) {
+                        SettingsSection.Theme -> ThemeSettingsPane(
+                            state = state,
+                            selectedThemeTextPalette = selectedThemeTextPalette,
+                            themeDisplayOrder = themeDisplayOrder,
+                            settingsFieldColors = settingsFieldColors,
+                            onSettingsIntent = onSettingsIntent,
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
+
+                        SettingsSection.Lyrics -> LyricsSettingsPane(
+                            state = state,
+                            settingsFieldColors = settingsFieldColors,
+                            onSettingsIntent = onSettingsIntent,
+                            onRequestDeleteEditingSource = {
+                                pendingLyricsSourceDeleteId = state.editingId
+                                pendingLyricsSourceDeleteName = state.name
+                                pendingLyricsSourceDeleteUsesEditingAction = true
+                            },
+                            onRequestDeleteListedSource = { sourceId, sourceName ->
+                                pendingLyricsSourceDeleteId = sourceId
+                                pendingLyricsSourceDeleteName = sourceName
+                                pendingLyricsSourceDeleteUsesEditingAction = false
+                            },
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
+                    }
+                }
+            } else {
+                when (val navigation = mobileNavigation) {
+                    SettingsMobileNavigation.List -> {
+                        SettingsSectionListPane(
+                            selectedSection = null,
+                            desktop = false,
+                            onSectionSelected = { section ->
+                                desktopSelectedSectionName = section.name
+                                mobileDetailSectionName = section.name
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+
+                    is SettingsMobileNavigation.Detail -> {
+                        MobileSettingsDetailLayout(
+                            section = navigation.section,
+                            onBack = { mobileDetailSectionName = null },
+                            modifier = Modifier.fillMaxSize(),
+                        ) { detailModifier ->
+                            when (navigation.section) {
+                                SettingsSection.Theme -> ThemeSettingsPane(
+                                    state = state,
+                                    selectedThemeTextPalette = selectedThemeTextPalette,
+                                    themeDisplayOrder = themeDisplayOrder,
+                                    settingsFieldColors = settingsFieldColors,
+                                    onSettingsIntent = onSettingsIntent,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
+
+                                SettingsSection.Lyrics -> LyricsSettingsPane(
+                                    state = state,
+                                    settingsFieldColors = settingsFieldColors,
+                                    onSettingsIntent = onSettingsIntent,
+                                    onRequestDeleteEditingSource = {
+                                        pendingLyricsSourceDeleteId = state.editingId
+                                        pendingLyricsSourceDeleteName = state.name
+                                        pendingLyricsSourceDeleteUsesEditingAction = true
+                                    },
+                                    onRequestDeleteListedSource = { sourceId, sourceName ->
+                                        pendingLyricsSourceDeleteId = sourceId
+                                        pendingLyricsSourceDeleteName = sourceName
+                                        pendingLyricsSourceDeleteUsesEditingAction = false
+                                    },
+                                    showHeading = false,
+                                    modifier = detailModifier,
                                 )
                             }
-                            if (rowThemes.size == 1) {
-                                Spacer(Modifier.weight(1f))
-                            }
                         }
                     }
-                    ThemeTextPaletteToggle(
-                        selectedTheme = state.selectedTheme,
-                        selectedPalette = selectedThemeTextPalette,
-                        onSelected = {
-                            onSettingsIntent(SettingsIntent.ThemeTextPaletteSelected(state.selectedTheme, it))
-                        },
-                    )
-                    if (state.selectedTheme == AppThemeId.Custom) {
-                        Text(
-                            text = "自定义主题",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = "输入 3 个基础颜色后保存，主界面会立即切换到新的自定义配色。",
-                            color = shellColors.secondaryText,
-                        )
-                        ThemeColorField(
-                            label = "主背景色",
-                            value = state.customBackgroundHex,
-                            previewArgb = parseThemeHexColor(state.customBackgroundHex)
-                                ?: state.customThemeTokens.backgroundArgb,
-                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeBackgroundChanged(it)) },
-                            colors = settingsFieldColors,
-                        )
-                        ThemeColorField(
-                            label = "主色",
-                            value = state.customAccentHex,
-                            previewArgb = parseThemeHexColor(state.customAccentHex)
-                                ?: state.customThemeTokens.accentArgb,
-                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeAccentChanged(it)) },
-                            colors = settingsFieldColors,
-                        )
-                        ThemeColorField(
-                            label = "选中 / 落焦色",
-                            value = state.customFocusHex,
-                            previewArgb = parseThemeHexColor(state.customFocusHex)
-                                ?: state.customThemeTokens.focusArgb,
-                            onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeFocusChanged(it)) },
-                            colors = settingsFieldColors,
-                        )
-                        state.themeInputError?.let { error ->
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(onClick = { onSettingsIntent(SettingsIntent.SaveCustomTheme) }) {
-                                Text("保存自定义主题")
-                            }
-                            OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ResetCustomTheme) }) {
-                                Text("重置自定义主题")
-                            }
-                        }
-                    }
-                }
-            }
-            SectionTitle(title = "歌词 API", subtitle = "声明式适配 JSON / XML / LRC / 纯文本返回。")
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Samba 播放", fontWeight = FontWeight.Bold)
-                    Text(
-                        "打开后会先缓存到本地再播放；关闭后桌面端直接返回 SMB 播放链接。移动端当前仍回退到缓存。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("使用本地缓存播放", fontWeight = FontWeight.Medium)
-                        Switch(
-                            checked = state.useSambaCache,
-                            onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
-                            colors = SwitchDefaults.colors(
-                                uncheckedThumbColor = MaterialTheme.colorScheme.background,
-                                uncheckedBorderColor = shellColors.cardBorder,
-                            ),
-                        )
-                    }
-                }
-            }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("LrcAPI", fontWeight = FontWeight.Bold)
-                    Text(
-                        "专用入口只维护请求地址，保存后会自动生成保留的 Direct 歌词源。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (state.hasLrcApiSource) "已保存到歌词源列表" else "尚未配置",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        if (state.hasLrcApiSource) {
-                            MainShellAssistChip(
-                                onClick = {},
-                                label = { Text("Direct") },
-                                leadingIcon = { Icon(Icons.Rounded.CloudSync, null) },
-                            )
-                        }
-                    }
-                    ImeAwareOutlinedTextField(
-                        value = state.lrcApiUrl,
-                        onValueChange = { onSettingsIntent(SettingsIntent.LrcApiUrlChanged(it)) },
-                        label = { Text("LrcAPI 请求地址") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        singleLine = true,
-                        colors = settingsFieldColors,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveLrcApi) }) {
-                            Text("保存 LrcAPI")
-                        }
-                        OutlinedButton(
-                            onClick = { onSettingsIntent(SettingsIntent.ClearLrcApi) },
-                            enabled = state.hasLrcApiSource,
-                        ) {
-                            Text("清除 LrcAPI")
-                        }
-                    }
-                }
-            }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Musicmatch", fontWeight = FontWeight.Bold)
-                    Text(
-                        "专用入口只维护 usertoken，保存后会自动生成保留的 Workflow 歌词源。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (state.hasMusicmatchSource) "已保存到歌词源列表" else "尚未配置",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        if (state.hasMusicmatchSource) {
-                            MainShellAssistChip(
-                                onClick = {},
-                                label = { Text("Workflow") },
-                                leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
-                            )
-                        }
-                    }
-                    ImeAwareOutlinedTextField(
-                        value = state.musicmatchUserToken,
-                        onValueChange = { onSettingsIntent(SettingsIntent.MusicmatchUserTokenChanged(it)) },
-                        label = { Text("Musicmatch usertoken") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        singleLine = true,
-                        colors = settingsFieldColors,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveMusicmatch) }) {
-                            Text("保存 Musicmatch")
-                        }
-                        if (state.hasMusicmatchSource || state.musicmatchUserToken.isNotBlank()) {
-                            OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ClearMusicmatch) }) {
-                                Text("清除 Musicmatch")
-                            }
-                        }
-                    }
-                }
-            }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ImeAwareOutlinedTextField(value = state.name, onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) }, label = { Text("歌词源名称") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    ImeAwareOutlinedTextField(value = state.urlTemplate, onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) }, label = { Text("URL 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        EnumSelector(label = "Method", values = RequestMethod.entries, selected = state.method, onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) }, modifier = Modifier.weight(1f))
-                        EnumSelector(label = "Format", values = LyricsResponseFormat.entries, selected = state.responseFormat, onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) }, modifier = Modifier.weight(1f))
-                    }
-                    ImeAwareOutlinedTextField(value = state.queryTemplate, onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) }, label = { Text("Query 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    ImeAwareOutlinedTextField(value = state.bodyTemplate, onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) }, label = { Text("Body 模板") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    ImeAwareOutlinedTextField(value = state.headersTemplate, onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) }, label = { Text("请求头，每行 Key: Value") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    ImeAwareOutlinedTextField(value = state.extractor, onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) }, label = { Text("提取规则") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = settingsFieldColors)
-                    ImeAwareOutlinedTextField(
-                        value = state.priority,
-                        onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
-                        label = { Text("优先级") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = settingsFieldColors,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("启用歌词源", fontWeight = FontWeight.Medium)
-                        Switch(
-                            checked = state.enabled,
-                            onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) },
-                            colors = SwitchDefaults.colors(
-                                uncheckedThumbColor = MaterialTheme.colorScheme.background,
-                                uncheckedBorderColor = shellColors.cardBorder,
-                            ),
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.Save else SettingsIntent.CreateNew) }) {
-                            Text(if (state.editingId != null) "保存" else "新建")
-                        }
-                        OutlinedButton(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.CreateNew else SettingsIntent.SelectConfig(null)) }) {
-                            Text(if (state.editingId != null) "新建" else "清空")
-                        }
-                        if (state.editingId != null) {
-                            TextButton(
-                                onClick = {
-                                    pendingLyricsSourceDeleteId = state.editingId
-                                    pendingLyricsSourceDeleteName = state.name
-                                    pendingLyricsSourceDeleteUsesEditingAction = true
-                                },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            ) {
-                                Text("删除")
-                            }
-                        }
-                    }
-                }
-            }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("Workflow JSON", fontWeight = FontWeight.Bold)
-                    Text(
-                        "用于新建或编辑多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前仍直接编辑原始 JSON。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.workflowJsonInput,
-                        onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
-                        label = { Text("Workflow JSON") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 180.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        minLines = 10,
-                        maxLines = 18,
-                        colors = settingsFieldColors,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.ImportWorkflow else SettingsIntent.CreateNewWorkflow) }) {
-                            Text(if (state.editingWorkflowId != null) "保存 Workflow" else "新建 Workflow")
-                        }
-                        if (state.editingWorkflowId != null || state.workflowJsonInput.isNotBlank()) {
-                            OutlinedButton(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.CreateNewWorkflow else SettingsIntent.ViewWorkflow(null)) }) {
-                                Text(if (state.editingWorkflowId != null) "新建 Workflow" else "清空编辑")
-                            }
-                        }
-                    }
-                }
-            }
-
-            SectionTitle(title = "已有配置", subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。")
-            if (state.sources.isEmpty()) {
-                EmptyStateCard(
-                    title = "还没有歌词源",
-                    body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
-                )
-            } else {
-                state.sources.forEach { source ->
-                    LyricsSourceCard(
-                        source = source,
-                        onClick = {
-                            when (source) {
-                                is LyricsSourceConfig -> {
-                                    if (top.iwesley.lyn.music.domain.isManagedLrcApiSource(source)) {
-                                        onSettingsIntent(SettingsIntent.SelectLrcApi(source))
-                                    } else {
-                                        onSettingsIntent(SettingsIntent.SelectConfig(source))
-                                    }
-                                }
-                                is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
-                                    if (top.iwesley.lyn.music.domain.isManagedMusicmatchSource(source)) {
-                                        onSettingsIntent(SettingsIntent.SelectMusicmatch(source))
-                                    } else {
-                                        onSettingsIntent(SettingsIntent.ViewWorkflow(source))
-                                    }
-                                }
-                            }
-                        },
-                        onToggleEnabled = {
-                            onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
-                        },
-                        onDelete = {
-                            pendingLyricsSourceDeleteId = source.id
-                            pendingLyricsSourceDeleteName = source.name
-                            pendingLyricsSourceDeleteUsesEditingAction = false
-                        },
-                    )
                 }
             }
         }
@@ -2270,6 +2038,604 @@ private fun SettingsTab(
                     .navigationBarsPadding(),
             )
         }
+    }
+}
+
+@Composable
+private fun SettingsSectionListPane(
+    selectedSection: SettingsSection?,
+    desktop: Boolean,
+    onSectionSelected: (SettingsSection) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SectionTitle(
+            title = "设置",
+            subtitle = if (desktop) {
+                "选择左侧设置项后，在右侧查看和编辑对应配置。"
+            } else {
+                "主题和歌词配置拆成两个独立项目，点击进入详情。"
+            },
+        )
+        SettingsSection.entries.forEach { section ->
+            SettingsSectionListItem(
+                section = section,
+                selected = desktop && selectedSection == section,
+                onClick = { onSectionSelected(section) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionListItem(
+    section: SettingsSection,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+            } else {
+                shellColors.cardContainer
+            },
+        ),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) shellColors.selectedBorder else shellColors.cardBorder,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = settingsSectionIcon(section),
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = settingsSectionTitle(section),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = settingsSectionSubtitle(section),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = shellColors.secondaryText,
+                )
+            }
+            if (selected) {
+                Text(
+                    text = "当前",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileSettingsDetailLayout(
+    section: SettingsSection,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DetailBackButton(onClick = onBack)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = settingsSectionTitle(section),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    text = settingsSectionSubtitle(section),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = shellColors.secondaryText,
+                )
+            }
+        }
+        content(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ThemeSettingsPane(
+    state: SettingsState,
+    selectedThemeTextPalette: AppThemeTextPalette,
+    themeDisplayOrder: List<AppThemeId>,
+    settingsFieldColors: androidx.compose.material3.TextFieldColors,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "主题",
+                subtitle = "切换预置主题，自定义主界面颜色，并给每个主题单独选择黑字或白字。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                themeDisplayOrder.chunked(2).forEach { rowThemes ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        rowThemes.forEach { themeId ->
+                            ThemePresetCard(
+                                themeId = themeId,
+                                selected = state.selectedTheme == themeId,
+                                tokens = if (themeId == AppThemeId.Custom) state.customThemeTokens else presetThemeTokens(themeId),
+                                textPalette = resolveAppThemeTextPalette(themeId, state.textPalettePreferences),
+                                onClick = { onSettingsIntent(SettingsIntent.ThemeSelected(themeId)) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        if (rowThemes.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+                ThemeTextPaletteToggle(
+                    selectedTheme = state.selectedTheme,
+                    selectedPalette = selectedThemeTextPalette,
+                    onSelected = {
+                        onSettingsIntent(SettingsIntent.ThemeTextPaletteSelected(state.selectedTheme, it))
+                    },
+                )
+                if (state.selectedTheme == AppThemeId.Custom) {
+                    Text(
+                        text = "自定义主题",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "输入 3 个基础颜色后保存，主界面会立即切换到新的自定义配色。",
+                        color = shellColors.secondaryText,
+                    )
+                    ThemeColorField(
+                        label = "主背景色",
+                        value = state.customBackgroundHex,
+                        previewArgb = parseThemeHexColor(state.customBackgroundHex)
+                            ?: state.customThemeTokens.backgroundArgb,
+                        onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeBackgroundChanged(it)) },
+                        colors = settingsFieldColors,
+                    )
+                    ThemeColorField(
+                        label = "主色",
+                        value = state.customAccentHex,
+                        previewArgb = parseThemeHexColor(state.customAccentHex)
+                            ?: state.customThemeTokens.accentArgb,
+                        onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeAccentChanged(it)) },
+                        colors = settingsFieldColors,
+                    )
+                    ThemeColorField(
+                        label = "选中 / 落焦色",
+                        value = state.customFocusHex,
+                        previewArgb = parseThemeHexColor(state.customFocusHex)
+                            ?: state.customThemeTokens.focusArgb,
+                        onValueChange = { onSettingsIntent(SettingsIntent.CustomThemeFocusChanged(it)) },
+                        colors = settingsFieldColors,
+                    )
+                    state.themeInputError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { onSettingsIntent(SettingsIntent.SaveCustomTheme) }) {
+                            Text("保存自定义主题")
+                        }
+                        OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ResetCustomTheme) }) {
+                            Text("重置自定义主题")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsSettingsPane(
+    state: SettingsState,
+    settingsFieldColors: androidx.compose.material3.TextFieldColors,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    onRequestDeleteEditingSource: () -> Unit,
+    onRequestDeleteListedSource: (String, String) -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "歌词",
+                subtitle = "配置歌词 API、搜索源和播放缓存。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Samba 播放", fontWeight = FontWeight.Bold)
+                Text(
+                    "打开后会先缓存到本地再播放；关闭后桌面端直接返回 SMB 播放链接。移动端当前仍回退到缓存。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("使用本地缓存播放", fontWeight = FontWeight.Medium)
+                    Switch(
+                        checked = state.useSambaCache,
+                        onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
+                        colors = SwitchDefaults.colors(
+                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                            uncheckedBorderColor = shellColors.cardBorder,
+                        ),
+                    )
+                }
+            }
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("LrcAPI", fontWeight = FontWeight.Bold)
+                Text(
+                    "专用入口只维护请求地址，保存后会自动生成保留的 Direct 歌词源。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (state.hasLrcApiSource) "已保存到歌词源列表" else "尚未配置",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (state.hasLrcApiSource) {
+                        MainShellAssistChip(
+                            onClick = {},
+                            label = { Text("Direct") },
+                            leadingIcon = { Icon(Icons.Rounded.CloudSync, null) },
+                        )
+                    }
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.lrcApiUrl,
+                    onValueChange = { onSettingsIntent(SettingsIntent.LrcApiUrlChanged(it)) },
+                    label = { Text("LrcAPI 请求地址") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    singleLine = true,
+                    colors = settingsFieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onSettingsIntent(SettingsIntent.SaveLrcApi) }) {
+                        Text("保存 LrcAPI")
+                    }
+                    OutlinedButton(
+                        onClick = { onSettingsIntent(SettingsIntent.ClearLrcApi) },
+                        enabled = state.hasLrcApiSource,
+                    ) {
+                        Text("清除 LrcAPI")
+                    }
+                }
+            }
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Musicmatch", fontWeight = FontWeight.Bold)
+                Text(
+                    "专用入口只维护 usertoken，保存后会自动生成保留的 Workflow 歌词源。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (state.hasMusicmatchSource) "已保存到歌词源列表" else "尚未配置",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (state.hasMusicmatchSource) {
+                        MainShellAssistChip(
+                            onClick = {},
+                            label = { Text("Workflow") },
+                            leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
+                        )
+                    }
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.musicmatchUserToken,
+                    onValueChange = { onSettingsIntent(SettingsIntent.MusicmatchUserTokenChanged(it)) },
+                    label = { Text("Musicmatch usertoken") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    singleLine = true,
+                    colors = settingsFieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onSettingsIntent(SettingsIntent.SaveMusicmatch) }) {
+                        Text("保存 Musicmatch")
+                    }
+                    if (state.hasMusicmatchSource || state.musicmatchUserToken.isNotBlank()) {
+                        OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ClearMusicmatch) }) {
+                            Text("清除 Musicmatch")
+                        }
+                    }
+                }
+            }
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ImeAwareOutlinedTextField(
+                    value = state.name,
+                    onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) },
+                    label = { Text("歌词源名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.urlTemplate,
+                    onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) },
+                    label = { Text("URL 模板") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    EnumSelector(
+                        label = "Method",
+                        values = RequestMethod.entries,
+                        selected = state.method,
+                        onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    EnumSelector(
+                        label = "Format",
+                        values = LyricsResponseFormat.entries,
+                        selected = state.responseFormat,
+                        onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.queryTemplate,
+                    onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) },
+                    label = { Text("Query 模板") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.bodyTemplate,
+                    onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) },
+                    label = { Text("Body 模板") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.headersTemplate,
+                    onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) },
+                    label = { Text("请求头，每行 Key: Value") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.extractor,
+                    onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) },
+                    label = { Text("提取规则") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = settingsFieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.priority,
+                    onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
+                    label = { Text("优先级") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = settingsFieldColors,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("启用歌词源", fontWeight = FontWeight.Medium)
+                    Switch(
+                        checked = state.enabled,
+                        onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) },
+                        colors = SwitchDefaults.colors(
+                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                            uncheckedBorderColor = shellColors.cardBorder,
+                        ),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.Save else SettingsIntent.CreateNew) }) {
+                        Text(if (state.editingId != null) "保存" else "新建")
+                    }
+                    OutlinedButton(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.CreateNew else SettingsIntent.SelectConfig(null)) }) {
+                        Text(if (state.editingId != null) "新建" else "清空")
+                    }
+                    if (state.editingId != null) {
+                        TextButton(
+                            onClick = onRequestDeleteEditingSource,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        ) {
+                            Text("删除")
+                        }
+                    }
+                }
+            }
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Workflow JSON", fontWeight = FontWeight.Bold)
+                Text(
+                    "用于新建或编辑多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前仍直接编辑原始 JSON。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.workflowJsonInput,
+                    onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
+                    label = { Text("Workflow JSON") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    minLines = 10,
+                    maxLines = 18,
+                    colors = settingsFieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.ImportWorkflow else SettingsIntent.CreateNewWorkflow) }) {
+                        Text(if (state.editingWorkflowId != null) "保存 Workflow" else "新建 Workflow")
+                    }
+                    if (state.editingWorkflowId != null || state.workflowJsonInput.isNotBlank()) {
+                        OutlinedButton(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.CreateNewWorkflow else SettingsIntent.ViewWorkflow(null)) }) {
+                            Text(if (state.editingWorkflowId != null) "新建 Workflow" else "清空编辑")
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionTitle(title = "已有配置", subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。")
+        if (state.sources.isEmpty()) {
+            EmptyStateCard(
+                title = "还没有歌词源",
+                body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
+            )
+        } else {
+            state.sources.forEach { source ->
+                LyricsSourceCard(
+                    source = source,
+                    onClick = {
+                        when (source) {
+                            is LyricsSourceConfig -> {
+                                if (top.iwesley.lyn.music.domain.isManagedLrcApiSource(source)) {
+                                    onSettingsIntent(SettingsIntent.SelectLrcApi(source))
+                                } else {
+                                    onSettingsIntent(SettingsIntent.SelectConfig(source))
+                                }
+                            }
+
+                            is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
+                                if (top.iwesley.lyn.music.domain.isManagedMusicmatchSource(source)) {
+                                    onSettingsIntent(SettingsIntent.SelectMusicmatch(source))
+                                } else {
+                                    onSettingsIntent(SettingsIntent.ViewWorkflow(source))
+                                }
+                            }
+                        }
+                    },
+                    onToggleEnabled = {
+                        onSettingsIntent(SettingsIntent.ToggleSourceEnabled(source.id, !source.enabled))
+                    },
+                    onDelete = {
+                        onRequestDeleteListedSource(source.id, source.name)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun settingsSectionTitle(section: SettingsSection): String {
+    return when (section) {
+        SettingsSection.Theme -> "主题"
+        SettingsSection.Lyrics -> "歌词"
+    }
+}
+
+private fun settingsSectionSubtitle(section: SettingsSection): String {
+    return when (section) {
+        SettingsSection.Theme -> "切换预置主题、自定义颜色和文字颜色。"
+        SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
+    }
+}
+
+private fun settingsSectionIcon(section: SettingsSection): ImageVector {
+    return when (section) {
+        SettingsSection.Theme -> Icons.Rounded.Settings
+        SettingsSection.Lyrics -> Icons.Rounded.GraphicEq
     }
 }
 
