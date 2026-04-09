@@ -12,7 +12,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -450,6 +452,7 @@ private fun MiniPlayerBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MobileMiniPlayerBar(
     snapshot: PlaybackSnapshot,
@@ -530,11 +533,12 @@ private fun MobileMiniPlayerBar(
             if (showLyrics && preferLyricsView) {
                 Text(
                     text = lyricsText.orEmpty(),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .basicMarquee(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.88f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             } else {
                 Column(
