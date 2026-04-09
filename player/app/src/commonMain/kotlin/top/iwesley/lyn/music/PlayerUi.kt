@@ -462,7 +462,16 @@ private fun MobileMiniPlayerBar(
     val swipeThresholdPx = with(density) { 72.dp.toPx() }
     val maxVisualOffsetPx = with(density) { 84.dp.toPx() }
     var dragOffsetPx by remember(snapshot.currentTrack?.id) { mutableStateOf(0f) }
-    val showLyrics = showPortraitLyrics && !lyricsText.isNullOrBlank()
+    val showLyrics = hasMiniPlayerLyricsContent(
+        showPortraitLyrics = showPortraitLyrics,
+        lyricsText = lyricsText,
+    )
+    var preferLyricsView by remember(snapshot.currentTrack?.id) { mutableStateOf(false) }
+    LaunchedEffect(snapshot.currentTrack?.id, showLyrics) {
+        if (showLyrics) {
+            preferLyricsView = true
+        }
+    }
     val animatedDragOffsetPx by animateFloatAsState(
         targetValue = dragOffsetPx,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
@@ -518,40 +527,15 @@ private fun MobileMiniPlayerBar(
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
                 spinning = snapshot.isPlaying,
             )
-            if (showLyrics) {
-                Row(
+            if (showLyrics && preferLyricsView) {
+                Text(
+                    text = lyricsText.orEmpty(),
                     modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.weight(0.56f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        Text(
-                            text = snapshot.currentDisplayTitle,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.96f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = snapshot.currentDisplayArtistName ?: "未知艺人",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.72f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text(
-                        text = lyricsText.orEmpty(),
-                        modifier = Modifier.weight(0.44f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.82f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.88f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             } else {
                 Column(
                     modifier = Modifier.weight(1f),
@@ -636,8 +620,19 @@ internal fun resolveMiniPlayerLyricsText(
         ?.text
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
-    return fallback ?: if (isLyricsLoading) "正在准备歌词" else null
+    return fallback ?: if (isLyricsLoading) MINI_PLAYER_LYRICS_LOADING_TEXT else null
 }
+
+internal fun hasMiniPlayerLyricsContent(
+    showPortraitLyrics: Boolean,
+    lyricsText: String?,
+): Boolean {
+    return showPortraitLyrics &&
+        !lyricsText.isNullOrBlank() &&
+        lyricsText != MINI_PLAYER_LYRICS_LOADING_TEXT
+}
+
+private const val MINI_PLAYER_LYRICS_LOADING_TEXT = "正在准备歌词"
 
 @Composable
 private fun MiniPlayerPlaybackProgress(

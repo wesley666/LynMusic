@@ -83,6 +83,15 @@ class MiniPlayerBarLogicTest {
         )
     }
 
+    @Test
+    fun `mini player lyrics content is only ready for actual lyric text`() {
+        assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = null))
+        assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = ""))
+        assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = "正在准备歌词"))
+        assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = false, lyricsText = "第一句"))
+        assertTrue(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = "第一句"))
+    }
+
     private fun lyricsDocument(vararg lines: LyricsLine): LyricsDocument {
         return LyricsDocument(
             lines = lines.toList(),
