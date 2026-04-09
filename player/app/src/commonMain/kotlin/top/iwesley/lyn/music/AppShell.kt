@@ -206,7 +206,7 @@ internal fun MobileShell(
                 onImportIntent = onImportIntent,
                 onPlayerIntent = onPlayerIntent,
                 onSettingsIntent = onSettingsIntent,
-                libraryNavigationTarget = if (isMobilePlaybackPlatform(platform)) null else libraryNavigationTarget,
+                libraryNavigationTarget = libraryNavigationTarget,
                 onLibraryNavigationHandled = onLibraryNavigationHandled,
                 onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
                 modifier = Modifier.weight(1f),

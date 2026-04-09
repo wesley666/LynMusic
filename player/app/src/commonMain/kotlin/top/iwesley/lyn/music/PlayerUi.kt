@@ -884,12 +884,14 @@ private fun PlayerOverlay(
                 PlayerBottomControls(
                     snapshot = state.snapshot,
                     track = track,
+                    mobilePlayback = isMobilePlaybackPlatform(platform),
                     wide = wide,
                     isFavorite = isFavorite,
                     onToggleFavorite = onToggleFavorite,
                     onOpenAddToPlaylist = onOpenAddToPlaylist,
                     onOpenQueue = onOpenQueue,
                     onPlayerIntent = onPlayerIntent,
+                    onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 )
             }
             if (state.isLyricsShareVisible) {
@@ -989,12 +991,14 @@ private fun PlayerInfoPane(
 private fun PlayerBottomControls(
     snapshot: PlaybackSnapshot,
     track: Track,
+    mobilePlayback: Boolean,
     wide: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
     val favoriteTint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.96f)
     val modeButtonSize = 42.dp
@@ -1004,6 +1008,17 @@ private fun PlayerBottomControls(
     val playButtonSize = 60.dp
     val playIconSize = 42.dp
     if (!wide) {
+        val artistNavigationTarget = remember(
+            mobilePlayback,
+            snapshot.currentDisplayArtistName,
+            track.artistName,
+        ) {
+            if (!mobilePlayback) {
+                null
+            } else {
+                derivePlaybackLibraryNavigationTargets(snapshot, track).artistTarget
+            }
+        }
         val mobileTopActionButtonSize = 58.dp
         val mobileTopActionIconSize = 30.dp
         val mobileBottomActionButtonSize = 62.dp
@@ -1041,6 +1056,13 @@ private fun PlayerBottomControls(
                     )
                     Text(
                         text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                        modifier = if (artistNavigationTarget != null) {
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onOpenLibraryNavigationTarget(artistNavigationTarget) }
+                        } else {
+                            Modifier
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
