@@ -94,6 +94,8 @@ internal fun LibraryTab(
     onLibraryIntent: (LibraryIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    showFavoriteButton: Boolean = true,
+    showDuration: Boolean = true,
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -128,6 +130,8 @@ internal fun LibraryTab(
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
         onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
+        showFavoriteButton = showFavoriteButton,
+        showDuration = showDuration,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         modifier = modifier,
@@ -139,6 +143,8 @@ internal fun FavoritesTab(
     state: FavoritesState,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    showFavoriteButton: Boolean = true,
+    showDuration: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -185,6 +191,8 @@ internal fun FavoritesTab(
         },
         onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
+        showFavoriteButton = showFavoriteButton,
+        showDuration = showDuration,
         modifier = modifier,
     )
 }
@@ -228,6 +236,8 @@ private fun LibraryBrowserTab(
     onSearchChanged: (String) -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onToggleFavorite: (Track) -> Unit,
+    showFavoriteButton: Boolean = true,
+    showDuration: Boolean = true,
     actionButton: (@Composable () -> Unit)? = null,
     onDismissMessage: () -> Unit,
     onPlayTracks: (List<Track>, Int) -> Unit,
@@ -485,6 +495,8 @@ private fun LibraryBrowserTab(
                                 index = index,
                                 isFavorite = track.id in state.favoriteTrackIds,
                                 onToggleFavorite = { onToggleFavorite(track) },
+                                showFavoriteButton = showFavoriteButton,
+                                showDuration = showDuration,
                                 onClick = {
                                     onPlayTracks(albumTracks, index)
                                 },
@@ -546,6 +558,8 @@ private fun LibraryBrowserTab(
                                 index = index,
                                 isFavorite = track.id in state.favoriteTrackIds,
                                 onToggleFavorite = { onToggleFavorite(track) },
+                                showFavoriteButton = showFavoriteButton,
+                                showDuration = showDuration,
                                 onClick = {
                                     onPlayTracks(artistTracks, index)
                                 },
@@ -609,6 +623,8 @@ private fun LibraryBrowserTab(
                                         index = index,
                                         isFavorite = track.id in state.favoriteTrackIds,
                                         onToggleFavorite = { onToggleFavorite(track) },
+                                        showFavoriteButton = showFavoriteButton,
+                                        showDuration = showDuration,
                                         onClick = {
                                             onPlayTracks(state.filteredTracks, index)
                                         },

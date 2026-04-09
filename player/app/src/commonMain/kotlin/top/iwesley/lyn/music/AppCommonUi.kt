@@ -277,6 +277,8 @@ internal fun TrackRow(
     index: Int,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    showFavoriteButton: Boolean = true,
+    showDuration: Boolean = true,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -310,14 +312,33 @@ internal fun TrackRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            FavoriteToggleButton(
-                isFavorite = isFavorite,
-                onClick = onToggleFavorite,
-            )
-            Text(
-                formatDuration(track.durationMs),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.width(
+                    when {
+                        showFavoriteButton && showDuration -> 112.dp
+                        showFavoriteButton || showDuration -> 56.dp
+                        else -> 0.dp
+                    },
+                ),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (showFavoriteButton) {
+                    FavoriteToggleButton(
+                        isFavorite = isFavorite,
+                        onClick = onToggleFavorite,
+                    )
+                }
+                if (showDuration) {
+                    Text(
+                        formatDuration(track.durationMs),
+                        modifier = Modifier.width(56.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                    )
+                }
+            }
         }
         Box(
             modifier = Modifier
