@@ -2113,11 +2113,7 @@ private fun SettingsSectionListPane(
     ) {
         SectionTitle(
             title = "设置",
-            subtitle = if (desktop) {
-                "选择左侧设置项后，在右侧查看和编辑对应配置。"
-            } else {
-                "主题、歌词、空间管理和关于本机拆成独立项目，点击进入详情。"
-            },
+            subtitle = ""
         )
         SettingsSection.entries.forEach { section ->
             SettingsSectionListItem(
