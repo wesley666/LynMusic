@@ -24,15 +24,15 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
-            val extension = artworkCacheExtension(target)
+            val payload = URL(target).openStream().use { it.readBytes() }
+            if (payload.isEmpty()) return@runCatching null
+            val extension = artworkCacheExtension(target, payload)
             val fileName = "${cacheKey.stableArtworkCacheHash()}$extension"
             val output = File(directory, fileName)
             if (output.exists() && output.length() > 0L) {
                 return@runCatching output.absolutePath
             }
-            URL(target).openStream().use { input ->
-                Files.copy(input, output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            }
+            Files.write(output.toPath(), payload)
             output.absolutePath.takeIf { output.length() > 0L }
         }.getOrNull()
     }

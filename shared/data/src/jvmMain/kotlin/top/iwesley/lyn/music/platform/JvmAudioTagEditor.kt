@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 
 object JvmAudioTagEditor {
     fun writeSnapshot(
@@ -75,7 +76,7 @@ object JvmAudioTagEditor {
     }
 
     private fun replaceArtwork(tag: Tag, bytes: ByteArray) {
-        val tempFile = Files.createTempFile("lynmusic-artwork-", ".img")
+        val tempFile = Files.createTempFile("lynmusic-artwork-", inferArtworkFileExtension(bytes = bytes))
         try {
             Files.write(tempFile, bytes)
             runCatching { tag.deleteArtworkField() }

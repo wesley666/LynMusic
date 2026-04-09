@@ -11,6 +11,7 @@ import org.jaudiotagger.tag.id3.ID3v24Tag
 import org.jaudiotagger.tag.images.ArtworkFactory
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 
 object AndroidAudioTagFileSupport {
     fun readSnapshot(
@@ -113,7 +114,11 @@ object AndroidAudioTagFileSupport {
 
     private fun replaceArtwork(tag: Tag, bytes: ByteArray, tempDirectory: File) {
         tempDirectory.mkdirs()
-        val tempFile = File.createTempFile("lynmusic-artwork-", ".img", tempDirectory)
+        val tempFile = File.createTempFile(
+            "lynmusic-artwork-",
+            inferArtworkFileExtension(bytes = bytes),
+            tempDirectory,
+        )
         try {
             tempFile.writeBytes(bytes)
             runCatching { tag.deleteArtworkField() }
@@ -129,7 +134,7 @@ object AndroidAudioTagFileSupport {
             append(file.absolutePath.hashCode().toUInt().toString(16))
             append('-')
             append(file.lastModified())
-            append(".img")
+            append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)
         if (!target.exists() || target.length() != bytes.size.toLong()) {

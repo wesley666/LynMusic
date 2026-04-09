@@ -23,11 +23,11 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 return@runCatching target
             }
-            val output = "$directory/${cacheKey.stableArtworkCacheHash()}${artworkCacheExtension(target)}"
+            val payload = readIosRemoteBytes(target) ?: return@runCatching null
+            val output = "$directory/${cacheKey.stableArtworkCacheHash()}${artworkCacheExtension(target, payload)}"
             if (readIosLocalBytes(output)?.isNotEmpty() == true) {
                 return@runCatching output
             }
-            val payload = readIosRemoteBytes(target) ?: return@runCatching null
             if (!writeIosFileBytes(output, payload)) {
                 return@runCatching null
             }

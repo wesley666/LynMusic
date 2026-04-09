@@ -14,6 +14,7 @@ import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 
@@ -33,14 +34,22 @@ private suspend fun loadAndroidArtworkBitmap(context: Context, locator: String?)
         val target = if (parseNavidromeCoverLocator(rawTarget) != null) {
             val actualUrl = NavidromeLocatorRuntime.resolveCoverArtUrl(rawTarget).orEmpty()
             if (actualUrl.isBlank()) return@runCatching null
-            val cacheFile = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
-                .resolve("${rawTarget.stableHash()}${artworkExtension(actualUrl)}")
-            if (!cacheFile.exists() || cacheFile.length() <= 0L) {
-                URL(actualUrl).openStream().use { input ->
-                    cacheFile.outputStream().use { output -> input.copyTo(output) }
-                }
+            val cacheDirectory = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
+            val cacheKey = rawTarget.stableHash()
+            val existingCacheFile = cacheDirectory
+                .listFiles()
+                ?.firstOrNull { file -> file.isFile && file.name.startsWith(cacheKey) && file.length() > 0L }
+            if (existingCacheFile != null) {
+                existingCacheFile.absolutePath
+            } else {
+                val payload = URL(actualUrl).openStream().use { it.readBytes() }
+                if (payload.isEmpty()) return@runCatching null
+                val cacheFile = cacheDirectory.resolve(
+                    "$cacheKey${inferArtworkFileExtension(locator = actualUrl, bytes = payload)}",
+                )
+                cacheFile.writeBytes(payload)
+                cacheFile.absolutePath
             }
-            cacheFile.absolutePath
         } else {
             rawTarget
         }
@@ -56,12 +65,6 @@ private suspend fun loadAndroidArtworkBitmap(context: Context, locator: String?)
         }
         bitmap?.asImageBitmap()
     }.getOrNull()
-}
-
-private fun artworkExtension(locator: String): String {
-    val path = runCatching { java.net.URI(locator).path }.getOrNull().orEmpty()
-    val extension = path.substringAfterLast('.', "").lowercase()
-    return if (extension in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif")) ".$extension" else ".img"
 }
 
 private fun String.stableHash(): String {

@@ -62,6 +62,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -697,7 +698,7 @@ private class AndroidImportSourceGateway(
         }
         val fileName = buildString {
             append(relativePath.hashCode().toUInt().toString(16))
-            append(".img")
+            append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)
         if (!target.exists() || target.length() != bytes.size.toLong()) {
@@ -1313,7 +1314,7 @@ private fun storeAndroidRemoteArtwork(
         append(relativePath.hashCode().toUInt().toString(16))
         append('-')
         append(bytes.contentHashCode().toUInt().toString(16))
-        append(".img")
+        append(inferArtworkFileExtension(bytes = bytes))
     }
     val target = File(artworkDirectory, fileName)
     if (!target.exists() || target.length() != bytes.size.toLong()) {

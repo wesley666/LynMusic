@@ -8,6 +8,7 @@ import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.debug
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.warn
 
 object AndroidAudioTagReader {
@@ -106,7 +107,7 @@ object AndroidAudioTagReader {
             append(relativePath.hashCode().toUInt().toString(16))
             append('-')
             append(bytes.size)
-            append(".img")
+            append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)
         if (!target.exists() || target.length() != bytes.size.toLong()) {

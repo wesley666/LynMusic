@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.platform.artworkCacheExtension
 import top.iwesley.lyn.music.platform.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.platform.stableArtworkCacheHash
@@ -40,8 +41,28 @@ class ArtworkCacheSupportTest {
             artworkCacheExtension("https://example.com/cover.jpg?size=1080"),
         )
         assertEquals(
-            ".img",
+            ".jpg",
             artworkCacheExtension("https://example.com/cover"),
+        )
+    }
+
+    @Test
+    fun `artwork file extension prefers image bytes signature`() {
+        assertEquals(
+            ".png",
+            inferArtworkFileExtension(
+                locator = "https://example.com/cover",
+                bytes = byteArrayOf(
+                    0x89.toByte(),
+                    0x50,
+                    0x4E,
+                    0x47,
+                    0x0D,
+                    0x0A,
+                    0x1A,
+                    0x0A,
+                ),
+            ),
         )
     }
 
