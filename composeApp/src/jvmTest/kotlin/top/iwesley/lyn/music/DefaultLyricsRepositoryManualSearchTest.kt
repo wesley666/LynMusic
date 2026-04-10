@@ -307,7 +307,7 @@ class DefaultLyricsRepositoryManualSearchTest {
                 priority = 20,
                 urlTemplate = "https://lyrics.example/many",
                 responseFormat = LyricsResponseFormat.JSON,
-                extractor = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
+                extractor = "json-map:lyrics=syncedLyrics|plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id",
             ),
         )
         val httpClient = FakeLyricsHttpClient(

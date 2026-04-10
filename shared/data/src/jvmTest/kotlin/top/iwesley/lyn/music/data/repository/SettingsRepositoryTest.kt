@@ -64,6 +64,43 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun `ensure defaults merges legacy lrclib entries into one built in source`() = runTest {
+        val database = createSettingsTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            directEntity(id = "lrclib-synced", name = "LRCLIB Synced").copy(
+                urlTemplate = "https://lrclib.net/api/search",
+                queryTemplate = "track_name={title}&artist_name={artist}&duration={duration_seconds}",
+                extractor = "json-map:lyrics=syncedLyrics,title=trackName",
+                priority = 100,
+                enabled = true,
+            ),
+        )
+        database.lyricsSourceConfigDao().upsert(
+            directEntity(id = "lrclib-plain", name = "LRCLIB Plain").copy(
+                urlTemplate = "https://lrclib.net/api/search",
+                queryTemplate = "track_name={title}&artist_name={artist}&album_name={album}",
+                extractor = "json-map:lyrics=plainLyrics,title=trackName",
+                priority = 90,
+                enabled = false,
+            ),
+        )
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(database, preferences, preferences)
+
+        repository.ensureDefaults()
+
+        val saved = database.lyricsSourceConfigDao().getAll()
+        assertEquals(1, saved.size)
+        assertEquals("lrclib", saved.single().id)
+        assertEquals("LRCLIB", saved.single().name)
+        assertEquals("https://lrclib.net/api/search", saved.single().urlTemplate)
+        assertEquals("track_name={title}&artist_name={artist}", saved.single().queryTemplate)
+        assertEquals(LRCLIB_JSON_MAP_EXTRACTOR, saved.single().extractor)
+        assertEquals(100, saved.single().priority)
+        assertEquals(true, saved.single().enabled)
+    }
+
+    @Test
     fun `saving direct source rejects duplicate direct name ignoring case and trim`() = runTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "LRCLIB"))

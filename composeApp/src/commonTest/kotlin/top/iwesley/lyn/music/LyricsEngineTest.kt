@@ -8,8 +8,7 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.repository.defaultLyricsSourceConfigs
-import top.iwesley.lyn.music.data.repository.LRCLIB_PLAIN_JSON_MAP_EXTRACTOR
-import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
+import top.iwesley.lyn.music.data.repository.LRCLIB_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.sanitizeLrclibQueryTemplate
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.parseLyricsPayload
@@ -338,14 +337,13 @@ class LyricsEngineTest {
     }
 
     @Test
-    fun `default lyrics sources include lrclib synced and plain`() {
+    fun `default lyrics sources include unified lrclib entry`() {
         val configs = defaultLyricsSourceConfigs()
 
-        assertEquals(2, configs.size)
-        assertEquals("lrclib-synced", configs[0].id)
-        assertEquals(LRCLIB_SYNCED_JSON_MAP_EXTRACTOR, configs[0].extractor)
-        assertEquals("lrclib-plain", configs[1].id)
-        assertEquals(LRCLIB_PLAIN_JSON_MAP_EXTRACTOR, configs[1].extractor)
+        assertEquals(1, configs.size)
+        assertEquals("lrclib", configs[0].id)
+        assertEquals(LRCLIB_JSON_MAP_EXTRACTOR, configs[0].extractor)
+        assertEquals("LRCLIB", configs[0].name)
         assertTrue(configs.all { it.urlTemplate == "https://lrclib.net/api/search" })
         assertTrue(configs.all { it.queryTemplate == "track_name={title}&artist_name={artist}" })
     }

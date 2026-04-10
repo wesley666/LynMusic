@@ -584,7 +584,14 @@ class DefaultSettingsRepository(
             return
         }
 
-        existing
+        migrateBuiltInLrclibConfig(existing)?.let { migrated ->
+            database.lyricsSourceConfigDao().upsert(migrated)
+            LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS.forEach { legacyId ->
+                database.lyricsSourceConfigDao().delete(legacyId)
+            }
+        }
+
+        database.lyricsSourceConfigDao().getAll()
             .mapNotNull(::sanitizeBuiltInLrclibConfig)
             .forEach { config ->
                 database.lyricsSourceConfigDao().upsert(config)
@@ -675,10 +682,34 @@ class DefaultSettingsRepository(
 
     private fun LyricsSourceConfigEntity.expectedBuiltInLrclibExtractor(): String {
         return when (id) {
-            "lrclib-synced" -> LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
-            "lrclib-plain" -> LRCLIB_PLAIN_JSON_MAP_EXTRACTOR
+            LRCLIB_SOURCE_ID,
+            "lrclib-synced",
+            "lrclib-plain",
+            -> LRCLIB_JSON_MAP_EXTRACTOR
             else -> extractor
         }
+    }
+
+    private fun migrateBuiltInLrclibConfig(
+        existing: List<LyricsSourceConfigEntity>,
+    ): LyricsSourceConfigEntity? {
+        val legacyConfigs = existing.filter { entity ->
+            entity.id in LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS && entity.urlTemplate.startsWith(LRCLIB_BASE_URL)
+        }
+        if (legacyConfigs.isEmpty()) return null
+        val currentConfig = existing.firstOrNull { entity ->
+            entity.id == LRCLIB_SOURCE_ID && entity.urlTemplate.startsWith(LRCLIB_BASE_URL)
+        }
+        val seed = currentConfig ?: legacyConfigs.maxByOrNull { it.priority } ?: return null
+        return seed.copy(
+            id = LRCLIB_SOURCE_ID,
+            name = LRCLIB_SOURCE_NAME,
+            urlTemplate = LRCLIB_SEARCH_URL,
+            queryTemplate = sanitizeLrclibQueryTemplate(seed.queryTemplate),
+            extractor = LRCLIB_JSON_MAP_EXTRACTOR,
+            priority = maxOf(seed.priority, defaultLyricsSourceConfigs().first().priority),
+            enabled = (listOfNotNull(currentConfig) + legacyConfigs).any { it.enabled },
+        )
     }
 
     private suspend fun assertUniqueLyricsSourceName(
@@ -713,7 +744,7 @@ class DefaultSettingsRepository(
     }
 
     private companion object {
-        val BUILT_IN_LRCLIB_SOURCE_IDS = setOf("lrclib-synced", "lrclib-plain")
+        val BUILT_IN_LRCLIB_SOURCE_IDS = setOf(LRCLIB_SOURCE_ID) + LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS
     }
 }
 
@@ -1875,25 +1906,14 @@ private fun String.toLyricsFormat(): LyricsResponseFormat {
 fun defaultLyricsSourceConfigs(): List<LyricsSourceConfig> {
     return listOf(
         LyricsSourceConfig(
-            id = "lrclib-synced",
-            name = "LRCLIB Synced",
+            id = LRCLIB_SOURCE_ID,
+            name = LRCLIB_SOURCE_NAME,
             method = RequestMethod.GET,
             urlTemplate = LRCLIB_SEARCH_URL,
             queryTemplate = LRCLIB_DEFAULT_QUERY_TEMPLATE,
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+            extractor = LRCLIB_JSON_MAP_EXTRACTOR,
             priority = 100,
-            enabled = true,
-        ),
-        LyricsSourceConfig(
-            id = "lrclib-plain",
-            name = "LRCLIB Plain",
-            method = RequestMethod.GET,
-            urlTemplate = LRCLIB_SEARCH_URL,
-            queryTemplate = LRCLIB_DEFAULT_QUERY_TEMPLATE,
-            responseFormat = LyricsResponseFormat.JSON,
-            extractor = LRCLIB_PLAIN_JSON_MAP_EXTRACTOR,
-            priority = 90,
             enabled = true,
         ),
     )
@@ -1912,6 +1932,8 @@ fun sanitizeLrclibQueryTemplate(template: String): String {
 private const val LRCLIB_BASE_URL = "https://lrclib.net/"
 private const val LRCLIB_SEARCH_URL = "${LRCLIB_BASE_URL}api/search"
 private const val LRCLIB_DEFAULT_QUERY_TEMPLATE = "track_name={title}&artist_name={artist}"
-const val LRCLIB_SYNCED_JSON_MAP_EXTRACTOR = "json-map:lyrics=syncedLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
-const val LRCLIB_PLAIN_JSON_MAP_EXTRACTOR = "json-map:lyrics=plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
+private const val LRCLIB_SOURCE_ID = "lrclib"
+private const val LRCLIB_SOURCE_NAME = "LRCLIB"
+private val LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS = setOf("lrclib-synced", "lrclib-plain")
+const val LRCLIB_JSON_MAP_EXTRACTOR = "json-map:lyrics=syncedLyrics|plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
 private val LRCLIB_REMOVED_QUERY_KEYS = setOf("album_name", "duration")

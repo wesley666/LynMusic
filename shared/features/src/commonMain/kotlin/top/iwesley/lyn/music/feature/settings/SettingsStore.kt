@@ -26,7 +26,7 @@ import top.iwesley.lyn.music.core.model.formatThemeHexColor
 import top.iwesley.lyn.music.core.model.parseThemeHexColor
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.mvi.BaseStore
-import top.iwesley.lyn.music.data.repository.LRCLIB_SYNCED_JSON_MAP_EXTRACTOR
+import top.iwesley.lyn.music.data.repository.LRCLIB_JSON_MAP_EXTRACTOR
 import top.iwesley.lyn.music.data.repository.SettingsRepository
 import top.iwesley.lyn.music.domain.MANAGED_LRCAPI_SOURCE_ID
 import top.iwesley.lyn.music.domain.MANAGED_MUSICMATCH_SOURCE_ID
@@ -61,7 +61,7 @@ data class SettingsState(
     val queryTemplate: String = "",
     val bodyTemplate: String = "",
     val responseFormat: LyricsResponseFormat = LyricsResponseFormat.JSON,
-    val extractor: String = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+    val extractor: String = LRCLIB_JSON_MAP_EXTRACTOR,
     val priority: String = "0",
     val enabled: Boolean = true,
     val workflowJsonInput: String = "",
@@ -710,7 +710,7 @@ class SettingsStore(
             queryTemplate = "",
             bodyTemplate = "",
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+            extractor = LRCLIB_JSON_MAP_EXTRACTOR,
             priority = "0",
             enabled = true,
             lrcApiUrl = config?.let(::extractManagedLrcApiUrl).orEmpty(),
@@ -772,7 +772,7 @@ class SettingsStore(
             queryTemplate = "",
             bodyTemplate = "",
             responseFormat = LyricsResponseFormat.JSON,
-            extractor = LRCLIB_SYNCED_JSON_MAP_EXTRACTOR,
+            extractor = LRCLIB_JSON_MAP_EXTRACTOR,
             priority = "0",
             enabled = true,
             workflowJsonInput = workflowJsonInput,
