@@ -641,34 +641,8 @@ private fun LyricsSettingsPane(
         if (showHeading) {
             SectionTitle(
                 title = "歌词",
-                subtitle = "配置歌词 API、搜索源和播放缓存。",
+                subtitle = "配置歌词 API 和搜索源。",
             )
-        }
-        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-            Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Samba 播放", fontWeight = FontWeight.Bold)
-                Text(
-                    "打开后会先缓存到本地再播放；关闭后桌面端直接返回 SMB 播放链接。移动端当前仍回退到缓存。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("使用本地缓存播放", fontWeight = FontWeight.Medium)
-                    Switch(
-                        checked = state.useSambaCache,
-                        onCheckedChange = { onSettingsIntent(SettingsIntent.UseSambaCacheChanged(it)) },
-                        colors = SwitchDefaults.colors(
-                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
-                            uncheckedBorderColor = shellColors.cardBorder,
-                        ),
-                    )
-                }
-            }
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Column(

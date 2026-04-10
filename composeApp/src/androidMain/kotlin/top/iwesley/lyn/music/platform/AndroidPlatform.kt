@@ -257,7 +257,7 @@ private class AndroidAppPreferencesStore(
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
-        preferences.getBoolean(KEY_USE_SAMBA_CACHE, true),
+        preferences.getBoolean(KEY_USE_SAMBA_CACHE, false),
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(
         readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER),

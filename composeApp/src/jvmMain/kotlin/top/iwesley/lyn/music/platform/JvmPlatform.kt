@@ -253,7 +253,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     }
 
     private fun readUseSambaCache(): Boolean {
-        return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: true
+        return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: false
     }
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {

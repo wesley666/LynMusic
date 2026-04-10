@@ -41,7 +41,7 @@ import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceId
 
 data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
-    val useSambaCache: Boolean = true,
+    val useSambaCache: Boolean = false,
     val selectedTheme: AppThemeId = AppThemeId.Classic,
     val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),

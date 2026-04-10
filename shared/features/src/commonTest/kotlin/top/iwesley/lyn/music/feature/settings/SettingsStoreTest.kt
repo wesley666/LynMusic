@@ -750,7 +750,7 @@ private class FakeSettingsRepository(
     textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
 ) : SettingsRepository {
     private val mutableSources = MutableStateFlow(sources)
-    private val mutableUseSambaCache = MutableStateFlow(true)
+    private val mutableUseSambaCache = MutableStateFlow(false)
     private val mutableSelectedTheme = MutableStateFlow(selectedTheme)
     private val mutableCustomThemeTokens = MutableStateFlow(customThemeTokens)
     private val mutableTextPalettePreferences = MutableStateFlow(textPalettePreferences)
