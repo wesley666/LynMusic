@@ -35,12 +35,157 @@ import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
+import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 
 class LyricsRepositoryManualOverrideTest {
+
+    @Test
+    fun `auto direct lyrics picks highest scored candidate instead of first result`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-auto",
+                urlTemplate = "https://lyrics.example/direct-auto",
+                priority = 100,
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-auto" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"wrong","title":"Glue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"wrong line","cover":"https://img.example.com/wrong.jpg"},
+                                  {"id":"right","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"right line","cover":"https://img.example.com/right.jpg"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, "direct-auto")
+
+        assertNotNull(resolved)
+        assertEquals("direct-auto", resolved.document.sourceId)
+        assertEquals("right line", resolved.document.lines.single().text)
+        assertEquals("https://img.example.com/right.jpg", resolved.artworkLocator)
+        assertNotNull(cachedRow)
+        assertEquals("https://img.example.com/right.jpg", cachedRow.artworkLocator)
+    }
+
+    @Test
+    fun `auto direct lyrics skips low scored candidate and falls through to workflow source`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-low-score",
+                urlTemplate = "https://lyrics.example/direct-low-score",
+                priority = 100,
+            ),
+        )
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-manual",
+                name = "Workflow Manual",
+                priority = 50,
+                enabled = true,
+                rawJson = TEST_WORKFLOW_JSON,
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-low-score" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"miss","title":"Completely Different","artist":"Someone Else","album":"Elsewhere","duration":180,"lyrics":"miss line"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                    "https://lyrics.example/search?title=Blue" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """{"data":[{"id":"wf-1","title":"Blue","artist":"Artist A","coverUrl":"https://img.example.com/workflow.jpg"}]}""",
+                        ),
+                    ),
+                    "https://lyrics.example/workflow?id=wf-1" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """{"data":{"content":"[00:01.00]workflow line"}}""",
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val directRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, "direct-low-score")
+
+        assertNotNull(resolved)
+        assertEquals("workflow-manual", resolved.document.sourceId)
+        assertEquals("workflow line", resolved.document.lines.single().text)
+        assertNull(directRow)
+    }
+
+    @Test
+    fun `manual direct lyrics search sorts candidates by score descending`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-manual",
+                urlTemplate = "https://lyrics.example/direct-manual",
+                priority = 100,
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-manual" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"third","title":"Completely Different","artist":"Someone Else","album":"Elsewhere","duration":100,"lyrics":"third line"},
+                                  {"id":"first","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"first line"},
+                                  {"id":"second","title":"Blue","artist":"Artist B","album":"Album A","duration":215,"lyrics":"second line"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track, includeTrackProvidedCandidate = false)
+
+        assertEquals(listOf("first", "second", "third"), candidates.mapNotNull { it.itemId })
+    }
 
     @Test
     fun `navidrome lyrics prefer manual override over navidrome cache`() = runTest {
@@ -617,6 +762,26 @@ private suspend fun seedNavidromeSource(database: LynMusicDatabase) {
     )
 }
 
+private fun directSourceEntity(
+    id: String,
+    urlTemplate: String,
+    priority: Int,
+): LyricsSourceConfigEntity {
+    return LyricsSourceConfigEntity(
+        id = id,
+        name = id,
+        method = "GET",
+        urlTemplate = urlTemplate,
+        headersTemplate = "",
+        queryTemplate = "",
+        bodyTemplate = "",
+        responseFormat = "JSON",
+        extractor = "json-map:data|lyrics=lyrics,title=title,artist=artist,album=album,durationSeconds=duration,id=id,coverUrl=cover",
+        priority = priority,
+        enabled = true,
+    )
+}
+
 private fun navidromeTrack(
     artworkLocator: String? = buildNavidromeCoverLocator("nav-source", "cover-1"),
 ): Track {
@@ -629,6 +794,24 @@ private fun navidromeTrack(
         durationMs = 215_000L,
         mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
         relativePath = "Artist A/Album A/Blue.flac",
+        artworkLocator = artworkLocator,
+        sizeBytes = 1L,
+        modifiedAt = 1L,
+    )
+}
+
+private fun localTrack(
+    artworkLocator: String? = "/tmp/default-artwork.jpg",
+): Track {
+    return Track(
+        id = "track:local-source:artist a/album a/blue.mp3",
+        sourceId = "local-source",
+        title = "Blue",
+        artistName = "Artist A",
+        albumTitle = "Album A",
+        durationMs = 215_000L,
+        mediaLocator = "file:///music/Artist%20A/Album%20A/Blue.mp3",
+        relativePath = "Artist A/Album A/Blue.mp3",
         artworkLocator = artworkLocator,
         sizeBytes = 1L,
         modifiedAt = 1L,

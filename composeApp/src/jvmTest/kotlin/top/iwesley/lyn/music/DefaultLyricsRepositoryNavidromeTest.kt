@@ -99,8 +99,8 @@ class DefaultLyricsRepositoryNavidromeTest {
                 headersTemplate = "",
                 queryTemplate = "",
                 bodyTemplate = "",
-                responseFormat = LyricsResponseFormat.TEXT.name,
-                extractor = "text",
+                responseFormat = LyricsResponseFormat.JSON.name,
+                extractor = "json-map:lyrics=lyrics,title=title,artist=artist,album=album,durationSeconds=duration,id=id",
                 priority = 100,
                 enabled = true,
             ),
@@ -139,7 +139,16 @@ class DefaultLyricsRepositoryNavidromeTest {
                   }
                 }
             """.trimIndent(),
-            directFallbackBody = "direct line",
+            directFallbackBody = """
+                {
+                  "id": "fallback-1",
+                  "title": "Blue",
+                  "artist": "Artist A",
+                  "album": "Album A",
+                  "duration": 215,
+                  "lyrics": "direct line"
+                }
+            """.trimIndent(),
         )
         val repository = DefaultLyricsRepository(
             database = database,
@@ -208,8 +217,8 @@ class DefaultLyricsRepositoryNavidromeTest {
                 headersTemplate = "",
                 queryTemplate = "",
                 bodyTemplate = "",
-                responseFormat = LyricsResponseFormat.TEXT.name,
-                extractor = "text",
+                responseFormat = LyricsResponseFormat.JSON.name,
+                extractor = "json-map:lyrics=lyrics,title=title,artist=artist,album=album,durationSeconds=duration,id=id",
                 priority = 100,
                 enabled = true,
             ),
@@ -235,7 +244,16 @@ class DefaultLyricsRepositoryNavidromeTest {
                   }
                 }
             """.trimIndent(),
-            directFallbackBody = "direct line",
+            directFallbackBody = """
+                {
+                  "id": "fallback-1",
+                  "title": "Blue",
+                  "artist": "Artist A",
+                  "album": "Album A",
+                  "duration": 215,
+                  "lyrics": "direct line"
+                }
+            """.trimIndent(),
         )
         val repository = DefaultLyricsRepository(
             database = database,

@@ -83,8 +83,10 @@ import top.iwesley.lyn.music.domain.parseLyricsPayloadResults
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsDocument
 import top.iwesley.lyn.music.domain.parsePlainText
 import top.iwesley.lyn.music.domain.parseLrc
+import top.iwesley.lyn.music.domain.DEFAULT_DIRECT_LYRICS_SELECTION
+import top.iwesley.lyn.music.domain.rankDirectLyricsCandidates
 import top.iwesley.lyn.music.domain.rankWorkflowSongCandidates
-import top.iwesley.lyn.music.domain.scoreWorkflowSongCandidate
+import top.iwesley.lyn.music.domain.scoreDirectLyricsCandidate
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
 import top.iwesley.lyn.music.domain.validateWorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.domain.mergeWorkflowCandidateCapture
@@ -782,15 +784,31 @@ class DefaultLyricsRepository(
 
         for (source in sources) {
             val sourceResult = when (source) {
-                is LyricsSourceConfig -> requestDirectLyricsResults(
-                    track = track,
-                    config = source,
-                    requestType = "auto",
-                ).firstOrNull()?.let { parsed ->
-                    ResolvedLyricsResult(
-                        document = parsed.document,
-                        artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
+                is LyricsSourceConfig -> {
+                    val rankedCandidates = rankDirectLyricsCandidates(
+                        track = track,
+                        candidates = requestDirectLyricsResults(
+                            track = track,
+                            config = source,
+                            requestType = "auto",
+                        ),
+                        selection = DEFAULT_DIRECT_LYRICS_SELECTION,
                     )
+                    val topCandidate = rankedCandidates.firstOrNull()
+                    val matchedCandidate = topCandidate
+                        ?.takeIf { it.score >= DEFAULT_DIRECT_LYRICS_SELECTION.minScore }
+                        ?.candidate
+                    logger.debug(LYRICS_LOG_TAG) {
+                        "auto-direct-ranked track=$trackLabel source=${source.id} candidates=${rankedCandidates.size} " +
+                            "topScore=${topCandidate?.score.logScore()} matched=${matchedCandidate != null} " +
+                            "itemId=${matchedCandidate?.itemId.orEmpty()}"
+                    }
+                    matchedCandidate?.let { parsed ->
+                        ResolvedLyricsResult(
+                            document = parsed.document,
+                            artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
+                        )
+                    }
                 }
 
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
@@ -854,29 +872,48 @@ class DefaultLyricsRepository(
                 emptyList()
             }
         }
-        val directCandidates = configs.flatMap { config ->
+        var originalIndex = 0
+        val rankedDirectCandidates = configs.flatMap { config ->
             requestDirectLyricsResults(
                 track = track,
                 config = config,
                 requestType = "manual",
             ).map { parsed ->
-                LyricsSearchCandidate(
-                    sourceId = config.id,
-                    sourceName = config.name,
-                    document = parsed.document,
-                    itemId = parsed.itemId,
-                    title = parsed.title,
-                    artistName = parsed.artistName,
-                    albumTitle = parsed.albumTitle,
-                    durationSeconds = parsed.durationSeconds,
-                    artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
-                    isTrackProvided = false,
+                ScoredManualDirectLyricsCandidate(
+                    candidate = LyricsSearchCandidate(
+                        sourceId = config.id,
+                        sourceName = config.name,
+                        document = parsed.document,
+                        itemId = parsed.itemId,
+                        title = parsed.title,
+                        artistName = parsed.artistName,
+                        albumTitle = parsed.albumTitle,
+                        durationSeconds = parsed.durationSeconds,
+                        artworkLocator = normalizeArtworkLocator(parsed.artworkLocator),
+                        isTrackProvided = false,
+                    ),
+                    score = scoreDirectLyricsCandidate(
+                        track = track,
+                        candidate = parsed,
+                        selection = DEFAULT_DIRECT_LYRICS_SELECTION,
+                    ),
+                    originalIndex = originalIndex++,
                 )
+            }
+        }
+            .sortedWith(compareByDescending<ScoredManualDirectLyricsCandidate> { it.score }.thenBy { it.originalIndex })
+
+        if (rankedDirectCandidates.isNotEmpty()) {
+            logger.debug(LYRICS_LOG_TAG) {
+                "manual-direct-ranked track=$trackLabel candidates=${rankedDirectCandidates.size} top=" +
+                    rankedDirectCandidates.take(3).joinToString(" | ") { scored ->
+                        "${scored.candidate.sourceId}:${scored.candidate.itemId.orEmpty()}:${scored.score.logScore()}"
+                    }
             }
         }
         return buildList {
             trackProvidedCandidate?.let(::add)
-            addAll(directCandidates)
+            addAll(rankedDirectCandidates.map { it.candidate })
         }
     }
 
@@ -1565,6 +1602,12 @@ class DefaultLyricsRepository(
     }
 }
 
+private data class ScoredManualDirectLyricsCandidate(
+    val candidate: LyricsSearchCandidate,
+    val score: Double,
+    val originalIndex: Int,
+)
+
 internal fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
@@ -1652,6 +1695,12 @@ private fun Map<String, String>.formatHeaderBlock(): String {
             .sortedBy { it.key.lowercase() }
             .joinToString("\n") { (key, value) -> "$key: $value" }
     }
+}
+
+private fun Double?.logScore(): String {
+    if (this == null) return ""
+    val rounded = (this * 1_000.0).toInt() / 1_000.0
+    return rounded.toString()
 }
 
 fun manualArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<String, String> {
