@@ -35,9 +35,9 @@ import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
-import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
@@ -71,6 +71,9 @@ internal suspend fun scanJvmWebDav(
                 rootUrl = rootUrl,
                 relativeDirectory = "",
                 sourceId = sourceId,
+                username = draft.username,
+                password = draft.password,
+                allowInsecureTls = draft.allowInsecureTls,
                 authEnabled = authEnabled,
                 logger = logger,
                 sink = tracks,
@@ -252,6 +255,9 @@ private fun collectJvmWebDavTracks(
     rootUrl: String,
     relativeDirectory: String,
     sourceId: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
     authEnabled: Boolean,
     logger: DiagnosticLogger,
     sink: MutableList<ImportedTrackCandidate>,
@@ -270,33 +276,185 @@ private fun collectJvmWebDavTracks(
         throw throwable.asJvmWebDavIOException("扫描", authEnabled)
     }
 
-    val currentDirectoryKey = relativeDirectory.trim('/')
     resources.forEach { resource ->
-        val relativePath = resolveWebDavRelativePath(rootUrl, resource.href.toString()) ?: return@forEach
-        if (relativePath.isBlank() || relativePath.trim('/') == currentDirectoryKey) return@forEach
-        if (resource.isDirectory) {
+        val resolved = resolveWebDavListedResource(
+            rootUrl = rootUrl,
+            currentDirectory = relativeDirectory,
+            resource = WebDavListedResource(
+                href = resource.href.toString(),
+                isDirectory = resource.isDirectory,
+                name = resource.name,
+                contentLength = resource.contentLength ?: 0L,
+                modifiedAt = resource.modified?.time ?: 0L,
+            ),
+        ) ?: return@forEach
+        if (resolved.isDirectory) {
             collectJvmWebDavTracks(
                 sardine = sardine,
                 rootUrl = rootUrl,
-                relativeDirectory = relativePath,
+                relativeDirectory = resolved.relativePath,
                 sourceId = sourceId,
+                username = username,
+                password = password,
+                allowInsecureTls = allowInsecureTls,
                 authEnabled = authEnabled,
                 logger = logger,
                 sink = sink,
             )
-        } else {
-            val fileName = resource.name ?: relativePath.substringAfterLast('/')
-            if (isSupportedJvmWebDavAudio(fileName)) {
-                sink += ImportedTrackCandidate(
-                    title = fileName.substringBeforeLast('.'),
-                    mediaLocator = buildWebDavLocator(sourceId, relativePath),
-                    relativePath = relativePath,
-                    sizeBytes = resource.contentLength ?: 0L,
-                    modifiedAt = resource.modified?.time ?: 0L,
+        } else if (isSupportedJvmWebDavAudio(resolved.fileName)) {
+            val requestUrl = buildWebDavTrackUrl(rootUrl, resolved.relativePath)
+            sink += runCatching {
+                resolveJvmWebDavScanCandidate(
+                    sourceId = sourceId,
+                    resource = resolved,
+                    requestUrl = requestUrl,
+                    username = username,
+                    password = password,
+                    allowInsecureTls = allowInsecureTls,
+                    authEnabled = authEnabled,
+                    logger = logger,
                 )
+            }.onFailure { throwable ->
+                logger.warn(WEBDAV_LOG_TAG) {
+                    "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+                }
+            }.getOrElse {
+                buildWebDavImportedTrackCandidate(sourceId, resolved)
             }
         }
     }
+}
+
+private fun resolveJvmWebDavScanCandidate(
+    sourceId: String,
+    resource: WebDavResolvedResource,
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+    authEnabled: Boolean,
+    logger: DiagnosticLogger,
+): ImportedTrackCandidate {
+    val fallback = buildWebDavImportedTrackCandidate(sourceId, resource)
+    if (resource.contentLength <= 0L) return fallback
+    val metadata = readJvmWebDavRemoteMetadata(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+        relativePath = resource.relativePath,
+        sizeBytes = resource.contentLength,
+        authEnabled = authEnabled,
+        logger = logger,
+        sourceId = sourceId,
+    )
+    if (metadata == null || !metadata.hasMeaningfulMetadata(resource.relativePath)) {
+        logger.info(WEBDAV_LOG_TAG) {
+            "metadata-miss source=$sourceId url=$requestUrl"
+        }
+        return fallback
+    }
+    val candidate = buildWebDavImportedTrackCandidate(
+        sourceId = sourceId,
+        resource = resource,
+        metadata = metadata,
+        storeArtwork = { bytes -> storeJvmWebDavArtwork(resource.relativePath, bytes) },
+    )
+    logger.info(WEBDAV_LOG_TAG) {
+        "metadata-hit source=$sourceId url=$requestUrl title=${candidate.title} artist=${candidate.artistName.orEmpty()} album=${candidate.albumTitle.orEmpty()}"
+    }
+    return candidate
+}
+
+private fun readJvmWebDavRemoteMetadata(
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+    relativePath: String,
+    sizeBytes: Long,
+    authEnabled: Boolean,
+    logger: DiagnosticLogger,
+    sourceId: String,
+): RemoteAudioMetadata? {
+    val initialHeadBytes = sizeBytes
+        .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+    if (initialHeadBytes <= 0) return null
+    var totalProbeBytes = initialHeadBytes.toLong()
+    var headBytes = downloadJvmWebDavRange(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+        startByte = 0L,
+        length = initialHeadBytes,
+        authEnabled = authEnabled,
+        operation = "标签探测",
+    )
+    val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
+    if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
+        if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
+            logger.info(WEBDAV_LOG_TAG) {
+                "metadata-skip source=$sourceId url=$requestUrl reason=head-too-large requested=$requiredHeadBytes"
+            }
+            return null
+        }
+        val expandedHeadBytes = requiredHeadBytes
+            .coerceAtMost(sizeBytes)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        totalProbeBytes = expandedHeadBytes.toLong()
+        headBytes = downloadJvmWebDavRange(
+            requestUrl = requestUrl,
+            username = username,
+            password = password,
+            allowInsecureTls = allowInsecureTls,
+            startByte = 0L,
+            length = expandedHeadBytes,
+            authEnabled = authEnabled,
+            operation = "标签探测",
+        )
+        logger.debug(WEBDAV_LOG_TAG) {
+            "metadata-range-expand source=$sourceId url=$requestUrl bytes=${headBytes.size}"
+        }
+    }
+    val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
+        val requestedTailBytes = sizeBytes
+            .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
+            logger.info(WEBDAV_LOG_TAG) {
+                "metadata-skip source=$sourceId url=$requestUrl reason=tail-over-budget requested=$requestedTailBytes"
+            }
+            null
+        } else {
+            totalProbeBytes += requestedTailBytes
+            downloadJvmWebDavRange(
+                requestUrl = requestUrl,
+                username = username,
+                password = password,
+                allowInsecureTls = allowInsecureTls,
+                startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                length = requestedTailBytes,
+                authEnabled = authEnabled,
+                operation = "标签探测",
+                allowFullResponseFallback = false,
+            )
+        }
+    } else {
+        null
+    }
+    logger.debug(WEBDAV_LOG_TAG) {
+        "metadata-range-read source=$sourceId url=$requestUrl head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
+    }
+    return RemoteAudioMetadataProbe.parse(
+        relativePath = relativePath,
+        headBytes = headBytes,
+        tailBytes = tailBytes,
+    )
 }
 
 private fun buildJvmSardine(
@@ -440,7 +598,35 @@ fun downloadJvmWebDavHead(
     allowInsecureTls: Boolean,
     rangeBytes: Long,
     target: File,
-): Long {
+    ): Long {
+    val bytes = downloadJvmWebDavRange(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+        startByte = 0L,
+        length = rangeBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        authEnabled = username.isNotBlank(),
+        operation = "标签探测",
+    )
+    target.outputStream().use { output ->
+        output.write(bytes)
+    }
+    return target.length()
+}
+
+private fun downloadJvmWebDavRange(
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+    startByte: Long,
+    length: Int,
+    authEnabled: Boolean,
+    operation: String,
+    allowFullResponseFallback: Boolean = true,
+): ByteArray {
+    if (length <= 0) return ByteArray(0)
     val connection = openJvmWebDavConnection(
         requestUrl = requestUrl,
         username = username,
@@ -452,17 +638,33 @@ fun downloadJvmWebDavHead(
         connection.instanceFollowRedirects = true
         connection.connectTimeout = 10_000
         connection.readTimeout = 10_000
-        connection.setRequestProperty("Range", "bytes=0-${rangeBytes - 1}")
+        connection.setRequestProperty(
+            "Range",
+            buildWebDavRangeHeader(
+                position = startByte,
+                requestedLength = length.toLong(),
+            ) ?: "bytes=0-${length - 1}",
+        )
         connection.connect()
         val statusCode = connection.responseCode
         if (statusCode !in 200..299) {
-            throw IOException("WebDAV metadata range request failed with HTTP $statusCode")
+            throw IOException(
+                describeWebDavHttpFailure(
+                    operation = operation,
+                    statusCode = statusCode,
+                    authSent = authEnabled,
+                    serverDetail = connection.getHeaderField("WWW-Authenticate").orEmpty().ifBlank { connection.responseMessage },
+                ),
+            )
+        }
+        if (startByte > 0L && statusCode == HttpURLConnection.HTTP_OK && !allowFullResponseFallback) {
+            return ByteArray(0)
         }
         connection.inputStream.use { input ->
-            target.outputStream().use { output ->
-                input.copyTo(output)
+            if (startByte > 0L && statusCode == HttpURLConnection.HTTP_OK) {
+                skipJvmWebDavBytes(input, startByte)
             }
-            target.length()
+            readJvmWebDavBytes(input, length)
         }
     } finally {
         connection.disconnect()
@@ -492,6 +694,32 @@ private fun skipJvmWebDavBytes(inputStream: InputStream, bytesToSkip: Long) {
         }
         remaining -= 1L
     }
+}
+
+private fun readJvmWebDavBytes(inputStream: InputStream, length: Int): ByteArray {
+    val buffer = ByteArray(length)
+    var totalRead = 0
+    while (totalRead < length) {
+        val read = inputStream.read(buffer, totalRead, length - totalRead)
+        if (read <= 0) break
+        totalRead += read
+    }
+    return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
+}
+
+private fun storeJvmWebDavArtwork(relativePath: String, bytes: ByteArray): String? {
+    if (bytes.isEmpty()) return null
+    val fileName = buildString {
+        append(relativePath.hashCode().toUInt().toString(16))
+        append('-')
+        append(bytes.contentHashCode().toUInt().toString(16))
+        append(inferArtworkFileExtension(bytes = bytes))
+    }
+    val target = File(jvmWebDavArtworkDirectory, fileName)
+    if (!target.exists() || target.length() != bytes.size.toLong()) {
+        target.writeBytes(bytes)
+    }
+    return target.absolutePath
 }
 
 private fun openJvmWebDavConnection(
@@ -550,6 +778,10 @@ private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else 
 
 private fun isSupportedJvmWebDavAudio(fileName: String): Boolean {
     return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
+}
+
+private val jvmWebDavArtworkDirectory = File(File(System.getProperty("user.home")), ".lynmusic/artwork").apply {
+    mkdirs()
 }
 
 private const val WEBDAV_LOG_TAG = "WebDav"

@@ -618,7 +618,12 @@ private class AndroidImportSourceGateway(
     }
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
-        return scanAndroidWebDav(draft, sourceId, logger)
+        return scanAndroidWebDav(
+            draft = draft,
+            sourceId = sourceId,
+            artworkDirectory = File(activity.cacheDir, "artwork"),
+            logger = logger,
+        )
     }
 
     override suspend fun testNavidrome(draft: NavidromeSourceDraft) {

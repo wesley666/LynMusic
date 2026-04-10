@@ -41,10 +41,34 @@ internal fun buildWebDavImportedTrackCandidate(
     sourceId: String,
     resource: WebDavResolvedResource,
 ): ImportedTrackCandidate {
+    val fallbackTitle = resource.fileName.substringBeforeLast('.')
     return ImportedTrackCandidate(
-        title = resource.fileName.substringBeforeLast('.'),
+        title = fallbackTitle,
         mediaLocator = buildWebDavLocator(sourceId, resource.relativePath),
         relativePath = resource.relativePath,
+        sizeBytes = resource.contentLength,
+        modifiedAt = resource.modifiedAt,
+    )
+}
+
+internal fun buildWebDavImportedTrackCandidate(
+    sourceId: String,
+    resource: WebDavResolvedResource,
+    metadata: RemoteAudioMetadata,
+    storeArtwork: (ByteArray) -> String? = { null },
+): ImportedTrackCandidate {
+    val fallbackTitle = resource.fileName.substringBeforeLast('.')
+    return ImportedTrackCandidate(
+        title = metadata.title?.trim()?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+        artistName = metadata.artistName?.trim()?.takeIf { it.isNotBlank() },
+        albumTitle = metadata.albumTitle?.trim()?.takeIf { it.isNotBlank() },
+        durationMs = metadata.durationMs?.coerceAtLeast(0L) ?: 0L,
+        trackNumber = metadata.trackNumber,
+        discNumber = metadata.discNumber,
+        mediaLocator = buildWebDavLocator(sourceId, resource.relativePath),
+        relativePath = resource.relativePath,
+        artworkLocator = metadata.artworkBytes?.takeIf { it.isNotEmpty() }?.let(storeArtwork),
+        embeddedLyrics = metadata.embeddedLyrics?.trim()?.takeIf { it.isNotBlank() },
         sizeBytes = resource.contentLength,
         modifiedAt = resource.modifiedAt,
     )

@@ -13,6 +13,7 @@ import com.thegrizzlylabs.sardineandroid.DavResource
 import com.thegrizzlylabs.sardineandroid.Sardine
 import com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine
 import java.io.EOFException
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.security.SecureRandom
@@ -37,8 +38,10 @@ import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
+import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 internal data class AndroidWebDavPlaybackTarget(
@@ -57,6 +60,7 @@ private data class AndroidWebDavSession(
 internal suspend fun scanAndroidWebDav(
     draft: WebDavSourceDraft,
     sourceId: String,
+    artworkDirectory: File,
     logger: DiagnosticLogger,
 ): ImportScanReport {
     val session = createAndroidWebDavSession(
@@ -75,6 +79,7 @@ internal suspend fun scanAndroidWebDav(
             session = session,
             relativeDirectory = "",
             sourceId = sourceId,
+            artworkDirectory = artworkDirectory,
             logger = logger,
             sink = tracks,
         )
@@ -150,6 +155,7 @@ private fun collectAndroidWebDavTracks(
     session: AndroidWebDavSession,
     relativeDirectory: String,
     sourceId: String,
+    artworkDirectory: File,
     logger: DiagnosticLogger,
     sink: MutableList<ImportedTrackCandidate>,
 ) {
@@ -179,13 +185,73 @@ private fun collectAndroidWebDavTracks(
                 session = session,
                 relativeDirectory = resolved.relativePath,
                 sourceId = sourceId,
+                artworkDirectory = artworkDirectory,
                 logger = logger,
                 sink = sink,
             )
         } else if (isSupportedWebDavAudio(resolved.fileName)) {
-            sink += buildWebDavImportedTrackCandidate(sourceId, resolved)
+            val requestUrl = buildWebDavTrackUrl(session.rootUrl, resolved.relativePath)
+            sink += runCatching {
+                resolveAndroidWebDavScanCandidate(
+                    session = session,
+                    sourceId = sourceId,
+                    resource = resolved,
+                    requestUrl = requestUrl,
+                    artworkDirectory = artworkDirectory,
+                    logger = logger,
+                )
+            }.onFailure { throwable ->
+                logger.warn(WEBDAV_LOG_TAG) {
+                    "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
+                }
+            }.getOrElse {
+                buildWebDavImportedTrackCandidate(sourceId, resolved)
+            }
         }
     }
+}
+
+private fun resolveAndroidWebDavScanCandidate(
+    session: AndroidWebDavSession,
+    sourceId: String,
+    resource: WebDavResolvedResource,
+    requestUrl: String,
+    artworkDirectory: File,
+    logger: DiagnosticLogger,
+): ImportedTrackCandidate {
+    val fallback = buildWebDavImportedTrackCandidate(sourceId, resource)
+    if (resource.contentLength <= 0L) return fallback
+    val metadata = readAndroidWebDavRemoteMetadata(
+        callFactory = session.client,
+        sourceId = sourceId,
+        requestUrl = requestUrl,
+        relativePath = resource.relativePath,
+        sizeBytes = resource.contentLength,
+        authEnabled = session.authEnabled,
+        logger = logger,
+    )
+    if (metadata == null || !metadata.hasMeaningfulMetadata(resource.relativePath)) {
+        logger.info(WEBDAV_LOG_TAG) {
+            "metadata-miss source=$sourceId url=$requestUrl"
+        }
+        return fallback
+    }
+    val candidate = buildWebDavImportedTrackCandidate(
+        sourceId = sourceId,
+        resource = resource,
+        metadata = metadata,
+        storeArtwork = { bytes ->
+            storeAndroidWebDavArtwork(
+                artworkDirectory = artworkDirectory,
+                relativePath = resource.relativePath,
+                bytes = bytes,
+            )
+        },
+    )
+    logger.info(WEBDAV_LOG_TAG) {
+        "metadata-hit source=$sourceId url=$requestUrl title=${candidate.title} artist=${candidate.artistName.orEmpty()} album=${candidate.albumTitle.orEmpty()}"
+    }
+    return candidate
 }
 
 private fun createAndroidWebDavSession(
@@ -251,6 +317,181 @@ private fun DavResource.toWebDavListedResource(): WebDavListedResource {
         contentLength = contentLength ?: 0L,
         modifiedAt = modified?.time ?: 0L,
     )
+}
+
+private fun readAndroidWebDavRemoteMetadata(
+    callFactory: Call.Factory,
+    sourceId: String,
+    requestUrl: String,
+    relativePath: String,
+    sizeBytes: Long,
+    authEnabled: Boolean,
+    logger: DiagnosticLogger,
+): RemoteAudioMetadata? {
+    val initialHeadBytes = sizeBytes
+        .coerceAtMost(RemoteAudioMetadataProbe.HEAD_PROBE_BYTES)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+    if (initialHeadBytes <= 0) return null
+    var totalProbeBytes = initialHeadBytes.toLong()
+    var headBytes = downloadAndroidWebDavRange(
+        callFactory = callFactory,
+        requestUrl = requestUrl,
+        startByte = 0L,
+        length = initialHeadBytes,
+        authEnabled = authEnabled,
+        operation = "标签探测",
+    )
+    val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
+    if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
+        if (requiredHeadBytes > RemoteAudioMetadataProbe.MAX_HEAD_PROBE_BYTES) {
+            logger.info(WEBDAV_LOG_TAG) {
+                "metadata-skip source=$sourceId url=$requestUrl reason=head-too-large requested=$requiredHeadBytes"
+            }
+            return null
+        }
+        val expandedHeadBytes = requiredHeadBytes
+            .coerceAtMost(sizeBytes)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        totalProbeBytes = expandedHeadBytes.toLong()
+        headBytes = downloadAndroidWebDavRange(
+            callFactory = callFactory,
+            requestUrl = requestUrl,
+            startByte = 0L,
+            length = expandedHeadBytes,
+            authEnabled = authEnabled,
+            operation = "标签探测",
+        )
+        logger.debug(WEBDAV_LOG_TAG) {
+            "metadata-range-expand source=$sourceId url=$requestUrl bytes=${headBytes.size}"
+        }
+    }
+    val tailBytes = if (RemoteAudioMetadataProbe.shouldReadTail(relativePath)) {
+        val requestedTailBytes = sizeBytes
+            .coerceAtMost(RemoteAudioMetadataProbe.TAIL_PROBE_BYTES)
+            .coerceAtMost(Int.MAX_VALUE.toLong())
+            .toInt()
+        if (totalProbeBytes + requestedTailBytes > RemoteAudioMetadataProbe.MAX_TOTAL_PROBE_BYTES) {
+            logger.info(WEBDAV_LOG_TAG) {
+                "metadata-skip source=$sourceId url=$requestUrl reason=tail-over-budget requested=$requestedTailBytes"
+            }
+            null
+        } else {
+            totalProbeBytes += requestedTailBytes
+            downloadAndroidWebDavRange(
+                callFactory = callFactory,
+                requestUrl = requestUrl,
+                startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                length = requestedTailBytes,
+                authEnabled = authEnabled,
+                operation = "标签探测",
+                allowFullResponseFallback = false,
+            )
+        }
+    } else {
+        null
+    }
+    logger.debug(WEBDAV_LOG_TAG) {
+        "metadata-range-read source=$sourceId url=$requestUrl head=${headBytes.size} tail=${tailBytes?.size ?: 0}"
+    }
+    return RemoteAudioMetadataProbe.parse(
+        relativePath = relativePath,
+        headBytes = headBytes,
+        tailBytes = tailBytes,
+    )
+}
+
+private fun downloadAndroidWebDavRange(
+    callFactory: Call.Factory,
+    requestUrl: String,
+    startByte: Long,
+    length: Int,
+    authEnabled: Boolean,
+    operation: String,
+    allowFullResponseFallback: Boolean = true,
+): ByteArray {
+    if (length <= 0) return ByteArray(0)
+    val request = Request.Builder()
+        .url(requestUrl)
+        .get()
+        .header(
+            "Range",
+            buildWebDavRangeHeader(
+                position = startByte,
+                requestedLength = length.toLong(),
+            ) ?: "bytes=0-${length - 1}",
+        )
+        .build()
+    val response = callFactory.newCall(request).execute()
+    return response.use { activeResponse ->
+        if (!activeResponse.isSuccessful) {
+            throw IOException(
+                describeWebDavHttpFailure(
+                    operation = operation,
+                    statusCode = activeResponse.code,
+                    authSent = authEnabled,
+                    serverDetail = activeResponse.header("WWW-Authenticate").orEmpty().ifBlank { activeResponse.message },
+                ),
+            )
+        }
+        if (startByte > 0L && activeResponse.code == 200 && !allowFullResponseFallback) {
+            return@use ByteArray(0)
+        }
+        val stream = activeResponse.body.byteStream()
+        if (startByte > 0L && activeResponse.code == 200) {
+            skipAndroidWebDavBytes(stream, startByte)
+        }
+        readUpTo(stream, length)
+    }
+}
+
+private fun readUpTo(
+    stream: InputStream,
+    length: Int,
+): ByteArray {
+    val buffer = ByteArray(length)
+    var totalRead = 0
+    while (totalRead < length) {
+        val read = stream.read(buffer, totalRead, length - totalRead)
+        if (read <= 0) break
+        totalRead += read
+    }
+    return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
+}
+
+private fun skipAndroidWebDavBytes(
+    stream: InputStream,
+    target: Long,
+) {
+    var skipped = 0L
+    while (skipped < target) {
+        val delta = stream.skip(target - skipped)
+        if (delta <= 0L) {
+            throw EOFException("Unable to skip to requested WebDAV position $target")
+        }
+        skipped += delta
+    }
+}
+
+private fun storeAndroidWebDavArtwork(
+    artworkDirectory: File,
+    relativePath: String,
+    bytes: ByteArray,
+): String? {
+    if (bytes.isEmpty()) return null
+    artworkDirectory.mkdirs()
+    val fileName = buildString {
+        append(relativePath.hashCode().toUInt().toString(16))
+        append('-')
+        append(bytes.contentHashCode().toUInt().toString(16))
+        append(inferArtworkFileExtension(bytes = bytes))
+    }
+    val target = File(artworkDirectory, fileName)
+    if (!target.exists() || target.length() != bytes.size.toLong()) {
+        target.writeBytes(bytes)
+    }
+    return target.absolutePath
 }
 
 private fun Throwable.asAndroidWebDavIOException(
