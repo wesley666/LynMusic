@@ -71,9 +71,7 @@ import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
-import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
-import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
 import top.iwesley.lyn.music.core.model.parseThemeHexColor
 import top.iwesley.lyn.music.core.model.presetThemeTokens
@@ -792,34 +790,10 @@ private fun LyricsSettingsPane(
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    EnumSelector(
-                        label = "Method",
-                        values = RequestMethod.entries,
-                        selected = state.method,
-                        onSelected = { onSettingsIntent(SettingsIntent.MethodChanged(it)) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    EnumSelector(
-                        label = "Format",
-                        values = LyricsResponseFormat.entries,
-                        selected = state.responseFormat,
-                        onSelected = { onSettingsIntent(SettingsIntent.ResponseFormatChanged(it)) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
                 ImeAwareOutlinedTextField(
                     value = state.queryTemplate,
                     onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) },
                     label = { Text("Query 模板") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = settingsFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.bodyTemplate,
-                    onValueChange = { onSettingsIntent(SettingsIntent.BodyChanged(it)) },
-                    label = { Text("Body 模板") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,

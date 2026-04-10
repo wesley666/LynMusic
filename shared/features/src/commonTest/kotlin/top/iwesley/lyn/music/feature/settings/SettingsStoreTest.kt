@@ -101,6 +101,32 @@ class SettingsStoreTest {
     }
 
     @Test
+    fun `saving direct source forces get json and clears body template`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.NameChanged("Custom Source"))
+        store.dispatch(SettingsIntent.UrlChanged("https://lyrics.example/direct"))
+        store.dispatch(SettingsIntent.QueryChanged("title={title}"))
+        store.dispatch(SettingsIntent.HeadersChanged("Authorization: Bearer token"))
+        store.dispatch(SettingsIntent.ExtractorChanged("json-map:lyrics=plainLyrics,title=trackName"))
+        store.dispatch(SettingsIntent.PriorityChanged("12"))
+        store.dispatch(SettingsIntent.MethodChanged(RequestMethod.POST))
+        store.dispatch(SettingsIntent.BodyChanged("{\"title\":\"{title}\"}"))
+        store.dispatch(SettingsIntent.ResponseFormatChanged(LyricsResponseFormat.XML))
+        store.dispatch(SettingsIntent.Save)
+        advanceUntilIdle()
+
+        val saved = repository.currentSources().filterIsInstance<LyricsSourceConfig>().single()
+        assertEquals(RequestMethod.GET, saved.method)
+        assertEquals("", saved.bodyTemplate)
+        assertEquals(LyricsResponseFormat.JSON, saved.responseFormat)
+        scope.cancel()
+    }
+
+    @Test
     fun `selecting theme text palette updates repository and state`() = runTest {
         val repository = FakeSettingsRepository()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
