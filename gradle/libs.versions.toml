@@ -24,6 +24,7 @@ jaudiotagger = "3.0.1"
 room = "2.8.4"
 smbj = "0.14.0"
 sardine = "5.13"
+sardineAndroid = "0.9"
 sqlite = "2.6.2"
 vlcj = "4.12.1"
 
@@ -61,6 +62,7 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 smbj = { module = "com.hierynomus:smbj", version.ref = "smbj" }
 sardine = { module = "com.github.lookfirst:sardine", version.ref = "sardine" }
+sardineAndroid = { module = "com.github.thegrizzlylabs:sardine-android", version.ref = "sardineAndroid" }
 vlcj = { module = "uk.co.caprica:vlcj", version.ref = "vlcj" }
 
 [plugins]

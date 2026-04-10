@@ -9,32 +9,29 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.thegrizzlylabs.sardineandroid.DavResource
+import com.thegrizzlylabs.sardineandroid.Sardine
+import com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine
 import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
-import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
-import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
 import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
 import top.iwesley.lyn.music.core.model.debug
@@ -42,8 +39,6 @@ import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
-import top.iwesley.lyn.music.core.model.parseWebDavMultistatus
-import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 internal data class AndroidWebDavPlaybackTarget(
@@ -51,37 +46,46 @@ internal data class AndroidWebDavPlaybackTarget(
     val requestUrl: String,
 )
 
+private data class AndroidWebDavSession(
+    val rootUrl: String,
+    val authEnabled: Boolean,
+    val allowInsecureTls: Boolean,
+    val client: OkHttpClient,
+    val sardine: Sardine,
+)
+
 internal suspend fun scanAndroidWebDav(
     draft: WebDavSourceDraft,
     sourceId: String,
     logger: DiagnosticLogger,
 ): ImportScanReport {
-    val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
-    val authHeader = buildBasicAuthorizationHeader(draft.username, draft.password)
-    val client = buildAndroidWebDavClient(draft.allowInsecureTls)
+    val session = createAndroidWebDavSession(
+        rootUrl = draft.rootUrl,
+        username = draft.username,
+        password = draft.password,
+        allowInsecureTls = draft.allowInsecureTls,
+    )
     val tracks = mutableListOf<ImportedTrackCandidate>()
     val startedAt = System.currentTimeMillis()
     logger.info(WEBDAV_LOG_TAG) {
-        "scan-start source=$sourceId rootUrl=$rootUrl auth=${authHeader != null} insecureTls=${draft.allowInsecureTls}"
+        "scan-start source=$sourceId rootUrl=${session.rootUrl} auth=${session.authEnabled} insecureTls=${session.allowInsecureTls} client=sardine-android"
     }
     return runCatching {
         collectAndroidWebDavTracks(
-            client = client,
-            rootUrl = rootUrl,
+            session = session,
             relativeDirectory = "",
             sourceId = sourceId,
-            authHeader = authHeader,
             logger = logger,
             sink = tracks,
         )
         ImportScanReport(tracks)
     }.onSuccess { report ->
         logger.info(WEBDAV_LOG_TAG) {
-            "scan-complete source=$sourceId rootUrl=$rootUrl trackCount=${report.tracks.size} elapsedMs=${System.currentTimeMillis() - startedAt}"
+            "scan-complete source=$sourceId rootUrl=${session.rootUrl} trackCount=${report.tracks.size} elapsedMs=${System.currentTimeMillis() - startedAt} client=sardine-android"
         }
     }.onFailure { throwable ->
         logger.error(WEBDAV_LOG_TAG, throwable) {
-            "scan-failed source=$sourceId rootUrl=$rootUrl elapsedMs=${System.currentTimeMillis() - startedAt}"
+            "scan-failed source=$sourceId rootUrl=${session.rootUrl} elapsedMs=${System.currentTimeMillis() - startedAt} client=sardine-android"
         }
     }.getOrThrow()
 }
@@ -90,33 +94,25 @@ internal fun testAndroidWebDavConnection(
     draft: WebDavSourceDraft,
     logger: DiagnosticLogger,
 ) {
-    val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
-    val authHeader = buildBasicAuthorizationHeader(draft.username, draft.password)
-    val client = buildAndroidWebDavClient(draft.allowInsecureTls)
-    val request = Request.Builder()
-        .url(rootUrl.ensureTrailingSlash())
-        .header("Depth", "0")
-        .header("Accept", "application/xml, text/xml, */*")
-        .apply {
-            authHeader?.let { header("Authorization", it) }
-        }
-        .method("PROPFIND", WEBDAV_PROPFIND_BODY.toRequestBody(WEBDAV_XML_MEDIA_TYPE))
-        .build()
-    client.newCall(request).execute().use { response ->
-        val payload = response.body.string()
-        logger.debug(WEBDAV_LOG_TAG) {
-            "test-connection url=$rootUrl status=${response.code} responseBytes=${payload.length}"
-        }
-        if (!response.isSuccessful) {
-            val challenge = response.header("WWW-Authenticate").orEmpty()
-            throw IOException(describeWebDavHttpFailure("测试连接", response.code, authHeader != null, challenge))
-        }
-        val rootEntry = parseWebDavMultistatus(payload)
-            .firstOrNull { resolveWebDavRelativePath(rootUrl, it.href)?.isBlank() == true }
+    val session = createAndroidWebDavSession(
+        rootUrl = draft.rootUrl,
+        username = draft.username,
+        password = draft.password,
+        allowInsecureTls = draft.allowInsecureTls,
+    )
+    logger.debug(WEBDAV_LOG_TAG) {
+        "test-connection rootUrl=${session.rootUrl} auth=${session.authEnabled} insecureTls=${session.allowInsecureTls} client=sardine-android"
+    }
+    try {
+        val resource = session.sardine.list(session.rootUrl.ensureTrailingSlash(), 0)
+            .filterIsInstance<DavResource>()
+            .firstOrNull()
             ?: error("WebDAV 根目录不可访问。")
-        if (!rootEntry.isDirectory) {
+        if (!resource.isDirectory) {
             error("WebDAV 根 URL 不是目录。")
         }
+    } catch (throwable: Throwable) {
+        throw throwable.asAndroidWebDavIOException("测试连接", session.authEnabled)
     }
 }
 
@@ -130,17 +126,20 @@ internal suspend fun resolveAndroidWebDavPlaybackTarget(
     val source = database.importSourceDao().getById(webDav.first)?.takeIf { it.enabled } ?: return null
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second)
-    val headers = buildMap {
-        buildBasicAuthorizationHeader(source.username.orEmpty(), password)?.let { put("Authorization", it) }
-    }
+    val session = createAndroidWebDavSession(
+        rootUrl = source.rootReference,
+        username = source.username.orEmpty(),
+        password = password,
+        allowInsecureTls = source.allowInsecureTls,
+    )
     logger.info(WEBDAV_LOG_TAG) {
-        "play-start source=${webDav.first} url=$requestUrl auth=${headers.isNotEmpty()} insecureTls=${source.allowInsecureTls}"
+        "play-start source=${webDav.first} url=$requestUrl auth=${session.authEnabled} insecureTls=${session.allowInsecureTls} client=sardine-android"
     }
     return AndroidWebDavPlaybackTarget(
         mediaSource = ProgressiveMediaSource.Factory(
             WebDavOkHttpDataSourceFactory(
-                callFactory = buildAndroidWebDavClient(source.allowInsecureTls),
-                headers = headers,
+                callFactory = session.client,
+                authEnabled = session.authEnabled,
             ),
         ).createMediaSource(MediaItem.fromUri(Uri.parse(requestUrl))),
         requestUrl = requestUrl,
@@ -148,85 +147,152 @@ internal suspend fun resolveAndroidWebDavPlaybackTarget(
 }
 
 private fun collectAndroidWebDavTracks(
-    client: OkHttpClient,
-    rootUrl: String,
+    session: AndroidWebDavSession,
     relativeDirectory: String,
     sourceId: String,
-    authHeader: String?,
     logger: DiagnosticLogger,
     sink: MutableList<ImportedTrackCandidate>,
 ) {
     val directoryUrl = if (relativeDirectory.isBlank()) {
-        rootUrl
+        session.rootUrl.ensureTrailingSlash()
     } else {
-        buildWebDavTrackUrl(rootUrl, relativeDirectory).ensureTrailingSlash()
+        buildWebDavTrackUrl(session.rootUrl, relativeDirectory).ensureTrailingSlash()
     }
-    val request = Request.Builder()
-        .url(directoryUrl)
-        .header("Depth", "1")
-        .header("Accept", "application/xml, text/xml, */*")
-        .apply {
-            authHeader?.let { header("Authorization", it) }
+    logger.debug(WEBDAV_LOG_TAG) {
+        "propfind source=$sourceId url=$directoryUrl client=sardine-android"
+    }
+    val resources = try {
+        session.sardine.list(directoryUrl, 1)
+            .filterIsInstance<DavResource>()
+    } catch (throwable: Throwable) {
+        throw throwable.asAndroidWebDavIOException("扫描", session.authEnabled)
+    }
+
+    resources.forEach { resource ->
+        val resolved = resolveWebDavListedResource(
+            rootUrl = session.rootUrl,
+            currentDirectory = relativeDirectory,
+            resource = resource.toWebDavListedResource(),
+        ) ?: return@forEach
+        if (resolved.isDirectory) {
+            collectAndroidWebDavTracks(
+                session = session,
+                relativeDirectory = resolved.relativePath,
+                sourceId = sourceId,
+                logger = logger,
+                sink = sink,
+            )
+        } else if (isSupportedWebDavAudio(resolved.fileName)) {
+            sink += buildWebDavImportedTrackCandidate(sourceId, resolved)
         }
-        .method("PROPFIND", WEBDAV_PROPFIND_BODY.toRequestBody(WEBDAV_XML_MEDIA_TYPE))
-        .build()
-    client.newCall(request).execute().use { response ->
-        val payload = response.body.string()
-        logger.debug(WEBDAV_LOG_TAG) {
-            "propfind source=$sourceId url=$directoryUrl status=${response.code} responseBytes=${payload.length}"
+    }
+}
+
+private fun createAndroidWebDavSession(
+    rootUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+): AndroidWebDavSession {
+    val normalizedRootUrl = normalizeWebDavRootUrl(rootUrl)
+    val client = buildAndroidWebDavClient(
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+    )
+    return AndroidWebDavSession(
+        rootUrl = normalizedRootUrl,
+        authEnabled = username.isNotBlank(),
+        allowInsecureTls = allowInsecureTls,
+        client = client,
+        sardine = OkHttpSardine(client),
+    )
+}
+
+private fun buildAndroidWebDavClient(
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+): OkHttpClient {
+    val builder = OkHttpClient.Builder()
+    if (allowInsecureTls) {
+        val trustManager = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
         }
-        if (!response.isSuccessful) {
-            val challenge = response.header("WWW-Authenticate").orEmpty()
-            throw IOException(describeWebDavHttpFailure("扫描", response.code, authHeader != null, challenge))
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
         }
-        parseWebDavMultistatus(payload).forEach { entry ->
-            val relativePath = resolveWebDavRelativePath(rootUrl, entry.href) ?: return@forEach
-            if (relativePath.isBlank()) return@forEach
-            if (entry.isDirectory) {
-                collectAndroidWebDavTracks(
-                    client = client,
-                    rootUrl = rootUrl,
-                    relativeDirectory = relativePath,
-                    sourceId = sourceId,
-                    authHeader = authHeader,
-                    logger = logger,
-                    sink = sink,
-                )
-            } else if (isSupportedWebDavAudio(relativePath.substringAfterLast('/'))) {
-                sink += ImportedTrackCandidate(
-                    title = relativePath.substringAfterLast('/').substringBeforeLast('.'),
-                    mediaLocator = buildWebDavLocator(sourceId, relativePath),
-                    relativePath = relativePath,
-                    sizeBytes = entry.contentLength ?: 0L,
-                    modifiedAt = parseWebDavLastModified(entry.lastModified),
-                )
+        builder.sslSocketFactory(sslContext.socketFactory, trustManager)
+        builder.hostnameVerifier(AlwaysTrueHostnameVerifier)
+    }
+    buildBasicAuthorizationHeader(username, password)?.let { authHeader ->
+        builder.addInterceptor { chain ->
+            val request = chain.request()
+            val nextRequest = if (request.header("Authorization").isNullOrBlank()) {
+                request.newBuilder()
+                    .header("Authorization", authHeader)
+                    .build()
+            } else {
+                request
             }
+            chain.proceed(nextRequest)
         }
     }
+    return builder.build()
 }
 
-private fun buildAndroidWebDavClient(allowInsecureTls: Boolean): OkHttpClient {
-    if (!allowInsecureTls) return OkHttpClient()
-    val trustManager = object : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-        override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
-        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-    }
-    val sslContext = SSLContext.getInstance("TLS").apply {
-        init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
-    }
-    return OkHttpClient.Builder()
-        .sslSocketFactory(sslContext.socketFactory, trustManager)
-        .hostnameVerifier(AlwaysTrueHostnameVerifier)
-        .build()
+private fun DavResource.toWebDavListedResource(): WebDavListedResource {
+    return WebDavListedResource(
+        href = href.toString(),
+        isDirectory = isDirectory,
+        name = name,
+        contentLength = contentLength ?: 0L,
+        modifiedAt = modified?.time ?: 0L,
+    )
 }
 
-private fun parseWebDavLastModified(value: String?): Long {
+private fun Throwable.asAndroidWebDavIOException(
+    operation: String,
+    authEnabled: Boolean,
+): IOException {
+    val statusCode = reflectStatusCode()
+    if (statusCode != null) {
+        return IOException(
+            describeWebDavHttpFailure(
+                operation = operation,
+                statusCode = statusCode,
+                authSent = authEnabled,
+                serverDetail = reflectResponsePhrase() ?: message,
+            ),
+            this,
+        )
+    }
+    return if (this is IOException) {
+        this
+    } else {
+        IOException(
+            "WebDAV $operation 失败: ${message ?: this::class.simpleName.orEmpty()}",
+            this,
+        )
+    }
+}
+
+private fun Throwable.reflectStatusCode(): Int? {
     return runCatching {
-        value?.takeIf { it.isNotBlank() }
-            ?.let { ZonedDateTime.parse(it, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }
-            ?: 0L
-    }.getOrDefault(0L)
+        javaClass.methods
+            .firstOrNull { it.name == "getStatusCode" && it.parameterCount == 0 }
+            ?.invoke(this) as? Number
+    }.getOrNull()?.toInt()
+}
+
+private fun Throwable.reflectResponsePhrase(): String? {
+    return runCatching {
+        javaClass.methods
+            .firstOrNull { it.name == "getResponsePhrase" && it.parameterCount == 0 }
+            ?.invoke(this) as? String
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 }
 
 private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else "$this/"
@@ -241,32 +307,20 @@ private object AlwaysTrueHostnameVerifier : HostnameVerifier {
 
 private const val WEBDAV_LOG_TAG = "WebDav"
 
-private val WEBDAV_XML_MEDIA_TYPE = "application/xml; charset=utf-8".toMediaType()
-
-private const val WEBDAV_PROPFIND_BODY = """
-<?xml version="1.0" encoding="utf-8"?>
-<d:propfind xmlns:d="DAV:">
-  <d:prop>
-    <d:resourcetype />
-    <d:getlastmodified />
-  </d:prop>
-</d:propfind>
-"""
-
 @UnstableApi
 private class WebDavOkHttpDataSourceFactory(
     private val callFactory: Call.Factory,
-    private val headers: Map<String, String>,
+    private val authEnabled: Boolean,
 ) : DataSource.Factory {
     override fun createDataSource(): DataSource {
-        return WebDavOkHttpDataSource(callFactory, headers)
+        return WebDavOkHttpDataSource(callFactory, authEnabled)
     }
 }
 
 @UnstableApi
 private class WebDavOkHttpDataSource(
     private val callFactory: Call.Factory,
-    private val headers: Map<String, String>,
+    private val authEnabled: Boolean,
 ) : BaseDataSource(true) {
     private var response: Response? = null
     private var inputStream: InputStream? = null
@@ -281,25 +335,24 @@ private class WebDavOkHttpDataSource(
             .url(dataSpec.uri.toString())
             .get()
             .apply {
-                headers.forEach { (key, value) -> header(key, value) }
-                if (dataSpec.position != 0L || dataSpec.length != C.LENGTH_UNSET.toLong()) {
-                    val end = if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
-                        ""
-                    } else {
-                        (dataSpec.position + dataSpec.length - 1L).toString()
-                    }
-                    header("Range", "bytes=${dataSpec.position}-$end")
-                }
+                buildWebDavRangeHeader(
+                    position = dataSpec.position,
+                    requestedLength = dataSpec.length,
+                )?.let { header("Range", it) }
             }
             .build()
         val response = callFactory.newCall(request).execute()
         if (!response.isSuccessful) {
             val challenge = response.header("WWW-Authenticate").orEmpty()
+            val detail = challenge.ifBlank { response.message }
             response.close()
             throw IOException(
-                "WebDAV stream request failed with HTTP ${response.code}" +
-                    " authSent=${headers.containsKey("Authorization")}" +
-                    challenge.takeIf { it.isNotBlank() }?.let { " challenge=$it" }.orEmpty(),
+                describeWebDavHttpFailure(
+                    operation = "播放",
+                    statusCode = response.code,
+                    authSent = authEnabled,
+                    serverDetail = detail,
+                ),
             )
         }
         val stream = response.body.byteStream()

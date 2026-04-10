@@ -71,6 +71,7 @@ kotlin {
             implementation(libs.androidx.media3.exoplayer)
             implementation(libs.androidx.media3.session)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.sardineAndroid)
             implementation(libs.smbj)
         }
         commonMain.dependencies {
