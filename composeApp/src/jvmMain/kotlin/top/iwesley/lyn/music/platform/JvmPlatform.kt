@@ -131,7 +131,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     )
     val logger = ConsoleDiagnosticLogger(enabled = true, label = "Desktop")
     logger.info("Desktop") {
-        "process pid=${ProcessHandle.current().pid()}"
+        "你好 process pid=${ProcessHandle.current().pid()}"
     }
     val secureStore = createJvmSecureCredentialStore(logger)
     val appPreferencesStore = JvmAppPreferencesStore()
@@ -1063,7 +1063,7 @@ private class JvmPlaybackGateway(
                         playbackTarget = playbackTarget,
                         sourceReference = currentSourceReference,
                         parseAccepted = parseAccepted,
-                        parseStatus = parseStatus.name,
+                        parseStatus = formatJvmVlcParseStatus(parseStatus),
                         durationMs = info.duration(),
                         metaData = metaData,
                     )
@@ -1544,6 +1544,10 @@ private fun buildVlcMetadataLogMessage(
         append(" nowPlaying=")
         append(metaData.value(Meta.NOW_PLAYING))
     }
+}
+
+internal fun formatJvmVlcParseStatus(parseStatus: MediaParsedStatus?): String {
+    return parseStatus?.name ?: "UNKNOWN"
 }
 
 private fun MetaData.value(meta: Meta): String {

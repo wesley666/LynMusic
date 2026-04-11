@@ -3,9 +3,15 @@ package top.iwesley.lyn.music
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import top.iwesley.lyn.music.platform.formatJvmVlcParseStatus
 import top.iwesley.lyn.music.platform.sanitizeJvmVlcMetadataTitle
 
 class JvmPlatformMetadataTest {
+
+    @Test
+    fun `formats missing vlc parse status`() {
+        assertEquals("UNKNOWN", formatJvmVlcParseStatus(null))
+    }
 
     @Test
     fun `filters vlc internal callback titles`() {
