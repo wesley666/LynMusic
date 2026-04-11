@@ -109,12 +109,18 @@ class PlayerStore(
     private var currentLyricsTrackId: String? = null
     private var currentLyricsRequestKey: String? = null
     private var currentSharePreviewRequestId: Long = 0L
+    private var lastPlaybackErrorKey: PlaybackErrorKey? = null
 
     init {
         storeScope.launch {
             playbackRepository.snapshot.collect { snapshot ->
                 val previousTrackId = state.value.snapshot.currentTrack?.id
                 val trackChanged = previousTrackId != snapshot.currentTrack?.id
+                val playbackErrorKey = snapshot.errorMessage?.let { message ->
+                    PlaybackErrorKey(trackId = snapshot.currentTrack?.id, message = message)
+                }
+                val shouldShowPlaybackError = playbackErrorKey != null && playbackErrorKey != lastPlaybackErrorKey
+                lastPlaybackErrorKey = playbackErrorKey
                 if (trackChanged || snapshot.currentTrack == null) {
                     invalidateLyricsSharePreviewRequests()
                 }
@@ -135,7 +141,11 @@ class PlayerStore(
                         manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
                         manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
                         manualLyricsError = if (trackChanged) null else current.manualLyricsError,
-                        message = if (trackChanged) null else current.message,
+                        message = when {
+                            shouldShowPlaybackError -> snapshot.errorMessage
+                            trackChanged -> null
+                            else -> current.message
+                        },
                     ).let { updated ->
                         if (trackChanged || snapshot.currentTrack == null) {
                             updated.clearLyricsShareState()
@@ -693,6 +703,11 @@ private fun PlayerState.clearLyricsShareState(): PlayerState {
         shareMessage = null,
     )
 }
+
+private data class PlaybackErrorKey(
+    val trackId: String?,
+    val message: String,
+)
 
 private fun PlaybackSnapshot.toLyricsLookupTrack(): Track? {
     val track = currentTrack ?: return null

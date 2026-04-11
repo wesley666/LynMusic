@@ -79,6 +79,46 @@ class PlayerStoreQueueTest {
     }
 
     @Test
+    fun `playback error updates transient message once per track and error`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        advanceUntilIdle()
+        playbackRepository.updateSnapshot(sampleSnapshot().copy(errorMessage = "访问歌曲失败"))
+        advanceUntilIdle()
+
+        assertEquals("访问歌曲失败", store.state.value.message)
+
+        store.dispatch(PlayerIntent.ClearMessage)
+        advanceUntilIdle()
+        playbackRepository.updateSnapshot(sampleSnapshot().copy(positionMs = 1_000L, errorMessage = "访问歌曲失败"))
+        advanceUntilIdle()
+
+        assertEquals(null, store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `same playback error is shown again for a different track`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        advanceUntilIdle()
+        playbackRepository.updateSnapshot(sampleSnapshot().copy(errorMessage = "无法播放当前歌曲"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.ClearMessage)
+        advanceUntilIdle()
+
+        playbackRepository.updateSnapshot(sampleSnapshot().copy(currentIndex = 1, errorMessage = "无法播放当前歌曲"))
+        advanceUntilIdle()
+
+        assertEquals("无法播放当前歌曲", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
     fun `invalid queue index leaves playback state unchanged`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
