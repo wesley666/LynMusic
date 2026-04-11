@@ -9,6 +9,7 @@ import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
 import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
+import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.parseWebDavMultistatus
@@ -31,6 +32,28 @@ class WebDavTest {
             "https://dav.example.com/%E4%B8%AD%E6%96%87%20%E9%9F%B3%E4%B9%90/%E6%B5%81%E8%A1%8C/",
             normalized,
         )
+    }
+
+    @Test
+    fun `display webdav root url decodes encoded path segments`() {
+        val displayUrl = displayWebDavRootUrl(
+            "https://dav.example.com/%E4%B8%AD%E6%96%87%20%E9%9F%B3%E4%B9%90/%E6%B5%81%E8%A1%8C/",
+        )
+
+        assertEquals("https://dav.example.com/中文 音乐/流行/", displayUrl)
+    }
+
+    @Test
+    fun `display webdav root url keeps readable url readable`() {
+        assertEquals(
+            "https://dav.example.com/中文 音乐/",
+            displayWebDavRootUrl("https://dav.example.com/中文 音乐/"),
+        )
+    }
+
+    @Test
+    fun `display webdav root url returns original value when url is invalid`() {
+        assertEquals("not a url", displayWebDavRootUrl("not a url"))
     }
 
     @Test

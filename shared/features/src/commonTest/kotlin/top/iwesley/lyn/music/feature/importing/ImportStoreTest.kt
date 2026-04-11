@@ -98,6 +98,60 @@ class ImportStoreTest {
     }
 
     @Test
+    fun `opening webdav editor prefills decoded root url`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "dav-1",
+                    type = ImportSourceType.WEBDAV,
+                    label = "云端曲库",
+                    rootReference = "https://dav.example.com/%E4%B8%AD%E6%96%87%20%E9%9F%B3%E4%B9%90/",
+                    username = "lyn",
+                    credentialKey = "credential-dav-1",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("dav-1"))
+        advanceUntilIdle()
+
+        val editing = assertNotNull(store.state.value.editingSource)
+        assertEquals("https://dav.example.com/中文 音乐/", editing.rootUrl)
+        assertEquals("云端曲库", editing.label)
+        harness.close()
+    }
+
+    @Test
+    fun `saving edited webdav source sends current root url to repository`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "dav-1",
+                    type = ImportSourceType.WEBDAV,
+                    label = "云端曲库",
+                    rootReference = "https://dav.example.com/%E4%B8%AD%E6%96%87%20%E9%9F%B3%E4%B9%90/",
+                    username = "lyn",
+                    credentialKey = "credential-dav-1",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("dav-1"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.SaveRemoteSource)
+        advanceUntilIdle()
+
+        assertEquals("dav-1", repository.lastUpdatedWebDavSourceId)
+        assertEquals("https://dav.example.com/中文 音乐/", repository.lastUpdatedWebDavDraft?.rootUrl)
+        assertTrue(repository.lastUpdatedWebDavKeepExisting)
+        harness.close()
+    }
+
+    @Test
     fun `testing new samba source calls repository and surfaces toast message`() = runTest {
         val repository = FakeImportSourceRepository()
         val harness = createStore(repository)
@@ -433,6 +487,9 @@ private class FakeImportSourceRepository(
     var pendingResult: CompletableDeferred<Result<Unit>>? = null
 
     var lastTestSambaDraft: SambaSourceDraft? = null
+    var lastUpdatedWebDavSourceId: String? = null
+    var lastUpdatedWebDavDraft: WebDavSourceDraft? = null
+    var lastUpdatedWebDavKeepExisting: Boolean = false
     var lastUpdatedNavidromeSourceId: String? = null
     var lastUpdatedNavidromeDraft: NavidromeSourceDraft? = null
     var lastUpdatedNavidromeKeepExisting: Boolean = false
@@ -476,7 +533,12 @@ private class FakeImportSourceRepository(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
+    ): Result<Unit> {
+        lastUpdatedWebDavSourceId = sourceId
+        lastUpdatedWebDavDraft = draft
+        lastUpdatedWebDavKeepExisting = keepExistingCredentialWhenBlankPassword
+        return pendingResult?.await() ?: Result.success(Unit)
+    }
 
     override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
         return pendingResult?.await() ?: Result.success(Unit)

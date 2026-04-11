@@ -8,6 +8,7 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 
@@ -245,7 +246,11 @@ class ImportStore(
                             server = source.server.orEmpty(),
                             port = source.port?.toString().orEmpty(),
                             path = source.path.orEmpty(),
-                            rootUrl = source.rootReference,
+                            rootUrl = if (source.type == ImportSourceType.WEBDAV) {
+                                displayWebDavRootUrl(source.rootReference)
+                            } else {
+                                source.rootReference
+                            },
                             username = source.username.orEmpty(),
                             password = "",
                             allowInsecureTls = source.allowInsecureTls,

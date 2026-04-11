@@ -80,6 +80,7 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlin.math.max
@@ -465,7 +466,8 @@ internal fun SourceCard(
                                 path = state.source.path,
                             )
 
-                            top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV -> state.source.rootReference
+                            top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV ->
+                                displayWebDavRootUrl(state.source.rootReference)
                             top.iwesley.lyn.music.core.model.ImportSourceType.NAVIDROME -> state.source.rootReference
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

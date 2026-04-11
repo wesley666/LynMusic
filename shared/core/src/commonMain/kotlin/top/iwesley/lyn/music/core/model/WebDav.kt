@@ -67,6 +67,19 @@ fun normalizeWebDavRootUrl(rawUrl: String?): String {
     }.buildString()
 }
 
+fun displayWebDavRootUrl(rootUrl: String): String {
+    return runCatching {
+        val parsed = parseUrl(rootUrl) ?: return rootUrl
+        val host = parsed.host.takeIf { it.isNotBlank() } ?: return rootUrl
+        val hostDisplay = if (':' in host && !host.startsWith("[")) "[$host]" else host
+        val portDisplay = if (parsed.port != parsed.protocol.defaultPort) ":${parsed.port}" else ""
+        val decodedPath = parsed.encodedPath
+            .split('/')
+            .joinToString("/") { segment -> segment.decodeURLPart() }
+        "${parsed.protocol.name}://$hostDisplay$portDisplay$decodedPath"
+    }.getOrElse { rootUrl }
+}
+
 fun buildWebDavTrackUrl(rootUrl: String, relativePath: String): String {
     val normalizedRoot = normalizeWebDavRootUrl(rootUrl)
     val segments = relativePath.trim().split('/').filter { it.isNotBlank() }
