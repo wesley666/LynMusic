@@ -26,6 +26,13 @@ data class RemoteSourceEditorState(
     val keepExistingCredential: Boolean = true,
 )
 
+sealed interface ImportScanOperation {
+    data object CreateLocalFolder : ImportScanOperation
+    data class CreateRemote(val type: ImportSourceType) : ImportScanOperation
+    data class RescanSource(val sourceId: String) : ImportScanOperation
+    data class UpdateRemote(val sourceId: String) : ImportScanOperation
+}
+
 data class ImportState(
     val capabilities: PlatformCapabilities,
     val sources: List<SourceWithStatus> = emptyList(),
@@ -46,6 +53,7 @@ data class ImportState(
     val navidromePassword: String = "",
     val editingSource: RemoteSourceEditorState? = null,
     val isWorking: Boolean = false,
+    val activeScanOperation: ImportScanOperation? = null,
     val message: String? = null,
     val testMessage: String? = null,
 )
@@ -119,7 +127,7 @@ class ImportStore(
 
     override suspend fun handleIntent(intent: ImportIntent) {
         when (intent) {
-            ImportIntent.ImportLocalFolder -> runImport {
+            ImportIntent.ImportLocalFolder -> runImport(ImportScanOperation.CreateLocalFolder) {
                 repository.importLocalFolder()
                     .onSuccess { setMessage("本地音乐源已导入。") }
                     .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
@@ -137,7 +145,7 @@ class ImportStore(
             ImportIntent.AddSambaSource -> {
                 val currentState = state.value
                 val draft = sambaDraftOrNull(currentState) ?: return
-                runImport {
+                runImport(ImportScanOperation.CreateRemote(ImportSourceType.SAMBA)) {
                     repository.addSambaSource(draft)
                         .onSuccess {
                             updateState {
@@ -167,7 +175,7 @@ class ImportStore(
 
             ImportIntent.AddWebDavSource -> {
                 val draft = webDavDraftOrNull(state.value, allowBlankPassword = true) ?: return
-                runImport {
+                runImport(ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV)) {
                     repository.addWebDavSource(draft)
                         .onSuccess {
                             updateState {
@@ -208,7 +216,7 @@ class ImportStore(
                     password = state.value.navidromePassword,
                     allowBlankPassword = false,
                 ) ?: return
-                runImport {
+                runImport(ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME)) {
                     repository.addNavidromeSource(draft)
                         .onSuccess {
                             updateState {
@@ -307,7 +315,7 @@ class ImportStore(
                 when (editor.type) {
                     ImportSourceType.SAMBA -> {
                         val draft = editingSambaDraftOrNull(editor) ?: return
-                        runImport {
+                        runImport(ImportScanOperation.UpdateRemote(editor.sourceId)) {
                             repository.updateSambaSource(
                                 sourceId = editor.sourceId,
                                 draft = draft,
@@ -323,7 +331,7 @@ class ImportStore(
 
                     ImportSourceType.WEBDAV -> {
                         val draft = editingWebDavDraftOrNull(editor) ?: return
-                        runImport {
+                        runImport(ImportScanOperation.UpdateRemote(editor.sourceId)) {
                             repository.updateWebDavSource(
                                 sourceId = editor.sourceId,
                                 draft = draft,
@@ -339,7 +347,7 @@ class ImportStore(
 
                     ImportSourceType.NAVIDROME -> {
                         val draft = editingNavidromeDraftOrNull(editor) ?: return
-                        runImport {
+                        runImport(ImportScanOperation.UpdateRemote(editor.sourceId)) {
                             repository.updateNavidromeSource(
                                 sourceId = editor.sourceId,
                                 draft = draft,
@@ -357,7 +365,7 @@ class ImportStore(
                 }
             }
 
-            is ImportIntent.RescanSource -> runImport {
+            is ImportIntent.RescanSource -> runImport(ImportScanOperation.RescanSource(intent.sourceId)) {
                 repository.rescanSource(intent.sourceId)
                     .onSuccess { setMessage("音乐源已重新扫描。") }
                     .onFailure { setMessage("重新扫描失败: ${it.message}") }
@@ -549,10 +557,13 @@ class ImportStore(
         }
     }
 
-    private suspend fun runImport(block: suspend () -> Unit) {
-        updateState { it.copy(isWorking = true) }
+    private suspend fun runImport(
+        scanOperation: ImportScanOperation? = null,
+        block: suspend () -> Unit,
+    ) {
+        updateState { it.copy(isWorking = true, activeScanOperation = scanOperation) }
         runCatching { block() }
-        updateState { it.copy(isWorking = false) }
+        updateState { it.copy(isWorking = false, activeScanOperation = null) }
     }
 
     private fun setMessage(message: String) {

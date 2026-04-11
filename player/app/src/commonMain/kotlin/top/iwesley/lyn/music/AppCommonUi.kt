@@ -43,10 +43,12 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -434,6 +436,7 @@ internal fun SourceCard(
     onEdit: (() -> Unit)?,
     onToggleEnabled: () -> Unit,
     onRescan: (() -> Unit)?,
+    isRescanning: Boolean,
     onDelete: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -485,9 +488,13 @@ internal fun SourceCard(
                         if (sourceEnabled) {
                             onRescan?.let { rescan ->
                                 OutlinedButton(onClick = rescan, enabled = enabled) {
-                                    Icon(Icons.Rounded.Sync, null)
+                                    if (isRescanning) {
+                                        ButtonLoadingIndicator()
+                                    } else {
+                                        Icon(Icons.Rounded.Sync, null)
+                                    }
                                     Spacer(Modifier.width(6.dp))
-                                    Text("重扫")
+                                    Text(if (isRescanning) "重扫中" else "重扫")
                                 }
                             }
                         }
@@ -536,6 +543,17 @@ internal fun SourceCard(
             }
         }
     }
+}
+
+@Composable
+internal fun ButtonLoadingIndicator(
+    modifier: Modifier = Modifier,
+) {
+    CircularProgressIndicator(
+        modifier = modifier.size(16.dp),
+        color = LocalContentColor.current,
+        strokeWidth = 2.dp,
+    )
 }
 
 @Composable

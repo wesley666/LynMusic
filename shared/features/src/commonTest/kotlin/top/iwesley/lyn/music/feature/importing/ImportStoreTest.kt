@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.feature.importing
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -187,6 +188,129 @@ class ImportStoreTest {
         harness.close()
     }
 
+    @Test
+    fun `local folder import marks scan operation while running`() = runTest {
+        val pendingResult = CompletableDeferred<Result<Unit>>()
+        val repository = FakeImportSourceRepository().also { it.pendingResult = pendingResult }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.ImportLocalFolder)
+        advanceUntilIdle()
+
+        assertEquals(ImportScanOperation.CreateLocalFolder, store.state.value.activeScanOperation)
+        assertTrue(store.state.value.isWorking)
+
+        pendingResult.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeScanOperation)
+        harness.close()
+    }
+
+    @Test
+    fun `remote source creation marks scan operation while running`() = runTest {
+        assertRemoteCreateScanOperation(
+            expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.SAMBA),
+            intent = ImportIntent.AddSambaSource,
+        ) { store ->
+            store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+            store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+        }
+        assertRemoteCreateScanOperation(
+            expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV),
+            intent = ImportIntent.AddWebDavSource,
+        ) { store ->
+            store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav.example.com/music"))
+        }
+        assertRemoteCreateScanOperation(
+            expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME),
+            intent = ImportIntent.AddNavidromeSource,
+        ) { store ->
+            store.dispatch(ImportIntent.NavidromeBaseUrlChanged("https://nav.example.com"))
+            store.dispatch(ImportIntent.NavidromeUsernameChanged("demo"))
+            store.dispatch(ImportIntent.NavidromePasswordChanged("secret"))
+        }
+    }
+
+    @Test
+    fun `rescan source marks only that source while running`() = runTest {
+        val pendingResult = CompletableDeferred<Result<Unit>>()
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "dav-1",
+                    type = ImportSourceType.WEBDAV,
+                    label = "云端曲库",
+                    rootReference = "https://dav.example.com/music",
+                ),
+            ),
+        ).also { it.pendingResult = pendingResult }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.RescanSource("dav-1"))
+        advanceUntilIdle()
+
+        assertEquals(ImportScanOperation.RescanSource("dav-1"), store.state.value.activeScanOperation)
+
+        pendingResult.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeScanOperation)
+        harness.close()
+    }
+
+    @Test
+    fun `saving remote source marks update scan operation and clears it on failure`() = runTest {
+        val pendingResult = CompletableDeferred<Result<Unit>>()
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "nav-1",
+                    type = ImportSourceType.NAVIDROME,
+                    label = "Navidrome",
+                    rootReference = "https://nav.example.com",
+                    username = "demo",
+                    credentialKey = "credential-nav-1",
+                ),
+            ),
+        ).also { it.pendingResult = pendingResult }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("nav-1"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.SaveRemoteSource)
+        advanceUntilIdle()
+
+        assertEquals(ImportScanOperation.UpdateRemote("nav-1"), store.state.value.activeScanOperation)
+
+        pendingResult.complete(Result.failure(IllegalStateException("连接失败")))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeScanOperation)
+        assertNotNull(store.state.value.editingSource)
+        assertEquals("更新来源失败: 连接失败", store.state.value.message)
+        harness.close()
+    }
+
+    @Test
+    fun `testing sources does not mark scan operation while running`() = runTest {
+        assertTestIntentHasNoScanOperation(ImportIntent.TestSambaSource) { store ->
+            store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+            store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+        }
+        assertTestIntentHasNoScanOperation(ImportIntent.TestWebDavSource) { store ->
+            store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav.example.com/music"))
+        }
+        assertTestIntentHasNoScanOperation(ImportIntent.TestNavidromeSource) { store ->
+            store.dispatch(ImportIntent.NavidromeBaseUrlChanged("https://nav.example.com"))
+            store.dispatch(ImportIntent.NavidromeUsernameChanged("demo"))
+            store.dispatch(ImportIntent.NavidromePasswordChanged("secret"))
+        }
+    }
+
     private fun TestScope.createStore(repository: FakeImportSourceRepository): TestStoreHarness {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         return TestStoreHarness(
@@ -197,6 +321,54 @@ class ImportStoreTest {
             ),
             scope = scope,
         )
+    }
+
+    private suspend fun TestScope.assertRemoteCreateScanOperation(
+        expectedOperation: ImportScanOperation.CreateRemote,
+        intent: ImportIntent,
+        configure: (ImportStore) -> Unit,
+    ) {
+        val pendingResult = CompletableDeferred<Result<Unit>>()
+        val repository = FakeImportSourceRepository().also { it.pendingResult = pendingResult }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        configure(store)
+        advanceUntilIdle()
+        store.dispatch(intent)
+        advanceUntilIdle()
+
+        assertEquals(expectedOperation, store.state.value.activeScanOperation)
+
+        pendingResult.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeScanOperation)
+        harness.close()
+    }
+
+    private suspend fun TestScope.assertTestIntentHasNoScanOperation(
+        intent: ImportIntent,
+        configure: (ImportStore) -> Unit,
+    ) {
+        val pendingResult = CompletableDeferred<Result<Unit>>()
+        val repository = FakeImportSourceRepository().also { it.pendingResult = pendingResult }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        configure(store)
+        advanceUntilIdle()
+        store.dispatch(intent)
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.isWorking)
+        assertNull(store.state.value.activeScanOperation)
+
+        pendingResult.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeScanOperation)
+        harness.close()
     }
 }
 
@@ -258,6 +430,7 @@ private class FakeImportSourceRepository(
     private val mutableSources = MutableStateFlow(sources)
     private val localFolderResult = localFolderResult
     private val sambaResult = sambaResult
+    var pendingResult: CompletableDeferred<Result<Unit>>? = null
 
     var lastTestSambaDraft: SambaSourceDraft? = null
     var lastUpdatedNavidromeSourceId: String? = null
@@ -266,52 +439,58 @@ private class FakeImportSourceRepository(
 
     override fun observeSources(): Flow<List<SourceWithStatus>> = mutableSources.asStateFlow()
 
-    override suspend fun importLocalFolder(): Result<Unit> = localFolderResult
+    override suspend fun importLocalFolder(): Result<Unit> = pendingResult?.await() ?: localFolderResult
 
     override suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit> {
         lastTestSambaDraft = draft
-        return Result.success(Unit)
+        return pendingResult?.await() ?: Result.success(Unit)
     }
 
     override suspend fun testUpdatedSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> = sambaResult
+    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> = pendingResult?.await() ?: sambaResult
 
     override suspend fun updateSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> = Result.success(Unit)
+    override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
+        return pendingResult?.await() ?: Result.success(Unit)
+    }
 
     override suspend fun testUpdatedWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> = webDavResult
+    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> = pendingResult?.await() ?: webDavResult
 
     override suspend fun updateWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = Result.success(Unit)
+    override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
+        return pendingResult?.await() ?: Result.success(Unit)
+    }
 
     override suspend fun testUpdatedNavidromeSource(
         sourceId: String,
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = navidromeResult
+    override suspend fun addNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
+        return pendingResult?.await() ?: navidromeResult
+    }
 
     override suspend fun updateNavidromeSource(
         sourceId: String,
@@ -321,10 +500,10 @@ private class FakeImportSourceRepository(
         lastUpdatedNavidromeSourceId = sourceId
         lastUpdatedNavidromeDraft = draft
         lastUpdatedNavidromeKeepExisting = keepExistingCredentialWhenBlankPassword
-        return Result.success(Unit)
+        return pendingResult?.await() ?: Result.success(Unit)
     }
 
-    override suspend fun rescanSource(sourceId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun rescanSource(sourceId: String): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
     override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> {
         mutableSources.value = mutableSources.value.map { source ->

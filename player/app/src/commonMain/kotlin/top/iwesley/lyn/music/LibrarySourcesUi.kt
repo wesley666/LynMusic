@@ -81,6 +81,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportIntent
+import top.iwesley.lyn.music.feature.importing.ImportScanOperation
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
@@ -821,10 +822,16 @@ internal fun SourcesTab(
         unfocusedBorderColor = shellColors.cardBorder,
         disabledBorderColor = shellColors.cardBorder,
     )
+    val activeScanOperation = state.activeScanOperation
+    val isLocalFolderScanning = activeScanOperation == ImportScanOperation.CreateLocalFolder
+    val isNavidromeCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME)
+    val isSambaCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.SAMBA)
+    val isWebDavCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV)
     state.editingSource?.let { editingSource ->
         RemoteSourceEditorDialog(
             state = editingSource,
             isWorking = state.isWorking,
+            isSavingScan = activeScanOperation == ImportScanOperation.UpdateRemote(editingSource.sourceId),
             constrainWidth = !isMobileSourcesPlatform(platform),
             testMessage = state.testMessage,
             fieldColors = importFieldColors,
@@ -904,9 +911,13 @@ internal fun SourcesTab(
                     onClick = { onImportIntent(ImportIntent.ImportLocalFolder) },
                     enabled = state.capabilities.supportsLocalFolderImport && !state.isWorking,
                 ) {
-                    Icon(Icons.Rounded.FolderOpen, null)
+                    if (isLocalFolderScanning) {
+                        ButtonLoadingIndicator()
+                    } else {
+                        Icon(Icons.Rounded.FolderOpen, null)
+                    }
                     Spacer(Modifier.width(8.dp))
-                    Text("选择文件夹")
+                    Text(if (isLocalFolderScanning) "扫描中" else "选择文件夹")
                 }
             }
         }
@@ -964,9 +975,13 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
                         enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
                     ) {
-                        Icon(Icons.Rounded.CloudSync, null)
+                        if (isNavidromeCreating) {
+                            ButtonLoadingIndicator()
+                        } else {
+                            Icon(Icons.Rounded.CloudSync, null)
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Text("连接并同步")
+                        Text(if (isNavidromeCreating) "同步中" else "连接并同步")
                     }
                 }
             }
@@ -1044,9 +1059,13 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.AddSambaSource) },
                         enabled = !state.isWorking,
                     ) {
-                        Icon(Icons.Rounded.CloudSync, null)
+                        if (isSambaCreating) {
+                            ButtonLoadingIndicator()
+                        } else {
+                            Icon(Icons.Rounded.CloudSync, null)
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Text("连接并扫描")
+                        Text(if (isSambaCreating) "扫描中" else "连接并扫描")
                     }
                 }
             }
@@ -1125,9 +1144,13 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.AddWebDavSource) },
                         enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
                     ) {
-                        Icon(Icons.Rounded.CloudSync, null)
+                        if (isWebDavCreating) {
+                            ButtonLoadingIndicator()
+                        } else {
+                            Icon(Icons.Rounded.CloudSync, null)
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Text("连接并扫描")
+                        Text(if (isWebDavCreating) "扫描中" else "连接并扫描")
                     }
                 }
             }
@@ -1161,6 +1184,7 @@ internal fun SourcesTab(
                         } else {
                             null
                         },
+                        isRescanning = activeScanOperation == ImportScanOperation.RescanSource(source.source.id),
                         onDelete = { pendingDeleteSourceId = source.source.id },
                     )
                 }
@@ -1183,6 +1207,7 @@ internal fun SourcesTab(
 private fun RemoteSourceEditorDialog(
     state: top.iwesley.lyn.music.feature.importing.RemoteSourceEditorState,
     isWorking: Boolean,
+    isSavingScan: Boolean,
     constrainWidth: Boolean,
     testMessage: String?,
     fieldColors: androidx.compose.material3.TextFieldColors,
@@ -1364,7 +1389,11 @@ private fun RemoteSourceEditorDialog(
                             onClick = { onIntent(ImportIntent.SaveRemoteSource) },
                             enabled = !isWorking,
                         ) {
-                            Text("保存并重扫")
+                            if (isSavingScan) {
+                                ButtonLoadingIndicator()
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (isSavingScan) "重扫中" else "保存并重扫")
                         }
                     }
                 }
