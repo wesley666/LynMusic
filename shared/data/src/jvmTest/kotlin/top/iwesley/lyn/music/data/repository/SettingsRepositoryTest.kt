@@ -12,6 +12,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
@@ -31,7 +32,7 @@ class SettingsRepositoryTest {
     fun `theme preferences default to classic theme`() = runTest {
         val database = createSettingsTestDatabase()
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         assertEquals(AppThemeId.Classic, repository.selectedTheme.value)
         assertEquals(defaultCustomThemeTokens(), repository.customThemeTokens.value)
@@ -44,7 +45,7 @@ class SettingsRepositoryTest {
     fun `setting theme preferences writes through to preference store`() = runTest {
         val database = createSettingsTestDatabase()
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
         val customTokens = AppThemeTokens(
             backgroundArgb = 0xFF101820.toInt(),
             accentArgb = 0xFF2F9E44.toInt(),
@@ -85,7 +86,7 @@ class SettingsRepositoryTest {
             ),
         )
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         repository.ensureDefaults()
 
@@ -105,7 +106,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "LRCLIB"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveLyricsSource(
@@ -121,7 +122,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "QQ Lyrics"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveLyricsSource(
@@ -137,7 +138,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "My Lyrics"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         repository.saveLyricsSource(
             directConfig(
@@ -157,7 +158,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.lyricsSourceConfigDao().upsert(directEntity(id = "direct-1", name = "Shared Name"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveWorkflowLyricsSource(
@@ -174,7 +175,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "Old Workflow"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         val saved = repository.saveWorkflowLyricsSource(
             rawJson = workflowJson(id = "wf-1", name = "New Workflow"),
@@ -191,7 +192,7 @@ class SettingsRepositoryTest {
         val database = createSettingsTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(workflowEntity(id = "wf-1", name = "Old Workflow"))
         val preferences = FakePreferencesStore()
-        val repository = DefaultSettingsRepository(database, preferences, preferences)
+        val repository = DefaultSettingsRepository(database, preferences, preferences, preferences)
 
         val error = assertFailsWith<IllegalStateException> {
             repository.saveWorkflowLyricsSource(
@@ -211,11 +212,14 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
     )
 }
 
-private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore {
+private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
     override val selectedTheme = MutableStateFlow(AppThemeId.Classic)
     override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
     override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
+    override val desktopVlcManualPath = MutableStateFlow<String?>(null)
+    override val desktopVlcAutoDetectedPath = MutableStateFlow<String?>(null)
+    override val desktopVlcEffectivePath = MutableStateFlow<String?>(null)
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         useSambaCache.value = enabled
@@ -231,6 +235,16 @@ private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreference
 
     override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
         textPalettePreferences.value = textPalettePreferences.value.withThemePalette(themeId, palette)
+    }
+
+    override suspend fun setDesktopVlcManualPath(path: String?) {
+        desktopVlcManualPath.value = path
+        desktopVlcEffectivePath.value = path ?: desktopVlcAutoDetectedPath.value
+    }
+
+    override suspend fun setDesktopVlcAutoDetectedPath(path: String?) {
+        desktopVlcAutoDetectedPath.value = path
+        desktopVlcEffectivePath.value = desktopVlcManualPath.value ?: path
     }
 }
 

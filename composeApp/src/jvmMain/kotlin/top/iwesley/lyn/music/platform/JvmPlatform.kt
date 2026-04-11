@@ -8,6 +8,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
+import java.awt.KeyboardFocusManager
 import java.io.File
 import java.net.URI
 import java.net.URL
@@ -16,6 +17,7 @@ import java.nio.file.Path
 import java.util.ArrayDeque
 import java.util.Properties
 import javax.swing.JFileChooser
+import javax.swing.SwingUtilities
 import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.invariantSeparatorsPathString
@@ -26,11 +28,14 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
@@ -40,6 +45,7 @@ import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
+import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -67,7 +73,7 @@ import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
+import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.core.model.debug
@@ -123,9 +129,18 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         ),
     )
     val logger = ConsoleDiagnosticLogger(enabled = true, label = "Desktop")
+    logger.info("Desktop") {
+        "process pid=${ProcessHandle.current().pid()}"
+    }
     val secureStore = createJvmSecureCredentialStore(logger)
     val appPreferencesStore = JvmAppPreferencesStore()
-    val playbackGateway = JvmPlaybackGateway(database, secureStore, appPreferencesStore, logger)
+    val playbackGateway = JvmPlaybackGateway(
+        database = database,
+        secureCredentialStore = secureStore,
+        playbackPreferencesStore = appPreferencesStore,
+        desktopVlcPreferencesStore = appPreferencesStore,
+        logger = logger,
+    )
     val navidromeHttpClient = JvmLyricsHttpClient()
     val platform = PlatformDescriptor(
         name = "Desktop",
@@ -145,6 +160,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             secureCredentialStore = secureStore,
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
+            desktopVlcPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
@@ -156,6 +172,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
                 logger = logger,
             ),
             audioTagEditorPlatformService = JvmAudioTagEditorPlatformService(),
+            vlcPathPickerPlatformService = JvmVlcPathPickerPlatformService(),
             logger = logger,
         ),
     )
@@ -191,7 +208,7 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
     }
 }
 
-private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, LibrarySourceFilterPreferencesStore {
+private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
@@ -201,11 +218,22 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
+    private val mutableDesktopVlcManualPath = MutableStateFlow(readDesktopVlcManualPath())
+    private val mutableDesktopVlcAutoDetectedPath = MutableStateFlow<String?>(null)
+    private val mutableDesktopVlcEffectivePath = MutableStateFlow(
+        resolveDesktopVlcEffectivePath(
+            manualPath = mutableDesktopVlcManualPath.value,
+            autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
+        ),
+    )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
+    override val desktopVlcManualPath: StateFlow<String?> = mutableDesktopVlcManualPath.asStateFlow()
+    override val desktopVlcAutoDetectedPath: StateFlow<String?> = mutableDesktopVlcAutoDetectedPath.asStateFlow()
+    override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -253,6 +281,30 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
     }
 
+    override suspend fun setDesktopVlcManualPath(path: String?) {
+        val normalizedPath = path?.trim()?.takeIf { it.isNotBlank() }
+        val properties = loadProperties()
+        if (normalizedPath == null) {
+            properties.remove(KEY_DESKTOP_VLC_MANUAL_PATH)
+        } else {
+            properties.setProperty(KEY_DESKTOP_VLC_MANUAL_PATH, normalizedPath)
+        }
+        persistProperties(properties)
+        mutableDesktopVlcManualPath.value = normalizedPath
+        mutableDesktopVlcEffectivePath.value = resolveDesktopVlcEffectivePath(
+            manualPath = mutableDesktopVlcManualPath.value,
+            autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
+        )
+    }
+
+    override suspend fun setDesktopVlcAutoDetectedPath(path: String?) {
+        mutableDesktopVlcAutoDetectedPath.value = path?.trim()?.takeIf { it.isNotBlank() }
+        mutableDesktopVlcEffectivePath.value = resolveDesktopVlcEffectivePath(
+            manualPath = mutableDesktopVlcManualPath.value,
+            autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
+        )
+    }
+
     private fun readUseSambaCache(): Boolean {
         return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: false
     }
@@ -265,6 +317,10 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private fun readSelectedTheme(): AppThemeId {
         val name = loadProperties().getProperty(KEY_SELECTED_THEME)
         return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Classic
+    }
+
+    private fun readDesktopVlcManualPath(): String? {
+        return loadProperties().getProperty(KEY_DESKTOP_VLC_MANUAL_PATH)?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {
@@ -332,6 +388,7 @@ private const val KEY_THEME_TEXT_PALETTE_FOREST = "theme_text_palette_forest"
 private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
+private const val KEY_DESKTOP_VLC_MANUAL_PATH = "desktop_vlc_manual_path"
 
 private class JvmAudioTagGateway(
     private val database: LynMusicDatabase,
@@ -431,6 +488,55 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
 
                     else -> Files.readAllBytes(Path.of(target))
                 }
+            }
+        }
+    }
+}
+
+private class JvmVlcPathPickerPlatformService : VlcPathPickerPlatformService {
+    override suspend fun pickVlcDirectory(): Result<String?> {
+        return runCatching {
+            val selectedPath = pickVlcDirectoryOnEdt() ?: return@runCatching null
+            val normalizedPath = normalizeDesktopVlcSelection(selectedPath)
+                ?: error(desktopVlcInvalidSelectionMessage())
+            normalizedPath.toString()
+        }
+    }
+
+    private suspend fun pickVlcDirectoryOnEdt(): Path? {
+        return suspendCancellableCoroutine { continuation ->
+            val showChooser = {
+                if (continuation.isActive) {
+                    runCatching {
+                        val chooser = JFileChooser().apply {
+                            dialogTitle = "选择 VLC 路径"
+                            fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
+                            isAcceptAllFileFilterUsed = true
+                        }
+                        val owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow
+                        if (chooser.showOpenDialog(owner) != JFileChooser.APPROVE_OPTION) {
+                            null
+                        } else {
+                            chooser.selectedFile?.toPath()
+                        }
+                    }.fold(
+                        onSuccess = { selectedPath ->
+                            if (continuation.isActive) {
+                                continuation.resume(selectedPath)
+                            }
+                        },
+                        onFailure = { throwable ->
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(throwable)
+                            }
+                        },
+                    )
+                }
+            }
+            if (SwingUtilities.isEventDispatchThread()) {
+                showChooser()
+            } else {
+                SwingUtilities.invokeLater(showChooser)
             }
         }
     }
@@ -828,12 +934,23 @@ private class JvmPlaybackGateway(
     private val database: LynMusicDatabase,
     private val secureCredentialStore: SecureCredentialStore,
     private val playbackPreferencesStore: PlaybackPreferencesStore,
+    private val desktopVlcPreferencesStore: DesktopVlcPreferencesStore,
     private val logger: DiagnosticLogger,
 ) : PlaybackGateway {
     private val mutableState = MutableStateFlow(PlaybackGatewayState())
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val discovery = NativeDiscovery().apply { discover() }
-    private val factory = MediaPlayerFactory()
+    private val autoDiscovery = NativeDiscovery().apply { discover() }
+    private val autoDetectedVlcPath = autoDiscovery.discoveredPath()?.trim()?.takeIf { it.isNotBlank() }
+    private val preferredVlcPath = resolveDesktopVlcEffectivePath(
+        manualPath = desktopVlcPreferencesStore.desktopVlcManualPath.value,
+        autoDetectedPath = autoDetectedVlcPath,
+    )
+    private val discovery = if (desktopVlcPreferencesStore.desktopVlcManualPath.value.isNullOrBlank()) {
+        autoDiscovery
+    } else {
+        createDesktopVlcDiscovery(preferredVlcPath)
+    }
+    private val factory = MediaPlayerFactory(discovery)
     private val nativeLog: NativeLog? = runCatching { factory.application().newLog() }
         .onFailure { throwable ->
             logger.warn(VLC_LOG_TAG) {
@@ -891,6 +1008,12 @@ private class JvmPlaybackGateway(
     init {
         logger.info(SAMBA_LOG_TAG) {
             "cache-dir path=${sambaCacheDir.absolutePath}"
+        }
+        scope.launch {
+            desktopVlcPreferencesStore.setDesktopVlcAutoDetectedPath(autoDetectedVlcPath)
+        }
+        logger.info(VLC_LOG_TAG) {
+            "native-discovery autoDetectedPath=${autoDetectedVlcPath.orEmpty()} manualPath=${desktopVlcPreferencesStore.desktopVlcManualPath.value.orEmpty()} effectivePath=${preferredVlcPath.orEmpty()}"
         }
         nativeLog?.apply {
             setLevel(LogLevel.NOTICE)

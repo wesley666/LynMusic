@@ -1,6 +1,9 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
+
 internal enum class SettingsSection {
+    General,
     Theme,
     Lyrics,
     Storage,
@@ -14,8 +17,16 @@ internal sealed interface SettingsMobileNavigation {
     data class Detail(val section: SettingsSection) : SettingsMobileNavigation
 }
 
-internal fun defaultDesktopSettingsSection(): SettingsSection {
-    return SettingsSection.Theme
+internal fun settingsSectionsForPlatform(platform: PlatformDescriptor): List<SettingsSection> {
+    return if (platform.name == "Desktop") {
+        SettingsSection.entries
+    } else {
+        SettingsSection.entries.filterNot { it == SettingsSection.General }
+    }
+}
+
+internal fun defaultSettingsSection(platform: PlatformDescriptor): SettingsSection {
+    return settingsSectionsForPlatform(platform).first()
 }
 
 internal fun resolveSettingsSection(sectionName: String?): SettingsSection? {

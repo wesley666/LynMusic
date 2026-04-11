@@ -19,6 +19,8 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
+import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
+import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
@@ -73,6 +75,9 @@ data class SettingsState(
     val deviceInfoSnapshot: DeviceInfoSnapshot? = null,
     val deviceInfoLoading: Boolean = false,
     val deviceInfoLoaded: Boolean = false,
+    val desktopVlcAutoDetectedPath: String? = null,
+    val desktopVlcManualPath: String? = null,
+    val desktopVlcEffectivePath: String? = null,
     val message: String? = null,
 )
 
@@ -81,6 +86,8 @@ sealed interface SettingsIntent {
     data class ThemeSelected(val value: AppThemeId) : SettingsIntent
     data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
     data class CustomThemeColorUpdated(val role: CustomThemeColorRole, val argb: Int) : SettingsIntent
+    data object PickDesktopVlcPath : SettingsIntent
+    data object ClearDesktopVlcManualPath : SettingsIntent
     data class SelectConfig(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectLrcApi(val config: LyricsSourceConfig?) : SettingsIntent
     data class SelectMusicmatch(val config: WorkflowLyricsSourceConfig?) : SettingsIntent
@@ -123,6 +130,7 @@ class SettingsStore(
     scope: CoroutineScope,
     private val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     private val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
+    private val vlcPathPickerPlatformService: VlcPathPickerPlatformService = UnsupportedVlcPathPickerPlatformService,
 ) : BaseStore<SettingsState, SettingsIntent, SettingsEffect>(
     initialState = SettingsState(),
     scope = scope,
@@ -179,6 +187,21 @@ class SettingsStore(
                 updateState { state -> state.copy(textPalettePreferences = preferences) }
             }
         }
+        scope.launch {
+            repository.desktopVlcAutoDetectedPath.collect { path ->
+                updateState { state -> state.copy(desktopVlcAutoDetectedPath = path) }
+            }
+        }
+        scope.launch {
+            repository.desktopVlcManualPath.collect { path ->
+                updateState { state -> state.copy(desktopVlcManualPath = path) }
+            }
+        }
+        scope.launch {
+            repository.desktopVlcEffectivePath.collect { path ->
+                updateState { state -> state.copy(desktopVlcEffectivePath = path) }
+            }
+        }
     }
 
     override suspend fun handleIntent(intent: SettingsIntent) {
@@ -214,6 +237,40 @@ class SettingsStore(
                 updateState {
                     it.copy(
                         customThemeTokens = updatedTokens,
+                    )
+                }
+            }
+
+            SettingsIntent.PickDesktopVlcPath -> {
+                val result = vlcPathPickerPlatformService.pickVlcDirectory()
+                val failure = result.exceptionOrNull()
+                if (failure != null) {
+                    updateState {
+                        it.copy(
+                            message = failure.message ?: "选择 VLC 路径失败。",
+                        )
+                    }
+                } else {
+                    result.getOrNull()?.takeIf { it.isNotBlank() }?.let { selectedPath ->
+                        repository.setDesktopVlcManualPath(selectedPath)
+                        updateState {
+                            it.copy(
+                                desktopVlcManualPath = selectedPath,
+                                desktopVlcEffectivePath = selectedPath,
+                                message = "VLC 路径已保存，将在下次启动后生效。",
+                            )
+                        }
+                    }
+                }
+            }
+
+            SettingsIntent.ClearDesktopVlcManualPath -> {
+                repository.clearDesktopVlcManualPath()
+                updateState {
+                    it.copy(
+                        desktopVlcManualPath = null,
+                        desktopVlcEffectivePath = it.desktopVlcAutoDetectedPath,
+                        message = "已恢复自动识别，将在下次启动后生效。",
                     )
                 }
             }

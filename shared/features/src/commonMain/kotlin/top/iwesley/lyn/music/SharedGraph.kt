@@ -8,6 +8,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
+import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -20,7 +21,10 @@ import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
+import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
+import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
@@ -46,6 +50,7 @@ data class SharedRuntimeServices(
     val secureCredentialStore: SecureCredentialStore,
     val sambaCachePreferencesStore: SambaCachePreferencesStore,
     val themePreferencesStore: ThemePreferencesStore,
+    val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
@@ -55,6 +60,7 @@ data class SharedRuntimeServices(
     val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
     val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
     val audioTagEditorPlatformService: AudioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
+    val vlcPathPickerPlatformService: VlcPathPickerPlatformService = UnsupportedVlcPathPickerPlatformService,
     val logger: DiagnosticLogger = NoopDiagnosticLogger,
 )
 
@@ -89,6 +95,7 @@ fun buildSharedGraph(
         database = database,
         sambaCachePreferencesStore = runtimeServices.sambaCachePreferencesStore,
         themePreferencesStore = runtimeServices.themePreferencesStore,
+        desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
     )
     NavidromeLocatorRuntime.install(
         object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
@@ -168,6 +175,7 @@ fun buildSharedGraph(
             scope = scope,
             appStorageGateway = runtimeServices.appStorageGateway,
             deviceInfoGateway = runtimeServices.deviceInfoGateway,
+            vlcPathPickerPlatformService = runtimeServices.vlcPathPickerPlatformService,
         ),
         lyricsRepository = lyricsRepository,
         audioTagGateway = runtimeServices.audioTagGateway,

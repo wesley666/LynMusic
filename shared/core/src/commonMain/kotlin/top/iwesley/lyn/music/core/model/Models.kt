@@ -430,6 +430,16 @@ object UnsupportedAudioTagEditorPlatformService : AudioTagEditorPlatformService 
     override suspend fun loadArtworkBytes(locator: String): Result<ByteArray?> = Result.failure(error)
 }
 
+interface VlcPathPickerPlatformService {
+    suspend fun pickVlcDirectory(): Result<String?>
+}
+
+object UnsupportedVlcPathPickerPlatformService : VlcPathPickerPlatformService {
+    private val error = IllegalStateException("当前平台暂不支持选择 VLC 路径。")
+
+    override suspend fun pickVlcDirectory(): Result<String?> = Result.failure(error)
+}
+
 interface NavidromeLocatorResolver {
     suspend fun resolveStreamUrl(locator: String): String?
     suspend fun resolveCoverArtUrl(locator: String): String?

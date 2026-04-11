@@ -523,6 +523,7 @@ private fun TabContent(
         )
 
         AppTab.Settings -> SettingsTab(
+            platform = platform,
             state = settingsState,
             onSettingsIntent = onSettingsIntent,
             modifier = modifier,

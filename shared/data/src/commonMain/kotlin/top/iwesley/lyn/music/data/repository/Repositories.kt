@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportIndexState
 import top.iwesley.lyn.music.core.model.ImportSource
@@ -188,12 +189,17 @@ interface SettingsRepository {
     val selectedTheme: StateFlow<AppThemeId>
     val customThemeTokens: StateFlow<AppThemeTokens>
     val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences>
+    val desktopVlcAutoDetectedPath: StateFlow<String?>
+    val desktopVlcManualPath: StateFlow<String?>
+    val desktopVlcEffectivePath: StateFlow<String?>
 
     suspend fun ensureDefaults()
     suspend fun setUseSambaCache(enabled: Boolean)
     suspend fun setSelectedTheme(themeId: AppThemeId)
     suspend fun setCustomThemeTokens(tokens: AppThemeTokens)
     suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
+    suspend fun setDesktopVlcManualPath(path: String)
+    suspend fun clearDesktopVlcManualPath()
     suspend fun saveLyricsSource(config: LyricsSourceConfig)
     suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String? = null): WorkflowLyricsSourceConfig
     suspend fun setLyricsSourceEnabled(sourceId: String, enabled: Boolean)
@@ -891,6 +897,7 @@ class DefaultSettingsRepository(
     private val database: LynMusicDatabase,
     private val sambaCachePreferencesStore: SambaCachePreferencesStore,
     private val themePreferencesStore: ThemePreferencesStore,
+    private val desktopVlcPreferencesStore: DesktopVlcPreferencesStore,
 ) : SettingsRepository {
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
         database.lyricsSourceConfigDao().observeAll(),
@@ -903,6 +910,9 @@ class DefaultSettingsRepository(
     override val selectedTheme: StateFlow<AppThemeId> = themePreferencesStore.selectedTheme
     override val customThemeTokens: StateFlow<AppThemeTokens> = themePreferencesStore.customThemeTokens
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = themePreferencesStore.textPalettePreferences
+    override val desktopVlcAutoDetectedPath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcAutoDetectedPath
+    override val desktopVlcManualPath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcManualPath
+    override val desktopVlcEffectivePath: StateFlow<String?> = desktopVlcPreferencesStore.desktopVlcEffectivePath
 
     override suspend fun ensureDefaults() {
         val existing = database.lyricsSourceConfigDao().getAll()
@@ -945,6 +955,14 @@ class DefaultSettingsRepository(
 
     override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
         themePreferencesStore.setTextPalette(themeId, palette)
+    }
+
+    override suspend fun setDesktopVlcManualPath(path: String) {
+        desktopVlcPreferencesStore.setDesktopVlcManualPath(path)
+    }
+
+    override suspend fun clearDesktopVlcManualPath() {
+        desktopVlcPreferencesStore.setDesktopVlcManualPath(null)
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {

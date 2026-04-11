@@ -28,6 +28,7 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.WorkflowLyricsConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowLyricsStepConfig
@@ -72,6 +73,24 @@ class SettingsStoreTest {
         assertEquals(AppThemeId.Custom, state.selectedTheme)
         assertEquals(customTokens, state.customThemeTokens)
         assertEquals(AppThemeTextPalette.Black, state.textPalettePreferences.custom)
+        scope.cancel()
+    }
+
+    @Test
+    fun `store loads persisted desktop vlc path state`() = runTest {
+        val repository = FakeSettingsRepository(
+            desktopVlcAutoDetectedPath = "/Applications/VLC.app/Contents/MacOS/lib",
+            desktopVlcManualPath = "/opt/homebrew/Cellar/vlc/lib",
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", state.desktopVlcAutoDetectedPath)
+        assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcManualPath)
+        assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcEffectivePath)
         scope.cancel()
     }
 
@@ -260,6 +279,76 @@ class SettingsStoreTest {
         assertEquals(defaultCustomThemeTokens(), repository.currentCustomThemeTokens())
         assertEquals(defaultCustomThemeTokens(), store.state.value.customThemeTokens)
         assertEquals("自定义主题已重置。", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `picking desktop vlc path saves manual override and restart message`() = runTest {
+        val repository = FakeSettingsRepository(
+            desktopVlcAutoDetectedPath = "/Applications/VLC.app/Contents/MacOS/lib",
+        )
+        val picker = FakeVlcPathPickerPlatformService(
+            nextResult = Result.success("/opt/homebrew/Cellar/vlc/lib"),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            vlcPathPickerPlatformService = picker,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.PickDesktopVlcPath)
+        advanceUntilIdle()
+
+        assertEquals("/opt/homebrew/Cellar/vlc/lib", repository.currentDesktopVlcManualPath())
+        assertEquals("/opt/homebrew/Cellar/vlc/lib", store.state.value.desktopVlcEffectivePath)
+        assertEquals("VLC 路径已保存，将在下次启动后生效。", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `canceling desktop vlc path picking leaves state unchanged`() = runTest {
+        val repository = FakeSettingsRepository(
+            desktopVlcAutoDetectedPath = "/Applications/VLC.app/Contents/MacOS/lib",
+        )
+        val picker = FakeVlcPathPickerPlatformService(
+            nextResult = Result.success(null),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            vlcPathPickerPlatformService = picker,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.PickDesktopVlcPath)
+        advanceUntilIdle()
+
+        assertEquals(null, repository.currentDesktopVlcManualPath())
+        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcAutoDetectedPath)
+        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
+        assertEquals(null, store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `clearing desktop vlc manual path restores auto detected path`() = runTest {
+        val repository = FakeSettingsRepository(
+            desktopVlcAutoDetectedPath = "/Applications/VLC.app/Contents/MacOS/lib",
+            desktopVlcManualPath = "/opt/homebrew/Cellar/vlc/lib",
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ClearDesktopVlcManualPath)
+        advanceUntilIdle()
+
+        assertEquals(null, repository.currentDesktopVlcManualPath())
+        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
+        assertEquals("已恢复自动识别，将在下次启动后生效。", store.state.value.message)
         scope.cancel()
     }
 
@@ -758,18 +847,28 @@ private class FakeSettingsRepository(
     selectedTheme: AppThemeId = AppThemeId.Classic,
     customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
+    desktopVlcAutoDetectedPath: String? = null,
+    desktopVlcManualPath: String? = null,
 ) : SettingsRepository {
     private val mutableSources = MutableStateFlow(sources)
     private val mutableUseSambaCache = MutableStateFlow(false)
     private val mutableSelectedTheme = MutableStateFlow(selectedTheme)
     private val mutableCustomThemeTokens = MutableStateFlow(customThemeTokens)
     private val mutableTextPalettePreferences = MutableStateFlow(textPalettePreferences)
+    private val mutableDesktopVlcAutoDetectedPath = MutableStateFlow(desktopVlcAutoDetectedPath)
+    private val mutableDesktopVlcManualPath = MutableStateFlow(desktopVlcManualPath)
+    private val mutableDesktopVlcEffectivePath = MutableStateFlow(
+        desktopVlcManualPath ?: desktopVlcAutoDetectedPath,
+    )
 
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = mutableSources.asStateFlow()
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
+    override val desktopVlcAutoDetectedPath: StateFlow<String?> = mutableDesktopVlcAutoDetectedPath.asStateFlow()
+    override val desktopVlcManualPath: StateFlow<String?> = mutableDesktopVlcManualPath.asStateFlow()
+    override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
 
     var setCustomThemeTokensCalls: Int = 0
         private set
@@ -778,6 +877,7 @@ private class FakeSettingsRepository(
     fun currentSelectedTheme(): AppThemeId = mutableSelectedTheme.value
     fun currentCustomThemeTokens(): AppThemeTokens = mutableCustomThemeTokens.value
     fun currentTextPalettePreferences(): AppThemeTextPalettePreferences = mutableTextPalettePreferences.value
+    fun currentDesktopVlcManualPath(): String? = mutableDesktopVlcManualPath.value
 
     override suspend fun ensureDefaults() = Unit
 
@@ -796,6 +896,16 @@ private class FakeSettingsRepository(
 
     override suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette) {
         mutableTextPalettePreferences.value = mutableTextPalettePreferences.value.withThemePalette(themeId, palette)
+    }
+
+    override suspend fun setDesktopVlcManualPath(path: String) {
+        mutableDesktopVlcManualPath.value = path
+        mutableDesktopVlcEffectivePath.value = path
+    }
+
+    override suspend fun clearDesktopVlcManualPath() {
+        mutableDesktopVlcManualPath.value = null
+        mutableDesktopVlcEffectivePath.value = mutableDesktopVlcAutoDetectedPath.value
     }
 
     override suspend fun saveLyricsSource(config: LyricsSourceConfig) {
@@ -827,6 +937,12 @@ private class FakeSettingsRepository(
     override suspend fun deleteLyricsSource(configId: String) {
         mutableSources.value = mutableSources.value.filterNot { it.id == configId }
     }
+}
+
+private class FakeVlcPathPickerPlatformService(
+    var nextResult: Result<String?> = Result.success(null),
+) : VlcPathPickerPlatformService {
+    override suspend fun pickVlcDirectory(): Result<String?> = nextResult
 }
 
 private class FakeAppStorageGateway(

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -72,6 +73,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
 import top.iwesley.lyn.music.core.model.formatThemeHexColor
 import top.iwesley.lyn.music.core.model.presetThemeTokens
@@ -85,6 +87,7 @@ import kotlin.math.min
 
 @Composable
 internal fun SettingsTab(
+    platform: PlatformDescriptor,
     state: SettingsState,
     onSettingsIntent: (SettingsIntent) -> Unit,
     modifier: Modifier = Modifier,
@@ -165,14 +168,30 @@ internal fun SettingsTab(
             AppThemeId.Custom,
         )
     }
-    var desktopSelectedSectionName by rememberSaveable {
+    val availableSections = remember(platform.name) {
+        settingsSectionsForPlatform(platform)
+    }
+    val defaultSection = remember(platform.name) {
+        defaultSettingsSection(platform)
+    }
+    var desktopSelectedSectionName by rememberSaveable(platform.name) {
         mutableStateOf(
-            defaultDesktopSettingsSection().name
+            defaultSection.name
         )
     }
     var mobileDetailSectionName by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(availableSections, desktopSelectedSectionName) {
+        if (availableSections.none { it.name == desktopSelectedSectionName }) {
+            desktopSelectedSectionName = defaultSection.name
+        }
+    }
+    LaunchedEffect(availableSections, mobileDetailSectionName) {
+        if (mobileDetailSectionName != null && availableSections.none { it.name == mobileDetailSectionName }) {
+            mobileDetailSectionName = null
+        }
+    }
     val desktopSelectedSection =
-        resolveSettingsSection(desktopSelectedSectionName) ?: defaultDesktopSettingsSection()
+        resolveSettingsSection(desktopSelectedSectionName)?.takeIf { it in availableSections } ?: defaultSection
     val mobileNavigation = toSettingsMobileNavigation(mobileDetailSectionName)
     Box(
         modifier = modifier.fillMaxSize(),
@@ -200,6 +219,7 @@ internal fun SettingsTab(
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
                     SettingsSectionListPane(
+                        sections = availableSections,
                         selectedSection = desktopSelectedSection,
                         desktop = true,
                         onSectionSelected = { section ->
@@ -210,6 +230,15 @@ internal fun SettingsTab(
                             .fillMaxHeight(),
                     )
                     when (desktopSelectedSection) {
+                        SettingsSection.General -> GeneralSettingsPane(
+                            state = state,
+                            onSettingsIntent = onSettingsIntent,
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
+
                         SettingsSection.Theme -> ThemeSettingsPane(
                             state = state,
                             selectedThemeTextPalette = selectedThemeTextPalette,
@@ -271,6 +300,7 @@ internal fun SettingsTab(
                 when (val navigation = mobileNavigation) {
                     SettingsMobileNavigation.List -> {
                         SettingsSectionListPane(
+                            sections = availableSections,
                             selectedSection = null,
                             desktop = false,
                             onSectionSelected = { section ->
@@ -288,6 +318,13 @@ internal fun SettingsTab(
                             modifier = Modifier.fillMaxSize(),
                         ) { detailModifier ->
                             when (navigation.section) {
+                                SettingsSection.General -> GeneralSettingsPane(
+                                    state = state,
+                                    onSettingsIntent = onSettingsIntent,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
+
                                 SettingsSection.Theme -> ThemeSettingsPane(
                                     state = state,
                                     selectedThemeTextPalette = selectedThemeTextPalette,
@@ -353,6 +390,7 @@ internal fun SettingsTab(
 
 @Composable
 private fun SettingsSectionListPane(
+    sections: List<SettingsSection>,
     selectedSection: SettingsSection?,
     desktop: Boolean,
     onSectionSelected: (SettingsSection) -> Unit,
@@ -369,7 +407,7 @@ private fun SettingsSectionListPane(
             title = "设置",
             subtitle = ""
         )
-        SettingsSection.entries.forEach { section ->
+        sections.forEach { section ->
             SettingsSectionListItem(
                 section = section,
                 selected = desktop && selectedSection == section,
@@ -481,6 +519,91 @@ private fun MobileSettingsDetailLayout(
             }
         }
         content(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun GeneralSettingsPane(
+    state: SettingsState,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
+    val autoDetectedPath = state.desktopVlcAutoDetectedPath?.takeIf { it.isNotBlank() }
+    val effectivePath = state.desktopVlcEffectivePath?.takeIf { it.isNotBlank() }
+    val currentPath = effectivePath ?: "未自动识别到 VLC 路径"
+    val currentSource = if (manualPath != null) "手动指定" else "自动识别"
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "通用",
+                subtitle = "管理桌面播放器路径和通用行为配置。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "VLC 播放器路径",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "当前生效路径会在下次启动时用于初始化桌面播放器。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = shellColors.secondaryText,
+                )
+                AboutAppFieldRow(
+                    label = "当前路径",
+                    value = currentPath,
+                    monospace = true,
+                )
+                AboutDeviceFieldRow(
+                    label = "来源",
+                    value = currentSource,
+                )
+                if (manualPath != null && autoDetectedPath != null) {
+                    AboutAppFieldRow(
+                        label = "自动识别路径",
+                        value = autoDetectedPath,
+                        monospace = true,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = { onSettingsIntent(SettingsIntent.PickDesktopVlcPath) },
+                    ) {
+                        Text("选择 VLC 路径")
+                    }
+                    if (manualPath != null) {
+                        OutlinedButton(
+                            onClick = { onSettingsIntent(SettingsIntent.ClearDesktopVlcManualPath) },
+                        ) {
+                            Text("恢复自动识别")
+                        }
+                    }
+                }
+                Text(
+                    text = "保存后将在下次启动时生效",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = shellColors.secondaryText,
+                )
+            }
+        }
     }
 }
 
@@ -909,6 +1032,7 @@ private fun LyricsSettingsPane(
 
 private fun settingsSectionTitle(section: SettingsSection): String {
     return when (section) {
+        SettingsSection.General -> "通用"
         SettingsSection.Theme -> "主题"
         SettingsSection.Lyrics -> "歌词"
         SettingsSection.Storage -> "空间管理"
@@ -919,6 +1043,7 @@ private fun settingsSectionTitle(section: SettingsSection): String {
 
 private fun settingsSectionSubtitle(section: SettingsSection): String {
     return when (section) {
+        SettingsSection.General -> "管理桌面播放器路径和通用配置。"
         SettingsSection.Theme -> "切换预置主题、自定义颜色和文字颜色。"
         SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
         SettingsSection.Storage -> "查看并清理缓存占用。"
@@ -929,6 +1054,7 @@ private fun settingsSectionSubtitle(section: SettingsSection): String {
 
 private fun settingsSectionIcon(section: SettingsSection): ImageVector {
     return when (section) {
+        SettingsSection.General -> Icons.Rounded.Tune
         SettingsSection.Theme -> Icons.Rounded.Settings
         SettingsSection.Lyrics -> Icons.Rounded.GraphicEq
         SettingsSection.Storage -> Icons.Rounded.Storage
