@@ -25,6 +25,7 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.pathString
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1133,99 +1134,117 @@ private class JvmPlaybackGateway(
     }
 
     override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
-        runCatching { mediaPlayer.controls().stop() }
-        currentCallbackMedia = null
-        val webDavTarget = resolveJvmWebDavPlaybackTarget(
-            database = database,
-            secureCredentialStore = secureCredentialStore,
-            locator = track.mediaLocator,
-            logger = logger,
-        )
-        val sambaTarget = if (webDavTarget == null && shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)) {
-            resolveJvmSambaPlaybackTarget(
+        try {
+            runCatching { mediaPlayer.controls().stop() }
+            currentCallbackMedia = null
+            currentPlaybackTarget = null
+            currentSourceReference = null
+            currentTrackForMetadata = track
+            val webDavTarget = resolveJvmWebDavPlaybackTarget(
                 database = database,
                 secureCredentialStore = secureCredentialStore,
                 locator = track.mediaLocator,
                 logger = logger,
             )
-        } else {
-            null
-        }
-        val actualPlaybackSource = when {
-            sambaTarget != null -> sambaTarget.sourceReference
-            webDavTarget != null -> webDavTarget.requestUrl
-            else -> resolveLocator(track.mediaLocator)
-        }
-        val sourceReference = when {
-            parseNavidromeSongLocator(track.mediaLocator) != null -> track.mediaLocator
-            else -> actualPlaybackSource
-        }
-        val playbackTarget = when {
-            webDavTarget != null -> "webdav-callback://${track.id}"
-            sambaTarget != null -> buildJvmSambaPlaybackTarget(track.id)
-            else -> sourceReference
-        }
-        currentPlaybackTarget = playbackTarget
-        currentSourceReference = sourceReference
-        currentTrackForMetadata = track
-        currentCallbackMedia = webDavTarget?.media ?: sambaTarget?.media
-        mutableState.update {
-            it.copy(
-                isPlaying = playWhenReady,
-                positionMs = 0L,
-                durationMs = 0L,
-                metadataTitle = null,
-                metadataArtistName = null,
-                metadataAlbumTitle = null,
-                errorMessage = null,
-            )
-        }
-        val started = if (playWhenReady) {
-            if (webDavTarget != null) {
-                mediaPlayer.media().start(webDavTarget.media)
-            } else if (sambaTarget != null) {
-                mediaPlayer.media().start(sambaTarget.media)
-            } else {
-                mediaPlayer.media().start(actualPlaybackSource)
-            }
-        } else {
-            if (webDavTarget != null) {
-                mediaPlayer.media().startPaused(webDavTarget.media)
-            } else if (sambaTarget != null) {
-                mediaPlayer.media().startPaused(sambaTarget.media)
-            } else {
-                mediaPlayer.media().startPaused(actualPlaybackSource)
-            }
-        }
-        if (!started) {
-            logger.error(VLC_LOG_TAG) {
-                "start-failed target=$playbackTarget source=$sourceReference playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
-            }
-        }
-        check(started) { "Unable to load media $playbackTarget" }
-        if (webDavTarget != null) {
-            val expectedTrackId = track.id
-            val expectedSourceReference = sourceReference
-            scope.launch {
-                val metadata = requestJvmWebDavMetadata(
+            val sambaTarget = if (webDavTarget == null && shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)) {
+                resolveJvmSambaPlaybackTarget(
                     database = database,
                     secureCredentialStore = secureCredentialStore,
                     locator = track.mediaLocator,
                     logger = logger,
-                ) ?: return@launch
-                if (currentTrackForMetadata?.id != expectedTrackId || currentSourceReference != expectedSourceReference) return@launch
-                mutableState.update {
-                    it.copy(
-                        metadataTitle = metadata.title.takeIf { value -> value.isNotBlank() } ?: it.metadataTitle,
-                        metadataArtistName = metadata.artistName?.takeIf { value -> value.isNotBlank() } ?: it.metadataArtistName,
-                        metadataAlbumTitle = metadata.albumTitle?.takeIf { value -> value.isNotBlank() } ?: it.metadataAlbumTitle,
-                        durationMs = metadata.durationMs.takeIf { value -> value > 0L } ?: it.durationMs,
-                    )
+                )
+            } else {
+                null
+            }
+            val actualPlaybackSource = when {
+                sambaTarget != null -> sambaTarget.sourceReference
+                webDavTarget != null -> webDavTarget.requestUrl
+                else -> resolveLocator(track.mediaLocator)
+            }
+            val sourceReference = when {
+                parseNavidromeSongLocator(track.mediaLocator) != null -> track.mediaLocator
+                else -> actualPlaybackSource
+            }
+            val playbackTarget = when {
+                webDavTarget != null -> "webdav-callback://${track.id}"
+                sambaTarget != null -> buildJvmSambaPlaybackTarget(track.id)
+                else -> sourceReference
+            }
+            currentPlaybackTarget = playbackTarget
+            currentSourceReference = sourceReference
+            currentCallbackMedia = webDavTarget?.media ?: sambaTarget?.media
+            mutableState.update {
+                it.copy(
+                    isPlaying = playWhenReady,
+                    positionMs = 0L,
+                    durationMs = 0L,
+                    metadataTitle = null,
+                    metadataArtistName = null,
+                    metadataAlbumTitle = null,
+                    errorMessage = null,
+                )
+            }
+            val started = if (playWhenReady) {
+                if (webDavTarget != null) {
+                    mediaPlayer.media().start(webDavTarget.media)
+                } else if (sambaTarget != null) {
+                    mediaPlayer.media().start(sambaTarget.media)
+                } else {
+                    mediaPlayer.media().start(actualPlaybackSource)
+                }
+            } else {
+                if (webDavTarget != null) {
+                    mediaPlayer.media().startPaused(webDavTarget.media)
+                } else if (sambaTarget != null) {
+                    mediaPlayer.media().startPaused(sambaTarget.media)
+                } else {
+                    mediaPlayer.media().startPaused(actualPlaybackSource)
                 }
             }
-        }
-        if (startPositionMs > 0) {
-            mediaPlayer.controls().setTime(startPositionMs)
+            if (!started) {
+                logger.error(VLC_LOG_TAG) {
+                    "start-failed target=$playbackTarget source=$sourceReference playWhenReady=$playWhenReady recentLogs=${recentVlcLogSummary()}"
+                }
+            }
+            check(started) { "Unable to load media $playbackTarget" }
+            if (webDavTarget != null) {
+                val expectedTrackId = track.id
+                val expectedSourceReference = sourceReference
+                scope.launch {
+                    val metadata = requestJvmWebDavMetadata(
+                        database = database,
+                        secureCredentialStore = secureCredentialStore,
+                        locator = track.mediaLocator,
+                        logger = logger,
+                    ) ?: return@launch
+                    if (currentTrackForMetadata?.id != expectedTrackId || currentSourceReference != expectedSourceReference) return@launch
+                    mutableState.update {
+                        it.copy(
+                            metadataTitle = metadata.title.takeIf { value -> value.isNotBlank() } ?: it.metadataTitle,
+                            metadataArtistName = metadata.artistName?.takeIf { value -> value.isNotBlank() } ?: it.metadataArtistName,
+                            metadataAlbumTitle = metadata.albumTitle?.takeIf { value -> value.isNotBlank() } ?: it.metadataAlbumTitle,
+                            durationMs = metadata.durationMs.takeIf { value -> value > 0L } ?: it.durationMs,
+                        )
+                    }
+                }
+            }
+            if (startPositionMs > 0) {
+                mediaPlayer.controls().setTime(startPositionMs)
+            }
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            logger.error(VLC_LOG_TAG, throwable) {
+                "load-failed track=${track.id} locator=${track.mediaLocator} playWhenReady=$playWhenReady startPositionMs=$startPositionMs target=${currentPlaybackTarget.orEmpty()} source=${currentSourceReference.orEmpty()}"
+            }
+            currentCallbackMedia = null
+            mutableState.update {
+                it.copy(
+                    isPlaying = false,
+                    positionMs = startPositionMs.coerceAtLeast(0L),
+                    durationMs = 0L,
+                    errorMessage = buildJvmPlaybackLoadFailureMessage(throwable),
+                )
+            }
         }
     }
 
@@ -1472,6 +1491,13 @@ private val jvmRemoteArtworkDirectory = File(File(System.getProperty("user.home"
 
 internal const val SAMBA_LOG_TAG = "Samba"
 private const val VLC_LOG_TAG = "VLC"
+
+private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
+    val detail = throwable.message?.takeIf { it.isNotBlank() }
+        ?: throwable::class.simpleName
+        ?: "未知错误"
+    return "访问歌曲失败：$detail"
+}
 
 private fun isSupportedAudio(fileName: String): Boolean {
     return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")

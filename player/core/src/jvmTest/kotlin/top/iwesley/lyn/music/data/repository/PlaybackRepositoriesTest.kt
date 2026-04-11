@@ -232,6 +232,61 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `play tracks surfaces gateway load failure without throwing`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway(loadFailure = IllegalStateException("No route to host"))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(false, repository.snapshot.value.isPlaying)
+            assertEquals("访问歌曲失败：No route to host", repository.snapshot.value.errorMessage)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `restore queue surfaces gateway load failure without throwing`() = runTest {
+        val database = createTestDatabase()
+        database.trackDao().upsertAll(
+            listOf(sampleTrackEntity("track-1", "First Song")),
+        )
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-1",
+                currentIndex = 0,
+                positionMs = 12_000L,
+                mode = PlaybackMode.ORDER.name,
+                updatedAt = 1L,
+            ),
+        )
+        val gateway = FakePlaybackGateway(loadFailure = IllegalStateException("No route to host"))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, scope)
+
+        try {
+            advanceUntilIdle()
+
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(false, repository.snapshot.value.isPlaying)
+            assertEquals(12_000L, repository.snapshot.value.positionMs)
+            assertEquals("访问歌曲失败：No route to host", repository.snapshot.value.errorMessage)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `system controls service receives snapshot updates`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
@@ -321,7 +376,29 @@ private fun sampleTrack(id: String, title: String): Track {
     )
 }
 
-private class FakePlaybackGateway : PlaybackGateway {
+private fun sampleTrackEntity(id: String, title: String): TrackEntity {
+    return TrackEntity(
+        id = id,
+        sourceId = "local-1",
+        title = title,
+        artistId = null,
+        artistName = "Artist A",
+        albumId = null,
+        albumTitle = "Album A",
+        durationMs = 180_000L,
+        trackNumber = null,
+        discNumber = null,
+        mediaLocator = "file:///music/$id.mp3",
+        relativePath = "$title.mp3",
+        artworkLocator = null,
+        sizeBytes = 0L,
+        modifiedAt = 0L,
+    )
+}
+
+private class FakePlaybackGateway(
+    private val loadFailure: Throwable? = null,
+) : PlaybackGateway {
     private val mutableState = MutableStateFlow(PlaybackGatewayState())
 
     val loadCalls = mutableListOf<LoadCall>()
@@ -330,6 +407,15 @@ private class FakePlaybackGateway : PlaybackGateway {
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
     override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+        loadFailure?.let { throwable ->
+            mutableState.value = mutableState.value.copy(
+                isPlaying = false,
+                positionMs = startPositionMs,
+                durationMs = 0L,
+                errorMessage = "访问歌曲失败：${throwable.message ?: throwable::class.simpleName.orEmpty()}",
+            )
+            throw throwable
+        }
         loadCalls += LoadCall(track, playWhenReady, startPositionMs)
         mutableState.value = mutableState.value.copy(
             isPlaying = playWhenReady,

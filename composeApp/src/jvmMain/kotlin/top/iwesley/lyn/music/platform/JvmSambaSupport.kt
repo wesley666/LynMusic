@@ -255,9 +255,8 @@ internal fun buildJvmSambaSourceReference(
 }
 
 private fun Throwable.asJvmSambaIOException(operation: String): IOException {
-    return if (this is IOException) {
-        this
-    } else {
-        IOException("Samba $operation 失败: ${message ?: this::class.simpleName.orEmpty()}", this)
-    }
+    val detail = message?.takeIf { it.isNotBlank() }
+        ?: this::class.simpleName
+        ?: "未知错误"
+    return IOException("Samba $operation 失败：$detail", this)
 }

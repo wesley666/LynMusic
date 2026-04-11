@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.debug
+import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -153,7 +155,7 @@ class DefaultPlaybackRepository(
             metadataAlbumTitle = null,
             metadataArtworkLocator = null,
         )
-        gateway.load(tracks[index], playWhenReady = true, startPositionMs = 0L)
+        loadGatewaySafely(tracks[index], playWhenReady = true, startPositionMs = 0L)
         persistSnapshot()
     }
 
@@ -288,7 +290,7 @@ class DefaultPlaybackRepository(
                 errorMessage = null,
             )
         }
-        gateway.load(target, playWhenReady = playWhenReady, startPositionMs = 0L)
+        loadGatewaySafely(target, playWhenReady = playWhenReady, startPositionMs = 0L)
         persistSnapshot()
     }
 
@@ -319,7 +321,29 @@ class DefaultPlaybackRepository(
             metadataAlbumTitle = null,
             metadataArtworkLocator = null,
         )
-        gateway.load(tracks[index], playWhenReady = false, startPositionMs = persisted.positionMs)
+        loadGatewaySafely(tracks[index], playWhenReady = false, startPositionMs = persisted.positionMs)
+    }
+
+    private suspend fun loadGatewaySafely(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+    ) {
+        runCatching {
+            gateway.load(track, playWhenReady = playWhenReady, startPositionMs = startPositionMs)
+        }.onFailure { throwable ->
+            if (throwable is CancellationException) throw throwable
+            logger.error(PLAYBACK_LOG_TAG, throwable) {
+                "load-failed track=${track.id} locator=${track.mediaLocator} playWhenReady=$playWhenReady startPositionMs=$startPositionMs"
+            }
+            mutableSnapshot.update {
+                it.copy(
+                    isPlaying = false,
+                    positionMs = startPositionMs.coerceAtLeast(0L),
+                    errorMessage = buildPlaybackLoadFailureMessage(throwable),
+                )
+            }
+        }
     }
 
     private suspend fun persistSnapshot() {
@@ -371,6 +395,13 @@ data class PlayerRuntimeServices(
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val PLAYBACK_LOG_TAG = "Playback"
+
+private fun buildPlaybackLoadFailureMessage(throwable: Throwable): String {
+    val detail = throwable.message?.takeIf { it.isNotBlank() }
+        ?: throwable::class.simpleName
+        ?: "未知错误"
+    return "访问歌曲失败：$detail"
+}
 
 private fun String.toPlaybackMode(): PlaybackMode {
     return runCatching { PlaybackMode.valueOf(this) }.getOrDefault(PlaybackMode.ORDER)
