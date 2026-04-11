@@ -154,6 +154,10 @@ compose.desktop {
             }
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.ico"))
+                shortcut = true
+                menu = true
+                menuGroup = "LynMusic"
+                upgradeUuid = "f70eff91-c266-4763-920a-64ec7eb7958d"
             }
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.png"))
