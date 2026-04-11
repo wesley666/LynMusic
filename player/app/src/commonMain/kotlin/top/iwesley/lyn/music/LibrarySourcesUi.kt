@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -457,7 +458,7 @@ private fun LibraryBrowserTab(
                     StatCard(
                         title = "艺人",
                         value = state.filteredArtists.size.toString(),
-                        icon = Icons.Rounded.Tune,
+                        icon = Icons.Rounded.RecentActors,
                         selected = rootView == LibraryBrowserRootView.Artists,
                         onClick = { selectRootView(LibraryBrowserRootView.Artists) },
                         modifier = Modifier.weight(1f),
