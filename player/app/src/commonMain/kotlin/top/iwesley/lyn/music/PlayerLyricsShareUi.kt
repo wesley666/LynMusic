@@ -939,29 +939,31 @@ internal fun LyricsShareOverlay(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = if (mobileActions) Arrangement.End else Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                "分享歌词",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = primaryTextColor,
-                            )
-                            Text(
-                                buildString {
-                                    append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
-                                    state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }
-                                        ?.let {
-                                            append(" · ")
-                                            append(it)
-                                        }
-                                },
-                                color = secondaryTextColor,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        if (!mobileActions) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "分享歌词",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = primaryTextColor,
+                                )
+                                Text(
+                                    buildString {
+                                        append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                                        state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }
+                                            ?.let {
+                                                append(" · ")
+                                                append(it)
+                                            }
+                                    },
+                                    color = secondaryTextColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         Column(
                             horizontalAlignment = Alignment.End,
