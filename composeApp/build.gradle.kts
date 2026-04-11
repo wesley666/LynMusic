@@ -138,8 +138,18 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "top.iwesley.lyn.music"
+            packageName = "LynMusic"
             packageVersion = "1.0.0"
+            macOS {
+                bundleID = "top.iwesley.lyn.music"
+                iconFile.set(project.file("src/jvmMain/resources/desktop-icon.icns"))
+            }
+            windows {
+                iconFile.set(project.file("src/jvmMain/resources/desktop-icon.ico"))
+            }
+            linux {
+                iconFile.set(project.file("src/jvmMain/resources/desktop-icon.png"))
+            }
         }
     }
 }
