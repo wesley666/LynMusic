@@ -13,6 +13,7 @@ import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
+import top.iwesley.lyn.music.platform.loadBundledDefaultCoverBytes
 import top.iwesley.lyn.music.platform.loadJvmArtworkBytes
 
 class ArtworkBitmapJvmCacheTest {
@@ -148,5 +149,31 @@ class ArtworkBitmapJvmCacheTest {
         assertContentEquals(payload, second)
         assertEquals(2, requestCount)
         assertTrue(cacheDirectory.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `missing locator falls back to bundled default cover`() {
+        val expected = runBlocking { loadBundledDefaultCoverBytes() }
+        val actual = runBlocking {
+            loadJvmArtworkBytes(null) {
+                error("missing locator should not trigger remote fetch")
+            }
+        }
+
+        assertNotNull(expected)
+        assertContentEquals(expected, actual)
+    }
+
+    @Test
+    fun `invalid local artwork falls back to bundled default cover`() {
+        val expected = runBlocking { loadBundledDefaultCoverBytes() }
+        val actual = runBlocking {
+            loadJvmArtworkBytes("file:///definitely-missing-cover.png") {
+                error("invalid local path should not trigger remote fetch")
+            }
+        }
+
+        assertNotNull(expected)
+        assertContentEquals(expected, actual)
     }
 }

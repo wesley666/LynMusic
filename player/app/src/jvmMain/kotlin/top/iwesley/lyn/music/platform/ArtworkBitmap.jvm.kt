@@ -20,10 +20,12 @@ import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 @Composable
 actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator, cacheRemote) {
+    val fallbackBitmap = rememberBundledDefaultCoverBitmap()
+    if (locator.isNullOrBlank()) return fallbackBitmap
+    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, fallbackBitmap) {
         value = loadJvmArtworkBitmap(locator, cacheRemote)
     }
-    return bitmap
+    return bitmap ?: fallbackBitmap
 }
 
 private suspend fun loadJvmArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.IO) {
@@ -33,12 +35,12 @@ private suspend fun loadJvmArtworkBitmap(locator: String?, cacheRemote: Boolean)
     }.getOrNull()
 }
 
-internal suspend fun loadJvmArtworkBytes(
+suspend fun loadJvmArtworkBytes(
     locator: String?,
     cacheRemote: Boolean = true,
     userHomePath: String = System.getProperty("user.home"),
     remoteBytesLoader: suspend (String) -> ByteArray? = { target ->
-        URL(target).openStream().use { it.readBytes() }
+        URI(target).toURL().openStream().use { it.readBytes() }
     },
 ): ByteArray? = withContext(Dispatchers.IO) {
     runCatching {
@@ -71,7 +73,7 @@ internal suspend fun loadJvmArtworkBytes(
 
             else -> Files.readAllBytes(Paths.get(target))
         }
-    }.getOrNull()
+    }.getOrNull() ?: loadBundledDefaultCoverBytes()
 }
 
 private fun isRemoteArtworkTarget(target: String): Boolean {

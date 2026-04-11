@@ -42,10 +42,12 @@ import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 @Composable
 actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, locator, cacheRemote) {
+    val fallbackBitmap = rememberBundledDefaultCoverBitmap()
+    if (locator.isNullOrBlank()) return fallbackBitmap
+    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, fallbackBitmap) {
         value = loadNativeArtworkBitmap(locator, cacheRemote)
     }
-    return bitmap
+    return bitmap ?: fallbackBitmap
 }
 
 private suspend fun loadNativeArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.Default) {

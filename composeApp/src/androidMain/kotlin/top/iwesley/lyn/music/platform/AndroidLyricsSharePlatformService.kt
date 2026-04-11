@@ -152,7 +152,7 @@ class AndroidLyricsSharePlatformService(
     }
 
     private suspend fun loadArtworkBitmap(locator: String?): Bitmap? {
-        return runCatching {
+        val artworkBitmap = runCatching {
             val normalized = locator?.trim().orEmpty()
             if (normalized.isBlank()) return@runCatching null
             val target = artworkCacheStore.cache(normalized, normalized).orEmpty()
@@ -167,6 +167,9 @@ class AndroidLyricsSharePlatformService(
                 else -> BitmapFactory.decodeFile(target)
             }
         }.getOrNull()
+        return artworkBitmap ?: loadBundledDefaultCoverBytes()?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }
     }
 
     private fun renderLyricsShareBitmap(

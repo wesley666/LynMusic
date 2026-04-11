@@ -594,10 +594,13 @@ private suspend fun loadArtworkImage(
     artworkCacheStore: ArtworkCacheStore,
 ): Image? {
     val normalized = locator?.trim().orEmpty()
-    if (normalized.isBlank()) return null
-    val localPath = artworkCacheStore.cache(normalized, normalized).orEmpty()
-    if (localPath.isBlank()) return null
-    return readIosLocalBytes(localPath)?.let(Image::makeFromEncoded)
+    val artworkBytes = if (normalized.isBlank()) {
+        null
+    } else {
+        val localPath = artworkCacheStore.cache(normalized, normalized).orEmpty()
+        if (localPath.isBlank()) null else readIosLocalBytes(localPath)
+    }
+    return (artworkBytes ?: loadBundledDefaultCoverBytes())?.let(Image::makeFromEncoded)
 }
 
 private fun sampleArtworkTintTheme(artworkImage: Image?): top.iwesley.lyn.music.core.model.ArtworkTintTheme? {

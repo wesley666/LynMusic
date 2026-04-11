@@ -50,6 +50,7 @@ kotlin {
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))
             implementation(project(":player:core"))
+            implementation(libs.compose.components.resources)
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

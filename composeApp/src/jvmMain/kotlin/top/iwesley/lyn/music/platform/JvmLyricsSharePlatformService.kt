@@ -16,10 +16,6 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.URI
-import java.net.URL
-import java.nio.file.Files
-import java.nio.file.Paths
 import javax.imageio.ImageIO
 import javax.swing.JFileChooser
 import kotlinx.coroutines.Dispatchers
@@ -38,8 +34,6 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 class JvmLyricsSharePlatformService : LyricsSharePlatformService {
-    private val artworkCacheStore = createJvmArtworkCacheStore()
-
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
             val artwork = loadArtworkImage(model.artworkLocator)
@@ -78,21 +72,8 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
     }
 
     private suspend fun loadArtworkImage(locator: String?): BufferedImage? {
-        return runCatching {
-            val normalized = locator?.trim().orEmpty()
-            if (normalized.isBlank()) return@runCatching null
-            val target = artworkCacheStore.cache(normalized, normalized).orEmpty()
-            if (target.isBlank()) return@runCatching null
-            when {
-                target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
-                    URL(target).openStream().use(ImageIO::read)
-
-                target.startsWith("file://", ignoreCase = true) ->
-                    ImageIO.read(Paths.get(URI(target)).toFile())
-
-                else -> ImageIO.read(File(target))
-            }
-        }.getOrNull()
+        val artworkBytes = loadJvmArtworkBytes(locator)
+        return artworkBytes?.let(::ByteArrayInputStream)?.use(ImageIO::read)
     }
 
     private fun renderLyricsShareImage(
@@ -468,7 +449,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val brandMetrics = graphics.fontMetrics
         val brandText = LyricsShareCardSpec.BRAND_TEXT
         val brandX = ((width - brandMetrics.stringWidth(brandText)) / 2f).toInt()
-        val brandY = (height - LyricsShareArtworkTintSpec.OUTER_PADDING_PX - brandMetrics.descent).toInt()
+        val brandY = height - LyricsShareArtworkTintSpec.OUTER_PADDING_PX - brandMetrics.descent
         graphics.drawString(brandText, brandX, brandY)
 
         graphics.dispose()
