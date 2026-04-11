@@ -1,48 +1,45 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Desktop (JVM).
+LynMusic is a cross-platform local music player for Windows, Linux, macOS, Android and iOS , built with Kotlin Multiplatform.
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+LynMusic是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，目标平台包括 Android、iOS 和桌面端（JVM），支持 Windows 、 macOS 和 Linux。
 
-* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+## 编译
 
-### Build and Run Android Application
+### 编译安卓 APP
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
+- macOS/Linux
   ```shell
+  #编译debug版本
   ./gradlew :composeApp:assembleDebug
+  #编译release版本
+  ./gradlew :composeApp:assembleRelease
   ```
-- on Windows
+- Windows
   ```shell
   .\gradlew.bat :composeApp:assembleDebug
+  .\gradlew.bat :composeApp:assembleRelease
   ```
 
-### Build and Run Desktop (JVM) Application
+### 直接运行Desktop (JVM)应用
 
-To build and run the development version of the desktop app, use the run configuration from the run widget
-in your IDE’s toolbar or run it directly from the terminal:
-- on macOS/Linux
+- macOS/Linux
   ```shell
   ./gradlew :composeApp:run
   ```
-- on Windows
+- Windows
   ```shell
   .\gradlew.bat :composeApp:run
   ```
 
-### Build and Run iOS Application
+**打包当前系统的独立安装包**（比如在 Mac 上运行就会打出 Mac 的包）：
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+```
+./gradlew :composeApp:packageDistributionForCurrentOS
+```
 
----
+*或者简写为*：`./gradlew :composeApp:package`
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+*产物路径*：`composeApp/build/compose/binaries/main/`
+
+### 运行IOS应用
+
+要构建并运行 iOS 应用的开发版，可以使用 IDE 工具栏运行控件中的运行配置；或者直接在 Xcode 中打开 [/iosApp](./iosApp)  目录并从那里启动。
