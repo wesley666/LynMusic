@@ -9,6 +9,7 @@ import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
+import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 
@@ -38,26 +39,40 @@ internal class ApplePlaybackGateway(
         }
     }
 
-    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
+        if (!loadToken.isCurrent()) {
+            return
+        }
+        stopAndResetForTrackSwitch()
         val effectiveLocator = if (parseNavidromeSongLocator(track.mediaLocator) != null) {
             NavidromeLocatorRuntime.resolveStreamUrl(track.mediaLocator) ?: track.mediaLocator
         } else {
             track.mediaLocator
         }
+        if (!loadToken.isCurrent()) {
+            return
+        }
         when (val resolved = AppleMediaLocatorResolver.resolve(effectiveLocator)) {
             is AppleResolvedMediaLocator.Unsupported -> {
-                player.pause()
+                if (!loadToken.isCurrent()) {
+                    return
+                }
                 mutableState.update {
                     it.copy(
-                        isPlaying = false,
-                        positionMs = 0L,
-                        durationMs = track.durationMs,
                         errorMessage = resolved.message,
                     )
                 }
             }
 
             else -> {
+                if (!loadToken.isCurrent()) {
+                    return
+                }
                 player.load(resolved)
                 if (startPositionMs > 0L) {
                     player.seekTo(startPositionMs)
@@ -70,8 +85,8 @@ internal class ApplePlaybackGateway(
                 mutableState.update {
                     it.copy(
                         isPlaying = playWhenReady,
-                        positionMs = startPositionMs.coerceAtLeast(0L),
-                        durationMs = track.durationMs.coerceAtLeast(0L),
+                        positionMs = 0L,
+                        durationMs = 0L,
                         errorMessage = null,
                     )
                 }
@@ -104,6 +119,13 @@ internal class ApplePlaybackGateway(
     override suspend fun release() {
         player.release()
         AppleAudioSessionCoordinator.deactivate()
+    }
+
+    private fun stopAndResetForTrackSwitch() {
+        player.stopAndClear()
+        mutableState.update {
+            it.resetForTrackSwitch(volumeOverride = player.volume())
+        }
     }
 
     private fun publishState(errorOverride: String? = null) {

@@ -38,6 +38,11 @@ internal actual class AppleNativePlayer actual constructor(
         onProgress?.invoke()
     }
 
+    actual fun stopAndClear() {
+        player.pause()
+        clearCurrentItem()
+    }
+
     actual fun play() {
         player.play()
     }

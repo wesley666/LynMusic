@@ -72,10 +72,22 @@ data class PlaybackGatewayState(
     val errorMessage: String? = null,
 )
 
+class PlaybackLoadToken(
+    val requestId: Long = 0L,
+    private val isCurrentRequest: () -> Boolean = { true },
+) {
+    fun isCurrent(): Boolean = isCurrentRequest()
+}
+
 interface PlaybackGateway {
     val state: StateFlow<PlaybackGatewayState>
 
-    suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long = 0L)
+    suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long = 0L,
+        loadToken: PlaybackLoadToken = PlaybackLoadToken(),
+    )
     suspend fun play()
     suspend fun pause()
     suspend fun seekTo(positionMs: Long)

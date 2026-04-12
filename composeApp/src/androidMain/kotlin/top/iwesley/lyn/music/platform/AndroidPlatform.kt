@@ -35,12 +35,13 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
-import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
@@ -52,6 +53,7 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
+import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
@@ -113,7 +115,8 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     )
     val secureStore = AndroidCredentialStore(activity.applicationContext)
     val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
-    val logger = ConsoleDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
+    val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
+    GlobalDiagnosticLogger.installStrategy(logger)
     val navidromeHttpClient = AndroidLyricsHttpClient()
     val platform = PlatformDescriptor(
         name = "Android",
@@ -932,25 +935,21 @@ private suspend fun resolveAndroidSambaTagReadTarget(
 ): AndroidSambaTagReadTarget? {
     val samba = parseSambaLocator(track.mediaLocator) ?: return null
     val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled } ?: return null
-    val shareName = source.shareName
-    val storedPort = shareName?.toIntOrNull()
-    val storedPath = when {
-        storedPort != null -> normalizeSambaPath(source.directoryPath)
-        shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-        else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
-    }
-    val sambaPath = parseSambaPath(storedPath)
-        ?: error("SMB source path is missing a share name.")
-    val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+    val spec = resolveSambaSourceSpec(
+        source = source,
+        locatorRelativePath = samba.second,
+        fallbackRelativePath = track.relativePath.ifBlank { samba.second },
+    )
+    val password = spec.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     return AndroidSambaTagReadTarget(
-        sourceId = samba.first,
-        endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath),
-        server = source.server.orEmpty(),
-        port = storedPort ?: DEFAULT_SAMBA_PORT,
-        shareName = sambaPath.shareName,
-        remotePath = joinSambaPath(sambaPath.directoryPath, samba.second),
-        relativePath = track.relativePath.ifBlank { samba.second },
-        username = source.username.orEmpty(),
+        sourceId = spec.sourceId,
+        endpoint = spec.endpoint,
+        server = spec.server,
+        port = spec.port,
+        shareName = spec.shareName,
+        remotePath = spec.remotePath,
+        relativePath = spec.relativePath,
+        username = spec.username,
         password = password,
     )
 }
@@ -1052,20 +1051,73 @@ private class AndroidPlaybackGateway(
         })
     }
 
-    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
+        logger.debug(PLAYBACK_LOG_TAG) {
+            "load-start request=${loadToken.requestId} track=${track.id} locator=${track.mediaLocator} " +
+                "playWhenReady=$playWhenReady startPositionMs=$startPositionMs"
+        }
+        if (!loadToken.isCurrent()) {
+            logger.debug(PLAYBACK_LOG_TAG) {
+                "load-discarded-stale request=${loadToken.requestId} track=${track.id} before-stop"
+            }
+            return
+        }
+        stopAndResetForTrackSwitch(loadToken)
         val webDavTarget = resolveAndroidWebDavPlaybackTarget(
             database = database,
             secureCredentialStore = secureCredentialStore,
             locator = track.mediaLocator,
             logger = logger,
         )
-        val navidrome = if (webDavTarget == null) parseNavidromeSongLocator(track.mediaLocator) else null
-        val resolvedUri = if (webDavTarget == null) resolveLocator(track.mediaLocator) else null
+        val sambaTarget = if (
+            webDavTarget == null &&
+            shouldUseAndroidSambaDirectPlayback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
+        ) {
+            resolveAndroidSambaPlaybackTarget(
+                database = database,
+                secureCredentialStore = secureCredentialStore,
+                track = track,
+                logger = logger,
+            )
+        } else {
+            null
+        }
+        val navidrome = if (webDavTarget == null && sambaTarget == null) {
+            parseNavidromeSongLocator(track.mediaLocator)
+        } else {
+            null
+        }
+        val resolvedUri = if (webDavTarget == null && sambaTarget == null) {
+            resolveLocator(track.mediaLocator)
+        } else {
+            null
+        }
+        if (!loadToken.isCurrent()) {
+            logger.debug(PLAYBACK_LOG_TAG) {
+                "load-discarded-stale request=${loadToken.requestId} track=${track.id} before-prepare"
+            }
+            return
+        }
         onPlayerThread {
+            if (!loadToken.isCurrent()) {
+                logger.debug(PLAYBACK_LOG_TAG) {
+                    "load-discarded-stale request=${loadToken.requestId} track=${track.id} on-player-thread"
+                }
+                return@onPlayerThread
+            }
             if (webDavTarget != null) {
                 currentRemoteLogTag = "WebDav"
                 currentRemoteLabel = webDavTarget.requestUrl
                 player.setMediaSource(webDavTarget.mediaSource)
+            } else if (sambaTarget != null) {
+                currentRemoteLogTag = SAMBA_LOG_TAG
+                currentRemoteLabel = sambaTarget.sourceReference
+                player.setMediaSource(sambaTarget.mediaSource)
             } else {
                 currentRemoteLogTag = if (navidrome != null) "Navidrome" else null
                 currentRemoteLabel = if (navidrome != null) track.mediaLocator else null
@@ -1075,7 +1127,30 @@ private class AndroidPlaybackGateway(
             player.seekTo(startPositionMs)
             player.playWhenReady = playWhenReady
         }
+        logger.debug(PLAYBACK_LOG_TAG) {
+            "load-applied request=${loadToken.requestId} track=${track.id}"
+        }
         ensureProgressTicker()
+    }
+
+    private suspend fun stopAndResetForTrackSwitch(loadToken: PlaybackLoadToken) {
+        onPlayerThread {
+            if (!loadToken.isCurrent()) {
+                logger.debug(PLAYBACK_LOG_TAG) {
+                    "load-discarded-stale request=${loadToken.requestId} before-stop-on-player-thread"
+                }
+                return@onPlayerThread
+            }
+            runCatching { player.stop() }
+            player.clearMediaItems()
+            currentRemoteLogTag = null
+            currentRemoteLabel = null
+            mutableState.update {
+                it.resetForTrackSwitch(volumeOverride = player.volume)
+            }
+            playerHandler.removeCallbacks(progressTicker)
+            progressTickerRunning = false
+        }
     }
 
     override suspend fun play() {
@@ -1116,47 +1191,39 @@ private class AndroidPlaybackGateway(
         resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return Uri.parse(it) }
         val samba = parseSambaLocator(locator) ?: return Uri.parse(locator)
         if (!playbackPreferencesStore.useSambaCache.value) {
-            logger.info(SAMBA_LOG_TAG) {
-                "direct-link-requested source=${samba.first} but Android playback still falls back to cache"
-            }
+            error("Samba 直连播放失败: Android 预期使用直连 MediaSource，但错误地落入了缓存路径。")
         }
         val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
             ?: error("SMB 来源不可用。")
-        val shareName = source.shareName
-        val storedPort = shareName?.toIntOrNull()
-        val storedPath = when {
-            storedPort != null -> normalizeSambaPath(source.directoryPath)
-            shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-            else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
-        }
-        val sambaPath = parseSambaPath(storedPath)
-            ?: error("SMB source path is missing a share name.")
-        val endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath)
-        val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+        val spec = resolveSambaSourceSpec(
+            source = source,
+            locatorRelativePath = samba.second,
+        )
+        val password = spec.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         val cacheFile = File(context.cacheDir, "${samba.first}-${samba.second.substringAfterLast('/')}").apply {
             parentFile?.mkdirs()
         }
-        val remotePath = joinSegments(sambaPath.directoryPath, samba.second)
+        val remotePath = spec.remotePath
         if (cacheFile.exists()) {
             logger.debug(SAMBA_LOG_TAG) {
-                "cache-hit source=${samba.first} endpoint=$endpoint remotePath=$remotePath cache=${cacheFile.absolutePath}"
+                "cache-hit source=${samba.first} endpoint=${spec.endpoint} remotePath=$remotePath cache=${cacheFile.absolutePath}"
             }
             return Uri.fromFile(cacheFile)
         }
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
-            "stream-fetch-start source=${samba.first} endpoint=$endpoint remotePath=$remotePath"
+            "stream-fetch-start source=${samba.first} endpoint=${spec.endpoint} remotePath=$remotePath"
         }
         runCatching {
             val client = SMBClient()
-            client.connect(source.server.orEmpty(), storedPort ?: DEFAULT_SAMBA_PORT).use { connection ->
+            client.connect(spec.server, spec.port).use { connection ->
                 logger.debug(SAMBA_LOG_TAG) {
-                    "stream-connect-ok source=${samba.first} endpoint=$endpoint remoteHost=${connection.remoteHostname}"
+                    "stream-connect-ok source=${samba.first} endpoint=${spec.endpoint} remoteHost=${connection.remoteHostname}"
                 }
                 val session = connection.authenticate(
-                    AuthenticationContext(source.username.orEmpty(), password.toCharArray(), ""),
+                    AuthenticationContext(spec.username, password.toCharArray(), ""),
                 )
-                val share = session.connectShare(sambaPath.shareName) as DiskShare
+                val share = session.connectShare(spec.shareName) as DiskShare
                 share.openFile(
                     remotePath,
                     setOf(AccessMask.GENERIC_READ),
@@ -1179,11 +1246,11 @@ private class AndroidPlaybackGateway(
             }
         }.onSuccess {
             logger.info(SAMBA_LOG_TAG) {
-                "stream-fetch-complete source=${samba.first} endpoint=$endpoint remotePath=$remotePath size=${cacheFile.length()} elapsedMs=${System.currentTimeMillis() - startedAt}"
+                "stream-fetch-complete source=${samba.first} endpoint=${spec.endpoint} remotePath=$remotePath size=${cacheFile.length()} elapsedMs=${System.currentTimeMillis() - startedAt}"
             }
         }.onFailure { throwable ->
             logger.error(SAMBA_LOG_TAG, throwable) {
-                "stream-fetch-failed source=${samba.first} endpoint=$endpoint remotePath=$remotePath elapsedMs=${System.currentTimeMillis() - startedAt}"
+                "stream-fetch-failed source=${samba.first} endpoint=${spec.endpoint} remotePath=$remotePath elapsedMs=${System.currentTimeMillis() - startedAt}"
             }
             throw throwable
         }
@@ -1233,6 +1300,7 @@ private object IntentFlags {
 }
 
 private const val LOCAL_IMPORT_LOG_TAG = "LocalImport"
+private const val PLAYBACK_LOG_TAG = "AndroidPlayback"
 
 private fun joinSegments(left: String, right: String): String {
     return listOf(left.trim('/'), right.trim('/'))

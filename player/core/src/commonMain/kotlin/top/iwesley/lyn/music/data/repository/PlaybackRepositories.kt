@@ -11,12 +11,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackGateway
+import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
@@ -53,6 +55,8 @@ class DefaultPlaybackRepository(
 ) : PlaybackRepository {
     private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot())
     private val playbackCommandMutex = Mutex()
+    @Volatile
+    private var latestLoadRequestId = 0L
     private var observedCompletionCount = 0L
     private var loggedArtworkTrackId: String? = null
     private var loggedDisplayArtworkLocator: String? = null
@@ -129,10 +133,16 @@ class DefaultPlaybackRepository(
                         errorMessage = gatewayState.errorMessage,
                     )
                 }
-                if (completionChanged) {
+                val completionLoadRequest = if (completionChanged) {
                     playbackCommandMutex.withLock {
-                        advance(autoTriggered = true)
+                        advanceLocked(autoTriggered = true)
                     }
+                } else {
+                    null
+                }
+                completionLoadRequest?.let {
+                    loadGatewaySafely(it)
+                    persistSnapshot()
                 }
             }
         }
@@ -145,8 +155,9 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
+        var loadRequest: PlaybackLoadRequest? = null
         playbackCommandMutex.withLock {
-            if (tracks.isEmpty()) return
+            if (tracks.isEmpty()) return@withLock
             val index = startIndex.coerceIn(0, tracks.lastIndex)
             mutableSnapshot.value = PlaybackSnapshot(
                 queue = tracks,
@@ -161,7 +172,14 @@ class DefaultPlaybackRepository(
                 metadataAlbumTitle = null,
                 metadataArtworkLocator = null,
             )
-            loadGatewaySafely(tracks[index], playWhenReady = true, startPositionMs = 0L)
+            loadRequest = createLoadRequest(
+                track = tracks[index],
+                playWhenReady = true,
+                startPositionMs = 0L,
+            )
+        }
+        loadRequest?.let {
+            loadGatewaySafely(it)
             persistSnapshot()
         }
     }
@@ -178,27 +196,36 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun skipNext() {
-        playbackCommandMutex.withLock {
-            advance(autoTriggered = false)
+        val loadRequest = playbackCommandMutex.withLock {
+            advanceLocked(autoTriggered = false)
+        }
+        loadRequest?.let {
+            loadGatewaySafely(it)
+            persistSnapshot()
         }
     }
 
     override suspend fun skipPrevious() {
+        var loadRequest: PlaybackLoadRequest? = null
         playbackCommandMutex.withLock {
             val snapshot = mutableSnapshot.value
-            if (snapshot.queue.isEmpty()) return
+            if (snapshot.queue.isEmpty()) return@withLock
             if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.positionMs > 5_000) {
                 gateway.seekTo(0L)
                 mutableSnapshot.update { it.copy(positionMs = 0L) }
                 persistSnapshot()
-                return
+                return@withLock
             }
             val previousIndex = when {
                 snapshot.mode == PlaybackMode.SHUFFLE && snapshot.queue.size > 1 -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
                 snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
                 else -> 0
             }
-            loadIndex(previousIndex, playWhenReady = true)
+            loadRequest = loadIndexLocked(previousIndex, playWhenReady = true)
+        }
+        loadRequest?.let {
+            loadGatewaySafely(it)
+            persistSnapshot()
         }
     }
 
@@ -269,21 +296,21 @@ class DefaultPlaybackRepository(
         }
     }
 
-    private suspend fun advance(autoTriggered: Boolean) {
+    private suspend fun advanceLocked(autoTriggered: Boolean): PlaybackLoadRequest? {
         val snapshot = mutableSnapshot.value
-        if (snapshot.queue.isEmpty()) return
+        if (snapshot.queue.isEmpty()) return null
         val nextIndex = when (snapshot.mode) {
             PlaybackMode.REPEAT_ONE -> {
                 if (autoTriggered) {
                     snapshot.currentIndex
                 } else {
-                    nextSequentialIndex(snapshot, autoTriggered = false) ?: return
+                    nextSequentialIndex(snapshot, autoTriggered = false) ?: return null
                 }
             }
             PlaybackMode.SHUFFLE -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
-            PlaybackMode.ORDER -> nextSequentialIndex(snapshot, autoTriggered) ?: return
+            PlaybackMode.ORDER -> nextSequentialIndex(snapshot, autoTriggered) ?: return null
         }
-        loadIndex(nextIndex, playWhenReady = true)
+        return loadIndexLocked(nextIndex, playWhenReady = true)
     }
 
     private suspend fun nextSequentialIndex(snapshot: PlaybackSnapshot, autoTriggered: Boolean): Int? {
@@ -299,9 +326,9 @@ class DefaultPlaybackRepository(
         return 0
     }
 
-    private suspend fun loadIndex(index: Int, playWhenReady: Boolean) {
+    private suspend fun loadIndexLocked(index: Int, playWhenReady: Boolean): PlaybackLoadRequest? {
         val queue = mutableSnapshot.value.queue
-        val target = queue.getOrNull(index) ?: return
+        val target = queue.getOrNull(index) ?: return null
         mutableSnapshot.update {
             it.copy(
                 currentIndex = index,
@@ -315,8 +342,11 @@ class DefaultPlaybackRepository(
                 errorMessage = null,
             )
         }
-        loadGatewaySafely(target, playWhenReady = playWhenReady, startPositionMs = 0L)
-        persistSnapshot()
+        return createLoadRequest(
+            track = target,
+            playWhenReady = playWhenReady,
+            startPositionMs = 0L,
+        )
     }
 
     private suspend fun restoreQueue() {
@@ -346,29 +376,76 @@ class DefaultPlaybackRepository(
             metadataAlbumTitle = null,
             metadataArtworkLocator = null,
         )
-        loadGatewaySafely(tracks[index], playWhenReady = false, startPositionMs = persisted.positionMs)
+        loadGatewaySafely(
+            createLoadRequest(
+                track = tracks[index],
+                playWhenReady = false,
+                startPositionMs = persisted.positionMs,
+            ),
+        )
     }
 
     private suspend fun loadGatewaySafely(
-        track: Track,
-        playWhenReady: Boolean,
-        startPositionMs: Long,
+        request: PlaybackLoadRequest,
     ) {
+        logger.debug(PLAYBACK_LOG_TAG) {
+            "load-start request=${request.loadToken.requestId} track=${request.track.id} " +
+                "playWhenReady=${request.playWhenReady} startPositionMs=${request.startPositionMs}"
+        }
         runCatching {
-            gateway.load(track, playWhenReady = playWhenReady, startPositionMs = startPositionMs)
+            gateway.load(
+                track = request.track,
+                playWhenReady = request.playWhenReady,
+                startPositionMs = request.startPositionMs,
+                loadToken = request.loadToken,
+            )
+        }.onSuccess {
+            if (!request.loadToken.isCurrent()) {
+                logger.debug(PLAYBACK_LOG_TAG) {
+                    "load-finished-stale request=${request.loadToken.requestId} track=${request.track.id}"
+                }
+            }
         }.onFailure { throwable ->
             if (throwable is CancellationException) throw throwable
+            if (!request.loadToken.isCurrent()) {
+                logger.debug(PLAYBACK_LOG_TAG) {
+                    "load-failed-stale request=${request.loadToken.requestId} track=${request.track.id} " +
+                        "cause=${throwable.message.orEmpty()}"
+                }
+                return@onFailure
+            }
             logger.error(PLAYBACK_LOG_TAG, throwable) {
-                "load-failed track=${track.id} locator=${track.mediaLocator} playWhenReady=$playWhenReady startPositionMs=$startPositionMs"
+                "load-failed request=${request.loadToken.requestId} track=${request.track.id} " +
+                    "locator=${request.track.mediaLocator} playWhenReady=${request.playWhenReady} " +
+                    "startPositionMs=${request.startPositionMs}"
             }
             mutableSnapshot.update {
                 it.copy(
                     isPlaying = false,
-                    positionMs = startPositionMs.coerceAtLeast(0L),
+                    positionMs = request.startPositionMs.coerceAtLeast(0L),
                     errorMessage = buildPlaybackLoadFailureMessage(throwable),
                 )
             }
         }
+    }
+
+    private fun createLoadRequest(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+    ): PlaybackLoadRequest {
+        val requestId = latestLoadRequestId + 1L
+        latestLoadRequestId = requestId
+        logger.debug(PLAYBACK_LOG_TAG) {
+            "load-enqueued request=$requestId track=${track.id} locator=${track.mediaLocator} " +
+                "playWhenReady=$playWhenReady startPositionMs=$startPositionMs"
+        }
+        return PlaybackLoadRequest(
+            track = track,
+            playWhenReady = playWhenReady,
+            startPositionMs = startPositionMs,
+            loadToken = PlaybackLoadToken(requestId) { requestId == latestLoadRequestId },
+        )
     }
 
     private suspend fun persistSnapshot() {
@@ -420,6 +497,13 @@ data class PlayerRuntimeServices(
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val PLAYBACK_LOG_TAG = "Playback"
+
+private data class PlaybackLoadRequest(
+    val track: Track,
+    val playWhenReady: Boolean,
+    val startPositionMs: Long,
+    val loadToken: PlaybackLoadToken,
+)
 
 private fun buildPlaybackLoadFailureMessage(throwable: Throwable): String {
     val detail = throwable.message?.takeIf { it.isNotBlank() }

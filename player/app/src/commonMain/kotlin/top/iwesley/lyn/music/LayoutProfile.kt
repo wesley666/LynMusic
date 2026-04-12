@@ -4,7 +4,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.debug
 import kotlin.math.roundToInt
 
 internal enum class LayoutOrientation {
@@ -26,12 +28,12 @@ internal data class LayoutProfile(
             if (maxWidth > maxHeight) LayoutOrientation.Landscape else LayoutOrientation.Portrait
         val maxWidthPxLabel = density?.run { "${maxWidth.toPx().roundToInt()}px" }
         val maxHeightPxLabel = density?.run { "${maxHeight.toPx().roundToInt()}px" }
-        println(
-            "LayoutProfile init: platform=${platform?.name ?: "unknown"} " +
-                "maxWidth=$maxWidth${maxWidthPxLabel?.let { " ($it)" } ?: ""} " +
-                "maxHeight=$maxHeight${maxHeightPxLabel?.let { " ($it)" } ?: ""} " +
-                "orientation=$orientationLabel",
-        )
+//        GlobalDiagnosticLogger.debug("LayoutProfile") {
+//            "LayoutProfile init: platform=${platform?.name ?: "unknown"} " +
+//                    "maxWidth=$maxWidth${maxWidthPxLabel?.let { " ($it)" } ?: ""} " +
+//                    "maxHeight=$maxHeight${maxHeightPxLabel?.let { " ($it)" } ?: ""} " +
+//                    "orientation=$orientationLabel"
+//        }
     }
     val orientation: LayoutOrientation =
         if (maxWidth > maxHeight) LayoutOrientation.Landscape else LayoutOrientation.Portrait

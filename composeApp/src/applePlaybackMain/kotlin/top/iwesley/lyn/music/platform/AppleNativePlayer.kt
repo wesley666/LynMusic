@@ -8,6 +8,7 @@ internal expect class AppleNativePlayer(platformLabel: String) {
     var onFailed: ((String?) -> Unit)?
 
     fun load(locator: AppleResolvedMediaLocator)
+    fun stopAndClear()
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)

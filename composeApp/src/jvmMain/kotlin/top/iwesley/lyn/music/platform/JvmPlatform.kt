@@ -60,6 +60,7 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
+import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
@@ -1143,7 +1144,12 @@ private class JvmPlaybackGateway(
         })
     }
 
-    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
         try {
             runCatching { mediaPlayer.controls().stop() }
             currentCallbackMedia = null
@@ -1174,6 +1180,12 @@ private class JvmPlaybackGateway(
             val sourceReference = when {
                 parseNavidromeSongLocator(track.mediaLocator) != null -> track.mediaLocator
                 else -> actualPlaybackSource
+            }
+            if (!loadToken.isCurrent()) {
+                logger.debug(VLC_LOG_TAG) {
+                    "load-discarded-stale request=${loadToken.requestId} track=${track.id} before-start"
+                }
+                return
             }
             val playbackTarget = when {
                 webDavTarget != null -> "webdav-callback://${track.id}"

@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
+import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
@@ -122,7 +123,7 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
-    fun `concurrent skip next commands are serialized until prior load finishes`() = runTest {
+    fun `concurrent skip next commands keep latest requested track while stale load finishes later`() = runTest {
         val database = createTestDatabase()
         val gateway = BlockingPlaybackGateway()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
@@ -138,22 +139,19 @@ class PlaybackRepositoriesTest {
             val firstSkipJob = launch { repository.skipNext() }
             advanceUntilIdle()
 
-            val secondSkipGate = CompletableDeferred<Unit>()
-            gateway.nextLoadGate = secondSkipGate
             val secondSkipJob = launch { repository.skipNext() }
             advanceUntilIdle()
 
-            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
-            assertEquals(listOf("track-1", "track-2"), gateway.loadCalls.map { it.track.id })
+            assertEquals("track-3", repository.snapshot.value.currentTrack?.id)
+            assertEquals(listOf("track-1", "track-2", "track-3"), gateway.loadCalls.map { it.track.id })
 
             firstSkipGate.complete(Unit)
-            secondSkipGate.complete(Unit)
             firstSkipJob.join()
             secondSkipJob.join()
             advanceUntilIdle()
 
             assertEquals("track-3", repository.snapshot.value.currentTrack?.id)
-            assertEquals(listOf("track-1", "track-2", "track-3"), gateway.loadCalls.map { it.track.id })
+            assertEquals("track-3", gateway.appliedTrackIds.last())
         } finally {
             repository.close()
             scope.cancel()
@@ -448,7 +446,12 @@ private class FakePlaybackGateway(
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
-    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
         loadFailure?.let { throwable ->
             mutableState.value = mutableState.value.copy(
                 isPlaying = false,
@@ -459,6 +462,9 @@ private class FakePlaybackGateway(
             throw throwable
         }
         loadCalls += LoadCall(track, playWhenReady, startPositionMs)
+        if (!loadToken.isCurrent()) {
+            return
+        }
         mutableState.value = mutableState.value.copy(
             isPlaying = playWhenReady,
             positionMs = startPositionMs,
@@ -502,15 +508,25 @@ private class BlockingPlaybackGateway : PlaybackGateway {
 
     var nextLoadGate: CompletableDeferred<Unit>? = null
     val loadCalls = mutableListOf<LoadCall>()
+    val appliedTrackIds = mutableListOf<String>()
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
-    override suspend fun load(track: Track, playWhenReady: Boolean, startPositionMs: Long) {
+    override suspend fun load(
+        track: Track,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        loadToken: PlaybackLoadToken,
+    ) {
         loadCalls += LoadCall(track, playWhenReady, startPositionMs)
         nextLoadGate?.also { gate ->
             nextLoadGate = null
             gate.await()
         }
+        if (!loadToken.isCurrent()) {
+            return
+        }
+        appliedTrackIds += track.id
         mutableState.value = mutableState.value.copy(
             isPlaying = playWhenReady,
             positionMs = startPositionMs,
