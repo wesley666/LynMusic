@@ -35,7 +35,7 @@ fun buildPresetOiapiQqMusicWorkflowJson(): String {
             "albumWeight": 0.05,
             "durationWeight": 0.05,
             "durationToleranceSeconds": 3,
-            "minScore": 0.4,
+            "minScore": 0.9,
             "maxCandidates": 10
           },
           "lyrics": {

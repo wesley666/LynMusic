@@ -28,8 +28,89 @@ class WorkflowLyricsEngineTest {
         val config = parseWorkflowLyricsSourceConfig(buildPresetOiapiQqMusicWorkflowJson())
 
         assertEquals("custom-oiapi-qqmusic", config.id)
+        assertEquals(0.9, config.selection.minScore)
         assertEquals("keyword={title} {artist}&page=1&limit=10&type=json", config.search.request.queryTemplate)
         assertEquals("id={candidate.id}&format=lrc&type=json", config.lyrics.steps.single().request.queryTemplate)
+    }
+
+    @Test
+    fun `workflow selection defaults minScore to point nine while preserving explicit values`() {
+        val defaultSelection = parseWorkflowLyricsSourceConfig(
+            """
+            {
+              "id": "workflow-default-score",
+              "name": "Workflow Default Score",
+              "kind": "workflow",
+              "enabled": true,
+              "priority": 10,
+              "search": {
+                "url": "https://lyrics.example/search",
+                "resultPath": "data",
+                "mapping": {
+                  "id": "id",
+                  "title": "title",
+                  "artists": "artists"
+                }
+              },
+              "selection": {
+                "titleWeight": 0.7,
+                "artistWeight": 0.2,
+                "albumWeight": 0.05,
+                "durationWeight": 0.05,
+                "durationToleranceSeconds": 3,
+                "maxCandidates": 10
+              },
+              "lyrics": {
+                "steps": [
+                  {
+                    "url": "https://lyrics.example/item",
+                    "payloadPath": "lyrics"
+                  }
+                ]
+              }
+            }
+            """.trimIndent(),
+        )
+        val explicitSelection = parseWorkflowLyricsSourceConfig(
+            """
+            {
+              "id": "workflow-custom-score",
+              "name": "Workflow Custom Score",
+              "kind": "workflow",
+              "enabled": true,
+              "priority": 10,
+              "search": {
+                "url": "https://lyrics.example/search",
+                "resultPath": "data",
+                "mapping": {
+                  "id": "id",
+                  "title": "title",
+                  "artists": "artists"
+                }
+              },
+              "selection": {
+                "titleWeight": 0.7,
+                "artistWeight": 0.2,
+                "albumWeight": 0.05,
+                "durationWeight": 0.05,
+                "durationToleranceSeconds": 3,
+                "minScore": 0.25,
+                "maxCandidates": 10
+              },
+              "lyrics": {
+                "steps": [
+                  {
+                    "url": "https://lyrics.example/item",
+                    "payloadPath": "lyrics"
+                  }
+                ]
+              }
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(0.9, defaultSelection.selection.minScore)
+        assertEquals(0.25, explicitSelection.selection.minScore)
     }
 
     @Test

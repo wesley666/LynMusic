@@ -383,7 +383,7 @@ private fun JsonObject.toWorkflowSelectionConfig(): WorkflowSelectionConfig {
         albumWeight = doubleOrDefault("albumWeight", 0.05),
         durationWeight = doubleOrDefault("durationWeight", 0.05),
         durationToleranceSeconds = intOrDefault("durationToleranceSeconds", 3),
-        minScore = doubleOrDefault("minScore", 0.4),
+        minScore = doubleOrDefault("minScore", 0.9),
         maxCandidates = intOrDefault("maxCandidates", 10),
     )
 }

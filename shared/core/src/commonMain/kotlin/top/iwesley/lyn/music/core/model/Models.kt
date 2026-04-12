@@ -283,7 +283,7 @@ data class WorkflowSelectionConfig(
     val albumWeight: Double = 0.05,
     val durationWeight: Double = 0.05,
     val durationToleranceSeconds: Int = 3,
-    val minScore: Double = 0.4,
+    val minScore: Double = 0.9,
     val maxCandidates: Int = 10,
 )
 

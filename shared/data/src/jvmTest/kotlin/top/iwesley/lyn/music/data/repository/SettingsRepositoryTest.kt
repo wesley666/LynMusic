@@ -120,8 +120,9 @@ class SettingsRepositoryTest {
         assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_ID, workflows.single().id)
         assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_NAME, workflows.single().name)
         assertEquals(PRESET_OIAPI_QQMUSIC_SOURCE_PRIORITY, workflows.single().priority)
-        assertEquals(false, workflows.single().enabled)
+        assertEquals(true, workflows.single().enabled)
         assertEquals(true, workflows.single().rawJson.contains("https://oiapi.net/api/QQMusicLyric"))
+        assertEquals(true, workflows.single().rawJson.contains("\"minScore\": 0.9"))
     }
 
     @Test
