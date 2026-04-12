@@ -1,6 +1,32 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+fun readSharedVersionConfig(): Map<String, String> =
+    rootProject.file("app-version.xcconfig")
+        .readLines()
+        .map(String::trim)
+        .filter { line ->
+            line.isNotEmpty() &&
+                !line.startsWith("//") &&
+                !line.startsWith("#")
+        }
+        .mapNotNull { line ->
+            val separatorIndex = line.indexOf('=')
+            if (separatorIndex < 0) {
+                null
+            } else {
+                line.substring(0, separatorIndex).trim() to
+                    line.substring(separatorIndex + 1).trim()
+            }
+        }
+        .toMap()
+
+val sharedVersionConfig = readSharedVersionConfig()
+val appVersionCode = sharedVersionConfig.getValue("APP_VERSION_CODE").toInt()
+val appVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
+val desktopPackageVersion = sharedVersionConfig
+    .getValue("APP_DESKTOP_PACKAGE_VERSION")
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidApplication)
@@ -108,8 +134,8 @@ android {
         applicationId = "top.iwesley.lyn.music"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
     packaging {
         resources {
@@ -147,7 +173,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "LynMusic"
-            packageVersion = "1.0.0"
+            packageVersion = desktopPackageVersion
             macOS {
                 bundleID = "top.iwesley.lyn.music"
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.icns"))
