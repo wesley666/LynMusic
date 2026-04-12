@@ -1,10 +1,12 @@
 name: Multi-OS Desktop & Android Build
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android-debug:
@@ -83,3 +85,89 @@ jobs:
           name: Desktop-App-${{ runner.os }}
           path: composeApp/build/compose/binaries/**
           if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs:
+      - build-android-debug
+      - build-android-release-unsigned
+      - build-desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Show downloaded files
+        shell: bash
+        run: find release-assets -type f | sort
+
+      - name: Decide release type
+        id: meta
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ "$TAG" =~ -(beta|rc)([.-].*)?$ ]]; then
+            echo "kind=prerelease" >> "$GITHUB_OUTPUT"
+            echo "title=${TAG} Pre-release" >> "$GITHUB_OUTPUT"
+          else
+            echo "kind=draft" >> "$GITHUB_OUTPUT"
+            echo "title=${TAG} Draft Release" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md << EOF
+          Automated release for tag ${GITHUB_REF_NAME}
+
+          Included artifacts:
+          - Android Debug APK
+          - Android Release APK (unsigned)
+          - Desktop packages for matrix builds
+
+          Please review the assets before publishing if this is a draft release.
+          EOF
+
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -d '' FILES < <(find release-assets -type f \
+            \( -name "*.apk" \
+            -o -name "*.aab" \
+            -o -name "*.exe" \
+            -o -name "*.msi" \
+            -o -name "*.dmg" \
+            -o -name "*.pkg" \
+            -o -name "*.deb" \
+            -o -name "*.rpm" \
+            -o -name "*.AppImage" \
+            -o -name "*.zip" \
+            -o -name "*.tar.gz" \) \
+            -print0)
+
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No release files found"
+            exit 1
+          fi
+
+          EXTRA_ARGS=()
+          if [ "${{ steps.meta.outputs.kind }}" = "prerelease" ]; then
+            EXTRA_ARGS+=(--prerelease)
+          else
+            EXTRA_ARGS+=(--draft)
+          fi
+
+          gh release create "${GITHUB_REF_NAME}" \
+            "${FILES[@]}" \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes-file RELEASE_NOTES.md \
+            --verify-tag \
+            "${EXTRA_ARGS[@]}"
