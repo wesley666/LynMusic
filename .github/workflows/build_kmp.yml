@@ -97,6 +97,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all workflow artifacts
         uses: actions/download-artifact@v4
         with:
