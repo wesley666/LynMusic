@@ -206,7 +206,8 @@ internal fun SettingsTab(
         BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
         ) {
-            val desktopLayout = maxWidth >= 900.dp
+            val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+            val desktopLayout = layoutProfile.isDesktopLayout
             PlatformBackHandler(
                 enabled = !desktopLayout && mobileNavigation is SettingsMobileNavigation.Detail,
                 onBack = { mobileDetailSectionName = null },

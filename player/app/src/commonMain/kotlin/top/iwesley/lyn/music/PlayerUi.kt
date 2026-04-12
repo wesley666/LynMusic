@@ -597,13 +597,6 @@ private fun rememberMiniPlayerLyricsText(state: PlayerState): String? {
     }
 }
 
-internal fun isMobilePortraitMiniPlayerLayout(
-    maxWidth: Dp,
-    maxHeight: Dp,
-): Boolean {
-    return maxHeight >= maxWidth
-}
-
 internal fun resolveMiniPlayerLyricsText(
     lyrics: LyricsDocument?,
     highlightedLineIndex: Int,
@@ -746,13 +739,16 @@ private fun PlayerOverlay(
                         ),
                     ),
             )
-            val wide = maxWidth >= 980.dp
-            val useTapToRevealLyrics =
-                isMobilePlaybackPlatform(platform) &&
-                    maxHeight >= maxWidth
+            val layoutProfile = buildLayoutProfile(
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                platform = platform,
+            )
+            val wide = layoutProfile.isWideLayout
+            val useTapToRevealLyrics = layoutProfile.usesTapToRevealPlaybackLyrics
             LaunchedEffect(platform.name, maxWidth, maxHeight) {
                 logger.debug(PLAYER_UI_LOG_TAG) {
-                    "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"
+                    "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight orientation=${layoutProfile.orientation} wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"
                 }
             }
             Column(
@@ -883,7 +879,7 @@ private fun PlayerOverlay(
                 PlayerBottomControls(
                     snapshot = state.snapshot,
                     track = track,
-                    mobilePlayback = isMobilePlaybackPlatform(platform),
+                    mobilePlayback = platform.isMobilePlatform(),
                     wide = wide,
                     isFavorite = isFavorite,
                     onToggleFavorite = onToggleFavorite,
@@ -955,10 +951,6 @@ private fun MobilePlayerPrimaryPane(
             compact = true,
         )
     }
-}
-
-internal fun isMobilePlaybackPlatform(platform: PlatformDescriptor): Boolean {
-    return platform.name == "Android" || platform.name == "iPhone / iPad"
 }
 
 @Composable

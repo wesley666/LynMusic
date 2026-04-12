@@ -472,7 +472,8 @@ private fun ManualLyricsSearchFormPane(
                     .fillMaxSize()
                     .padding(18.dp),
             ) {
-                val stackedFields = maxWidth < 560.dp
+                val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+                val stackedFields = layoutProfile.usesStackedFields
                 val buttonSpacing = if (stackedFields) 8.dp else 10.dp
                 Column(
                     modifier = Modifier
@@ -930,9 +931,14 @@ internal fun LyricsShareOverlay(
                     .fillMaxSize()
                     .padding(22.dp),
             ) {
-                val wideLayout = maxWidth >= 980.dp
-                val narrowActions = maxWidth < 760.dp
-                val mobileActions = isMobilePlaybackPlatform(platform)
+                val layoutProfile = buildLayoutProfile(
+                    maxWidth = maxWidth,
+                    maxHeight = maxHeight,
+                    platform = platform,
+                )
+                val wideLayout = layoutProfile.isWideLayout
+                val narrowActions = layoutProfile.usesNarrowActionLayout
+                val mobileActions = layoutProfile.isMobilePlatform
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -1163,7 +1169,7 @@ internal fun shouldEnableLyricsShareFullscreen(
     platform: PlatformDescriptor,
     hasPreviewContent: Boolean,
 ): Boolean {
-    return hasPreviewContent && isMobilePlaybackPlatform(platform)
+    return hasPreviewContent && platform.isMobilePlatform()
 }
 
 @Composable

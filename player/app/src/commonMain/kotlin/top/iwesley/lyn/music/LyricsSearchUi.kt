@@ -139,7 +139,8 @@ internal fun LyricsSearchOverlayDialog(
                     .fillMaxSize()
                     .padding(22.dp),
             ) {
-                val wideLayout = maxWidth >= 980.dp
+                val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+                val wideLayout = layoutProfile.isWideLayout
                 if (wideLayout) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -364,7 +365,8 @@ private fun LyricsSearchFormPane(
                     .fillMaxSize()
                     .padding(18.dp),
             ) {
-                val stackedFields = maxWidth < 560.dp
+                val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+                val stackedFields = layoutProfile.usesStackedFields
                 val buttonSpacing = if (stackedFields) 8.dp else 10.dp
                 Column(
                     modifier = Modifier

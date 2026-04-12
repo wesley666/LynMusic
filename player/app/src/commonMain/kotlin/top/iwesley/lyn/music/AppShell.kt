@@ -484,7 +484,7 @@ private fun TabContent(
             onLibraryIntent = onLibraryIntent,
             onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
-            showDuration = !isMobilePlaybackPlatform(platform),
+            showDuration = !platform.isMobilePlatform(),
             navigationTarget = libraryNavigationTarget,
             onNavigationHandled = onLibraryNavigationHandled,
             modifier = modifier,
@@ -501,7 +501,7 @@ private fun TabContent(
             state = favoritesState,
             onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
-            showDuration = !isMobilePlaybackPlatform(platform),
+            showDuration = !platform.isMobilePlatform(),
             modifier = modifier,
         )
 

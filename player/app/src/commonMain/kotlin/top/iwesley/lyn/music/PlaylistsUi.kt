@@ -278,7 +278,8 @@ internal fun PlaylistsTab(
         }
     }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val wide = maxWidth >= 980.dp
+        val layoutProfile = buildLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+        val wide = layoutProfile.isWideLayout
         if (showCreateDialog) {
             PlaylistNameDialog(
                 onDismiss = { showCreateDialog = false },

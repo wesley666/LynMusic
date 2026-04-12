@@ -155,9 +155,13 @@ fun App(component: LynMusicAppComponent) {
                     component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
                 }
             }
-            val compact = maxWidth < 900.dp
-            val mobilePortraitMiniPlayer =
-                compact && isMobilePortraitMiniPlayerLayout(maxWidth, maxHeight)
+            val layoutProfile = buildLayoutProfile(
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                platform = component.platform,
+            )
+            val compact = layoutProfile.isCompactShell
+            val mobilePortraitMiniPlayer = layoutProfile.usesPortraitMiniPlayer
             val shellColors = mainShellColors
             Box(
                 modifier = Modifier

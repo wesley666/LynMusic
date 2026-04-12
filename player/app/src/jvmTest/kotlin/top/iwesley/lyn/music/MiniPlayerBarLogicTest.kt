@@ -12,12 +12,12 @@ import top.iwesley.lyn.music.core.model.LyricsLine
 class MiniPlayerBarLogicTest {
     @Test
     fun `portrait mini player layout returns true when height is greater than width`() {
-        assertTrue(isMobilePortraitMiniPlayerLayout(maxWidth = 390.dp, maxHeight = 844.dp))
+        assertTrue(buildLayoutProfile(maxWidth = 390.dp, maxHeight = 844.dp).usesPortraitMiniPlayer)
     }
 
     @Test
     fun `portrait mini player layout returns false when width is greater than height`() {
-        assertFalse(isMobilePortraitMiniPlayerLayout(maxWidth = 844.dp, maxHeight = 390.dp))
+        assertFalse(buildLayoutProfile(maxWidth = 844.dp, maxHeight = 390.dp).usesPortraitMiniPlayer)
     }
 
     @Test
