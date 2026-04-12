@@ -35,6 +35,7 @@ import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 interface PlaybackRepository {
     val snapshot: StateFlow<PlaybackSnapshot>
 
+    suspend fun hydratePersistedQueueIfNeeded()
     suspend fun playTracks(tracks: List<Track>, startIndex: Int)
     suspend fun togglePlayPause()
     suspend fun skipNext()
@@ -52,11 +53,14 @@ class DefaultPlaybackRepository(
     private val scope: CoroutineScope,
     private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
+    hydrateImmediately: Boolean = true,
 ) : PlaybackRepository {
-    private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot())
+    private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot(isHydratingPlayback = true))
     private val playbackCommandMutex = Mutex()
     @Volatile
     private var latestLoadRequestId = 0L
+    @Volatile
+    private var hasHydratedPersistedQueue = false
     private var observedCompletionCount = 0L
     private var loggedArtworkTrackId: String? = null
     private var loggedDisplayArtworkLocator: String? = null
@@ -74,8 +78,10 @@ class DefaultPlaybackRepository(
                 seekTo = { positionMs -> seekTo(positionMs) },
             ),
         )
-        runBlocking {
-            restoreQueue()
+        if (hydrateImmediately) {
+            runBlocking {
+                hydratePersistedQueueIfNeeded()
+            }
         }
         scope.launch {
             combine(
@@ -154,6 +160,18 @@ class DefaultPlaybackRepository(
         }
     }
 
+    override suspend fun hydratePersistedQueueIfNeeded() {
+        if (hasHydratedPersistedQueue) return
+        runCatching { restoreQueueAsync() }
+            .onFailure { throwable ->
+                if (throwable is CancellationException) throw throwable
+                mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+                logger.error(PLAYBACK_LOG_TAG, throwable) {
+                    "hydrate-failed"
+                }
+            }
+    }
+
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
         var loadRequest: PlaybackLoadRequest? = null
         playbackCommandMutex.withLock {
@@ -163,6 +181,7 @@ class DefaultPlaybackRepository(
                 queue = tracks,
                 currentIndex = index,
                 mode = mutableSnapshot.value.mode,
+                isHydratingPlayback = false,
                 isPlaying = true,
                 positionMs = 0L,
                 durationMs = tracks[index].durationMs,
@@ -332,6 +351,7 @@ class DefaultPlaybackRepository(
         mutableSnapshot.update {
             it.copy(
                 currentIndex = index,
+                isHydratingPlayback = false,
                 isPlaying = playWhenReady,
                 positionMs = 0L,
                 durationMs = target.durationMs,
@@ -349,10 +369,32 @@ class DefaultPlaybackRepository(
         )
     }
 
-    private suspend fun restoreQueue() {
-        val persisted = database.playbackQueueSnapshotDao().get() ?: return
+    private suspend fun restoreQueueAsync() {
+        val shouldHydrate = playbackCommandMutex.withLock {
+            if (hasHydratedPersistedQueue) {
+                false
+            } else {
+                hasHydratedPersistedQueue = true
+                if (mutableSnapshot.value.queue.isNotEmpty()) {
+                    mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+                    false
+                } else {
+                    true
+                }
+            }
+        }
+        if (!shouldHydrate) return
+
+        val persisted = database.playbackQueueSnapshotDao().get()
+        if (persisted == null) {
+            mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+            return
+        }
         val ids = persisted.queueTrackIds.split(',').filter { it.isNotBlank() }
-        if (ids.isEmpty()) return
+        if (ids.isEmpty()) {
+            mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+            return
+        }
         val artworkOverrides = manualArtworkOverridesByTrackId(
             ids.mapNotNull { trackId ->
                 database.lyricsCacheDao().getByTrackIdAndSourceId(trackId, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
@@ -361,28 +403,41 @@ class DefaultPlaybackRepository(
         val tracks = database.trackDao().getByIds(ids)
             .associateBy { it.id }
             .let { indexed -> ids.mapNotNull { trackId -> indexed[trackId]?.toDomain(artworkOverrides[trackId]) } }
-        if (tracks.isEmpty()) return
+        if (tracks.isEmpty()) {
+            mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+            return
+        }
         val index = persisted.currentIndex.coerceIn(0, tracks.lastIndex)
         val mode = persisted.mode.toPlaybackMode()
-        mutableSnapshot.value = PlaybackSnapshot(
-            queue = tracks,
-            currentIndex = index,
-            mode = mode,
-            isPlaying = false,
-            positionMs = persisted.positionMs,
-            durationMs = tracks[index].durationMs,
-            metadataTitle = null,
-            metadataArtistName = null,
-            metadataAlbumTitle = null,
-            metadataArtworkLocator = null,
-        )
-        loadGatewaySafely(
-            createLoadRequest(
-                track = tracks[index],
-                playWhenReady = false,
-                startPositionMs = persisted.positionMs,
-            ),
-        )
+        var loadRequest: PlaybackLoadRequest? = null
+        var shouldApplyRestore = false
+        playbackCommandMutex.withLock {
+            if (mutableSnapshot.value.queue.isNotEmpty()) {
+                mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
+            } else {
+                shouldApplyRestore = true
+                mutableSnapshot.value = PlaybackSnapshot(
+                    queue = tracks,
+                    currentIndex = index,
+                    mode = mode,
+                    isHydratingPlayback = false,
+                    isPlaying = false,
+                    positionMs = persisted.positionMs,
+                    durationMs = tracks[index].durationMs,
+                    metadataTitle = null,
+                    metadataArtistName = null,
+                    metadataAlbumTitle = null,
+                    metadataArtworkLocator = null,
+                )
+                loadRequest = createLoadRequest(
+                    track = tracks[index],
+                    playWhenReady = false,
+                    startPositionMs = persisted.positionMs,
+                )
+            }
+        }
+        if (!shouldApplyRestore) return
+        loadRequest?.let { loadGatewaySafely(it) }
     }
 
     private suspend fun loadGatewaySafely(

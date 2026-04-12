@@ -12,6 +12,7 @@ data class PlaybackSnapshot(
     val queue: List<Track> = emptyList(),
     val currentIndex: Int = -1,
     val mode: PlaybackMode = PlaybackMode.ORDER,
+    val isHydratingPlayback: Boolean = false,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,

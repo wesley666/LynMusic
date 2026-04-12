@@ -15,6 +15,7 @@ import top.iwesley.lyn.music.data.repository.PlaylistRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 
 data class PlaylistsState(
+    val isLoadingContent: Boolean = true,
     val playlists: List<PlaylistSummary> = emptyList(),
     val selectedPlaylistId: String? = null,
     val selectedPlaylist: PlaylistDetail? = null,
@@ -43,14 +44,24 @@ class PlaylistsStore(
     private val playlistRepository: PlaylistRepository,
     private val importSourceRepository: ImportSourceRepository,
     private val storeScope: CoroutineScope,
+    startImmediately: Boolean = true,
 ) : BaseStore<PlaylistsState, PlaylistsIntent, PlaylistsEffect>(
     initialState = PlaylistsState(),
     scope = storeScope,
 ) {
     private var detailJob: Job? = null
-    private var lastNavidromeSourceIds: Set<String>? = null
+    private var contentStarted = false
+    private var hasTriggeredInitialRemoteRefresh = false
 
     init {
+        if (startImmediately) {
+            ensureContentStarted()
+        }
+    }
+
+    fun ensureContentStarted() {
+        if (contentStarted) return
+        contentStarted = true
         storeScope.launch {
             combine(
                 playlistRepository.playlists,
@@ -65,7 +76,7 @@ class PlaylistsStore(
                         .mapTo(linkedSetOf()) { it.id },
                 )
             }.collect { snapshot ->
-                refreshNavidromePlaylistsIfNeeded(snapshot.navidromeSourceIds)
+                refreshNavidromePlaylistsOnFirstActivation(snapshot.navidromeSourceIds)
                 val previousSelectedId = state.value.selectedPlaylistId
                 val nextSelectedId = previousSelectedId?.takeIf { selectedId ->
                     snapshot.playlists.any { it.id == selectedId }
@@ -78,6 +89,7 @@ class PlaylistsStore(
                         }
                         ?: LibrarySourceFilter.ALL
                     it.copy(
+                        isLoadingContent = false,
                         playlists = snapshot.playlists,
                         selectedPlaylistId = nextSelectedId,
                         selectedSourceFilter = selectedSourceFilter,
@@ -209,9 +221,9 @@ class PlaylistsStore(
             }
     }
 
-    private fun refreshNavidromePlaylistsIfNeeded(navidromeSourceIds: Set<String>) {
-        if (lastNavidromeSourceIds == navidromeSourceIds) return
-        lastNavidromeSourceIds = navidromeSourceIds
+    private fun refreshNavidromePlaylistsOnFirstActivation(navidromeSourceIds: Set<String>) {
+        if (hasTriggeredInitialRemoteRefresh || navidromeSourceIds.isEmpty()) return
+        hasTriggeredInitialRemoteRefresh = true
         storeScope.launch {
             refreshPlaylists()
         }

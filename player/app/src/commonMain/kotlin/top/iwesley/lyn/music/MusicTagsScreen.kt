@@ -353,7 +353,13 @@ private fun MusicTagsTrackPane(
                     subtitle = headerSubtitle,
                 )
             }
-            if (state.tracks.isEmpty()) {
+            if (state.isLoadingContent) {
+                MusicTagsEmptyState(
+                    title = "正在加载本地歌曲",
+                    body = "本地歌曲列表会在页面显示后继续异步整理，请稍候。",
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (state.tracks.isEmpty()) {
                 MusicTagsEmptyState(
                     title = "还没有本地歌曲",
                     body = "先在来源页导入本地文件夹，这里才会出现可编辑的歌曲列表。",

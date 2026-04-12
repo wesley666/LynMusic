@@ -338,7 +338,12 @@ private fun MiniPlayerBar(
     mobilePortraitMiniPlayer: Boolean = false,
 ) {
     val snapshot = state.snapshot
-    if (snapshot.currentTrack == null) return
+    if (snapshot.currentTrack == null) {
+        if (snapshot.isHydratingPlayback) {
+            MiniPlayerHydratingBar(mobile = mobile, compact = compact)
+        }
+        return
+    }
     val miniPlayerLyricsText = rememberMiniPlayerLyricsText(state)
     if (mobile) {
         MobileMiniPlayerBar(
@@ -448,6 +453,52 @@ private fun MiniPlayerBar(
         }
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
             Icon(Icons.Rounded.SkipNext, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerHydratingBar(
+    mobile: Boolean,
+    compact: Boolean,
+) {
+    val modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = if (mobile || compact) 0.dp else 18.dp, vertical = 12.dp)
+        .clip(RoundedCornerShape(28.dp))
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+        .border(
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            shape = RoundedCornerShape(28.dp),
+        )
+        .padding(horizontal = 18.dp, vertical = 14.dp)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        VinylPlaceholder(
+            vinylSize = if (mobile) 42.dp else 50.dp,
+            artworkLocator = null,
+            spinning = false,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "正在恢复上次播放",
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "播放队列和进度会在后台继续加载。",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.78f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

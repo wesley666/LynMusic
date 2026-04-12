@@ -110,6 +110,7 @@ internal fun LibraryTab(
 ) {
     LibraryBrowserTab(
         state = LibraryBrowserPageState(
+            isLoadingContent = state.isLoadingContent,
             query = state.query,
             tracks = state.tracks,
             filteredTracks = state.filteredTracks,
@@ -157,6 +158,7 @@ internal fun FavoritesTab(
 ) {
     LibraryBrowserTab(
         state = LibraryBrowserPageState(
+            isLoadingContent = state.isLoadingContent,
             query = state.query,
             tracks = state.tracks,
             filteredTracks = state.filteredTracks,
@@ -206,6 +208,7 @@ internal fun FavoritesTab(
 }
 
 private data class LibraryBrowserPageState(
+    val isLoadingContent: Boolean,
     val query: String,
     val tracks: List<Track>,
     val filteredTracks: List<Track>,
@@ -604,6 +607,11 @@ private fun LibraryBrowserTab(
                     if (currentItemCount == 0) {
                         item {
                             when {
+                                state.isLoadingContent -> EmptyStateCard(
+                                    title = "正在加载$currentLabel",
+                                    body = "歌曲数据会在首屏显示后继续异步整理，请稍候。",
+                                )
+
                                 state.tracks.isEmpty() -> EmptyStateCard(
                                     title = strings.emptyCollectionTitle,
                                     body = strings.emptyCollectionBody,

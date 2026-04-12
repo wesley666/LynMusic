@@ -103,6 +103,7 @@ fun buildPlaylistAddTargets(
 @Composable
 internal fun PlaylistAddDialog(
     track: Track,
+    isLoadingTargets: Boolean,
     targets: List<PlaylistAddTarget>,
     onDismiss: () -> Unit,
     onAddTarget: (PlaylistAddTarget) -> Unit,
@@ -113,7 +114,9 @@ internal fun PlaylistAddDialog(
         mutableStateOf(targets.firstOrNull { !it.alreadyContainsTrack }?.id)
     }
     var newPlaylistName by rememberSaveable(track.id) { mutableStateOf("") }
-    val selectedTarget = targets.firstOrNull { it.id == selectedTargetId && !it.alreadyContainsTrack }
+    val selectedTarget = targets
+        .takeUnless { isLoadingTargets }
+        ?.firstOrNull { it.id == selectedTargetId && !it.alreadyContainsTrack }
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = mainShellColors.cardBorder,
         unfocusedBorderColor = mainShellColors.cardBorder,
@@ -146,62 +149,77 @@ internal fun PlaylistAddDialog(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    targets.forEach { target ->
-                        val disabled = target.alreadyContainsTrack
-                        val selected = selectedTargetId == target.id
-                        Row(
+                    if (isLoadingTargets) {
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(
-                                    when {
-                                        disabled -> shellColors.cardContainer.copy(alpha = 0.45f)
-                                        selected -> shellColors.selectedContainer
-                                        else -> shellColors.cardContainer.copy(alpha = 0.55f)
-                                    },
-                                )
-                                .clickable(enabled = !disabled) {
-                                    selectedTargetId = target.id
-                                }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                                .background(shellColors.cardContainer.copy(alpha = 0.55f))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                         ) {
-                            Box(
-                                modifier = Modifier.width(32.dp),
-                                contentAlignment = Alignment.Center,
+                            Text(
+                                text = "正在加载歌单目标…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        targets.forEach { target ->
+                            val disabled = target.alreadyContainsTrack
+                            val selected = selectedTargetId == target.id
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        when {
+                                            disabled -> shellColors.cardContainer.copy(alpha = 0.45f)
+                                            selected -> shellColors.selectedContainer
+                                            else -> shellColors.cardContainer.copy(alpha = 0.55f)
+                                        },
+                                    )
+                                    .clickable(enabled = !disabled) {
+                                        selectedTargetId = target.id
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                RadioButton(
-                                    selected = selected,
-                                    onClick = if (disabled) null else { { selectedTargetId = target.id } },
-                                    modifier = Modifier.size(20.dp),
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = MaterialTheme.colorScheme.primary,
-                                        unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        disabledSelectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                        disabledUnselectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    ),
-                                )
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = target.name,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (disabled) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                )
-                                Text(
-                                    text = if (disabled) "已存在" else when (target.kind) {
-                                        PlaylistKind.SYSTEM_LIKED -> "加入喜欢"
-                                        PlaylistKind.USER -> "加入普通歌单"
-                                    },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                Box(
+                                    modifier = Modifier.width(32.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = if (disabled) null else { { selectedTargetId = target.id } },
+                                        modifier = Modifier.size(20.dp),
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = MaterialTheme.colorScheme.primary,
+                                            unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            disabledSelectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                            disabledUnselectedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        ),
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = target.name,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (disabled) {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                    )
+                                    Text(
+                                        text = if (disabled) "已存在" else when (target.kind) {
+                                            PlaylistKind.SYSTEM_LIKED -> "加入喜欢"
+                                            PlaylistKind.USER -> "加入普通歌单"
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }
@@ -216,20 +234,20 @@ internal fun PlaylistAddDialog(
                 )
                 Button(
                     onClick = {
-                    onCreatePlaylistAndAdd(newPlaylistName)
-                    newPlaylistName = ""
-                },
-                enabled = newPlaylistName.trim().isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary,
-                    disabledContainerColor = shellColors.cardContainer,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                        onCreatePlaylistAndAdd(newPlaylistName)
+                        newPlaylistName = ""
+                    },
+                    enabled = newPlaylistName.trim().isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary,
+                        contentColor = MaterialTheme.colorScheme.onSecondary,
+                        disabledContainerColor = shellColors.cardContainer,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
                     Text("新建并加入")
                 }
             }
@@ -303,6 +321,7 @@ internal fun PlaylistsTab(
             ) {
                 PlaylistListPane(
                     playlists = state.playlists,
+                    isLoadingContent = state.isLoadingContent,
                     selectedPlaylistId = state.selectedPlaylistId,
                     isRefreshing = state.isRefreshing,
                     selectedSourceFilter = state.selectedSourceFilter,
@@ -315,6 +334,7 @@ internal fun PlaylistsTab(
                 )
                 PlaylistDetailPane(
                     detail = filteredDetail,
+                    isLoadingContent = state.isLoadingContent,
                     hasTracksOutsideFilter = detail?.tracks?.isNotEmpty() == true && filteredDetail?.tracks?.isEmpty() == true,
                     onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                     onPlayAll = { tracks ->
@@ -337,6 +357,7 @@ internal fun PlaylistsTab(
         } else if (detail == null) {
             PlaylistListPane(
                 playlists = state.playlists,
+                isLoadingContent = state.isLoadingContent,
                 selectedPlaylistId = state.selectedPlaylistId,
                 isRefreshing = state.isRefreshing,
                 selectedSourceFilter = state.selectedSourceFilter,
@@ -350,6 +371,7 @@ internal fun PlaylistsTab(
         } else {
             PlaylistDetailPane(
                 detail = filteredDetail,
+                isLoadingContent = state.isLoadingContent,
                 hasTracksOutsideFilter = detail.tracks.isNotEmpty() && filteredDetail?.tracks?.isEmpty() == true,
                 onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                 onPlayAll = { tracks ->
@@ -374,6 +396,7 @@ internal fun PlaylistsTab(
 @OptIn(ExperimentalLayoutApi::class)
 private fun PlaylistListPane(
     playlists: List<PlaylistSummary>,
+    isLoadingContent: Boolean,
     selectedPlaylistId: String?,
     isRefreshing: Boolean,
     selectedSourceFilter: LibrarySourceFilter,
@@ -448,7 +471,14 @@ private fun PlaylistListPane(
                 }
             }
         }
-        if (playlists.isEmpty()) {
+        if (isLoadingContent) {
+            item {
+                EmptyStateCard(
+                    title = "正在加载歌单",
+                    body = "歌单数据会在页面显示后继续异步整理，请稍候。",
+                )
+            }
+        } else if (playlists.isEmpty()) {
             item {
                 EmptyStateCard(
                     title = "还没有普通歌单",
@@ -537,6 +567,7 @@ private fun PlaylistSummaryCard(
 @Composable
 private fun PlaylistDetailPane(
     detail: PlaylistDetail?,
+    isLoadingContent: Boolean,
     hasTracksOutsideFilter: Boolean,
     onBack: () -> Unit,
     onPlayAll: (List<Track>) -> Unit,
@@ -551,7 +582,12 @@ private fun PlaylistDetailPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            if (detail == null) {
+            if (isLoadingContent && detail == null) {
+                EmptyStateCard(
+                    title = "正在加载歌单详情",
+                    body = "歌单列表和歌曲内容会在后台继续准备，请稍候。",
+                )
+            } else if (detail == null) {
                 EmptyStateCard(
                     title = "选择一个歌单",
                     body = "左侧会列出普通歌单，点击后可以查看歌曲并直接播放。",

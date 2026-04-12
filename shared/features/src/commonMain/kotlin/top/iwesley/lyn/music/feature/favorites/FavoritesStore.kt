@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 
 data class FavoritesState(
     val query: String = "",
+    val isLoadingContent: Boolean = true,
     val tracks: List<Track> = emptyList(),
     val filteredTracks: List<Track> = emptyList(),
     val filteredAlbums: List<Album> = emptyList(),
@@ -49,24 +50,37 @@ class FavoritesStore(
     private val importSourceRepository: ImportSourceRepository,
     private val preferencesStore: LibrarySourceFilterPreferencesStore,
     private val storeScope: CoroutineScope,
+    startImmediately: Boolean = true,
 ) : BaseStore<FavoritesState, FavoritesIntent, FavoritesEffect>(
     initialState = FavoritesState(),
     scope = storeScope,
 ) {
-    private var lastNavidromeSourceIds: Set<String>? = null
+    private var contentStarted = false
+    private var hasTriggeredInitialRemoteRefresh = false
 
     init {
         storeScope.launch {
+            favoritesRepository.favoriteTrackIds.collect { favoriteTrackIds ->
+                updateState { it.copy(favoriteTrackIds = favoriteTrackIds) }
+            }
+        }
+        if (startImmediately) {
+            ensureContentStarted()
+        }
+    }
+
+    fun ensureContentStarted() {
+        if (contentStarted) return
+        contentStarted = true
+        storeScope.launch {
             combine(
                 favoritesRepository.favoriteTracks,
-                favoritesRepository.favoriteTrackIds,
                 importSourceRepository.observeSources(),
                 preferencesStore.favoritesSourceFilter,
-            ) { tracks, favoriteTrackIds, sources, selectedSourceFilter ->
+            ) { tracks, sources, selectedSourceFilter ->
                 val enabledSources = sources.map { it.source }.filter { it.enabled }
                 FavoritesSnapshot(
                     tracks = tracks,
-                    favoriteTrackIds = favoriteTrackIds,
                     selectedSourceFilter = selectedSourceFilter,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
                     availableSourceFilters = buildAvailableSourceFilters(sources.filter { it.source.enabled }),
@@ -75,12 +89,12 @@ class FavoritesStore(
                         .mapTo(linkedSetOf()) { it.id },
                 )
             }.collect { snapshot ->
-                refreshNavidromeFavoritesIfNeeded(snapshot.navidromeSourceIds)
+                refreshNavidromeFavoritesOnFirstActivation(snapshot.navidromeSourceIds)
                 updateState { state ->
                     deriveState(
                         state.copy(
+                            isLoadingContent = false,
                             tracks = snapshot.tracks,
-                            favoriteTrackIds = snapshot.favoriteTrackIds,
                             selectedSourceFilter = snapshot.selectedSourceFilter,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
@@ -125,10 +139,9 @@ class FavoritesStore(
         }
     }
 
-    private fun refreshNavidromeFavoritesIfNeeded(navidromeSourceIds: Set<String>) {
-        if (lastNavidromeSourceIds == navidromeSourceIds) return
-        lastNavidromeSourceIds = navidromeSourceIds
-        if (navidromeSourceIds.isEmpty()) return
+    private fun refreshNavidromeFavoritesOnFirstActivation(navidromeSourceIds: Set<String>) {
+        if (hasTriggeredInitialRemoteRefresh || navidromeSourceIds.isEmpty()) return
+        hasTriggeredInitialRemoteRefresh = true
         storeScope.launch {
             refreshNavidromeFavorites(canRefreshRemote = true, manual = false)
         }
@@ -230,7 +243,6 @@ class FavoritesStore(
 
     private data class FavoritesSnapshot(
         val tracks: List<Track>,
-        val favoriteTrackIds: Set<String>,
         val selectedSourceFilter: LibrarySourceFilter,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,

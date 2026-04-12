@@ -117,7 +117,7 @@ internal fun MobileShell(
                     textPalette = AppThemeTextPalette.White,
                 ) {
                     MiniPlayerBarVisibility(
-                        visible = playerState.snapshot.currentTrack != null &&
+                        visible = (playerState.snapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
                                 !playerState.isExpanded &&
                                 !hideMiniPlayerBar,
                         state = playerState,
@@ -368,7 +368,8 @@ internal fun DesktopShell(
                 textPalette = AppThemeTextPalette.White,
             ) {
                 MiniPlayerBarVisibility(
-                    visible = playerState.snapshot.currentTrack != null && !playerState.isExpanded,
+                    visible = (playerState.snapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
+                            !playerState.isExpanded,
                     state = playerState,
                     onPlayerIntent = onPlayerIntent,
                     isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,

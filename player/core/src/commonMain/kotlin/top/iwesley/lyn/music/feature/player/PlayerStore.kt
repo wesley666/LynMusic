@@ -178,6 +178,12 @@ class PlayerStore(
         }
     }
 
+    fun startHydration() {
+        storeScope.launch {
+            playbackRepository.hydratePersistedQueueIfNeeded()
+        }
+    }
+
     override suspend fun handleIntent(intent: PlayerIntent) {
         when (intent) {
             is PlayerIntent.PlayTracks -> playbackRepository.playTracks(intent.tracks, intent.startIndex)

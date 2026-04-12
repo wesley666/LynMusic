@@ -70,12 +70,18 @@ class PlaylistsStoreTest {
     }
 
     @Test
-    fun `distinct navidrome source sets trigger refresh once`() = runTest {
+    fun `navidrome playlists auto refresh only runs once after first page activation`() = runTest {
         val repository = FakePlaylistRepository()
         val importSources = FakePlaylistsImportSourceRepository()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         PlaylistsStore(repository, importSources, scope)
 
+        advanceUntilIdle()
+        assertEquals(0, repository.refreshCalls)
+
+        importSources.updateSources(
+            listOf(source("nav-1", ImportSourceType.NAVIDROME, "Navidrome")),
+        )
         advanceUntilIdle()
         assertEquals(1, repository.refreshCalls)
 
@@ -83,13 +89,7 @@ class PlaylistsStoreTest {
             listOf(source("nav-1", ImportSourceType.NAVIDROME, "Navidrome")),
         )
         advanceUntilIdle()
-        assertEquals(2, repository.refreshCalls)
-
-        importSources.updateSources(
-            listOf(source("nav-1", ImportSourceType.NAVIDROME, "Navidrome")),
-        )
-        advanceUntilIdle()
-        assertEquals(2, repository.refreshCalls)
+        assertEquals(1, repository.refreshCalls)
 
         importSources.updateSources(
             listOf(
@@ -98,7 +98,7 @@ class PlaylistsStoreTest {
             ),
         )
         advanceUntilIdle()
-        assertEquals(3, repository.refreshCalls)
+        assertEquals(1, repository.refreshCalls)
         scope.cancel()
     }
 

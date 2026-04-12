@@ -267,6 +267,8 @@ private class FakeQueuePlaybackRepository(
         mutableSnapshot.value = snapshot
     }
 
+    override suspend fun hydratePersistedQueueIfNeeded() = Unit
+
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
         lastPlayTracks = tracks
         lastPlayStartIndex = startIndex

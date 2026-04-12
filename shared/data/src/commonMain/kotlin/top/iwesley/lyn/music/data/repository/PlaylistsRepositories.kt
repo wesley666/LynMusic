@@ -47,8 +47,9 @@ class RoomPlaylistRepository(
             .filter { it.enabled }
             .map { it.id }
             .toSet()
+        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
         val trackById = trackEntities.associate { entity ->
-            entity.id to entity.toDomain(manualArtworkOverridesByTrackId(overrides)[entity.id])
+            entity.id to entity.toDomain(artworkOverrides[entity.id])
         }
         playlists.map { playlist ->
             val memberTrackIds = playlistTracks.asSequence()

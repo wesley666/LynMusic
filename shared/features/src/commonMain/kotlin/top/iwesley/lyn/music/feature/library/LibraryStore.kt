@@ -21,6 +21,7 @@ enum class LibrarySourceFilter {
 
 data class LibraryState(
     val query: String = "",
+    val isLoadingContent: Boolean = true,
     val tracks: List<Track> = emptyList(),
     val filteredTracks: List<Track> = emptyList(),
     val albums: List<Album> = emptyList(),
@@ -45,13 +46,24 @@ class LibraryStore(
     private val repository: LibraryRepository,
     private val importSourceRepository: ImportSourceRepository,
     private val preferencesStore: LibrarySourceFilterPreferencesStore,
-    scope: CoroutineScope,
+    private val storeScope: CoroutineScope,
+    startImmediately: Boolean = true,
 ) : BaseStore<LibraryState, LibraryIntent, LibraryEffect>(
     initialState = LibraryState(),
-    scope = scope,
+    scope = storeScope,
 ) {
+    private var hasStarted = false
+
     init {
-        scope.launch {
+        if (startImmediately) {
+            ensureStarted()
+        }
+    }
+
+    fun ensureStarted() {
+        if (hasStarted) return
+        hasStarted = true
+        storeScope.launch {
             combine(
                 repository.tracks,
                 repository.albums,
@@ -72,6 +84,7 @@ class LibraryStore(
                 updateState { state ->
                     deriveState(
                         state.copy(
+                            isLoadingContent = false,
                             tracks = snapshot.tracks,
                             albums = snapshot.albums,
                             artists = snapshot.artists,

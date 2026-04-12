@@ -59,6 +59,7 @@ data class MusicTagsLyricsSearchState(
 )
 
 data class MusicTagsState(
+    val isLoadingContent: Boolean = true,
     val tracks: List<Track> = emptyList(),
     val rowMetadata: Map<String, MusicTagsRowMetadata> = emptyMap(),
     val rowMetadataLoadingIds: Set<String> = emptySet(),
@@ -129,14 +130,24 @@ class MusicTagsStore(
     private val lyricsRepository: LyricsRepository,
     private val editorPlatformService: AudioTagEditorPlatformService,
     private val storeScope: CoroutineScope,
+    startImmediately: Boolean = true,
 ) : BaseStore<MusicTagsState, MusicTagsIntent, MusicTagsEffect>(
     initialState = MusicTagsState(),
     scope = storeScope,
 ) {
+    private var contentStarted = false
     private var selectedLoadVersion = 0L
     private var onlineLyricsSearchVersion = 0L
 
     init {
+        if (startImmediately) {
+            ensureStarted()
+        }
+    }
+
+    fun ensureStarted() {
+        if (contentStarted) return
+        contentStarted = true
         storeScope.launch {
             repository.localTracks.collect { tracks ->
                 val previousSelectedId = state.value.selectedTrackId
@@ -145,6 +156,7 @@ class MusicTagsStore(
                 } ?: tracks.firstOrNull()?.id
                 updateState { current ->
                     current.copy(
+                        isLoadingContent = false,
                         tracks = tracks,
                         selectedTrackId = nextSelectedId,
                     )

@@ -132,7 +132,7 @@ class FavoritesStoreTest {
     }
 
     @Test
-    fun `navidrome source set change triggers refresh once per distinct set`() = runTest {
+    fun `navidrome favorites auto refresh only runs once after first page activation`() = runTest {
         val favoritesRepository = FakeFavoritesRepository()
         val importSourceRepository = FakeImportSourceRepository(
             listOf(sampleSource("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录")),
@@ -156,7 +156,7 @@ class FavoritesStoreTest {
             sampleSources() + sampleSource("nav-2", ImportSourceType.NAVIDROME, "备用 Navidrome"),
         )
         advanceUntilIdle()
-        assertEquals(2, favoritesRepository.refreshCalls)
+        assertEquals(1, favoritesRepository.refreshCalls)
         scope.cancel()
     }
 

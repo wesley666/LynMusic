@@ -387,6 +387,8 @@ private class FakeLyricsSharePlaybackRepository(
         mutableSnapshot.value = snapshot
     }
 
+    override suspend fun hydratePersistedQueueIfNeeded() = Unit
+
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) = Unit
 
     override suspend fun togglePlayPause() = Unit

@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -83,6 +84,7 @@ fun buildPlayerAppComponent(
         scope = sharedGraph.scope,
         systemPlaybackControlsPlatformService = playerRuntimeServices.systemPlaybackControlsPlatformService,
         logger = sharedGraph.logger,
+        hydrateImmediately = false,
     )
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
@@ -124,6 +126,7 @@ fun App(component: LynMusicAppComponent) {
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
     var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
+    var startupHydrationStarted by remember(component) { mutableStateOf(false) }
     val shellThemeTokens = remember(settingsState.selectedTheme, settingsState.customThemeTokens) {
         resolveAppThemeTokens(
             themeId = settingsState.selectedTheme,
@@ -139,6 +142,24 @@ fun App(component: LynMusicAppComponent) {
         }
 
     CompositionLocalProvider(LocalPlatformDescriptor provides component.platform) {
+        LaunchedEffect(component) {
+            withFrameNanos { }
+            component.playerStore.startHydration()
+            activateStartupStores(
+                component = component,
+                selectedTab = selectedTab,
+                pendingPlaylistTrack = pendingPlaylistTrack,
+            )
+            startupHydrationStarted = true
+        }
+        LaunchedEffect(startupHydrationStarted, selectedTab, pendingPlaylistTrack) {
+            if (!startupHydrationStarted) return@LaunchedEffect
+            activateStartupStores(
+                component = component,
+                selectedTab = selectedTab,
+                pendingPlaylistTrack = pendingPlaylistTrack,
+            )
+        }
         LynMusicTheme(
             themeTokens = shellThemeTokens,
             textPalette = shellTextPalette,
@@ -288,6 +309,7 @@ fun App(component: LynMusicAppComponent) {
                     pendingPlaylistTrack?.let { track ->
                         PlaylistAddDialog(
                             track = track,
+                            isLoadingTargets = playlistsState.isLoadingContent,
                             targets = buildPlaylistAddTargets(
                                 playlists = playlistsState.playlists,
                                 favoriteTrackIds = favoritesState.favoriteTrackIds,
@@ -341,5 +363,22 @@ fun App(component: LynMusicAppComponent) {
                 }
             }
         }
+    }
+}
+
+private fun activateStartupStores(
+    component: LynMusicAppComponent,
+    selectedTab: AppTab,
+    pendingPlaylistTrack: Track?,
+) {
+    when (selectedTab) {
+        AppTab.Library -> component.libraryStore.ensureStarted()
+        AppTab.Favorites -> component.favoritesStore.ensureContentStarted()
+        AppTab.Playlists -> component.playlistsStore.ensureContentStarted()
+        AppTab.Tags -> component.musicTagsStore.ensureStarted()
+        AppTab.Sources, AppTab.Settings -> Unit
+    }
+    if (pendingPlaylistTrack != null) {
+        component.playlistsStore.ensureContentStarted()
     }
 }
