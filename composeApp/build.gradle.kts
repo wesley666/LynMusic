@@ -183,7 +183,7 @@ compose.desktop {
         mainClass = "top.iwesley.lyn.music.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Pkg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "LynMusic"
             packageVersion = desktopPackageVersion
             macOS {
