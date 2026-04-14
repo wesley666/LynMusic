@@ -407,26 +407,76 @@ private fun PlayerTrackInfoDialog(
     onDismiss: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = shellColors.secondaryText
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
         containerColor = shellColors.cardContainer,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("歌曲信息") },
+        titleContentColor = primaryTextColor,
+        textContentColor = primaryTextColor,
+        tonalElevation = 0.dp,
+        title = {
+            Text(
+                text = "歌曲信息",
+                color = primaryTextColor,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("格式：${trackDisplayFormat(track)}")
-                Text("大小：${formatTrackSize(track.sizeBytes)}")
-                Text("路径：${track.relativePath.ifBlank { "未知" }}")
+                PlayerTrackInfoDialogLine(
+                    label = "格式",
+                    value = trackDisplayFormat(track),
+                    labelColor = secondaryTextColor,
+                    valueColor = primaryTextColor,
+                )
+                PlayerTrackInfoDialogLine(
+                    label = "大小",
+                    value = formatTrackSize(track.sizeBytes),
+                    labelColor = secondaryTextColor,
+                    valueColor = primaryTextColor,
+                )
+                PlayerTrackInfoDialogLine(
+                    label = "路径",
+                    value = track.relativePath.ifBlank { "未知" },
+                    labelColor = secondaryTextColor,
+                    valueColor = primaryTextColor,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+            ) {
                 Text("关闭")
             }
         },
     )
+}
+
+@Composable
+private fun PlayerTrackInfoDialogLine(
+    label: String,
+    value: String,
+    labelColor: Color,
+    valueColor: Color,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            color = labelColor,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = value,
+            color = valueColor,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
 
 @Composable

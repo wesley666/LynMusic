@@ -26,8 +26,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.core.model.AppTab
-import top.iwesley.lyn.music.core.model.AppThemeTextPalette
-import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaylistKind
@@ -254,8 +252,8 @@ fun App(component: LynMusicAppComponent) {
                     }
 
                     LynMusicTheme(
-                        themeTokens = CLASSIC_APP_THEME_TOKENS,
-                        textPalette = AppThemeTextPalette.White,
+                        themeTokens = shellThemeTokens,
+                        textPalette = shellTextPalette,
                     ) {
                         PlayerDrawerHost(
                             visible = playerState.isExpanded,
