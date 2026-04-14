@@ -796,6 +796,7 @@ private fun PlayerOverlay(
                 platform = platform,
                 density = LocalDensity.current,
             )
+            val mobilePlayback = platform.isMobilePlatform()
             val wide = layoutProfile.isExpandedLayout
             val useTapToRevealLyrics = layoutProfile.isCompactLayout
             LaunchedEffect(platform.name, maxWidth, maxHeight) {
@@ -901,6 +902,7 @@ private fun PlayerOverlay(
                             track = track,
                             onPlayerIntent = onPlayerIntent,
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                            mobilePlayback = mobilePlayback,
                             modifier = Modifier
                                 .weight(0.54f)
                                 .fillMaxHeight(),
@@ -923,6 +925,7 @@ private fun PlayerOverlay(
                             state = state,
                             track = track,
                             onPlayerIntent = onPlayerIntent,
+                            mobilePlayback = mobilePlayback,
                             modifier = Modifier.weight(1f),
                             compact = true,
                         )
@@ -931,7 +934,7 @@ private fun PlayerOverlay(
                 PlayerBottomControls(
                     snapshot = state.snapshot,
                     track = track,
-                    mobilePlayback = platform.isMobilePlatform(),
+                    mobilePlayback = mobilePlayback,
                     wide = wide,
                     isFavorite = isFavorite,
                     onToggleFavorite = onToggleFavorite,

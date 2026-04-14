@@ -34,9 +34,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -54,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -95,10 +98,12 @@ internal fun PlayerLyricsPane(
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    mobilePlayback: Boolean = false,
 ) {
     val listState = rememberLazyListState()
     val lyricsPrimaryTextColor = Color.White
     val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
+    var showTrackInfoDialog by rememberSaveable(track.id, mobilePlayback) { mutableStateOf(false) }
     LaunchedEffect(track.id, state.lyrics, state.highlightedLineIndex) {
         val lyrics = state.lyrics ?: return@LaunchedEffect
         val targetIndex =
@@ -139,32 +144,36 @@ internal fun PlayerLyricsPane(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (onOpenLibraryNavigationTarget != null) {
-                        DesktopLyricsMetadataRow(
+                        PlayerLyricsMetadataRow(
                             snapshot = state.snapshot,
                             track = track,
                             secondaryTextColor = lyricsSecondaryTextColor,
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                            showTrackInfo = mobilePlayback,
+                            onShowTrackInfo = { showTrackInfoDialog = true },
                         )
                     } else {
+                        PlayerLyricsPlainMetadataRow(
+                            text = "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
+                            secondaryTextColor = lyricsSecondaryTextColor,
+                            showTrackInfo = mobilePlayback,
+                            onShowTrackInfo = { showTrackInfoDialog = true },
+                        )
+                    }
+                    if (!mobilePlayback) {
                         Text(
-                            "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
+                            track.relativePath,
+                            color = lyricsSecondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
                             color = lyricsSecondaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        track.relativePath,
-                        color = lyricsSecondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
-                        color = lyricsSecondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
             if (!compact || state.isLyricsLoading) {
@@ -283,14 +292,50 @@ internal fun PlayerLyricsPane(
             }
         }
     }
+    if (showTrackInfoDialog && mobilePlayback) {
+        PlayerTrackInfoDialog(
+            track = track,
+            onDismiss = { showTrackInfoDialog = false },
+        )
+    }
 }
 
 @Composable
-private fun DesktopLyricsMetadataRow(
+private fun PlayerLyricsPlainMetadataRow(
+    text: String,
+    secondaryTextColor: Color,
+    showTrackInfo: Boolean,
+    onShowTrackInfo: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f, fill = !showTrackInfo),
+            color = secondaryTextColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (showTrackInfo) {
+            PlayerTrackInfoButton(
+                tint = secondaryTextColor,
+                onClick = onShowTrackInfo,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerLyricsMetadataRow(
     snapshot: top.iwesley.lyn.music.core.model.PlaybackSnapshot,
     track: Track,
     secondaryTextColor: Color,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+    showTrackInfo: Boolean,
+    onShowTrackInfo: () -> Unit,
 ) {
     val navigationTargets = remember(
         snapshot.currentDisplayAlbumTitle,
@@ -327,9 +372,61 @@ private fun DesktopLyricsMetadataRow(
             target = navigationTargets.albumTarget,
             secondaryTextColor = secondaryTextColor,
             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f, fill = !showTrackInfo),
+        )
+        if (showTrackInfo) {
+            PlayerTrackInfoButton(
+                tint = secondaryTextColor,
+                onClick = onShowTrackInfo,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerTrackInfoButton(
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Info,
+            contentDescription = "查看歌曲信息",
+            modifier = Modifier.size(18.dp),
+            tint = tint,
         )
     }
+}
+
+@Composable
+private fun PlayerTrackInfoDialog(
+    track: Track,
+    onDismiss: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
+        containerColor = shellColors.cardContainer,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        title = { Text("歌曲信息") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("格式：${trackDisplayFormat(track)}")
+                Text("大小：${formatTrackSize(track.sizeBytes)}")
+                Text("路径：${track.relativePath.ifBlank { "未知" }}")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        },
+    )
 }
 
 @Composable
