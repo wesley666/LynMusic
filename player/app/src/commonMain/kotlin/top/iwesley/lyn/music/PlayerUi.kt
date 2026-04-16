@@ -720,12 +720,12 @@ internal fun resolvePlayerInfoVinylSize(
     hasCompactLyrics: Boolean,
 ): Dp {
     return if (compact) {
-        val widthBound = maxWidth * if (hasCompactLyrics) 0.84f else 0.84f
-        val heightReserve = if (hasCompactLyrics) 32.dp else 32.dp
+        val widthBound = maxWidth * 0.90f //if (hasCompactLyrics) 0.90f else 0.90f
+        val heightReserve = 32.dp //if (hasCompactLyrics) 32.dp else 32.dp
         val heightBound = (maxHeight - heightReserve).coerceAtLeast(180.dp)
         minOf(widthBound, heightBound).coerceIn(
             minimumValue = 220.dp,
-            maximumValue = if (hasCompactLyrics) 400.dp else 400.dp,
+            maximumValue = 400.dp //if (hasCompactLyrics) 400.dp else 400.dp
         )
     } else {
         minOf(maxWidth * 0.88f, maxHeight * 0.74f).coerceIn(
@@ -1105,26 +1105,25 @@ private fun PlayerInfoPane(
                 hasCompactLyrics = hasCompactLyrics,
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(),
+        val compactLyricsAreaTopOffset = ((maxHeight - vinylSize) / 2) + vinylSize
+        val compactLyricsAreaHeight = (maxHeight - compactLyricsAreaTopOffset).coerceAtLeast(0.dp)
+        VinylPlaceholder(
+            vinylSize = vinylSize,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
+            spinning = snapshot.isPlaying,
+            artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+            innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+            modifier = Modifier.align(Alignment.Center),
         )
         if (hasCompactLyrics) {
-            Column(
+            Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(50.dp),
+                    .align(Alignment.TopCenter)
+                    .offset(y = compactLyricsAreaTopOffset)
+                    .fillMaxWidth()
+                    .height(compactLyricsAreaHeight),
+                contentAlignment = Alignment.Center,
             ) {
-                VinylPlaceholder(
-                    vinylSize = vinylSize,
-                    artworkLocator = snapshot.currentDisplayArtworkLocator,
-                    spinning = snapshot.isPlaying,
-                    artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
-                    innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
-                )
                 Text(
                     text = compactLyricsText,
                     modifier = Modifier
@@ -1138,15 +1137,6 @@ private fun PlayerInfoPane(
                     overflow = TextOverflow.Clip,
                 )
             }
-        } else {
-            VinylPlaceholder(
-                vinylSize = vinylSize,
-                artworkLocator = snapshot.currentDisplayArtworkLocator,
-                spinning = snapshot.isPlaying,
-                artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
-                innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
-                modifier = Modifier.align(Alignment.Center),
-            )
         }
     }
 }

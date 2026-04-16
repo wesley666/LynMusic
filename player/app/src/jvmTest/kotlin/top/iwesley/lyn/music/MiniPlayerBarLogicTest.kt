@@ -168,7 +168,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player info vinyl size reserves more room when compact lyrics are visible`() {
+    fun `player info vinyl size keeps compact sizing identical with or without lyrics`() {
         val withoutLyrics = resolvePlayerInfoVinylSize(
             maxWidth = 390.dp,
             maxHeight = 520.dp,
@@ -182,13 +182,13 @@ class MiniPlayerBarLogicTest {
             hasCompactLyrics = true,
         )
 
-        assertTrue(withoutLyrics > withLyrics)
+        assertEquals(withoutLyrics, withLyrics)
     }
 
     @Test
     fun `player info vinyl size is capped on large wide layouts`() {
         assertEquals(
-            520.dp,
+            400.dp,
             resolvePlayerInfoVinylSize(
                 maxWidth = 900.dp,
                 maxHeight = 900.dp,
