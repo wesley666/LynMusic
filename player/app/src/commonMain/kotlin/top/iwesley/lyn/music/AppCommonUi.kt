@@ -64,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
@@ -813,6 +814,7 @@ internal fun StatCard(
 @Composable
 internal fun VinylPlaceholder(
     vinylSize: Dp,
+    artworkBitmap: ImageBitmap? = null,
     artworkLocator: String? = null,
     spinning: Boolean = false,
     enableArtworkTint: Boolean = false,
@@ -823,9 +825,9 @@ internal fun VinylPlaceholder(
     val normalizedArtworkDiameterFraction = artworkDiameterFraction.coerceIn(0.2f, 1f)
     val normalizedInnerGlowDiameterFraction = innerGlowDiameterFraction
         .coerceIn(normalizedArtworkDiameterFraction, 1f)
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val resolvedArtworkBitmap = artworkBitmap ?: rememberPlatformArtworkBitmap(artworkLocator)
     val palette = rememberVinylArtworkPalette(
-        artworkBitmap = artworkBitmap,
+        artworkBitmap = resolvedArtworkBitmap,
         enabled = enableArtworkTint,
     )
     val animatedRimColor by animateColorAsState(
@@ -935,9 +937,9 @@ internal fun VinylPlaceholder(
                     .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                if (artworkBitmap != null) {
+                if (resolvedArtworkBitmap != null) {
                     Image(
-                        bitmap = artworkBitmap,
+                        bitmap = resolvedArtworkBitmap,
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxSize()

@@ -80,6 +80,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
@@ -942,6 +943,7 @@ private fun PlayerOverlay(
                     MobilePlayerPrimaryPane(
                         state = state,
                         track = track,
+                        artworkBitmap = artworkBitmap,
                         showCompactPlayerLyrics = showCompactPlayerLyrics,
                         onPlayerIntent = onPlayerIntent,
                         modifier = Modifier
@@ -959,6 +961,7 @@ private fun PlayerOverlay(
                         PlayerInfoPane(
                             snapshot = state.snapshot,
                             track = track,
+                            artworkBitmap = artworkBitmap,
                             modifier = Modifier
                                 .weight(0.46f)
                                 .fillMaxHeight(),
@@ -984,6 +987,7 @@ private fun PlayerOverlay(
                         PlayerInfoPane(
                             snapshot = state.snapshot,
                             track = track,
+                            artworkBitmap = artworkBitmap,
                             modifier = Modifier.fillMaxWidth(),
                             compact = true,
                         )
@@ -1031,6 +1035,7 @@ private fun PlayerOverlay(
 private fun MobilePlayerPrimaryPane(
     state: PlayerState,
     track: Track,
+    artworkBitmap: ImageBitmap?,
     showCompactPlayerLyrics: Boolean,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
@@ -1076,6 +1081,7 @@ private fun MobilePlayerPrimaryPane(
         PlayerInfoPane(
             snapshot = state.snapshot,
             track = track,
+            artworkBitmap = artworkBitmap,
             modifier = Modifier.fillMaxSize(),
             compact = true,
             compactLyricsText = displayCompactLyricsText,
@@ -1088,6 +1094,7 @@ private fun MobilePlayerPrimaryPane(
 private fun PlayerInfoPane(
     snapshot: PlaybackSnapshot,
     track: Track,
+    artworkBitmap: ImageBitmap? = null,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     compactLyricsText: String? = null,
@@ -1109,6 +1116,7 @@ private fun PlayerInfoPane(
         val compactLyricsAreaHeight = (maxHeight - compactLyricsAreaTopOffset).coerceAtLeast(0.dp)
         VinylPlaceholder(
             vinylSize = vinylSize,
+            artworkBitmap = artworkBitmap,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
             artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
