@@ -109,6 +109,26 @@ class RoomPlaylistRepository(
         }
     }
 
+    override suspend fun deletePlaylist(playlistId: String): Result<Unit> {
+        return runCatching {
+            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            val bindings = database.playlistRemoteBindingDao().getByPlaylistId(playlistId)
+            bindings.forEach { binding ->
+                val resolvedSource = resolveNavidromeSource(binding.sourceId)
+                    ?: error("Navidrome 来源不可用，无法删除歌单。")
+                requestNavidromeJson(
+                    httpClient = httpClient,
+                    source = resolvedSource,
+                    endpoint = "deletePlaylist",
+                    parameters = mapOf("id" to binding.remotePlaylistId),
+                    logger = logger,
+                    logContext = "playlist=\"${playlist.name}\" delete remotePlaylist=${binding.remotePlaylistId}",
+                )
+            }
+            deleteLocalPlaylist(playlistId)
+        }
+    }
+
     override suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit> {
         return runCatching {
             val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
@@ -380,6 +400,12 @@ class RoomPlaylistRepository(
         if (!playlist.createdLocally && !hasTracks && !hasBindings) {
             database.playlistDao().deleteById(playlistId)
         }
+    }
+
+    private suspend fun deleteLocalPlaylist(playlistId: String) {
+        database.playlistRemoteBindingDao().deleteByPlaylistId(playlistId)
+        database.playlistTrackDao().deleteByPlaylistId(playlistId)
+        database.playlistDao().deleteById(playlistId)
     }
 
     private suspend fun touchPlaylist(playlist: PlaylistEntity) {

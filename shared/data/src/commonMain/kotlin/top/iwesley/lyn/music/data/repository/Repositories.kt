@@ -155,6 +155,7 @@ interface PlaylistRepository {
 
     fun observePlaylistDetail(playlistId: String): Flow<PlaylistDetail?>
     suspend fun createPlaylist(name: String): Result<PlaylistSummary>
+    suspend fun deletePlaylist(playlistId: String): Result<Unit>
     suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit>
     suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String): Result<Unit>
     suspend fun refreshNavidromePlaylists(): Result<Unit>

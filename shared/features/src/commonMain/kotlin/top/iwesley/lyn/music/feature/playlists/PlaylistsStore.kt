@@ -31,6 +31,7 @@ sealed interface PlaylistsIntent {
     data class SourceFilterChanged(val filter: LibrarySourceFilter) : PlaylistsIntent
     data object BackToList : PlaylistsIntent
     data class CreatePlaylist(val name: String) : PlaylistsIntent
+    data class DeletePlaylist(val playlistId: String) : PlaylistsIntent
     data class CreatePlaylistAndAddTrack(val name: String, val track: Track?) : PlaylistsIntent
     data class AddTrackToPlaylist(val playlistId: String, val track: Track) : PlaylistsIntent
     data class RemoveTrackFromPlaylist(val playlistId: String, val trackId: String) : PlaylistsIntent
@@ -120,6 +121,7 @@ class PlaylistsStore(
             }
             is PlaylistsIntent.SelectPlaylist -> observeSelectedPlaylist(intent.playlistId)
             is PlaylistsIntent.CreatePlaylist -> createPlaylist(intent.name)
+            is PlaylistsIntent.DeletePlaylist -> deletePlaylist(intent.playlistId)
             is PlaylistsIntent.CreatePlaylistAndAddTrack -> createPlaylistAndMaybeAddTrack(intent.name, intent.track)
             is PlaylistsIntent.AddTrackToPlaylist -> addTrackToPlaylist(intent.playlistId, intent.track)
             is PlaylistsIntent.RemoveTrackFromPlaylist -> removeTrackFromPlaylist(intent.playlistId, intent.trackId)
@@ -191,6 +193,14 @@ class PlaylistsStore(
             .onSuccess { updateState { it.copy(message = null) } }
             .onFailure { throwable ->
                 updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "加入歌单失败。" }) }
+            }
+    }
+
+    private suspend fun deletePlaylist(playlistId: String) {
+        playlistRepository.deletePlaylist(playlistId)
+            .onSuccess { updateState { it.copy(message = null) } }
+            .onFailure { throwable ->
+                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "删除歌单失败。" }) }
             }
     }
 

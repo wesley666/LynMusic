@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
@@ -118,6 +119,50 @@ class PlaylistsStoreTest {
     }
 
     @Test
+    fun `delete playlist removes selected playlist after repository update`() = runTest {
+        val repository = FakePlaylistRepository()
+        val importSources = FakePlaylistsImportSourceRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(repository, importSources, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlaylistsIntent.CreatePlaylist("晨跑"))
+        advanceUntilIdle()
+        val playlistId = store.state.value.selectedPlaylistId
+        requireNotNull(playlistId)
+
+        store.dispatch(PlaylistsIntent.DeletePlaylist(playlistId))
+        advanceUntilIdle()
+
+        assertEquals(listOf(playlistId), repository.deletedPlaylistIds)
+        assertTrue(store.state.value.playlists.isEmpty())
+        assertEquals(null, store.state.value.selectedPlaylistId)
+        assertEquals(null, store.state.value.selectedPlaylist)
+        scope.cancel()
+    }
+
+    @Test
+    fun `delete playlist failure surfaces message`() = runTest {
+        val repository = FakePlaylistRepository(deleteError = IllegalStateException("删除失败"))
+        val importSources = FakePlaylistsImportSourceRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(repository, importSources, scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlaylistsIntent.CreatePlaylist("晨跑"))
+        advanceUntilIdle()
+        val playlistId = store.state.value.selectedPlaylistId
+        requireNotNull(playlistId)
+
+        store.dispatch(PlaylistsIntent.DeletePlaylist(playlistId))
+        advanceUntilIdle()
+
+        assertEquals("删除失败", store.state.value.message)
+        assertTrue(store.state.value.playlists.isNotEmpty())
+        scope.cancel()
+    }
+
+    @Test
     fun `source filter follows available sources and falls back to all`() = runTest {
         val repository = FakePlaylistRepository()
         val importSources = FakePlaylistsImportSourceRepository(
@@ -162,6 +207,7 @@ class PlaylistsStoreTest {
 
 private class FakePlaylistRepository(
     private val createError: Throwable? = null,
+    private val deleteError: Throwable? = null,
 ) : PlaylistRepository {
     private val mutablePlaylists = MutableStateFlow<List<PlaylistSummary>>(emptyList())
     private val mutableDetails = MutableStateFlow<Map<String, PlaylistDetail>>(emptyMap())
@@ -170,6 +216,7 @@ private class FakePlaylistRepository(
     var refreshCalls: Int = 0
         private set
     val addedTrackIds = mutableListOf<String>()
+    val deletedPlaylistIds = mutableListOf<String>()
 
     override val playlists: Flow<List<PlaylistSummary>> = mutablePlaylists.asStateFlow()
 
@@ -195,6 +242,14 @@ private class FakePlaylistRepository(
             )
         )
         return Result.success(summary)
+    }
+
+    override suspend fun deletePlaylist(playlistId: String): Result<Unit> {
+        deleteError?.let { return Result.failure(it) }
+        deletedPlaylistIds += playlistId
+        mutablePlaylists.value = mutablePlaylists.value.filterNot { it.id == playlistId }
+        mutableDetails.value = mutableDetails.value - playlistId
+        return Result.success(Unit)
     }
 
     override suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit> {

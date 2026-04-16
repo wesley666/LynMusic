@@ -393,6 +393,9 @@ interface PlaylistRemoteBindingDao {
     @Query("SELECT * FROM playlist_remote_binding")
     suspend fun getAll(): List<PlaylistRemoteBindingEntity>
 
+    @Query("SELECT * FROM playlist_remote_binding WHERE playlistId = :playlistId")
+    suspend fun getByPlaylistId(playlistId: String): List<PlaylistRemoteBindingEntity>
+
     @Query("SELECT * FROM playlist_remote_binding WHERE playlistId = :playlistId AND sourceId = :sourceId LIMIT 1")
     suspend fun getByPlaylistIdAndSourceId(playlistId: String, sourceId: String): PlaylistRemoteBindingEntity?
 

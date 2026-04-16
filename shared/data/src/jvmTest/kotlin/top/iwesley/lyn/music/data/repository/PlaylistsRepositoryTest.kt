@@ -6,7 +6,9 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -211,6 +213,136 @@ class PlaylistsRepositoryTest {
         assertEquals(firstPlaylist.updatedAt, secondPlaylist.updatedAt)
         assertEquals(firstPlaylist.trackCount, secondPlaylist.trackCount)
     }
+
+    @Test
+    fun `delete playlist removes local playlist and relations`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        database.trackDao().upsertAll(listOf(localTrackEntity()))
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(),
+            httpClient = RecordingPlaylistsHttpClient(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val playlist = repository.createPlaylist("晨跑").getOrThrow()
+        repository.addTrackToPlaylist(playlist.id, localTrack()).getOrThrow()
+
+        repository.deletePlaylist(playlist.id).getOrThrow()
+
+        assertNull(database.playlistDao().getById(playlist.id))
+        assertTrue(database.playlistTrackDao().getByPlaylistId(playlist.id).isEmpty())
+        assertTrue(database.playlistRemoteBindingDao().getByPlaylistId(playlist.id).isEmpty())
+        assertTrue(repository.playlists.first().isEmpty())
+    }
+
+    @Test
+    fun `delete playlist removes remote playlist before local cleanup`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        database.trackDao().upsertAll(listOf(navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1")))
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(mutableMapOf("cred-a" to "pass-a")),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val playlist = repository.createPlaylist("Road Trip").getOrThrow()
+        repository.addTrackToPlaylist(
+            playlistId = playlist.id,
+            track = navidromeTrack(sourceId = "nav-a", songId = "song-a1"),
+        ).getOrThrow()
+        val binding = database.playlistRemoteBindingDao().getByPlaylistIdAndSourceId(playlist.id, "nav-a")
+
+        repository.deletePlaylist(playlist.id).getOrThrow()
+
+        assertNotNull(binding)
+        assertFalse(httpClient.remotePlaylistsByUser.getValue("alpha").containsKey(binding.remotePlaylistId))
+        assertTrue(httpClient.requestedEndpoints.contains("deletePlaylist"))
+        assertNull(database.playlistDao().getById(playlist.id))
+        assertTrue(database.playlistRemoteBindingDao().getByPlaylistId(playlist.id).isEmpty())
+    }
+
+    @Test
+    fun `delete playlist removes all remote bindings for merged playlist`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        seedNavidromeSource(database, sourceId = "nav-b", username = "beta", credentialKey = "cred-b", label = "Beta")
+        database.trackDao().upsertAll(
+            listOf(
+                navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1"),
+                navidromeTrackEntity(sourceId = "nav-b", songId = "song-b1"),
+            ),
+        )
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(
+                    "pa" to RemotePlaylistState(id = "pa", name = "Chill", songIds = mutableListOf("song-a1")),
+                ),
+                "beta" to linkedMapOf(
+                    "pb" to RemotePlaylistState(id = "pb", name = "Chill", songIds = mutableListOf("song-b1")),
+                ),
+            ),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(
+                mutableMapOf("cred-a" to "pass-a", "cred-b" to "pass-b"),
+            ),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromePlaylists().getOrThrow()
+        val playlist = repository.playlists.first().single()
+
+        repository.deletePlaylist(playlist.id).getOrThrow()
+
+        assertTrue(httpClient.remotePlaylistsByUser.getValue("alpha").isEmpty())
+        assertTrue(httpClient.remotePlaylistsByUser.getValue("beta").isEmpty())
+        assertEquals(2, httpClient.requestedEndpoints.count { it == "deletePlaylist" })
+        assertNull(database.playlistDao().getById(playlist.id))
+    }
+
+    @Test
+    fun `delete playlist failure keeps local playlist intact`() = runTest {
+        val database = createPlaylistTestDatabase()
+        seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
+        database.trackDao().upsertAll(listOf(navidromeTrackEntity(sourceId = "nav-a", songId = "song-a1")))
+        val httpClient = RecordingPlaylistsHttpClient(
+            remotePlaylistsByUser = mutableMapOf(
+                "alpha" to linkedMapOf(),
+            ),
+            failingDeletePlaylistIds = mutableSetOf("pl-alpha-1"),
+        )
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(mutableMapOf("cred-a" to "pass-a")),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val playlist = repository.createPlaylist("Road Trip").getOrThrow()
+        repository.addTrackToPlaylist(
+            playlistId = playlist.id,
+            track = navidromeTrack(sourceId = "nav-a", songId = "song-a1"),
+        ).getOrThrow()
+
+        val result = repository.deletePlaylist(playlist.id)
+
+        assertTrue(result.isFailure)
+        assertNotNull(database.playlistDao().getById(playlist.id))
+        assertTrue(database.playlistTrackDao().getByPlaylistId(playlist.id).isNotEmpty())
+        assertTrue(database.playlistRemoteBindingDao().getByPlaylistId(playlist.id).isNotEmpty())
+        assertTrue(httpClient.remotePlaylistsByUser.getValue("alpha").containsKey("pl-alpha-1"))
+    }
 }
 
 private fun createPlaylistTestDatabase(): LynMusicDatabase {
@@ -330,6 +462,7 @@ private fun navidromeTrackEntity(sourceId: String, songId: String): TrackEntity 
 
 private class RecordingPlaylistsHttpClient(
     val remotePlaylistsByUser: MutableMap<String, LinkedHashMap<String, RemotePlaylistState>> = mutableMapOf(),
+    private val failingDeletePlaylistIds: MutableSet<String> = mutableSetOf(),
 ) : LyricsHttpClient {
     val requestedEndpoints = mutableListOf<String>()
 
@@ -369,6 +502,16 @@ private class RecordingPlaylistsHttpClient(
                     LyricsHttpResponse(200, okBody())
                 }
 
+                "deletePlaylist" -> {
+                    val playlistId = url.parameters["id"].orEmpty()
+                    if (playlistId in failingDeletePlaylistIds) {
+                        LyricsHttpResponse(200, errorBody("delete failed"))
+                    } else {
+                        playlists.remove(playlistId)
+                        LyricsHttpResponse(200, okBody())
+                    }
+                }
+
                 else -> error("Unexpected request endpoint: $endpoint")
             },
         )
@@ -376,6 +519,10 @@ private class RecordingPlaylistsHttpClient(
 
     private fun okBody(): String {
         return """{"subsonic-response":{"status":"ok","version":"1.16.1"}}"""
+    }
+
+    private fun errorBody(message: String): String {
+        return """{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"message":"$message"}}}"""
     }
 
     private fun getPlaylistsBody(playlists: List<RemotePlaylistState>): String {

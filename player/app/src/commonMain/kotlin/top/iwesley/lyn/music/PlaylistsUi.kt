@@ -3,6 +3,8 @@ package top.iwesley.lyn.music
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,6 +50,7 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +60,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -329,6 +335,7 @@ internal fun PlaylistsTab(
                     onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                     onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                     onCreate = { showCreateDialog = true },
+                    onDelete = { onPlaylistsIntent(PlaylistsIntent.DeletePlaylist(it)) },
                     onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
                     modifier = Modifier.weight(0.36f).fillMaxHeight(),
                 )
@@ -365,6 +372,7 @@ internal fun PlaylistsTab(
                 onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                 onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                 onCreate = { showCreateDialog = true },
+                onDelete = { onPlaylistsIntent(PlaylistsIntent.DeletePlaylist(it)) },
                 onSelect = { onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it)) },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -404,164 +412,295 @@ private fun PlaylistListPane(
     onRefresh: () -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onCreate: () -> Unit,
+    onDelete: (String) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            PlaylistSectionTitle(
-                title = "歌单",
-                subtitle = "普通歌单支持本地歌曲和 Navidrome 歌曲混合收藏。",
-            )
+    val mobilePlatform = currentPlatformDescriptor.isMobilePlatform()
+    var menuPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDeletePlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingDeletePlaylistName by rememberSaveable { mutableStateOf("") }
+    val pendingDeletePlaylist = remember(playlists, pendingDeletePlaylistId) {
+        playlists.firstOrNull { it.id == pendingDeletePlaylistId }
+    }
+    LaunchedEffect(pendingDeletePlaylistId, pendingDeletePlaylist) {
+        if (pendingDeletePlaylistId != null && pendingDeletePlaylist == null) {
+            pendingDeletePlaylistId = null
+            pendingDeletePlaylistName = ""
         }
-        item {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(onClick = onCreate) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "新建歌单",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                OutlinedButton(onClick = onRefresh) {
-                    Icon(Icons.Rounded.Sync, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (isRefreshing) "同步中" else "同步远端",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Box {
-                    OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
-                        Icon(Icons.Rounded.Tune, contentDescription = null)
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                PlaylistSectionTitle(
+                    title = "歌单",
+                    subtitle = "普通歌单支持本地歌曲和 Navidrome 歌曲混合收藏。",
+                )
+            }
+            item {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedButton(onClick = onCreate) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = playlistSourceFilterButtonLabel(selectedSourceFilter),
+                            text = "新建歌单",
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    DropdownMenu(
-                        expanded = sourceFilterMenuExpanded,
-                        onDismissRequest = { sourceFilterMenuExpanded = false },
-                        containerColor = mainShellColors.navContainer,
-                    ) {
-                        availableSourceFilters.forEach { filter ->
-                            DropdownMenuItem(
-                                text = { Text(playlistSourceFilterMenuLabel(filter)) },
-                                onClick = {
-                                    sourceFilterMenuExpanded = false
-                                    onSourceFilterChanged(filter)
-                                },
+                    OutlinedButton(onClick = onRefresh) {
+                        Icon(Icons.Rounded.Sync, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (isRefreshing) "同步中" else "同步远端",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box {
+                        OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                            Icon(Icons.Rounded.Tune, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = playlistSourceFilterButtonLabel(selectedSourceFilter),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
+                        }
+                        DropdownMenu(
+                            expanded = sourceFilterMenuExpanded,
+                            onDismissRequest = { sourceFilterMenuExpanded = false },
+                            containerColor = mainShellColors.navContainer,
+                        ) {
+                            availableSourceFilters.forEach { filter ->
+                                DropdownMenuItem(
+                                    text = { Text(playlistSourceFilterMenuLabel(filter)) },
+                                    onClick = {
+                                        sourceFilterMenuExpanded = false
+                                        onSourceFilterChanged(filter)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
+            if (isLoadingContent) {
+                item {
+                    EmptyStateCard(
+                        title = "正在加载歌单",
+                        body = "歌单数据会在页面显示后继续异步整理，请稍候。",
+                    )
+                }
+            } else if (playlists.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        title = "还没有普通歌单",
+                        body = "从播放器把当前歌曲加入歌单，或先新建一个空歌单。",
+                    )
+                }
+            } else {
+                items(playlists, key = { it.id }) { playlist ->
+                    PlaylistSummaryCard(
+                        playlist = playlist,
+                        selected = playlist.id == selectedPlaylistId,
+                        mobilePlatform = mobilePlatform,
+                        menuExpanded = menuPlaylistId == playlist.id,
+                        onClick = { onSelect(playlist.id) },
+                        onOpenMenu = { menuPlaylistId = playlist.id },
+                        onDismissMenu = {
+                            if (menuPlaylistId == playlist.id) {
+                                menuPlaylistId = null
+                            }
+                        },
+                        onRequestDelete = {
+                            menuPlaylistId = null
+                            pendingDeletePlaylistId = playlist.id
+                            pendingDeletePlaylistName = playlist.name
+                        },
+                    )
+                }
+            }
         }
-        if (isLoadingContent) {
-            item {
-                EmptyStateCard(
-                    title = "正在加载歌单",
-                    body = "歌单数据会在页面显示后继续异步整理，请稍候。",
-                )
-            }
-        } else if (playlists.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    title = "还没有普通歌单",
-                    body = "从播放器把当前歌曲加入歌单，或先新建一个空歌单。",
-                )
-            }
-        } else {
-            items(playlists, key = { it.id }) { playlist ->
-                PlaylistSummaryCard(
-                    playlist = playlist,
-                    selected = playlist.id == selectedPlaylistId,
-                    onClick = { onSelect(playlist.id) },
-                )
-            }
+
+        pendingDeletePlaylist?.let { playlist ->
+            PlaylistDeleteDialog(
+                playlistName = pendingDeletePlaylistName.ifBlank { playlist.name },
+                onDismiss = {
+                    pendingDeletePlaylistId = null
+                    pendingDeletePlaylistName = ""
+                },
+                onConfirm = {
+                    pendingDeletePlaylistId = null
+                    pendingDeletePlaylistName = ""
+                    onDelete(playlist.id)
+                },
+            )
         }
     }
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun PlaylistSummaryCard(
     playlist: PlaylistSummary,
     selected: Boolean,
+    mobilePlatform: Boolean,
+    menuExpanded: Boolean,
     onClick: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onRequestDelete: () -> Unit,
 ) {
     val shellColors = mainShellColors
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardContainer,
-        ),
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardBorder,
-        ),
-    ) {
-        Row(
+    val cardShape = RoundedCornerShape(24.dp)
+    val interactionModifier = if (mobilePlatform) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onOpenMenu,
+        )
+    } else {
+        Modifier
+            .pointerInput(onOpenMenu) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                            event.changes.forEach { it.consume() }
+                            onOpenMenu()
+                        }
+                    }
+                }
+            }
+            .clickable(onClick = onClick)
+    }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .clip(cardShape)
+                .then(interactionModifier),
+            shape = cardShape,
+            colors = CardDefaults.cardColors(
+                containerColor = if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardContainer,
+            ),
+            border = BorderStroke(
+                1.dp,
+                if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardBorder,
+            ),
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (selected) Color.Transparent else shellColors.navContainer,
-                    ),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.List,
-                    contentDescription = null,
-                    tint = if (selected) {
-                        MaterialTheme.colorScheme.onSecondary
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    playlist.name,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "${playlist.trackCount} 首歌曲",
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            if (selected) Color.Transparent else shellColors.navContainer,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.List,
+                        contentDescription = null,
+                        tint = if (selected) {
+                            MaterialTheme.colorScheme.onSecondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        playlist.name,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${playlist.trackCount} 首歌曲",
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onSecondary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = onDismissMenu,
+            containerColor = shellColors.navContainer,
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "删除歌单",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                },
+                onClick = onRequestDelete,
+            )
+        }
     }
+}
+
+@Composable
+private fun PlaylistDeleteDialog(
+    playlistName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = shellColors.navContainer,
+        iconContentColor = MaterialTheme.colorScheme.error,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text("删除歌单") },
+        text = { Text("确认删除“$playlistName”吗？本地和已同步的远端歌单都会一起删除。") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = "删除",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    )
 }
 
 @Composable
