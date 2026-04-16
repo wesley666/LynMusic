@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -286,8 +287,9 @@ internal fun PlaylistsTab(
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     val detail = state.selectedPlaylist
+    val requestedPlaylistId = state.selectedPlaylistId
     PlatformBackHandler(
-        enabled = canNavigateBackFromPlaylistDetail(state.selectedPlaylistId),
+        enabled = canNavigateBackFromPlaylistDetail(requestedPlaylistId),
         onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
     )
     val filteredDetail = remember(detail, state.selectedSourceFilter, state.sourceTypesById) {
@@ -302,6 +304,22 @@ internal fun PlaylistsTab(
             playlistDetail.copy(tracks = filteredTracks)
         }
     }
+    val rawDetailPresentation = remember(requestedPlaylistId, detail, state.playlists) {
+        buildPlaylistDetailPresentationState(
+            selectedPlaylistId = requestedPlaylistId,
+            detail = detail,
+            playlists = state.playlists,
+        )
+    }
+    val filteredDetailPresentation = remember(requestedPlaylistId, filteredDetail, state.playlists) {
+        buildPlaylistDetailPresentationState(
+            selectedPlaylistId = requestedPlaylistId,
+            detail = filteredDetail,
+            playlists = state.playlists,
+        )
+    }
+    val resolvedDetail = filteredDetailPresentation.resolvedDetail
+    val resolvedRawDetail = rawDetailPresentation.resolvedDetail
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val layoutProfile = buildLayoutProfile(
@@ -328,7 +346,7 @@ internal fun PlaylistsTab(
                 PlaylistListPane(
                     playlists = state.playlists,
                     isLoadingContent = state.isLoadingContent,
-                    selectedPlaylistId = state.selectedPlaylistId,
+                    selectedPlaylistId = requestedPlaylistId,
                     isRefreshing = state.isRefreshing,
                     selectedSourceFilter = state.selectedSourceFilter,
                     availableSourceFilters = state.availableSourceFilters,
@@ -340,9 +358,12 @@ internal fun PlaylistsTab(
                     modifier = Modifier.weight(0.36f).fillMaxHeight(),
                 )
                 PlaylistDetailPane(
-                    detail = filteredDetail,
+                    detail = resolvedDetail,
                     isLoadingContent = state.isLoadingContent,
-                    hasTracksOutsideFilter = detail?.tracks?.isNotEmpty() == true && filteredDetail?.tracks?.isEmpty() == true,
+                    isDetailSwitchLoading = filteredDetailPresentation.isDetailSwitchLoading,
+                    requestedPlaylistName = filteredDetailPresentation.requestedPlaylistName,
+                    hasTracksOutsideFilter = resolvedRawDetail?.tracks?.isNotEmpty() == true &&
+                        resolvedDetail?.tracks?.isEmpty() == true,
                     onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                     onPlayAll = { tracks ->
                         if (tracks.isNotEmpty()) {
@@ -353,7 +374,7 @@ internal fun PlaylistsTab(
                         onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
                     },
                     onRemoveTrack = { trackId ->
-                        detail?.id?.let { playlistId ->
+                        resolvedRawDetail?.id?.let { playlistId ->
                             onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(playlistId, trackId))
                         }
                     },
@@ -361,11 +382,11 @@ internal fun PlaylistsTab(
                     showBackButton = false,
                 )
             }
-        } else if (detail == null) {
+        } else if (!filteredDetailPresentation.shouldShowDetailPane) {
             PlaylistListPane(
                 playlists = state.playlists,
                 isLoadingContent = state.isLoadingContent,
-                selectedPlaylistId = state.selectedPlaylistId,
+                selectedPlaylistId = requestedPlaylistId,
                 isRefreshing = state.isRefreshing,
                 selectedSourceFilter = state.selectedSourceFilter,
                 availableSourceFilters = state.availableSourceFilters,
@@ -378,9 +399,12 @@ internal fun PlaylistsTab(
             )
         } else {
             PlaylistDetailPane(
-                detail = filteredDetail,
+                detail = resolvedDetail,
                 isLoadingContent = state.isLoadingContent,
-                hasTracksOutsideFilter = detail.tracks.isNotEmpty() && filteredDetail?.tracks?.isEmpty() == true,
+                isDetailSwitchLoading = filteredDetailPresentation.isDetailSwitchLoading,
+                requestedPlaylistName = filteredDetailPresentation.requestedPlaylistName,
+                hasTracksOutsideFilter = resolvedRawDetail?.tracks?.isNotEmpty() == true &&
+                    resolvedDetail?.tracks?.isEmpty() == true,
                 onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
                 onPlayAll = { tracks ->
                     if (tracks.isNotEmpty()) {
@@ -391,13 +415,38 @@ internal fun PlaylistsTab(
                     onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
                 },
                 onRemoveTrack = { trackId ->
-                    onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(detail.id, trackId))
+                    resolvedRawDetail?.id?.let { playlistId ->
+                        onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(playlistId, trackId))
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
                 showBackButton = true,
             )
         }
     }
+}
+
+internal data class PlaylistDetailPresentationState(
+    val requestedPlaylistId: String?,
+    val requestedPlaylistName: String?,
+    val resolvedDetail: PlaylistDetail?,
+    val isDetailSwitchLoading: Boolean,
+    val shouldShowDetailPane: Boolean,
+)
+
+internal fun buildPlaylistDetailPresentationState(
+    selectedPlaylistId: String?,
+    detail: PlaylistDetail?,
+    playlists: List<PlaylistSummary>,
+): PlaylistDetailPresentationState {
+    val resolvedDetail = detail?.takeIf { it.id == selectedPlaylistId }
+    return PlaylistDetailPresentationState(
+        requestedPlaylistId = selectedPlaylistId,
+        requestedPlaylistName = playlists.firstOrNull { it.id == selectedPlaylistId }?.name,
+        resolvedDetail = resolvedDetail,
+        isDetailSwitchLoading = selectedPlaylistId != null && resolvedDetail == null,
+        shouldShowDetailPane = selectedPlaylistId != null,
+    )
 }
 
 @Composable
@@ -707,6 +756,8 @@ private fun PlaylistDeleteDialog(
 private fun PlaylistDetailPane(
     detail: PlaylistDetail?,
     isLoadingContent: Boolean,
+    isDetailSwitchLoading: Boolean,
+    requestedPlaylistName: String?,
     hasTracksOutsideFilter: Boolean,
     onBack: () -> Unit,
     onPlayAll: (List<Track>) -> Unit,
@@ -721,7 +772,13 @@ private fun PlaylistDetailPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            if (isLoadingContent && detail == null) {
+            if (isDetailSwitchLoading) {
+                PlaylistDetailLoadingContent(
+                    requestedPlaylistName = requestedPlaylistName,
+                    showBackButton = showBackButton,
+                    onBack = onBack,
+                )
+            } else if (isLoadingContent && detail == null) {
                 EmptyStateCard(
                     title = "正在加载歌单详情",
                     body = "歌单列表和歌曲内容会在后台继续准备，请稍候。",
@@ -781,6 +838,48 @@ private fun PlaylistDetailPane(
                     onClick = { onPlayTrack(detail.tracks.map { it.track }, index) },
                     onRemove = { onRemoveTrack(item.track.id) },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistDetailLoadingContent(
+    requestedPlaylistName: String?,
+    showBackButton: Boolean,
+    onBack: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (showBackButton) {
+            TextButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("返回歌单列表")
+            }
+        }
+        Card(
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = mainShellColors.cardContainer),
+            border = BorderStroke(1.dp, mainShellColors.cardBorder),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("正在打开歌单", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = requestedPlaylistName
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { "正在读取“$it”中的歌曲，请稍候。" }
+                            ?: "正在读取歌单中的歌曲，请稍候。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
