@@ -1101,7 +1101,7 @@ internal fun LyricsShareOverlay(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (mobileActions) Arrangement.End else Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.Top,
                     ) {
                         if (!mobileActions) {
@@ -1126,6 +1126,13 @@ internal fun LyricsShareOverlay(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
+                        } else {
+                            TextButton(
+                                onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                            ) {
+                                Text("关闭")
+                            }
                         }
                         Column(
                             horizontalAlignment = Alignment.End,
@@ -1137,11 +1144,13 @@ internal fun LyricsShareOverlay(
                                     onPlayerIntent(PlayerIntent.LyricsShareTemplateChanged(it))
                                 },
                             )
-                            TextButton(
-                                onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                            ) {
-                                Text("关闭")
+                            if (!mobileActions) {
+                                TextButton(
+                                    onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                                ) {
+                                    Text("关闭")
+                                }
                             }
                         }
                     }
