@@ -52,10 +52,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
+import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
@@ -579,8 +581,11 @@ private fun LyricsSearchResultsPane(
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = primaryTextColor,
                                             )
+                                            val lyricsContentType = resolveLyricsSearchContentType(
+                                                candidate.document,
+                                            )
                                             Text(
-                                                "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
+                                                "${lyricsContentType.shortLabel} · ${candidate.document.lines.size} 行",
                                                 color = secondaryTextColor,
                                             )
                                         }
@@ -867,7 +872,7 @@ private sealed interface LyricsSearchApplyConfirmation {
         override val sourceName: String = candidate.sourceName
         override val title: String = candidate.title?.takeIf { it.isNotBlank() } ?: "歌词结果"
         override val metadata: String? = buildString {
-            append(if (candidate.document.isSynced) "同步歌词" else "纯文本歌词")
+            append(resolveLyricsSearchContentType(candidate.document).descriptionLabel)
             append(" · ")
             append(candidate.document.lines.size)
             append(" 行")
@@ -887,6 +892,27 @@ private sealed interface LyricsSearchApplyConfirmation {
         override val preview: String =
             "“应用”或“仅应用歌词”会继续请求该候选的歌词内容。"
         override val artworkLocator: String? = candidate.imageUrl
+    }
+}
+
+internal enum class LyricsSearchContentType(
+    val shortLabel: String,
+    val descriptionLabel: String,
+) {
+    WORD("逐字", "逐字歌词"),
+    LINE("逐行", "逐行歌词"),
+    PLAIN("纯文本", "纯文本歌词"),
+}
+
+internal fun resolveLyricsSearchContentType(document: LyricsDocument): LyricsSearchContentType {
+    return when {
+        parseEnhancedLyricsPresentation(
+            rawPayload = document.rawPayload,
+            fallbackDocument = document,
+        ) != null -> LyricsSearchContentType.WORD
+
+        document.isSynced -> LyricsSearchContentType.LINE
+        else -> LyricsSearchContentType.PLAIN
     }
 }
 
