@@ -967,7 +967,11 @@ private fun MusicTagsLyricsField(
     LaunchedEffect(value, resetKey) {
         if (value != textFieldValueState.text) {
             textFieldValueState = musicTagsLyricsTextFieldValueFor(value)
+            horizontalScroll.scrollTo(0)
         }
+    }
+    LaunchedEffect(resetKey) {
+        horizontalScroll.scrollTo(0)
     }
 
     val textColor = if (readOnly) {
@@ -1087,7 +1091,7 @@ private fun MusicTagsLyricsField(
 private fun musicTagsLyricsTextFieldValueFor(value: String): TextFieldValue {
     return TextFieldValue(
         text = value,
-        selection = TextRange(value.length),
+        selection = TextRange.Zero,
     )
 }
 
