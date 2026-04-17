@@ -242,7 +242,10 @@ private suspend fun requestNavidromeStructuredLyrics(
             httpClient = httpClient,
             source = source,
             endpoint = "getLyricsBySongId",
-            parameters = mapOf("id" to songId),
+            parameters = mapOf(
+                "id" to songId,
+                "enhanced" to "true",
+            ),
             logger = logger,
             logContext = buildString {
                 append("songId=\"")
@@ -534,41 +537,13 @@ private fun redactNavidromeUrlForLog(url: String): String {
 }
 
 private fun parseNavidromeStructuredLyricsDocument(payload: JsonObject): LyricsDocument? {
-    val lyricsList = payload["lyricsList"].asObjectOrNull() ?: return null
-    val entries = lyricsList["structuredLyrics"].asObjectList()
-    if (entries.isEmpty()) return null
-    val chosen = entries
-        .mapNotNull(::parseNavidromeStructuredLyricsEntry)
-        .sortedWith(
-            compareByDescending<ParsedNavidromeStructuredLyrics> { it.document.isSynced }
-                .thenByDescending { it.document.lines.size }
-        )
-        .firstOrNull()
+    val parsed = parseNavidromeStructuredLyricsPayload(payload)
         ?: return null
-    return chosen.document
-}
-
-private fun parseNavidromeStructuredLyricsEntry(entry: JsonObject): ParsedNavidromeStructuredLyrics? {
-    val synced = entry.boolean("synced") ?: false
-    val offsetMs = entry.long("offset") ?: 0L
-    val lines = entry["line"].asObjectList()
-        .mapNotNull { line ->
-            val text = line.string("value")?.trim().orEmpty()
-            if (text.isBlank()) return@mapNotNull null
-            LyricsLine(
-                timestampMs = if (synced) line.long("start") else null,
-                text = text,
-            )
-        }
-    if (lines.isEmpty()) return null
-    val document = LyricsDocument(
-        lines = lines,
-        offsetMs = offsetMs,
+    return LyricsDocument(
+        lines = parsed.lines,
+        offsetMs = parsed.offsetMs,
         sourceId = NAVIDROME_LYRICS_SOURCE_ID,
-        rawPayload = "",
-    )
-    return ParsedNavidromeStructuredLyrics(
-        document = document.copy(rawPayload = serializeLyricsDocument(document)),
+        rawPayload = payload.toString(),
     )
 }
 
@@ -668,7 +643,3 @@ private fun JsonObject.boolean(key: String): Boolean? {
 private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
 
 private fun JsonObject.long(key: String): Long? = string(key)?.toLongOrNull()
-
-private data class ParsedNavidromeStructuredLyrics(
-    val document: LyricsDocument,
-)

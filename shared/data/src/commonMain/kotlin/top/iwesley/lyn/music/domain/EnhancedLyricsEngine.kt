@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.domain
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 
@@ -48,6 +54,7 @@ fun parseEnhancedLyricsPresentation(
 
 internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredLyricsPayload? {
     if (rawPayload.isBlank()) return null
+    parseNavidromeStructuredLyricsPayload(rawPayload)?.let { return it }
     val hasStructuredSyntax = rawPayload.lineSequence()
         .map { it.trim() }
         .any { line ->
@@ -136,12 +143,14 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
 private data class ParsedDisplayLineDraft(
     val text: String,
     val lineStartTimeMs: Long?,
+    val lineEndTimeMs: Long? = null,
     val segments: List<ParsedSegmentDraft> = emptyList(),
 )
 
 private data class ParsedSegmentDraft(
     val text: String,
     val startTimeMs: Long,
+    val endTimeMs: Long? = null,
 )
 
 private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<EnhancedLyricsDisplayLine> {
@@ -151,10 +160,13 @@ private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<Enh
             .mapNotNull { it.lineStartTimeMs }
             .firstOrNull()
             ?.takeIf { nextStart -> draft.lineStartTimeMs == null || nextStart > draft.lineStartTimeMs }
+        val resolvedLineEndTimeMs = draft.lineEndTimeMs
+            ?.takeIf { lineEnd -> draft.lineStartTimeMs == null || lineEnd > draft.lineStartTimeMs }
+            ?: nextLineStartTimeMs
         EnhancedLyricsDisplayLine(
             text = draft.text,
             lineStartTimeMs = draft.lineStartTimeMs,
-            lineEndTimeMs = nextLineStartTimeMs,
+            lineEndTimeMs = resolvedLineEndTimeMs,
             segments = draft.segments.mapIndexed { segmentIndex, segment ->
                 val nextSegmentStartTimeMs = draft.segments
                     .getOrNull(segmentIndex + 1)
@@ -163,7 +175,10 @@ private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<Enh
                 EnhancedLyricsSegment(
                     text = segment.text,
                     startTimeMs = segment.startTimeMs,
-                    endTimeMs = nextSegmentStartTimeMs ?: nextLineStartTimeMs,
+                    endTimeMs = segment.endTimeMs
+                        ?.takeIf { segmentEnd -> segmentEnd > segment.startTimeMs }
+                        ?: nextSegmentStartTimeMs
+                        ?: resolvedLineEndTimeMs,
                 )
             },
         )
@@ -190,12 +205,191 @@ private fun parseEnhancedSegmentDrafts(content: String): List<ParsedSegmentDraft
                     ParsedSegmentDraft(
                         text = segmentText,
                         startTimeMs = segmentStartTimeMs,
+                        endTimeMs = null,
                     ),
                 )
             }
         }
     }
     return segments
+}
+
+internal fun parseNavidromeStructuredLyricsPayload(rawPayload: String): ParsedStructuredLyricsPayload? {
+    if (rawPayload.isBlank()) return null
+    val root = runCatching { structuredLyricsJson.parseToJsonElement(rawPayload) }.getOrNull() as? JsonObject
+        ?: return null
+    return parseNavidromeStructuredLyricsPayload(root)
+}
+
+internal fun parseNavidromeStructuredLyricsPayload(rootPayload: JsonObject): ParsedStructuredLyricsPayload? {
+    val payload = rootPayload["subsonic-response"].asJsonObjectOrNull() ?: rootPayload
+    val lyricsList = payload["lyricsList"].asJsonObjectOrNull() ?: return null
+    val entries = lyricsList["structuredLyrics"].asJsonObjectList()
+    if (entries.isEmpty()) return null
+    val chosen = entries
+        .mapNotNull(::parseNavidromeStructuredLyricsEntry)
+        .filter { entry -> entry.kind == null || entry.kind.equals("main", ignoreCase = true) }
+        .sortedWith(
+            compareByDescending<ParsedNavidromeStructuredLyricsEntry> { it.hasEnhancedSegments }
+                .thenByDescending { it.synced }
+                .thenByDescending { it.lines.size },
+        )
+        .firstOrNull()
+        ?: return null
+    return ParsedStructuredLyricsPayload(
+        lines = chosen.lines,
+        offsetMs = chosen.offsetMs,
+        displayLines = chosen.displayLines,
+        hasEnhancedSegments = chosen.hasEnhancedSegments,
+    )
+}
+
+private data class ParsedNavidromeStructuredLyricsEntry(
+    val kind: String?,
+    val synced: Boolean,
+    val offsetMs: Long,
+    val lines: List<LyricsLine>,
+    val displayLines: List<EnhancedLyricsDisplayLine>,
+    val hasEnhancedSegments: Boolean,
+)
+
+private data class ParsedNavidromeLineDraft(
+    val index: Int,
+    val text: String,
+    val startTimeMs: Long?,
+)
+
+private data class ParsedNavidromeCueLineDraft(
+    val index: Int,
+    val text: String,
+    val startTimeMs: Long?,
+    val endTimeMs: Long?,
+    val segments: List<ParsedSegmentDraft>,
+    val agentId: String? = null,
+)
+
+private fun parseNavidromeStructuredLyricsEntry(entry: JsonObject): ParsedNavidromeStructuredLyricsEntry? {
+    val kind = entry.string("kind")
+    val synced = entry.boolean("synced") ?: false
+    val offsetMs = entry.long("offset") ?: 0L
+    val lineDrafts = entry["line"].asJsonObjectList()
+        .mapIndexedNotNull { index, line ->
+            val text = line.string("value")?.trim().orEmpty()
+            if (text.isBlank()) return@mapIndexedNotNull null
+            ParsedNavidromeLineDraft(
+                index = index,
+                text = text,
+                startTimeMs = if (synced) line.long("start") else null,
+            )
+        }
+    if (lineDrafts.isEmpty()) return null
+
+    val cueLinesByIndex = if (synced) {
+        val mainAgentId = entry["agents"].asJsonObjectList()
+            .firstOrNull { agent -> agent.string("role")?.equals("main", ignoreCase = true) == true }
+            ?.string("id")
+        buildMap {
+            entry["cueLine"].asJsonObjectList()
+            .mapNotNull(::parseNavidromeCueLineDraft)
+            .filter { cueLine ->
+                mainAgentId == null ||
+                    cueLine.agentId == null ||
+                    cueLine.agentId == mainAgentId
+            }
+                .forEach { cueLine ->
+                    putIfAbsent(cueLine.index, cueLine)
+                }
+        }
+    } else {
+        emptyMap()
+    }
+
+    val displayLineDrafts = lineDrafts.map { line ->
+        val cueLine = cueLinesByIndex[line.index]
+        ParsedDisplayLineDraft(
+            text = cueLine?.text ?: line.text,
+            lineStartTimeMs = line.startTimeMs ?: cueLine?.startTimeMs,
+            lineEndTimeMs = cueLine?.endTimeMs,
+            segments = cueLine?.segments.orEmpty(),
+        )
+    }
+    return ParsedNavidromeStructuredLyricsEntry(
+        kind = kind,
+        synced = synced,
+        offsetMs = offsetMs,
+        lines = lineDrafts.map { line ->
+            LyricsLine(
+                timestampMs = line.startTimeMs,
+                text = line.text,
+            )
+        },
+        displayLines = finalizeDisplayLines(displayLineDrafts),
+        hasEnhancedSegments = displayLineDrafts.any { it.segments.isNotEmpty() },
+    )
+}
+
+private fun parseNavidromeCueLineDraft(entry: JsonObject): ParsedNavidromeCueLineDraft? {
+    val value = entry.string("value") ?: return null
+    val index = entry.int("index") ?: return null
+    val startTimeMs = entry.long("start")
+    val endTimeMs = entry.long("end")
+    val cueDrafts = parseNavidromeCueDrafts(
+        text = value,
+        cueEntries = entry["cue"].asJsonObjectList(),
+    )
+    if (cueDrafts.isEmpty()) return null
+    return ParsedNavidromeCueLineDraft(
+        index = index,
+        text = value,
+        startTimeMs = startTimeMs,
+        endTimeMs = endTimeMs,
+        segments = cueDrafts,
+        agentId = entry.string("agentId"),
+    )
+}
+
+private fun parseNavidromeCueDrafts(
+    text: String,
+    cueEntries: List<JsonObject>,
+): List<ParsedSegmentDraft> {
+    if (cueEntries.isEmpty()) return emptyList()
+    val textBytes = text.encodeToByteArray()
+    var consumedByteEndExclusive = 0
+    val drafts = mutableListOf<ParsedSegmentDraft>()
+    cueEntries.forEach { cue ->
+        val cueStartTimeMs = cue.long("start") ?: return@forEach
+        val cueEndTimeMs = cue.long("end")
+        val byteEndInclusive = cue.int("byteEnd")
+        val resolvedEndExclusive = byteEndInclusive
+            ?.plus(1)
+            ?.coerceIn(0, textBytes.size)
+            ?: textBytes.size
+        val resolvedStartInclusive = consumedByteEndExclusive.coerceIn(0, resolvedEndExclusive)
+        val segmentText = if (resolvedStartInclusive < resolvedEndExclusive) {
+            textBytes.copyOfRange(resolvedStartInclusive, resolvedEndExclusive).decodeToString()
+        } else {
+            cue.string("value").orEmpty()
+        }
+        if (segmentText.isEmpty()) {
+            consumedByteEndExclusive = resolvedEndExclusive
+            return@forEach
+        }
+        drafts += ParsedSegmentDraft(
+            text = segmentText,
+            startTimeMs = cueStartTimeMs,
+            endTimeMs = cueEndTimeMs,
+        )
+        consumedByteEndExclusive = resolvedEndExclusive
+    }
+    if (drafts.isEmpty()) return emptyList()
+    if (consumedByteEndExclusive < textBytes.size) {
+        val trailingText = textBytes.copyOfRange(consumedByteEndExclusive, textBytes.size).decodeToString()
+        if (trailingText.isNotEmpty()) {
+            val lastDraft = drafts.last()
+            drafts[drafts.lastIndex] = lastDraft.copy(text = lastDraft.text + trailingText)
+        }
+    }
+    return drafts
 }
 
 private fun parseStructuredTimestampMatch(match: MatchResult): Long? {
@@ -218,3 +412,32 @@ private val ENHANCED_LYRICS_METADATA_REGEX = Regex(
     """^\[(ti|ar|al|by|re|ve|length|lang|language):.*]$""",
     RegexOption.IGNORE_CASE,
 )
+private val structuredLyricsJson = Json { ignoreUnknownKeys = true }
+
+private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject
+
+private fun JsonElement?.asJsonObjectList(): List<JsonObject> {
+    return when (val element = this) {
+        is JsonArray -> element.mapNotNull { it as? JsonObject }
+        is JsonObject -> listOf(element)
+        else -> emptyList()
+    }
+}
+
+private fun JsonObject.string(key: String): String? {
+    return (this[key] as? JsonPrimitive)?.contentOrNull
+}
+
+private fun JsonObject.boolean(key: String): Boolean? {
+    return string(key)?.lowercase()?.let { value ->
+        when (value) {
+            "true" -> true
+            "false" -> false
+            else -> null
+        }
+    }
+}
+
+private fun JsonObject.int(key: String): Int? = string(key)?.toIntOrNull()
+
+private fun JsonObject.long(key: String): Long? = string(key)?.toLongOrNull()

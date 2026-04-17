@@ -89,4 +89,97 @@ class EnhancedLyricsEngineTest {
         assertEquals(listOf(null, null), document.lines.map { it.timestampMs })
         assertEquals(listOf("第一句", "第二句"), document.lines.map { it.text })
     }
+
+    @Test
+    fun `navidrome structured lyrics preserves main cue lines as enhanced presentation`() {
+        val rawLyrics = """
+            {
+              "lyricsList": {
+                "structuredLyrics": [
+                  {
+                    "kind": "translation",
+                    "synced": true,
+                    "offset": 999,
+                    "line": [
+                      { "start": 1000, "value": "Hello" }
+                    ]
+                  },
+                  {
+                    "kind": "main",
+                    "synced": true,
+                    "offset": 150,
+                    "line": [
+                      { "start": 1000, "value": "你好" },
+                      { "start": 2400, "value": "世界" }
+                    ],
+                    "cueLine": [
+                      {
+                        "index": 0,
+                        "start": 1000,
+                        "end": 2400,
+                        "value": "你好",
+                        "cue": [
+                          { "start": 1000, "end": 1500, "value": "你", "byteStart": 0, "byteEnd": 2 },
+                          { "start": 1500, "end": 2000, "value": "好", "byteStart": 3, "byteEnd": 5 }
+                        ]
+                      },
+                      {
+                        "index": 1,
+                        "start": 2400,
+                        "end": 3800,
+                        "value": "世界",
+                        "cue": [
+                          { "start": 2400, "end": 2900, "value": "世", "byteStart": 0, "byteEnd": 2 },
+                          { "start": 2900, "end": 3400, "value": "界", "byteStart": 3, "byteEnd": 5 }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val document = parseCachedLyrics(sourceId = NAVIDROME_LYRICS_SOURCE_ID, rawPayload = rawLyrics)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = rawLyrics,
+            fallbackDocument = requireNotNull(document),
+        )
+
+        assertNotNull(document)
+        assertEquals(150L, document.offsetMs)
+        assertEquals(listOf("你好", "世界"), document.lines.map { it.text })
+        assertEquals(listOf(1_000L, 2_400L), document.lines.map { it.timestampMs })
+        assertNotNull(presentation)
+        assertEquals(150L, presentation.offsetMs)
+        assertEquals(listOf("你", "好"), presentation.lines.first().segments.map { it.text })
+        assertEquals(listOf(1_000L, 1_500L), presentation.lines.first().segments.map { it.startTimeMs })
+    }
+
+    @Test
+    fun `navidrome structured lyrics without cue lines stay line based`() {
+        val rawLyrics = """
+            {
+              "lyricsList": {
+                "structuredLyrics": [
+                  {
+                    "synced": true,
+                    "offset": 80,
+                    "line": [
+                      { "start": 1000, "value": "第一句" },
+                      { "start": 2000, "value": "第二句" }
+                    ]
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val document = parseCachedLyrics(sourceId = NAVIDROME_LYRICS_SOURCE_ID, rawPayload = rawLyrics)
+
+        assertNotNull(document)
+        assertEquals(80L, document.offsetMs)
+        assertEquals(listOf("第一句", "第二句"), document.lines.map { it.text })
+        assertNull(parseEnhancedLyricsPresentation(rawPayload = rawLyrics, fallbackDocument = document))
+    }
 }

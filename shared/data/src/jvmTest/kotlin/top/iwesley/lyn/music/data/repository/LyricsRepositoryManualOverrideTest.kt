@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
@@ -244,6 +245,95 @@ class LyricsRepositoryManualOverrideTest {
         val candidates = repository.searchLyricsCandidates(track, includeTrackProvidedCandidate = false)
 
         assertEquals(listOf("first", "second", "third"), candidates.mapNotNull { it.itemId })
+    }
+
+    @Test
+    fun `navidrome structured lyrics request enhanced mode and preserve structured payload in cache`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val track = navidromeTrack()
+        val httpClient = MatchingLyricsHttpClient { request ->
+            when {
+                request.url.contains("/rest/getLyricsBySongId") -> Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            {
+                              "subsonic-response": {
+                                "status": "ok",
+                                "version": "1.16.1",
+                                "type": "Navidrome",
+                                "serverVersion": "0.55.0",
+                                "openSubsonic": true,
+                                "lyricsList": {
+                                  "structuredLyrics": [
+                                    {
+                                      "kind": "main",
+                                      "synced": true,
+                                      "offset": 120,
+                                      "line": [
+                                        { "start": 1000, "value": "你好" }
+                                      ],
+                                      "cueLine": [
+                                        {
+                                          "index": 0,
+                                          "start": 1000,
+                                          "end": 2400,
+                                          "value": "你好",
+                                          "cue": [
+                                            { "start": 1000, "end": 1500, "value": "你", "byteStart": 0, "byteEnd": 2 },
+                                            { "start": 1500, "end": 2100, "value": "好", "byteStart": 3, "byteEnd": 5 }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                        """.trimIndent(),
+                    ),
+                )
+
+                request.url.contains("/rest/getLyrics") -> Result.failure(
+                    IllegalStateException("Should not fall back to plain getLyrics for enhanced structured lyrics"),
+                )
+
+                else -> Result.failure(IllegalArgumentException("Unexpected request: ${request.url}"))
+            }
+        }
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, NAVIDROME_LYRICS_SOURCE_ID)
+        val resolvedFromCache = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(mutableMapOf("nav-cred" to "plain-pass")),
+            logger = NoopDiagnosticLogger,
+        ).getLyrics(track)
+        val presentation = parseEnhancedLyricsPresentation(
+            rawPayload = requireNotNull(resolvedFromCache).document.rawPayload,
+            fallbackDocument = resolvedFromCache.document,
+        )
+
+        assertNotNull(resolved)
+        assertEquals(NAVIDROME_LYRICS_SOURCE_ID, resolved.document.sourceId)
+        assertEquals(120L, resolved.document.offsetMs)
+        assertEquals("你好", resolved.document.lines.single().text)
+        assertTrue(httpClient.requestedUrls.single().contains("enhanced=true"))
+        assertNotNull(cachedRow)
+        assertTrue(cachedRow.rawPayload.startsWith("{"))
+        assertTrue(cachedRow.rawPayload.contains("\"cueLine\""))
+        assertNotNull(resolvedFromCache)
+        assertEquals(cachedRow.rawPayload, resolvedFromCache.document.rawPayload)
+        assertNotNull(presentation)
+        assertEquals(listOf("你", "好"), presentation.lines.single().segments.map { it.text })
     }
 
     @Test
@@ -922,6 +1012,17 @@ private class RecordingLyricsHttpClient(
         requestedUrls += request.url
         return responses[request.url]
             ?: Result.failure(IllegalArgumentException("Unexpected request: ${request.url}"))
+    }
+}
+
+private class MatchingLyricsHttpClient(
+    private val responder: (LyricsRequest) -> Result<LyricsHttpResponse>,
+) : LyricsHttpClient {
+    val requestedUrls = mutableListOf<String>()
+
+    override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+        requestedUrls += request.url
+        return responder(request)
     }
 }
 
