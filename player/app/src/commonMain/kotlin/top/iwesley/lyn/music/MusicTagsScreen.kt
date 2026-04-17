@@ -145,24 +145,10 @@ fun MusicTagsTab(
                 )
             }
             if (state.showDiscardChangesDialog) {
-                val shellColors = mainShellColors
-                AlertDialog(
+                MusicTagsDiscardChangesDialog(
                     onDismissRequest = { onMusicTagsIntent(MusicTagsIntent.DismissDiscardSelection) },
-                    title = { Text("放弃未保存修改？") },
-                    text = { Text("当前歌曲的标签还没有保存，切换后这些改动会丢失。") },
-                    containerColor = shellColors.cardContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    confirmButton = {
-                        Button(onClick = { onMusicTagsIntent(MusicTagsIntent.ConfirmDiscardSelection) }) {
-                            Text("放弃并切换")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { onMusicTagsIntent(MusicTagsIntent.DismissDiscardSelection) }) {
-                            Text("继续编辑")
-                        }
-                    },
+                    onConfirm = { onMusicTagsIntent(MusicTagsIntent.ConfirmDiscardSelection) },
+                    confirmLabel = "放弃并切换",
                 )
             }
             if (state.onlineLyricsSearch.isVisible) {
@@ -255,14 +241,27 @@ private fun MobileMusicTagsLayout(
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
 ) {
     var detailTrackId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDiscardBackDialog by rememberSaveable { mutableStateOf(false) }
     val detailTrack = state.tracks.firstOrNull { it.id == detailTrackId }
     val layoutSpacing = if (detailTrack == null) 14.dp else 10.dp
+    fun requestBackToList() {
+        if (state.isDirty) {
+            showDiscardBackDialog = true
+        } else {
+            detailTrackId = null
+        }
+    }
     SideEffect {
         onMobileEditorVisibilityChanged(detailTrack != null)
     }
+    LaunchedEffect(detailTrackId, state.isDirty) {
+        if (detailTrackId == null || !state.isDirty) {
+            showDiscardBackDialog = false
+        }
+    }
     PlatformBackHandler(
         enabled = canNavigateBackFromMusicTagsDetail(detailTrackId),
-        onBack = { detailTrackId = null },
+        onBack = ::requestBackToList,
     )
     Column(
         modifier = Modifier
@@ -313,7 +312,7 @@ private fun MobileMusicTagsLayout(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                TextButton(onClick = { detailTrackId = null }) {
+                TextButton(onClick = ::requestBackToList) {
                     Text("返回列表")
                 }
             }
@@ -335,6 +334,44 @@ private fun MobileMusicTagsLayout(
             )
         }
     }
+    if (showDiscardBackDialog) {
+        MusicTagsDiscardChangesDialog(
+            onDismissRequest = { showDiscardBackDialog = false },
+            onConfirm = {
+                showDiscardBackDialog = false
+                onMusicTagsIntent(MusicTagsIntent.ResetDraft)
+                detailTrackId = null
+            },
+            confirmLabel = "放弃并返回",
+        )
+    }
+}
+
+@Composable
+private fun MusicTagsDiscardChangesDialog(
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    confirmLabel: String,
+) {
+    val shellColors = mainShellColors
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text("放弃未保存修改？") },
+        text = { Text("当前歌曲的标签还没有保存，切换后这些改动会丢失。") },
+        containerColor = shellColors.cardContainer,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("继续编辑")
+            }
+        },
+    )
 }
 
 @Composable
