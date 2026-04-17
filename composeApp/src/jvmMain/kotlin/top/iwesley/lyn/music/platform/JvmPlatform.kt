@@ -8,7 +8,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
-import java.awt.KeyboardFocusManager
 import java.io.File
 import java.net.URI
 import java.net.URL
@@ -16,9 +15,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.ArrayDeque
 import java.util.Properties
-import javax.swing.JFileChooser
-import javax.swing.SwingUtilities
-import javax.swing.filechooser.FileNameExtensionFilter
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.isRegularFile
@@ -29,14 +25,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
@@ -464,24 +457,14 @@ private class JvmAudioTagGateway(
 private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
     override suspend fun pickArtworkBytes(): Result<ByteArray?> {
         return runCatching {
-            val chooser = JFileChooser().apply {
-                fileSelectionMode = JFileChooser.FILES_ONLY
-                isAcceptAllFileFilterUsed = true
-                fileFilter = FileNameExtensionFilter(
-                    "图片文件",
-                    "jpg",
-                    "jpeg",
-                    "png",
-                    "webp",
-                    "bmp",
-                    "gif",
-                )
-            }
-            if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
-                null
-            } else {
-                chooser.selectedFile?.toPath()?.let(Files::readAllBytes)
-            }
+            val path = JvmNativeFilePicker.pickOpenFile(
+                title = "选择图片文件",
+                extensionFilter = JvmFileExtensionFilter(
+                    description = "图片文件",
+                    rawExtensions = listOf("jpg", "jpeg", "png", "webp", "bmp", "gif"),
+                ),
+            ) ?: return@runCatching null
+            Files.readAllBytes(path)
         }
     }
 
@@ -514,48 +497,10 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
 private class JvmVlcPathPickerPlatformService : VlcPathPickerPlatformService {
     override suspend fun pickVlcDirectory(): Result<String?> {
         return runCatching {
-            val selectedPath = pickVlcDirectoryOnEdt() ?: return@runCatching null
+            val selectedPath = JvmNativeFilePicker.pickFileOrDirectory("选择 VLC 路径") ?: return@runCatching null
             val normalizedPath = normalizeDesktopVlcSelection(selectedPath)
                 ?: error(desktopVlcInvalidSelectionMessage())
             normalizedPath.toString()
-        }
-    }
-
-    private suspend fun pickVlcDirectoryOnEdt(): Path? {
-        return suspendCancellableCoroutine { continuation ->
-            val showChooser = {
-                if (continuation.isActive) {
-                    runCatching {
-                        val chooser = JFileChooser().apply {
-                            dialogTitle = "选择 VLC 路径"
-                            fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
-                            isAcceptAllFileFilterUsed = true
-                        }
-                        val owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow
-                        if (chooser.showOpenDialog(owner) != JFileChooser.APPROVE_OPTION) {
-                            null
-                        } else {
-                            chooser.selectedFile?.toPath()
-                        }
-                    }.fold(
-                        onSuccess = { selectedPath ->
-                            if (continuation.isActive) {
-                                continuation.resume(selectedPath)
-                            }
-                        },
-                        onFailure = { throwable ->
-                            if (continuation.isActive) {
-                                continuation.resumeWithException(throwable)
-                            }
-                        },
-                    )
-                }
-            }
-            if (SwingUtilities.isEventDispatchThread()) {
-                showChooser()
-            } else {
-                SwingUtilities.invokeLater(showChooser)
-            }
         }
     }
 }
@@ -679,16 +624,10 @@ private class JvmImportSourceGateway(
     private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
     override suspend fun pickLocalFolder(): LocalFolderSelection? {
-        val chooser = JFileChooser().apply {
-            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-            isAcceptAllFileFilterUsed = false
-        }
-        val result = chooser.showOpenDialog(null)
-        if (result != JFileChooser.APPROVE_OPTION) return null
-        val file = chooser.selectedFile ?: return null
+        val path = JvmNativeFilePicker.pickDirectory("选择本地音乐文件夹") ?: return null
         return LocalFolderSelection(
-            label = file.name.ifBlank { file.absolutePath },
-            persistentReference = file.absolutePath,
+            label = path.name.ifBlank { path.toString() },
+            persistentReference = path.toString(),
         )
     }
 

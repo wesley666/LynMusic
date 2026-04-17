@@ -15,9 +15,7 @@ import java.awt.geom.RoundRectangle2D
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.File
 import javax.imageio.ImageIO
-import javax.swing.JFileChooser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
@@ -45,21 +43,17 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         pngBytes: ByteArray,
         suggestedName: String,
     ): Result<LyricsShareSaveResult> {
-        return withContext(Dispatchers.Swing) {
-            runCatching {
-                val chooser = JFileChooser().apply {
-                    selectedFile = File(ensurePngFileName(suggestedName))
-                }
-                if (chooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
-                    error("已取消保存。")
-                }
-                val output = chooser.selectedFile?.let { selected ->
-                    if (selected.name.endsWith(".png", ignoreCase = true)) selected else File(selected.parentFile, "${selected.name}.png")
-                } ?: error("没有可用的输出文件。")
-                output.parentFile?.mkdirs()
-                output.writeBytes(pngBytes)
-                LyricsShareSaveResult(message = "图片已保存到文件")
+        return runCatching {
+            val output = JvmNativeFilePicker.pickSaveFile(
+                title = "保存歌词图片",
+                suggestedName = ensurePngFileName(suggestedName),
+                defaultExtension = "png",
+            ) ?: error("已取消保存。")
+            withContext(Dispatchers.IO) {
+                output.parent?.toFile()?.mkdirs()
+                output.toFile().writeBytes(pngBytes)
             }
+            LyricsShareSaveResult(message = "图片已保存到文件")
         }
     }
 
