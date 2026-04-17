@@ -8,6 +8,7 @@ import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
@@ -1203,6 +1204,19 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
+            readEmbeddedTrackLyrics(track).document?.let { embeddedLyrics ->
+                storeLyricsDocument(
+                    track.id,
+                    embeddedLyrics,
+                    cacheSourceId = EMBEDDED_LYRICS_SOURCE_ID,
+                )
+                logger.info(LYRICS_LOG_TAG) {
+                    "resolved track=$trackLabel source=${embeddedLyrics.sourceId} synced=${embeddedLyrics.isSynced} " +
+                        "lines=${embeddedLyrics.lines.size}"
+                }
+                return ResolvedLyricsResult(document = embeddedLyrics)
+                    .withArtworkOverride(manualArtworkOverride)
+            }
         }
 
         val sources = enabledLyricsSources()
@@ -1494,7 +1508,7 @@ class DefaultLyricsRepository(
         )
     }
 
-    private suspend fun buildEmbeddedTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+    private suspend fun readEmbeddedTrackLyrics(track: Track): LiveEmbeddedTrackLyricsResult {
         val isSambaTrack = parseSambaLocator(track.mediaLocator) != null
         val currentSnapshot = runCatching {
             if (isSambaTrack || audioTagGateway.canEdit(track)) {
@@ -1504,29 +1518,43 @@ class DefaultLyricsRepository(
             }
         }.onFailure { throwable ->
             logger.warn(LYRICS_LOG_TAG) {
-                "manual-track-provided-tag-read-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+                "embedded-tag-read-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
             }
         }.getOrNull()
+        val document = parseCachedLyrics(
+            EMBEDDED_LYRICS_SOURCE_ID,
+            currentSnapshot?.embeddedLyrics?.trim().orEmpty(),
+        )
+        return LiveEmbeddedTrackLyricsResult(
+            snapshot = currentSnapshot,
+            document = document,
+            isSambaTrack = isSambaTrack,
+        )
+    }
 
-        if (currentSnapshot != null) {
-            val rawPayload = currentSnapshot.embeddedLyrics?.trim().orEmpty()
-            val document = parseCachedLyrics(EMBEDDED_LYRICS_SOURCE_ID, rawPayload)
-            if (document == null) return null
+    private suspend fun buildEmbeddedTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val liveLyrics = readEmbeddedTrackLyrics(track)
+        if (liveLyrics.snapshot != null && liveLyrics.document != null) {
+            val currentSnapshot = liveLyrics.snapshot
             return LyricsSearchCandidate(
                 sourceId = EMBEDDED_LYRICS_SOURCE_ID,
                 sourceName = "歌曲标签",
-                document = document,
+                document = liveLyrics.document,
                 title = currentSnapshot.title.takeIf { it.isNotBlank() },
                 artistName = currentSnapshot.artistName?.takeIf { it.isNotBlank() },
                 albumTitle = currentSnapshot.albumTitle?.takeIf { it.isNotBlank() },
                 durationSeconds = track.durationSecondsOrNull(),
                 artworkLocator = normalizeArtworkLocator(
-                    if (isSambaTrack) currentSnapshot.artworkLocator else (currentSnapshot.artworkLocator ?: track.artworkLocator),
+                    if (liveLyrics.isSambaTrack) {
+                        currentSnapshot.artworkLocator
+                    } else {
+                        currentSnapshot.artworkLocator ?: track.artworkLocator
+                    },
                 ),
                 isTrackProvided = true,
             )
         }
-        if (isSambaTrack) return null
+        if (liveLyrics.snapshot != null || liveLyrics.isSambaTrack) return null
 
         val cached = database.lyricsCacheDao().getByTrack(track.id)
             .firstOrNull { it.sourceId == EMBEDDED_LYRICS_SOURCE_ID }
@@ -2041,6 +2069,12 @@ private data class ScoredManualDirectLyricsCandidate(
     val candidate: LyricsSearchCandidate,
     val score: Double,
     val originalIndex: Int,
+)
+
+private data class LiveEmbeddedTrackLyricsResult(
+    val snapshot: AudioTagSnapshot?,
+    val document: LyricsDocument?,
+    val isSambaTrack: Boolean,
 )
 
 internal fun now(): Long = Clock.System.now().toEpochMilliseconds()

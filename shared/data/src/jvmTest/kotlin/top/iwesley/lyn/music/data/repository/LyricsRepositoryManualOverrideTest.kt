@@ -11,6 +11,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.AudioTagGateway
+import top.iwesley.lyn.music.core.model.AudioTagPatch
+import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -265,6 +268,249 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals(rawLyrics, resolvedFromCache.document.rawPayload)
         assertNotNull(presentation)
         assertEquals(listOf("Test", " Word"), presentation.lines.single().segments.map { it.text })
+    }
+
+    @Test
+    fun `non navidrome manual override wins over live embedded lyrics`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "manual line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:01.00]tag line",
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("manual line", resolved.document.lines.single().text)
+        assertTrue(audioTagGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `non navidrome cached lyrics win over live embedded lyrics`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "cached-source",
+                rawPayload = "[00:01.00]cached line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals("cached-source", resolved.document.sourceId)
+        assertEquals("cached line", resolved.document.lines.single().text)
+        assertTrue(audioTagGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `non navidrome live embedded lyrics resolve before online sources and cache result without artwork override`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-auto",
+                urlTemplate = "https://lyrics.example/direct-auto",
+                priority = 100,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                    artworkLocator = "/tmp/tag-artwork.jpg",
+                ),
+            ),
+        )
+        val httpClient = RecordingLyricsHttpClient(
+            responses = mapOf(
+                "https://lyrics.example/direct-auto" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            {"data":[
+                              {"id":"direct","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"direct line"}
+                            ]}
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val embeddedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, EMBEDDED_LYRICS_SOURCE_ID)
+        val cachedGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:03.00]different live line",
+                ),
+            ),
+        )
+        val resolvedFromCache = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = cachedGateway,
+            logger = NoopDiagnosticLogger,
+        ).getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals(EMBEDDED_LYRICS_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("tag line", resolved.document.lines.single().text)
+        assertNull(resolved.artworkLocator)
+        assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
+        assertTrue(httpClient.requestedUrls.isEmpty())
+        assertNotNull(embeddedRow)
+        assertEquals("[00:02.00]tag line", embeddedRow.rawPayload)
+        assertNotNull(resolvedFromCache)
+        assertEquals(EMBEDDED_LYRICS_SOURCE_ID, resolvedFromCache.document.sourceId)
+        assertEquals("tag line", resolvedFromCache.document.lines.single().text)
+        assertTrue(cachedGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `non navidrome empty embedded lyrics fall through to online sources`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-fallback",
+                urlTemplate = "https://lyrics.example/direct-fallback",
+                priority = 100,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = null,
+                ),
+            ),
+        )
+        val httpClient = RecordingLyricsHttpClient(
+            responses = mapOf(
+                "https://lyrics.example/direct-fallback" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            {"data":[
+                              {"id":"direct","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"direct line"}
+                            ]}
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val embeddedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, EMBEDDED_LYRICS_SOURCE_ID)
+
+        assertNotNull(resolved)
+        assertEquals("direct-fallback", resolved.document.sourceId)
+        assertEquals("direct line", resolved.document.lines.single().text)
+        assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
+        assertEquals(listOf("https://lyrics.example/direct-fallback"), httpClient.requestedUrls)
+        assertNull(embeddedRow)
+    }
+
+    @Test
+    fun `manual track provided candidate falls back to cached embedded lyrics when live read fails`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = EMBEDDED_LYRICS_SOURCE_ID,
+                rawPayload = "[00:01.00]cached embedded line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway()
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track)
+
+        assertEquals(1, candidates.size)
+        assertEquals(EMBEDDED_LYRICS_SOURCE_ID, candidates.single().sourceId)
+        assertEquals("cached embedded line", candidates.single().document.lines.single().text)
+        assertEquals(track.artworkLocator, candidates.single().artworkLocator)
+        assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
     }
 
     @Test
@@ -1061,6 +1307,31 @@ private fun syncedLyricsDocument(sourceId: String, line: String): LyricsDocument
     )
 }
 
+private fun sampleTagSnapshot(
+    title: String,
+    artistName: String? = "Artist A",
+    albumTitle: String? = "Album A",
+    embeddedLyrics: String? = null,
+    artworkLocator: String? = "/tmp/art.png",
+): AudioTagSnapshot {
+    return AudioTagSnapshot(
+        title = title,
+        artistName = artistName,
+        albumTitle = albumTitle,
+        albumArtist = artistName,
+        year = 2024,
+        genre = "Pop",
+        comment = "comment",
+        composer = "composer",
+        isCompilation = false,
+        tagLabel = "ID3v2.4",
+        trackNumber = 1,
+        discNumber = 1,
+        embeddedLyrics = embeddedLyrics,
+        artworkLocator = artworkLocator,
+    )
+}
+
 private class RecordingLyricsHttpClient(
     private val responses: Map<String, Result<LyricsHttpResponse>> = emptyMap(),
 ) : LyricsHttpClient {
@@ -1081,6 +1352,27 @@ private class MatchingLyricsHttpClient(
     override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
         requestedUrls += request.url
         return responder(request)
+    }
+}
+
+private class RecordingFakeAudioTagGateway(
+    private val readSnapshots: Map<String, AudioTagSnapshot> = emptyMap(),
+    private val canEdit: Boolean = true,
+) : AudioTagGateway {
+    val readTrackIds = mutableListOf<String>()
+
+    override suspend fun canEdit(track: Track): Boolean = canEdit
+
+    override suspend fun canWrite(track: Track): Boolean = false
+
+    override suspend fun read(track: Track): Result<AudioTagSnapshot> {
+        readTrackIds += track.id
+        return readSnapshots[track.id]?.let(Result.Companion::success)
+            ?: Result.failure(IllegalStateException("missing snapshot"))
+    }
+
+    override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
+        return Result.failure(IllegalStateException("Unexpected write"))
     }
 }
 
