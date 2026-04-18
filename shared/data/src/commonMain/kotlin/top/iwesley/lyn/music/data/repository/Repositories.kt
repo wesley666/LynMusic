@@ -15,6 +15,8 @@ import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportIndexState
+import top.iwesley.lyn.music.core.model.ImportScanReport
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.ImportSourceType
@@ -111,31 +113,31 @@ interface LibraryRepository {
 
 interface ImportSourceRepository {
     fun observeSources(): Flow<List<SourceWithStatus>>
-    suspend fun importLocalFolder(): Result<Unit>
+    suspend fun importLocalFolder(): Result<ImportScanSummary?>
     suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit>
     suspend fun testUpdatedSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
     ): Result<Unit>
-    suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit>
+    suspend fun addSambaSource(draft: SambaSourceDraft): Result<ImportScanSummary>
     suspend fun updateSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
-    ): Result<Unit>
+    ): Result<ImportScanSummary>
     suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit>
     suspend fun testUpdatedWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
     ): Result<Unit>
-    suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit>
+    suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<ImportScanSummary>
     suspend fun updateWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
-    ): Result<Unit>
+    ): Result<ImportScanSummary>
     suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit>
     suspend fun testUpdatedNavidromeSource(
         sourceId: String,
@@ -148,7 +150,7 @@ interface ImportSourceRepository {
         draft: NavidromeSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean = true,
     ): Result<Unit>
-    suspend fun rescanSource(sourceId: String): Result<Unit>
+    suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?>
     suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit>
     suspend fun deleteSource(sourceId: String): Result<Unit>
 }
@@ -273,9 +275,9 @@ class RoomImportSourceRepository(
         }
     }
 
-    override suspend fun importLocalFolder(): Result<Unit> {
+    override suspend fun importLocalFolder(): Result<ImportScanSummary?> {
         return runCatching {
-            val selection = gateway.pickLocalFolder() ?: return Result.success(Unit)
+            val selection = gateway.pickLocalFolder() ?: return@runCatching null
             validateImportSourceCreation(
                 label = selection.label,
                 localFolderRootReference = selection.persistentReference,
@@ -319,7 +321,7 @@ class RoomImportSourceRepository(
         }
     }
 
-    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> {
+    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<ImportScanSummary> {
         return runCatching {
             val sourceId = newId("smb")
             val preparedDraft = prepareSambaDraft(draft)
@@ -339,7 +341,7 @@ class RoomImportSourceRepository(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> {
+    ): Result<ImportScanSummary> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.SAMBA)
             val preparedDraft = prepareSambaDraft(draft)
@@ -390,7 +392,7 @@ class RoomImportSourceRepository(
         }
     }
 
-    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
+    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<ImportScanSummary> {
         return runCatching {
             val sourceId = newId("dav")
             val preparedDraft = prepareWebDavDraft(draft)
@@ -410,7 +412,7 @@ class RoomImportSourceRepository(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> {
+    ): Result<ImportScanSummary> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.WEBDAV)
             val preparedDraft = prepareWebDavDraft(draft)
@@ -475,6 +477,7 @@ class RoomImportSourceRepository(
             runScan(source) {
                 gateway.scanNavidrome(preparedDraft, sourceId)
             }
+            Unit
         }
     }
 
@@ -510,10 +513,11 @@ class RoomImportSourceRepository(
             )
             persistUpdatedCredential(existing.credentialKey, credentialKey, password)
             persistScan(updatedSource.copy(credentialKey = credentialKey), report)
+            Unit
         }
     }
 
-    override suspend fun rescanSource(sourceId: String): Result<Unit> {
+    override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> {
         return runCatching {
             val entity = database.importSourceDao().getById(sourceId)
                 ?: error("Source $sourceId does not exist.")
@@ -521,7 +525,7 @@ class RoomImportSourceRepository(
             if (!source.enabled) {
                 error("来源已禁用，请先启用。")
             }
-            runScan(source.copy(lastScannedAt = now())) {
+            val summary = runScan(source.copy(lastScannedAt = now())) {
                 when (source.type) {
                     ImportSourceType.LOCAL_FOLDER -> gateway.scanLocalFolder(
                         selection = LocalFolderSelection(
@@ -574,6 +578,7 @@ class RoomImportSourceRepository(
                     }
                 }
             }
+            summary.takeUnless { source.type == ImportSourceType.NAVIDROME }
         }
     }
 
@@ -748,7 +753,7 @@ class RoomImportSourceRepository(
         }
     }
 
-    private suspend fun persistScan(source: ImportSource, report: top.iwesley.lyn.music.core.model.ImportScanReport) {
+    private suspend fun persistScan(source: ImportSource, report: ImportScanReport): ImportScanSummary {
         database.trackDao().deleteBySourceId(source.id)
         database.lyricsCacheDao().deleteByTrackIdPrefixAndSourceId(trackIdPrefix(source.id), EMBEDDED_LYRICS_SOURCE_ID)
         val trackEntities = report.tracks.map { candidate ->
@@ -809,14 +814,20 @@ class RoomImportSourceRepository(
                 lastError = report.warnings.joinToString("\n").ifBlank { null },
             ),
         )
+        return ImportScanSummary(
+            sourceId = source.id,
+            discoveredAudioFileCount = report.discoveredAudioFileCount,
+            importedTrackCount = trackEntities.size,
+            failures = report.failures,
+        )
     }
 
     private suspend fun runScan(
         source: ImportSource,
-        scan: suspend () -> top.iwesley.lyn.music.core.model.ImportScanReport,
-    ) {
+        scan: suspend () -> ImportScanReport,
+    ): ImportScanSummary {
         try {
-            persistScan(source, scan())
+            return persistScan(source, scan())
         } catch (throwable: Throwable) {
             persistScanFailure(source.id, throwable)
             throw throwable

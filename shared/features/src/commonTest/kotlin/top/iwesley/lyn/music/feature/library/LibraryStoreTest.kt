@@ -14,6 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
@@ -236,7 +237,7 @@ private class FakeImportSourceRepository(
 
     override fun observeSources(): Flow<List<SourceWithStatus>> = mutableSources.asStateFlow()
 
-    override suspend fun importLocalFolder(): Result<Unit> = Result.success(Unit)
+    override suspend fun importLocalFolder(): Result<ImportScanSummary?> = Result.success(testScanSummary())
 
     override suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit> = Result.success(Unit)
 
@@ -246,13 +247,13 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = Result.success(Unit)
 
-    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> = Result.success(Unit)
+    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<ImportScanSummary> = Result.success(testScanSummary())
 
     override suspend fun updateSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<ImportScanSummary> = Result.success(testScanSummary(sourceId))
 
     override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> = Result.success(Unit)
 
@@ -262,13 +263,13 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = Result.success(Unit)
 
-    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> = Result.success(Unit)
+    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<ImportScanSummary> = Result.success(testScanSummary())
 
     override suspend fun updateWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = Result.success(Unit)
+    ): Result<ImportScanSummary> = Result.success(testScanSummary(sourceId))
 
     override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> = Result.success(Unit)
 
@@ -286,11 +287,19 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = Result.success(Unit)
 
-    override suspend fun rescanSource(sourceId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> = Result.success(testScanSummary(sourceId))
 
     override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> = Result.success(Unit)
 
     override suspend fun deleteSource(sourceId: String): Result<Unit> = Result.success(Unit)
+}
+
+private fun testScanSummary(sourceId: String = "source-1"): ImportScanSummary {
+    return ImportScanSummary(
+        sourceId = sourceId,
+        discoveredAudioFileCount = 1,
+        importedTrackCount = 1,
+    )
 }
 
 private class FakeLibrarySourceFilterPreferencesStore(

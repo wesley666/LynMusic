@@ -25,6 +25,7 @@ import uk.co.caprica.vlcj.media.callback.CallbackMedia
 import uk.co.caprica.vlcj.media.callback.seekable.SeekableCallbackMedia
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
@@ -58,6 +59,7 @@ internal suspend fun scanJvmWebDav(
     val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
     val authEnabled = draft.username.isNotBlank()
     val tracks = mutableListOf<ImportedTrackCandidate>()
+    val failures = mutableListOf<ImportScanFailure>()
     val startedAt = System.currentTimeMillis()
     logger.info(WEBDAV_LOG_TAG) {
         "scan-start source=$sourceId rootUrl=$rootUrl auth=$authEnabled insecureTls=${draft.allowInsecureTls} client=sardine"
@@ -70,7 +72,7 @@ internal suspend fun scanJvmWebDav(
             allowInsecureTls = draft.allowInsecureTls,
         )
         try {
-            collectJvmWebDavTracks(
+            val discoveredAudioFileCount = collectJvmWebDavTracks(
                 sardine = sardine,
                 rootUrl = rootUrl,
                 relativeDirectory = "",
@@ -81,11 +83,16 @@ internal suspend fun scanJvmWebDav(
                 authEnabled = authEnabled,
                 logger = logger,
                 sink = tracks,
+                failures = failures,
+            )
+            ImportScanReport(
+                tracks = tracks,
+                discoveredAudioFileCount = discoveredAudioFileCount,
+                failures = failures,
             )
         } finally {
             sardine.shutdownQuietly()
         }
-        ImportScanReport(tracks)
     }.onSuccess { report ->
         logger.info(WEBDAV_LOG_TAG) {
             "scan-complete source=$sourceId rootUrl=$rootUrl trackCount=${report.tracks.size} elapsedMs=${System.currentTimeMillis() - startedAt}"
@@ -294,7 +301,9 @@ private fun collectJvmWebDavTracks(
     authEnabled: Boolean,
     logger: DiagnosticLogger,
     sink: MutableList<ImportedTrackCandidate>,
-) {
+    failures: MutableList<ImportScanFailure>,
+): Int {
+    var discoveredAudioFileCount = 0
     val directoryUrl = if (relativeDirectory.isBlank()) {
         rootUrl
     } else {
@@ -322,7 +331,7 @@ private fun collectJvmWebDavTracks(
             ),
         ) ?: return@forEach
         if (resolved.isDirectory) {
-            collectJvmWebDavTracks(
+            discoveredAudioFileCount += collectJvmWebDavTracks(
                 sardine = sardine,
                 rootUrl = rootUrl,
                 relativeDirectory = resolved.relativePath,
@@ -333,10 +342,12 @@ private fun collectJvmWebDavTracks(
                 authEnabled = authEnabled,
                 logger = logger,
                 sink = sink,
+                failures = failures,
             )
         } else if (isSupportedJvmWebDavAudio(resolved.fileName)) {
+            discoveredAudioFileCount += 1
             val requestUrl = buildWebDavTrackUrl(rootUrl, resolved.relativePath)
-            sink += runCatching {
+            runCatching {
                 resolveJvmWebDavScanCandidate(
                     sourceId = sourceId,
                     resource = resolved,
@@ -351,11 +362,19 @@ private fun collectJvmWebDavTracks(
                 logger.warn(WEBDAV_LOG_TAG) {
                     "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
                 }
-            }.getOrElse {
+            }.recoverCatching {
                 buildWebDavImportedTrackCandidate(sourceId, resolved)
+            }.onSuccess { candidate ->
+                sink += candidate
+            }.onFailure { throwable ->
+                failures += ImportScanFailure(
+                    relativePath = resolved.relativePath,
+                    reason = scanFailureReason(throwable),
+                )
             }
         }
     }
+    return discoveredAudioFileCount
 }
 
 private fun resolveJvmWebDavScanCandidate(
@@ -854,6 +873,12 @@ private fun String.ensureTrailingSlash(): String = if (endsWith("/")) this else 
 
 private fun isSupportedJvmWebDavAudio(fileName: String): Boolean {
     return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac", "ape")
+}
+
+private fun scanFailureReason(throwable: Throwable): String {
+    return throwable.message?.takeIf { it.isNotBlank() }
+        ?: throwable::class.simpleName
+        ?: "读取失败。"
 }
 
 private val jvmWebDavArtworkDirectory = File(File(System.getProperty("user.home")), ".lynmusic/artwork").apply {

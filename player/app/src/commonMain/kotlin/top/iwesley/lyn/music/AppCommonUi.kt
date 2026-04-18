@@ -78,11 +78,13 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
+import top.iwesley.lyn.music.feature.importing.formatImportScanSummary
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlin.math.max
@@ -441,6 +443,8 @@ internal fun SourceCard(
     onRescan: (() -> Unit)?,
     isRescanning: Boolean,
     onDelete: () -> Unit,
+    scanSummary: ImportScanSummary? = null,
+    onShowScanFailures: ((ImportScanSummary) -> Unit)? = null,
 ) {
     val shellColors = mainShellColors
     val sourceEnabled = state.source.enabled
@@ -538,6 +542,24 @@ internal fun SourceCard(
                         )
                     },
                     leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
+            }
+            scanSummary?.let { summary ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = formatImportScanSummary(summary),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (summary.failedAudioFileCount > 0 && onShowScanFailures != null) {
+                        TextButton(onClick = { onShowScanFailures(summary) }) {
+                            Text("查看失败")
+                        }
+                    }
+                }
             }
             state.indexState?.lastError?.takeIf { it.isNotBlank() }?.let {
                 Text(

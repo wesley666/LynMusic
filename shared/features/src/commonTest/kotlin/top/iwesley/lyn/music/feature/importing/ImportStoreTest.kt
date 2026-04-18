@@ -17,6 +17,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.ImportScanFailure
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
@@ -316,6 +318,57 @@ class ImportStoreTest {
     }
 
     @Test
+    fun `successful samba import stores scan summary and appends message`() = runTest {
+        val summary = ImportScanSummary(
+            sourceId = "smb-1",
+            discoveredAudioFileCount = 3,
+            importedTrackCount = 2,
+            failures = listOf(ImportScanFailure(relativePath = "bad.mp3", reason = "读取失败。")),
+        )
+        val repository = FakeImportSourceRepository(
+            sambaResult = Result.success(summary),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.AddSambaSource)
+        advanceUntilIdle()
+
+        assertEquals("Samba 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
+        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["smb-1"])
+        harness.close()
+    }
+
+    @Test
+    fun `deleting source clears current session scan summary`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "dav-1",
+                    type = ImportSourceType.WEBDAV,
+                    label = "云端曲库",
+                    rootReference = "https://dav.example.com/music",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.RescanSource("dav-1"))
+        advanceUntilIdle()
+        assertNotNull(store.state.value.latestScanSummariesBySourceId["dav-1"])
+
+        store.dispatch(ImportIntent.DeleteSource("dav-1"))
+        advanceUntilIdle()
+
+        assertNull(store.state.value.latestScanSummariesBySourceId["dav-1"])
+        harness.close()
+    }
+
+    @Test
     fun `saving remote source marks update scan operation and clears it on failure`() = runTest {
         val pendingResult = CompletableDeferred<Result<Unit>>()
         val repository = FakeImportSourceRepository(
@@ -475,9 +528,9 @@ private fun source(
 }
 
 private class FakeImportSourceRepository(
-    localFolderResult: Result<Unit> = Result.success(Unit),
-    sambaResult: Result<Unit> = Result.success(Unit),
-    private val webDavResult: Result<Unit> = Result.success(Unit),
+    localFolderResult: Result<ImportScanSummary?> = Result.success(testScanSummary("local-1")),
+    sambaResult: Result<ImportScanSummary> = Result.success(testScanSummary("smb-1")),
+    private val webDavResult: Result<ImportScanSummary> = Result.success(testScanSummary("dav-1")),
     private val navidromeResult: Result<Unit> = Result.success(Unit),
     sources: List<SourceWithStatus> = emptyList(),
 ) : ImportSourceRepository {
@@ -496,7 +549,9 @@ private class FakeImportSourceRepository(
 
     override fun observeSources(): Flow<List<SourceWithStatus>> = mutableSources.asStateFlow()
 
-    override suspend fun importLocalFolder(): Result<Unit> = pendingResult?.await() ?: localFolderResult
+    override suspend fun importLocalFolder(): Result<ImportScanSummary?> {
+        return pendingResult?.await()?.map { testScanSummary("local-1") } ?: localFolderResult
+    }
 
     override suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit> {
         lastTestSambaDraft = draft
@@ -509,13 +564,17 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<Unit> = pendingResult?.await() ?: sambaResult
+    override suspend fun addSambaSource(draft: SambaSourceDraft): Result<ImportScanSummary> {
+        return pendingResult?.await()?.map { testScanSummary("smb-1") } ?: sambaResult
+    }
 
     override suspend fun updateSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
+    ): Result<ImportScanSummary> {
+        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
+    }
 
     override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
         return pendingResult?.await() ?: Result.success(Unit)
@@ -527,17 +586,19 @@ private class FakeImportSourceRepository(
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
-    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<Unit> = pendingResult?.await() ?: webDavResult
+    override suspend fun addWebDavSource(draft: WebDavSourceDraft): Result<ImportScanSummary> {
+        return pendingResult?.await()?.map { testScanSummary("dav-1") } ?: webDavResult
+    }
 
     override suspend fun updateWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
-    ): Result<Unit> {
+    ): Result<ImportScanSummary> {
         lastUpdatedWebDavSourceId = sourceId
         lastUpdatedWebDavDraft = draft
         lastUpdatedWebDavKeepExisting = keepExistingCredentialWhenBlankPassword
-        return pendingResult?.await() ?: Result.success(Unit)
+        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
     }
 
     override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
@@ -565,7 +626,9 @@ private class FakeImportSourceRepository(
         return pendingResult?.await() ?: Result.success(Unit)
     }
 
-    override suspend fun rescanSource(sourceId: String): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
+    override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> {
+        return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
+    }
 
     override suspend fun setSourceEnabled(sourceId: String, enabled: Boolean): Result<Unit> {
         mutableSources.value = mutableSources.value.map { source ->
@@ -579,4 +642,12 @@ private class FakeImportSourceRepository(
     }
 
     override suspend fun deleteSource(sourceId: String): Result<Unit> = Result.success(Unit)
+}
+
+private fun testScanSummary(sourceId: String): ImportScanSummary {
+    return ImportScanSummary(
+        sourceId = sourceId,
+        discoveredAudioFileCount = 1,
+        importedTrackCount = 1,
+    )
 }

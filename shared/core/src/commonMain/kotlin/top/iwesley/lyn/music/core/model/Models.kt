@@ -168,10 +168,27 @@ data class ImportedTrackCandidate(
     val modifiedAt: Long = 0L,
 )
 
+data class ImportScanFailure(
+    val relativePath: String,
+    val reason: String,
+)
+
 data class ImportScanReport(
     val tracks: List<ImportedTrackCandidate>,
     val warnings: List<String> = emptyList(),
+    val discoveredAudioFileCount: Int = tracks.size,
+    val failures: List<ImportScanFailure> = emptyList(),
 )
+
+data class ImportScanSummary(
+    val sourceId: String,
+    val discoveredAudioFileCount: Int,
+    val importedTrackCount: Int,
+    val failures: List<ImportScanFailure> = emptyList(),
+) {
+    val failedAudioFileCount: Int
+        get() = maxOf(discoveredAudioFileCount - importedTrackCount, failures.size, 0)
+}
 
 data class AudioTagSnapshot(
     val title: String,

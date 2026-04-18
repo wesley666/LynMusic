@@ -2,6 +2,7 @@ package top.iwesley.lyn.music.feature.importing
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
@@ -55,6 +56,7 @@ data class ImportState(
     val editingSource: RemoteSourceEditorState? = null,
     val isWorking: Boolean = false,
     val activeScanOperation: ImportScanOperation? = null,
+    val latestScanSummariesBySourceId: Map<String, ImportScanSummary> = emptyMap(),
     val message: String? = null,
     val testMessage: String? = null,
 )
@@ -115,11 +117,13 @@ class ImportStore(
         scope.launch {
             repository.observeSources().collect { sources ->
                 updateState { state ->
+                    val sourceIds = sources.mapTo(mutableSetOf()) { it.source.id }
                     state.copy(
                         sources = sources,
                         editingSource = state.editingSource?.takeIf { editing ->
                             sources.any { it.source.id == editing.sourceId && it.source.type == editing.type }
                         },
+                        latestScanSummariesBySourceId = state.latestScanSummariesBySourceId.filterKeys { it in sourceIds },
                     )
                 }
             }
@@ -130,7 +134,12 @@ class ImportStore(
         when (intent) {
             ImportIntent.ImportLocalFolder -> runImport(ImportScanOperation.CreateLocalFolder) {
                 repository.importLocalFolder()
-                    .onSuccess { setMessage("本地音乐源已导入。") }
+                    .onSuccess { summary ->
+                        summary?.let {
+                            recordScanSummary(it)
+                            setMessage(scanSuccessMessage("本地音乐源已导入。", it))
+                        }
+                    }
                     .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
             }
 
@@ -148,7 +157,7 @@ class ImportStore(
                 val draft = sambaDraftOrNull(currentState) ?: return
                 runImport(ImportScanOperation.CreateRemote(ImportSourceType.SAMBA)) {
                     repository.addSambaSource(draft)
-                        .onSuccess {
+                        .onSuccess { summary ->
                             updateState {
                                 it.copy(
                                     sambaLabel = "",
@@ -159,7 +168,8 @@ class ImportStore(
                                     sambaPassword = "",
                                 )
                             }
-                            setMessage("Samba 音乐源已导入。")
+                            recordScanSummary(summary)
+                            setMessage(scanSuccessMessage("Samba 音乐源已导入。", summary))
                         }
                         .onFailure { setMessage("Samba 导入失败: ${it.message}") }
                 }
@@ -178,7 +188,7 @@ class ImportStore(
                 val draft = webDavDraftOrNull(state.value, allowBlankPassword = true) ?: return
                 runImport(ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV)) {
                     repository.addWebDavSource(draft)
-                        .onSuccess {
+                        .onSuccess { summary ->
                             updateState {
                                 it.copy(
                                     webDavLabel = "",
@@ -188,7 +198,8 @@ class ImportStore(
                                     webDavAllowInsecureTls = false,
                                 )
                             }
-                            setMessage("WebDAV 音乐源已导入。")
+                            recordScanSummary(summary)
+                            setMessage(scanSuccessMessage("WebDAV 音乐源已导入。", summary))
                         }
                         .onFailure { setMessage("WebDAV 导入失败: ${it.message}") }
                 }
@@ -325,9 +336,10 @@ class ImportStore(
                                 sourceId = editor.sourceId,
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
-                            ).onSuccess {
+                            ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
-                                setMessage("来源已更新并重新扫描。")
+                                recordScanSummary(summary)
+                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
                             }.onFailure {
                                 setMessage("更新来源失败: ${it.message}")
                             }
@@ -341,9 +353,10 @@ class ImportStore(
                                 sourceId = editor.sourceId,
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
-                            ).onSuccess {
+                            ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
-                                setMessage("来源已更新并重新扫描。")
+                                recordScanSummary(summary)
+                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
                             }.onFailure {
                                 setMessage("更新来源失败: ${it.message}")
                             }
@@ -372,7 +385,10 @@ class ImportStore(
 
             is ImportIntent.RescanSource -> runImport(ImportScanOperation.RescanSource(intent.sourceId)) {
                 repository.rescanSource(intent.sourceId)
-                    .onSuccess { setMessage("音乐源已重新扫描。") }
+                    .onSuccess { summary ->
+                        summary?.let(::recordScanSummary)
+                        setMessage(scanSuccessMessage("音乐源已重新扫描。", summary))
+                    }
                     .onFailure { setMessage("重新扫描失败: ${it.message}") }
             }
 
@@ -386,7 +402,10 @@ class ImportStore(
 
             is ImportIntent.DeleteSource -> runImport {
                 repository.deleteSource(intent.sourceId)
-                    .onSuccess { setMessage("音乐源已删除。") }
+                    .onSuccess {
+                        clearScanSummary(intent.sourceId)
+                        setMessage("音乐源已删除。")
+                    }
                     .onFailure { setMessage("删除音乐源失败: ${it.message}") }
             }
 
@@ -562,6 +581,20 @@ class ImportStore(
         }
     }
 
+    private fun recordScanSummary(summary: ImportScanSummary) {
+        updateState { state ->
+            state.copy(
+                latestScanSummariesBySourceId = state.latestScanSummariesBySourceId + (summary.sourceId to summary),
+            )
+        }
+    }
+
+    private fun clearScanSummary(sourceId: String) {
+        updateState { state ->
+            state.copy(latestScanSummariesBySourceId = state.latestScanSummariesBySourceId - sourceId)
+        }
+    }
+
     private suspend fun runImport(
         scanOperation: ImportScanOperation? = null,
         block: suspend () -> Unit,
@@ -578,4 +611,14 @@ class ImportStore(
     private fun setTestMessage(message: String) {
         updateState { it.copy(testMessage = message) }
     }
+}
+
+fun formatImportScanSummary(summary: ImportScanSummary): String {
+    return "发现 ${summary.discoveredAudioFileCount} 个音频文件，" +
+        "成功导入 ${summary.importedTrackCount} 首，" +
+        "${summary.failedAudioFileCount} 个失败"
+}
+
+private fun scanSuccessMessage(prefix: String, summary: ImportScanSummary?): String {
+    return summary?.let { "$prefix${formatImportScanSummary(it)}。" } ?: prefix
 }

@@ -42,6 +42,7 @@ import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
@@ -724,15 +725,34 @@ private class JvmImportSourceGateway(
         if (!Files.exists(root)) {
             error("Folder does not exist: ${selection.persistentReference}")
         }
-        val tracks = Files.walk(root).use { stream ->
+        val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
+        val failures = mutableListOf<ImportScanFailure>()
+        var discoveredAudioFileCount = 0
+        Files.walk(root).use { stream ->
             stream.filter { path -> path.isRegularFile() && isSupportedAudio(path.name) }
-                .map { path ->
+                .forEach { path ->
+                    discoveredAudioFileCount += 1
                     val relativePath = root.relativize(path).invariantSeparatorsPathString
-                    ImportedCandidateFactory.fromPath(path, relativePath, logger)
+                    runCatching {
+                        ImportedCandidateFactory.fromPath(path, relativePath, logger)
+                    }.onSuccess { candidate ->
+                        tracks += candidate
+                    }.onFailure { throwable ->
+                        failures += ImportScanFailure(
+                            relativePath = relativePath,
+                            reason = scanFailureReason(throwable),
+                        )
+                        logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                            "candidate-failed source=$sourceId path=$relativePath reason=${throwable.message.orEmpty()}"
+                        }
+                    }
                 }
-                .toList()
         }
-        return ImportScanReport(tracks)
+        return ImportScanReport(
+            tracks = tracks,
+            discoveredAudioFileCount = discoveredAudioFileCount,
+            failures = failures,
+        )
     }
 
     override suspend fun testSamba(draft: SambaSourceDraft) {
@@ -790,8 +810,13 @@ private class JvmImportSourceGateway(
                 val share = session.connectShare(sambaPath.shareName) as DiskShare
                 val baseDirectory = sambaPath.directoryPath
                 val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
-                collectSambaTracks(share, baseDirectory, "", sourceId, tracks)
-                ImportScanReport(tracks)
+                val failures = mutableListOf<ImportScanFailure>()
+                val discoveredAudioFileCount = collectSambaTracks(share, baseDirectory, "", sourceId, tracks, failures)
+                ImportScanReport(
+                    tracks = tracks,
+                    discoveredAudioFileCount = discoveredAudioFileCount,
+                    failures = failures,
+                )
             }
         }.onSuccess { report ->
             logger.info(SAMBA_LOG_TAG) {
@@ -826,7 +851,9 @@ private class JvmImportSourceGateway(
         relativeDirectory: String,
         sourceId: String,
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
-    ) {
+        failures: MutableList<ImportScanFailure>,
+    ): Int {
+        var discoveredAudioFileCount = 0
         val listPath = joinSegments(baseDirectory, relativeDirectory)
         share.list(listPath).forEach { fileInfo ->
             val name = fileInfo.fileName
@@ -835,10 +862,18 @@ private class JvmImportSourceGateway(
             val childPath = joinSegments(baseDirectory, childRelative)
             val isDirectory = share.folderExists(childPath)
             if (isDirectory) {
-                collectSambaTracks(share, baseDirectory, childRelative, sourceId, sink)
+                discoveredAudioFileCount += collectSambaTracks(
+                    share = share,
+                    baseDirectory = baseDirectory,
+                    relativeDirectory = childRelative,
+                    sourceId = sourceId,
+                    sink = sink,
+                    failures = failures,
+                )
             } else if (isSupportedAudio(name)) {
+                discoveredAudioFileCount += 1
                 val sizeBytes = runCatching { fileInfo.endOfFile }.getOrDefault(0L)
-                sink += runCatching {
+                runCatching {
                     resolveJvmSambaScanCandidate(
                         share = share,
                         sourceId = sourceId,
@@ -850,15 +885,23 @@ private class JvmImportSourceGateway(
                     logger.warn(SAMBA_LOG_TAG) {
                         "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
                     }
-                }.getOrElse {
+                }.recoverCatching {
                     ImportedCandidateFactory.fromRemotePath(
                         sourceId = sourceId,
                         relativePath = childRelative,
                         sizeBytes = sizeBytes,
                     )
+                }.onSuccess { candidate ->
+                    sink += candidate
+                }.onFailure { throwable ->
+                    failures += ImportScanFailure(
+                        relativePath = childRelative,
+                        reason = scanFailureReason(throwable),
+                    )
                 }
             }
         }
+        return discoveredAudioFileCount
     }
 
     private fun resolveJvmSambaScanCandidate(
@@ -1662,8 +1705,15 @@ private val jvmRemoteArtworkDirectory = File(File(System.getProperty("user.home"
 }
 
 internal const val SAMBA_LOG_TAG = "Samba"
+private const val LOCAL_IMPORT_LOG_TAG = "LocalImport"
 private const val VLC_LOG_TAG = "VLC"
 private const val DESKTOP_VLC_UNAVAILABLE_MESSAGE = "未检测到 VLC，请安装或在设置手动选择 VLC 路径。"
+
+private fun scanFailureReason(throwable: Throwable): String {
+    return throwable.message?.takeIf { it.isNotBlank() }
+        ?: throwable::class.simpleName
+        ?: "读取失败。"
+}
 
 private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
     val detail = throwable.message?.takeIf { it.isNotBlank() }

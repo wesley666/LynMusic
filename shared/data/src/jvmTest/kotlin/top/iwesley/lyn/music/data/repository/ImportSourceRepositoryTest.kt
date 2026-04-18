@@ -8,9 +8,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
@@ -126,6 +128,40 @@ class ImportSourceRepositoryTest {
         assertTrue(result.isSuccess)
         assertEquals(2, database.importSourceDao().getAll().size)
         assertEquals(1, gateway.localFolderScanCount)
+    }
+
+    @Test
+    fun `non navidrome scan returns current summary without persisting scan counters`() = runTest {
+        val database = createImportTestDatabase()
+        val scanReport = ImportScanReport(
+            tracks = listOf(
+                ImportedTrackCandidate(
+                    title = "Good Song",
+                    mediaLocator = "file:///music/good.mp3",
+                    relativePath = "good.mp3",
+                ),
+            ),
+            discoveredAudioFileCount = 2,
+            failures = listOf(ImportScanFailure(relativePath = "bad.mp3", reason = "读取失败。")),
+        )
+        val gateway = RecordingImportSourceGateway(
+            nextLocalFolderSelection = LocalFolderSelection(
+                label = "下载目录",
+                persistentReference = "folder://downloads",
+            ),
+            scanReport = scanReport,
+        )
+        val repository = createRepository(database = database, gateway = gateway)
+
+        val summary = repository.importLocalFolder().getOrThrow()
+
+        assertNotNull(summary)
+        assertEquals(2, summary.discoveredAudioFileCount)
+        assertEquals(1, summary.importedTrackCount)
+        assertEquals(listOf("bad.mp3"), summary.failures.map { it.relativePath })
+        val indexState = assertNotNull(database.importIndexStateDao().getBySourceId(summary.sourceId))
+        assertEquals(1, indexState.trackCount)
+        assertEquals(1, database.trackDao().count())
     }
 
     @Test

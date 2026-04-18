@@ -43,6 +43,7 @@ import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
+import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.ImportSourceType
@@ -711,8 +712,20 @@ private class AndroidImportSourceGateway(
                 }
                 val share = session.connectShare(sambaPath.shareName) as DiskShare
                 val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
-                collectSambaTracks(share, sambaPath.directoryPath, "", sourceId, tracks)
-                ImportScanReport(tracks)
+                val failures = mutableListOf<ImportScanFailure>()
+                val discoveredAudioFileCount = collectSambaTracks(
+                    share = share,
+                    baseDirectory = sambaPath.directoryPath,
+                    relativeDirectory = "",
+                    sourceId = sourceId,
+                    sink = tracks,
+                    failures = failures,
+                )
+                ImportScanReport(
+                    tracks = tracks,
+                    discoveredAudioFileCount = discoveredAudioFileCount,
+                    failures = failures,
+                )
             }
         }.onSuccess { report ->
             logger.info(SAMBA_LOG_TAG) {
@@ -799,31 +812,59 @@ private class AndroidImportSourceGateway(
     private fun scanLocalTree(treeUri: Uri): ImportScanReport {
         val root = DocumentFile.fromTreeUri(activity, treeUri) ?: error("Cannot open tree uri: $treeUri")
         val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
-        walkDocumentTree(root, "", tracks)
-        return ImportScanReport(tracks)
+        val failures = mutableListOf<ImportScanFailure>()
+        val discoveredAudioFileCount = walkDocumentTree(root, "", tracks, failures)
+        return ImportScanReport(
+            tracks = tracks,
+            discoveredAudioFileCount = discoveredAudioFileCount,
+            failures = failures,
+        )
     }
 
     private fun scanLocalDirectory(root: File): ImportScanReport {
         val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
-        walkLocalDirectory(root, "", tracks)
-        return ImportScanReport(tracks)
+        val failures = mutableListOf<ImportScanFailure>()
+        val discoveredAudioFileCount = walkLocalDirectory(root, "", tracks, failures)
+        return ImportScanReport(
+            tracks = tracks,
+            discoveredAudioFileCount = discoveredAudioFileCount,
+            failures = failures,
+        )
     }
 
     private fun walkDocumentTree(
         folder: DocumentFile,
         relativeDirectory: String,
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
-    ) {
+        failures: MutableList<ImportScanFailure>,
+    ): Int {
+        var discoveredAudioFileCount = 0
         folder.listFiles()
             .sortedBy { it.name.orEmpty().lowercase() }
             .forEach { file ->
                 val fileName = file.name ?: return@forEach
                 val nextRelative = listOf(relativeDirectory, fileName).filter { it.isNotBlank() }.joinToString("/")
                 when {
-                    file.isDirectory -> walkDocumentTree(file, nextRelative, sink)
-                    file.isFile && isSupportedAudio(fileName) -> sink += readAndroidCandidate(file, nextRelative)
+                    file.isDirectory -> discoveredAudioFileCount += walkDocumentTree(file, nextRelative, sink, failures)
+                    file.isFile && isSupportedAudio(fileName) -> {
+                        discoveredAudioFileCount += 1
+                        runCatching {
+                            readAndroidCandidate(file, nextRelative)
+                        }.onSuccess { candidate ->
+                            sink += candidate
+                        }.onFailure { throwable ->
+                            failures += ImportScanFailure(
+                                relativePath = nextRelative,
+                                reason = scanFailureReason(throwable),
+                            )
+                            logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                                "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                            }
+                        }
+                    }
                 }
             }
+        return discoveredAudioFileCount
     }
 
     private fun readAndroidCandidate(
@@ -846,17 +887,35 @@ private class AndroidImportSourceGateway(
         folder: File,
         relativeDirectory: String,
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
-    ) {
+        failures: MutableList<ImportScanFailure>,
+    ): Int {
+        var discoveredAudioFileCount = 0
         folder.listFiles()
             ?.sortedBy { it.name.lowercase() }
             .orEmpty()
             .forEach { file ->
                 val nextRelative = listOf(relativeDirectory, file.name).filter { it.isNotBlank() }.joinToString("/")
                 when {
-                    file.isDirectory -> walkLocalDirectory(file, nextRelative, sink)
-                    file.isFile && isSupportedAudio(file.name) -> sink += readAndroidCandidate(file, nextRelative)
+                    file.isDirectory -> discoveredAudioFileCount += walkLocalDirectory(file, nextRelative, sink, failures)
+                    file.isFile && isSupportedAudio(file.name) -> {
+                        discoveredAudioFileCount += 1
+                        runCatching {
+                            readAndroidCandidate(file, nextRelative)
+                        }.onSuccess { candidate ->
+                            sink += candidate
+                        }.onFailure { throwable ->
+                            failures += ImportScanFailure(
+                                relativePath = nextRelative,
+                                reason = scanFailureReason(throwable),
+                            )
+                            logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                                "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
+                            }
+                        }
+                    }
                 }
             }
+        return discoveredAudioFileCount
     }
 
     private fun readAndroidCandidate(
@@ -896,7 +955,9 @@ private class AndroidImportSourceGateway(
         relativeDirectory: String,
         sourceId: String,
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
-    ) {
+        failures: MutableList<ImportScanFailure>,
+    ): Int {
+        var discoveredAudioFileCount = 0
         val listPath = joinSegments(baseDirectory, relativeDirectory)
         share.list(listPath).forEach { info ->
             val name = info.fileName
@@ -905,10 +966,18 @@ private class AndroidImportSourceGateway(
             val childPath = joinSegments(baseDirectory, childRelative)
             val isDirectory = share.folderExists(childPath)
             if (isDirectory) {
-                collectSambaTracks(share, baseDirectory, childRelative, sourceId, sink)
+                discoveredAudioFileCount += collectSambaTracks(
+                    share = share,
+                    baseDirectory = baseDirectory,
+                    relativeDirectory = childRelative,
+                    sourceId = sourceId,
+                    sink = sink,
+                    failures = failures,
+                )
             } else if (isSupportedAudio(name)) {
+                discoveredAudioFileCount += 1
                 val sizeBytes = runCatching { info.endOfFile }.getOrDefault(0L)
-                sink += runCatching {
+                runCatching {
                     resolveAndroidSambaScanCandidate(
                         share = share,
                         sourceId = sourceId,
@@ -920,15 +989,23 @@ private class AndroidImportSourceGateway(
                     logger.warn(SAMBA_LOG_TAG) {
                         "metadata-failed source=$sourceId remotePath=$childPath reason=${throwable.message.orEmpty()}"
                     }
-                }.getOrElse {
+                }.recoverCatching {
                     buildAndroidRemoteFallbackCandidate(
                         sourceId = sourceId,
                         relativePath = childRelative,
                         sizeBytes = sizeBytes,
                     )
+                }.onSuccess { candidate ->
+                    sink += candidate
+                }.onFailure { throwable ->
+                    failures += ImportScanFailure(
+                        relativePath = childRelative,
+                        reason = scanFailureReason(throwable),
+                    )
                 }
             }
         }
+        return discoveredAudioFileCount
     }
 
     private fun resolveAndroidSambaScanCandidate(
@@ -1634,6 +1711,12 @@ private const val GCM_TAG_LENGTH_BITS = 128
 
 private fun isSupportedAudio(fileName: String): Boolean {
     return fileName.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "aac", "wav", "flac")
+}
+
+private fun scanFailureReason(throwable: Throwable): String {
+    return throwable.message?.takeIf { it.isNotBlank() }
+        ?: throwable::class.simpleName
+        ?: "读取失败。"
 }
 
 private fun buildMetadataLogMessage(

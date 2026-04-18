@@ -76,6 +76,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
+import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
@@ -818,6 +819,7 @@ internal fun SourcesTab(
 ) {
     val shellColors = mainShellColors
     var pendingDeleteSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    var failureDetailSummary by remember { mutableStateOf<ImportScanSummary?>(null) }
     val pendingDeleteSource = remember(state.sources, pendingDeleteSourceId) {
         state.sources.firstOrNull { it.source.id == pendingDeleteSourceId }
     }
@@ -875,6 +877,42 @@ internal fun SourcesTab(
                     enabled = !state.isWorking,
                 ) {
                     Text("取消")
+                }
+            },
+        )
+    }
+    failureDetailSummary?.let { summary ->
+        AlertDialog(
+            onDismissRequest = { failureDetailSummary = null },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = shellColors.cardContainer,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text("扫描失败文件") },
+            text = {
+                if (summary.failures.isEmpty()) {
+                    Text("当前扫描没有可展示的失败路径。")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(summary.failures) { failure ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(failure.relativePath, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    failure.reason,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { failureDetailSummary = null }) {
+                    Text("知道了")
                 }
             },
         )
@@ -1195,6 +1233,8 @@ internal fun SourcesTab(
                         },
                         isRescanning = activeScanOperation == ImportScanOperation.RescanSource(source.source.id),
                         onDelete = { pendingDeleteSourceId = source.source.id },
+                        scanSummary = state.latestScanSummariesBySourceId[source.source.id],
+                        onShowScanFailures = { failureDetailSummary = it },
                     )
                 }
             }
