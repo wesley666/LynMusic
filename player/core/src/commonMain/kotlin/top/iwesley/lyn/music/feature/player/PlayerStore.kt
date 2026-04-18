@@ -49,6 +49,7 @@ data class PlayerState(
     val availableLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
     val selectedLyricsShareFontFamily: String? = null,
     val isLyricsShareFontsLoading: Boolean = false,
+    val lyricsShareFontsError: String? = null,
     val selectedLyricsLineIndices: Set<Int> = emptySet(),
     val shareCardModel: LyricsShareCardModel? = null,
     val sharePreviewBytes: ByteArray? = null,
@@ -97,6 +98,7 @@ sealed interface PlayerIntent {
     data object OpenLyricsShare : PlayerIntent
     data object DismissLyricsShare : PlayerIntent
     data class LyricsShareTemplateChanged(val template: LyricsShareTemplate) : PlayerIntent
+    data object RequestLyricsShareFonts : PlayerIntent
     data class LyricsShareFontChanged(val familyName: String) : PlayerIntent
     data class ToggleLyricsLineSelection(val index: Int) : PlayerIntent
     data object ClearLyricsSelection : PlayerIntent
@@ -220,6 +222,7 @@ class PlayerStore(
             PlayerIntent.OpenLyricsShare -> openLyricsShare()
             PlayerIntent.DismissLyricsShare -> dismissLyricsShare()
             is PlayerIntent.LyricsShareTemplateChanged -> updateLyricsShareTemplate(intent.template)
+            PlayerIntent.RequestLyricsShareFonts -> loadLyricsShareFonts()
             is PlayerIntent.LyricsShareFontChanged -> updateLyricsShareFont(intent.familyName)
             is PlayerIntent.ToggleLyricsLineSelection -> toggleLyricsLineSelection(intent.index)
             PlayerIntent.ClearLyricsSelection -> clearLyricsSelection()
@@ -334,11 +337,6 @@ class PlayerStore(
                 isShareCopying = false,
                 shareMessage = null,
             )
-        }
-        if (supportsFontSelection && currentState.availableLyricsShareFonts.isEmpty() && !currentState.isLyricsShareFontsLoading) {
-            storeScope.launch {
-                loadLyricsShareFonts(showFailureMessage = true)
-            }
         }
         if (defaultSelection.isNotEmpty()) {
             rebuildLyricsSharePreview()
@@ -730,11 +728,16 @@ class PlayerStore(
         )
     }
 
-    private suspend fun loadLyricsShareFonts(showFailureMessage: Boolean) {
+    private suspend fun loadLyricsShareFonts() {
         if (!supportsLyricsShareFontSelection()) return
         val currentState = state.value
         if (currentState.availableLyricsShareFonts.isNotEmpty() || currentState.isLyricsShareFontsLoading) return
-        updateState { it.copy(isLyricsShareFontsLoading = true) }
+        updateState {
+            it.copy(
+                isLyricsShareFontsLoading = true,
+                lyricsShareFontsError = null,
+            )
+        }
         val result = lyricsSharePlatformService.listAvailableFontFamilies()
         result.fold(
             onSuccess = { fonts ->
@@ -758,7 +761,7 @@ class PlayerStore(
                     updateState {
                         it.copy(
                             isLyricsShareFontsLoading = false,
-                            shareMessage = if (showFailureMessage) "读取系统字体失败" else it.shareMessage,
+                            lyricsShareFontsError = "读取系统字体失败",
                         )
                     }
                     return
@@ -774,6 +777,7 @@ class PlayerStore(
                         availableLyricsShareFonts = normalizedFonts,
                         selectedLyricsShareFontFamily = resolvedFontFamily,
                         isLyricsShareFontsLoading = false,
+                        lyricsShareFontsError = null,
                         shareCardModel = if (latest.isLyricsShareVisible) {
                             deriveLyricsShareCardModel(
                                 snapshot = latest.snapshot,
@@ -795,7 +799,7 @@ class PlayerStore(
                 updateState { current ->
                     current.copy(
                         isLyricsShareFontsLoading = false,
-                        shareMessage = if (showFailureMessage) "读取系统字体失败" else current.shareMessage,
+                        lyricsShareFontsError = "读取系统字体失败",
                     )
                 }
             },

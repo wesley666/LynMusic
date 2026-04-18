@@ -45,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
@@ -58,6 +59,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -1354,8 +1356,7 @@ internal fun LyricsShareOverlay(
                             }
                         }
                     } else {
-                        val showFontSelector = platform.name == "Desktop" &&
-                            (state.isLyricsShareFontsLoading || state.availableLyricsShareFonts.isNotEmpty())
+                        val showFontSelector = platform.name == "Desktop"
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
@@ -1366,6 +1367,10 @@ internal fun LyricsShareOverlay(
                                     selectedFontFamily = state.selectedLyricsShareFontFamily,
                                     availableFonts = state.availableLyricsShareFonts,
                                     isLoading = state.isLyricsShareFontsLoading,
+                                    errorMessage = state.lyricsShareFontsError,
+                                    onRequestFonts = {
+                                        onPlayerIntent(PlayerIntent.RequestLyricsShareFonts)
+                                    },
                                     onFontSelected = {
                                         onPlayerIntent(PlayerIntent.LyricsShareFontChanged(it))
                                     },
@@ -1429,81 +1434,177 @@ private fun LyricsShareFontMenuButton(
     selectedFontFamily: String?,
     availableFonts: List<LyricsShareFontOption>,
     isLoading: Boolean,
+    errorMessage: String?,
+    onRequestFonts: () -> Unit,
     onFontSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
     var expanded by remember { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
-    val buttonLabel = if (isLoading) {
-        "字体加载中..."
-    } else {
-        "字体 · ${selectedFontFamily ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY}"
+    var menuSessionId by remember { mutableStateOf(0) }
+    var pendingMenuLoad by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    val showLoading = pendingMenuLoad || isLoading
+    val showError = !showLoading && availableFonts.isEmpty() && !errorMessage.isNullOrBlank()
+    val selectedIndex = remember(availableFonts, selectedFontFamily) {
+        availableFonts.indexOfFirst { option ->
+            selectedFontFamily?.let { option.familyName.equals(it, ignoreCase = true) } == true
+        }
     }
+    val initialScrollOffset = remember(availableFonts, selectedIndex, density) {
+        calculateLyricsShareFontMenuScrollOffsetPx(
+            selectedIndex = selectedIndex,
+            itemCount = availableFonts.size,
+            itemHeightPx = with(density) { LyricsShareFontMenuItemHeight.roundToPx() },
+            menuMaxHeightPx = with(density) { LyricsShareFontMenuMaxHeight.roundToPx() },
+        )
+    }
+    val buttonLabel = "字体 · ${selectedFontFamily ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY}"
+    LaunchedEffect(expanded, isLoading, availableFonts, errorMessage) {
+        if (!expanded || isLoading || availableFonts.isNotEmpty() || !errorMessage.isNullOrBlank()) {
+            pendingMenuLoad = false
+        }
+    }
+
+    fun requestFontsIfNeeded() {
+        if (availableFonts.isNotEmpty() || isLoading || pendingMenuLoad) return
+        if (!errorMessage.isNullOrBlank()) return
+        pendingMenuLoad = true
+        onRequestFonts()
+    }
+
+    fun retryLoadingFonts() {
+        if (isLoading || pendingMenuLoad) return
+        pendingMenuLoad = true
+        onRequestFonts()
+    }
+
     Box(modifier = modifier) {
         OutlinedButton(
-            onClick = { expanded = true },
-            enabled = !isLoading && availableFonts.isNotEmpty(),
+            onClick = {
+                if (!expanded) {
+                    menuSessionId += 1
+                }
+                expanded = true
+                requestFontsIfNeeded()
+            },
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         ) {
             Text(buttonLabel, maxLines = 1)
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier
-                .heightIn(max = 320.dp)
-                .widthIn(min = 360.dp, max = 560.dp),
-            scrollState = scrollState,
-            shape = RoundedCornerShape(20.dp),
-            containerColor = MaterialTheme.colorScheme.background,
-            shadowElevation = 12.dp,
-            border = BorderStroke(1.dp, shellColors.cardBorder),
-        ) {
-            availableFonts.forEach { option ->
-                val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
-                val isSelected = option.familyName == selectedFontFamily
-                DropdownMenuItem(
-                    text = {
+        key(menuSessionId, showLoading, showError, availableFonts, selectedFontFamily) {
+            val scrollState = rememberScrollState(initial = if (availableFonts.isNotEmpty() && !showLoading) initialScrollOffset else 0)
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier
+                    .heightIn(max = LyricsShareFontMenuMaxHeight)
+                    .widthIn(min = LyricsShareFontMenuMinWidth, max = LyricsShareFontMenuMaxWidth),
+                scrollState = scrollState,
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.background,
+                shadowElevation = 12.dp,
+                border = BorderStroke(1.dp, shellColors.cardBorder),
+            ) {
+                when {
+                    showLoading -> {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = option.familyName,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.5.dp,
                             )
-                            Text(
-                                text = option.previewText,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontFamily = previewFontFamily,
+                            Text("正在读取系统字体...")
+                        }
+                    }
+
+                    showError -> {
+                        Text(
+                            text = requireNotNull(errorMessage),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 14.dp),
+                            color = shellColors.secondaryText,
+                        )
+                        DropdownMenuItem(
+                            text = { Text("重试") },
+                            onClick = { retryLoadingFonts() },
+                        )
+                    }
+
+                    else -> {
+                        availableFonts.forEach { option ->
+                            val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
+                            val isSelected = option.familyName == selectedFontFamily
+                            DropdownMenuItem(
+                                modifier = Modifier.height(LyricsShareFontMenuItemHeight),
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = option.familyName,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = option.previewText,
+                                            modifier = Modifier.weight(1f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontFamily = previewFontFamily,
+                                        )
+                                    }
+                                },
+                                trailingIcon = if (isSelected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                onClick = {
+                                    expanded = false
+                                    onFontSelected(option.familyName)
+                                },
                             )
                         }
-                    },
-                    trailingIcon = if (isSelected) {
-                        {
-                            Icon(
-                                imageVector = Icons.Rounded.Check,
-                                contentDescription = null,
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    onClick = {
-                        expanded = false
-                        onFontSelected(option.familyName)
-                    },
-                )
+                    }
+                }
             }
         }
     }
 }
+
+internal fun calculateLyricsShareFontMenuScrollOffsetPx(
+    selectedIndex: Int,
+    itemCount: Int,
+    itemHeightPx: Int,
+    menuMaxHeightPx: Int,
+): Int {
+    if (selectedIndex < 0 || itemCount <= 0 || itemHeightPx <= 0 || menuMaxHeightPx <= 0) return 0
+    val contentHeightPx = itemCount * itemHeightPx
+    if (contentHeightPx <= menuMaxHeightPx) return 0
+    val targetOffset = selectedIndex * itemHeightPx - (menuMaxHeightPx - itemHeightPx) / 2
+    val maxOffset = contentHeightPx - menuMaxHeightPx
+    return targetOffset.coerceIn(0, maxOffset)
+}
+
+private val LyricsShareFontMenuMaxHeight = 320.dp
+private val LyricsShareFontMenuMinWidth = 360.dp
+private val LyricsShareFontMenuMaxWidth = 560.dp
+private val LyricsShareFontMenuItemHeight = 56.dp
 
 @Composable
 private fun LyricsShareSelectionPane(
