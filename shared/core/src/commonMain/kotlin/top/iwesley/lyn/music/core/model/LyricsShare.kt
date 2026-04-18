@@ -5,6 +5,11 @@ enum class LyricsShareTemplate {
     ARTWORK_TINT,
 }
 
+data class LyricsShareFontOption(
+    val familyName: String,
+    val previewText: String = familyName,
+)
+
 data class LyricsShareCardModel(
     val title: String,
     val artistName: String? = null,
@@ -12,6 +17,7 @@ data class LyricsShareCardModel(
     val template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     val artworkTintTheme: ArtworkTintTheme? = null,
     val lyricsLines: List<String>,
+    val fontFamilyName: String? = null,
 )
 
 data class LyricsShareSaveResult(
@@ -22,17 +28,23 @@ interface LyricsSharePlatformService {
     suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray>
     suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult>
     suspend fun copyImage(pngBytes: ByteArray): Result<Unit>
+    suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>>
 }
 
 object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
     private val error = IllegalStateException("当前平台暂不支持歌词分享图片。")
+    private val fontError = IllegalStateException("当前平台暂不支持读取系统字体。")
 
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = Result.failure(error)
 
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> = Result.failure(error)
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = Result.failure(error)
+
+    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = Result.failure(fontError)
 }
+
+const val DEFAULT_LYRICS_SHARE_FONT_FAMILY: String = "Serif"
 
 object LyricsShareCardSpec {
     const val BRAND_TEXT: String = "Via LynMusic"

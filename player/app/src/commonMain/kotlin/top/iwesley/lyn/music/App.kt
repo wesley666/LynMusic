@@ -97,6 +97,7 @@ fun buildPlayerAppComponent(
             lyricsRepository = sharedGraph.lyricsRepository,
             storeScope = sharedGraph.scope,
             lyricsSharePlatformService = playerRuntimeServices.lyricsSharePlatformService,
+            lyricsShareFontPreferencesStore = playerRuntimeServices.lyricsShareFontPreferencesStore,
             logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,

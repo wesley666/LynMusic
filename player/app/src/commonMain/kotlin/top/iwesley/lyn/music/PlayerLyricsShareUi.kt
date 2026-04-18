@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
@@ -43,6 +45,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,11 +76,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
@@ -86,6 +92,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.platform.PlatformBackHandler
+import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
@@ -1347,11 +1354,24 @@ internal fun LyricsShareOverlay(
                             }
                         }
                     } else {
+                        val showFontSelector = platform.name == "Desktop" &&
+                            (state.isLyricsShareFontsLoading || state.availableLyricsShareFonts.isNotEmpty())
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            if (showFontSelector) {
+                                LyricsShareFontMenuButton(
+                                    selectedFontFamily = state.selectedLyricsShareFontFamily,
+                                    availableFonts = state.availableLyricsShareFonts,
+                                    isLoading = state.isLyricsShareFontsLoading,
+                                    onFontSelected = {
+                                        onPlayerIntent(PlayerIntent.LyricsShareFontChanged(it))
+                                    },
+                                )
+                                Spacer(Modifier.width(10.dp))
+                            }
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
@@ -1402,6 +1422,87 @@ internal fun shouldEnableLyricsShareFullscreen(
     hasPreviewContent: Boolean,
 ): Boolean {
     return hasPreviewContent && platform.isMobilePlatform()
+}
+
+@Composable
+private fun LyricsShareFontMenuButton(
+    selectedFontFamily: String?,
+    availableFonts: List<LyricsShareFontOption>,
+    isLoading: Boolean,
+    onFontSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    var expanded by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+    val buttonLabel = if (isLoading) {
+        "字体加载中..."
+    } else {
+        "字体 · ${selectedFontFamily ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY}"
+    }
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = !isLoading && availableFonts.isNotEmpty(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        ) {
+            Text(buttonLabel, maxLines = 1)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                .heightIn(max = 320.dp)
+                .widthIn(min = 360.dp, max = 560.dp),
+            scrollState = scrollState,
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.background,
+            shadowElevation = 12.dp,
+            border = BorderStroke(1.dp, shellColors.cardBorder),
+        ) {
+            availableFonts.forEach { option ->
+                val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
+                val isSelected = option.familyName == selectedFontFamily
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = option.familyName,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = option.previewText,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontFamily = previewFontFamily,
+                            )
+                        }
+                    },
+                    trailingIcon = if (isSelected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        expanded = false
+                        onFontSelected(option.familyName)
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -1752,6 +1853,7 @@ private fun LyricsShareNoteCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
+    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontFamilyName)
     val primaryTextColor = Color(0xFF3C2E24)
     val footerTextColor = composeColorFromArgb(LyricsShareCardSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = Color(0xFF70584B)
@@ -1788,6 +1890,7 @@ private fun LyricsShareNoteCard(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = primaryTextColor,
+                            fontFamily = previewFontFamily,
                         )
                     }
                 }
@@ -1798,6 +1901,7 @@ private fun LyricsShareNoteCard(
                     color = footerTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    fontFamily = previewFontFamily,
                 )
                 Box(
                     modifier = Modifier.fillMaxWidth(),
@@ -1807,6 +1911,7 @@ private fun LyricsShareNoteCard(
                         text = LyricsShareCardSpec.BRAND_TEXT,
                         style = MaterialTheme.typography.labelLarge,
                         color = secondaryTextColor.copy(alpha = 0.85f),
+                        fontFamily = previewFontFamily,
                     )
                 }
             }
@@ -1821,6 +1926,7 @@ private fun LyricsShareArtworkTintCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
+    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontFamilyName)
     val backgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
     val topTint = composeColorFromArgb(
         argbWithAlpha(
@@ -1921,6 +2027,7 @@ private fun LyricsShareArtworkTintCard(
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = primaryTextColor,
+                            fontFamily = previewFontFamily,
                         )
                     }
                 }
@@ -1932,6 +2039,7 @@ private fun LyricsShareArtworkTintCard(
                     color = footerTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    fontFamily = previewFontFamily,
                 )
                 Spacer(Modifier.height(10.dp))
                 Box(
@@ -1942,6 +2050,7 @@ private fun LyricsShareArtworkTintCard(
                         text = LyricsShareCardSpec.BRAND_TEXT,
                         style = MaterialTheme.typography.labelLarge,
                         color = secondaryTextColor,
+                        fontFamily = previewFontFamily,
                     )
                 }
             }

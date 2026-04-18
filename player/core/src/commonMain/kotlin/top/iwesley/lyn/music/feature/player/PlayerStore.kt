@@ -6,8 +6,11 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
@@ -15,6 +18,7 @@ import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
@@ -42,11 +46,15 @@ data class PlayerState(
     val manualLyricsError: String? = null,
     val isLyricsShareVisible: Boolean = false,
     val selectedLyricsShareTemplate: LyricsShareTemplate = LyricsShareTemplate.NOTE,
+    val availableLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
+    val selectedLyricsShareFontFamily: String? = null,
+    val isLyricsShareFontsLoading: Boolean = false,
     val selectedLyricsLineIndices: Set<Int> = emptySet(),
     val shareCardModel: LyricsShareCardModel? = null,
     val sharePreviewBytes: ByteArray? = null,
     val sharePreviewSelection: Set<Int> = emptySet(),
     val sharePreviewTemplate: LyricsShareTemplate? = null,
+    val sharePreviewFontFamilyName: String? = null,
     val sharePreviewError: String? = null,
     val isShareRendering: Boolean = false,
     val isShareSaving: Boolean = false,
@@ -57,7 +65,8 @@ data class PlayerState(
     val hasFreshSharePreview: Boolean
         get() = sharePreviewBytes != null &&
             sharePreviewSelection == selectedLyricsLineIndices &&
-            sharePreviewTemplate == selectedLyricsShareTemplate
+            sharePreviewTemplate == selectedLyricsShareTemplate &&
+            sharePreviewFontFamilyName == selectedLyricsShareFontFamily
 }
 
 sealed interface PlayerIntent {
@@ -88,6 +97,7 @@ sealed interface PlayerIntent {
     data object OpenLyricsShare : PlayerIntent
     data object DismissLyricsShare : PlayerIntent
     data class LyricsShareTemplateChanged(val template: LyricsShareTemplate) : PlayerIntent
+    data class LyricsShareFontChanged(val familyName: String) : PlayerIntent
     data class ToggleLyricsLineSelection(val index: Int) : PlayerIntent
     data object ClearLyricsSelection : PlayerIntent
     data object BuildLyricsSharePreview : PlayerIntent
@@ -104,6 +114,7 @@ class PlayerStore(
     private val lyricsRepository: LyricsRepository,
     private val storeScope: CoroutineScope,
     private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
+    private val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore = UnsupportedLyricsShareFontPreferencesStore,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
     initialState = PlayerState(),
@@ -209,6 +220,7 @@ class PlayerStore(
             PlayerIntent.OpenLyricsShare -> openLyricsShare()
             PlayerIntent.DismissLyricsShare -> dismissLyricsShare()
             is PlayerIntent.LyricsShareTemplateChanged -> updateLyricsShareTemplate(intent.template)
+            is PlayerIntent.LyricsShareFontChanged -> updateLyricsShareFont(intent.familyName)
             is PlayerIntent.ToggleLyricsLineSelection -> toggleLyricsLineSelection(intent.index)
             PlayerIntent.ClearLyricsSelection -> clearLyricsSelection()
             PlayerIntent.BuildLyricsSharePreview -> rebuildLyricsSharePreview()
@@ -266,10 +278,30 @@ class PlayerStore(
     }
 
     private suspend fun openLyricsShare() {
-        val snapshot = state.value.snapshot
-        val lyrics = state.value.lyrics ?: return
+        val currentState = state.value
+        val snapshot = currentState.snapshot
+        val lyrics = currentState.lyrics ?: return
         if (snapshot.currentTrack == null) return
-        val defaultSelection = state.value.highlightedLineIndex
+        val supportsFontSelection = supportsLyricsShareFontSelection()
+        val savedFontFamily = if (supportsFontSelection) {
+            lyricsShareFontPreferencesStore.selectedLyricsShareFontFamily.value
+        } else {
+            null
+        }
+        var selectedFontFamily = currentState.selectedLyricsShareFontFamily
+            ?: savedFontFamily
+            ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY.takeIf { supportsFontSelection }
+        if (supportsFontSelection && currentState.availableLyricsShareFonts.isNotEmpty()) {
+            val resolvedFontFamily = resolveLyricsShareFontFamilySelection(
+                availableFonts = currentState.availableLyricsShareFonts,
+                preferredFontFamily = selectedFontFamily,
+            )
+            if (resolvedFontFamily != null && resolvedFontFamily != savedFontFamily) {
+                lyricsShareFontPreferencesStore.setSelectedLyricsShareFontFamily(resolvedFontFamily)
+            }
+            selectedFontFamily = resolvedFontFamily
+        }
+        val defaultSelection = currentState.highlightedLineIndex
             .takeIf { index ->
                 index in lyrics.lines.indices && lyrics.lines[index].text.trim().isNotEmpty()
             }?.let { setOf(it) }.orEmpty()
@@ -283,22 +315,30 @@ class PlayerStore(
                 manualWorkflowSongResults = emptyList(),
                 manualLyricsError = null,
                 isLyricsShareVisible = true,
+                selectedLyricsShareFontFamily = selectedFontFamily,
                 selectedLyricsLineIndices = defaultSelection,
                 shareCardModel = deriveLyricsShareCardModel(
                     snapshot = snapshot,
                     lyrics = lyrics,
                     selectedLineIndices = defaultSelection,
                     template = it.selectedLyricsShareTemplate,
+                    fontFamilyName = selectedFontFamily,
                 ),
                 sharePreviewBytes = null,
                 sharePreviewSelection = emptySet(),
                 sharePreviewTemplate = null,
+                sharePreviewFontFamilyName = null,
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
                 isShareCopying = false,
                 shareMessage = null,
             )
+        }
+        if (supportsFontSelection && currentState.availableLyricsShareFonts.isEmpty() && !currentState.isLyricsShareFontsLoading) {
+            storeScope.launch {
+                loadLyricsShareFonts(showFailureMessage = true)
+            }
         }
         if (defaultSelection.isNotEmpty()) {
             rebuildLyricsSharePreview()
@@ -323,6 +363,38 @@ class PlayerStore(
                     lyrics = lyrics,
                     selectedLineIndices = current.selectedLyricsLineIndices,
                     template = template,
+                    fontFamilyName = current.selectedLyricsShareFontFamily,
+                ),
+                sharePreviewError = null,
+                isShareRendering = false,
+                isShareSaving = false,
+                isShareCopying = false,
+                shareMessage = null,
+            )
+        }
+        if (state.value.isLyricsShareVisible && state.value.selectedLyricsLineIndices.isNotEmpty()) {
+            rebuildLyricsSharePreview()
+        }
+    }
+
+    private suspend fun updateLyricsShareFont(familyName: String) {
+        val current = state.value
+        if (!supportsLyricsShareFontSelection()) return
+        if (familyName == current.selectedLyricsShareFontFamily) return
+        if (current.availableLyricsShareFonts.none { it.familyName == familyName }) return
+        lyricsShareFontPreferencesStore.setSelectedLyricsShareFontFamily(familyName)
+        invalidateLyricsSharePreviewRequests()
+        updateState {
+            val snapshot = it.snapshot
+            val lyrics = it.lyrics
+            it.copy(
+                selectedLyricsShareFontFamily = familyName,
+                shareCardModel = deriveLyricsShareCardModel(
+                    snapshot = snapshot,
+                    lyrics = lyrics,
+                    selectedLineIndices = it.selectedLyricsLineIndices,
+                    template = it.selectedLyricsShareTemplate,
+                    fontFamilyName = familyName,
                 ),
                 sharePreviewError = null,
                 isShareRendering = false,
@@ -355,6 +427,7 @@ class PlayerStore(
                     lyrics = lyrics,
                     selectedLineIndices = updatedSelection,
                     template = it.selectedLyricsShareTemplate,
+                    fontFamilyName = it.selectedLyricsShareFontFamily,
                 ),
                 sharePreviewError = null,
                 isShareRendering = false,
@@ -377,6 +450,7 @@ class PlayerStore(
                 sharePreviewBytes = null,
                 sharePreviewSelection = emptySet(),
                 sharePreviewTemplate = null,
+                sharePreviewFontFamilyName = null,
                 sharePreviewError = null,
                 isShareRendering = false,
                 isShareSaving = false,
@@ -534,6 +608,7 @@ class PlayerStore(
             lyrics = lyrics,
             selectedLineIndices = state.value.selectedLyricsLineIndices,
             template = state.value.selectedLyricsShareTemplate,
+            fontFamilyName = state.value.selectedLyricsShareFontFamily,
         )
         if (!state.value.isLyricsShareVisible || model == null) {
             updateState {
@@ -542,6 +617,7 @@ class PlayerStore(
                     sharePreviewBytes = null,
                     sharePreviewSelection = emptySet(),
                     sharePreviewTemplate = null,
+                    sharePreviewFontFamilyName = null,
                     sharePreviewError = null,
                     isShareRendering = false,
                 )
@@ -566,6 +642,7 @@ class PlayerStore(
                         sharePreviewBytes = bytes,
                         sharePreviewSelection = it.selectedLyricsLineIndices,
                         sharePreviewTemplate = model.template,
+                        sharePreviewFontFamilyName = model.fontFamilyName,
                         sharePreviewError = null,
                         isShareRendering = false,
                     )
@@ -635,6 +712,7 @@ class PlayerStore(
         lyrics: LyricsDocument?,
         selectedLineIndices: Set<Int>,
         template: LyricsShareTemplate,
+        fontFamilyName: String?,
     ): LyricsShareCardModel? {
         val selectedLines = lyrics?.lines.orEmpty()
             .mapIndexedNotNull { index, line ->
@@ -648,7 +726,84 @@ class PlayerStore(
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             template = template,
             lyricsLines = selectedLines,
+            fontFamilyName = fontFamilyName,
         )
+    }
+
+    private suspend fun loadLyricsShareFonts(showFailureMessage: Boolean) {
+        if (!supportsLyricsShareFontSelection()) return
+        val currentState = state.value
+        if (currentState.availableLyricsShareFonts.isNotEmpty() || currentState.isLyricsShareFontsLoading) return
+        updateState { it.copy(isLyricsShareFontsLoading = true) }
+        val result = lyricsSharePlatformService.listAvailableFontFamilies()
+        result.fold(
+            onSuccess = { fonts ->
+                val normalizedFonts = fonts
+                    .mapNotNull { option ->
+                        option.familyName.trim().takeIf { it.isNotEmpty() }?.let { normalizedFamilyName ->
+                            LyricsShareFontOption(
+                                familyName = normalizedFamilyName,
+                                previewText = option.previewText.ifBlank { normalizedFamilyName },
+                            )
+                        }
+                    }
+                    .distinctBy { it.familyName.lowercase() }
+                val resolvedFontFamily = resolveLyricsShareFontFamilySelection(
+                    availableFonts = normalizedFonts,
+                    preferredFontFamily = currentState.selectedLyricsShareFontFamily
+                        ?: lyricsShareFontPreferencesStore.selectedLyricsShareFontFamily.value
+                        ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY,
+                )
+                if (normalizedFonts.isEmpty() || resolvedFontFamily == null) {
+                    updateState {
+                        it.copy(
+                            isLyricsShareFontsLoading = false,
+                            shareMessage = if (showFailureMessage) "读取系统字体失败" else it.shareMessage,
+                        )
+                    }
+                    return
+                }
+                if (lyricsShareFontPreferencesStore.selectedLyricsShareFontFamily.value != resolvedFontFamily) {
+                    lyricsShareFontPreferencesStore.setSelectedLyricsShareFontFamily(resolvedFontFamily)
+                }
+                val shouldRebuild = currentState.isLyricsShareVisible &&
+                    currentState.selectedLyricsLineIndices.isNotEmpty() &&
+                    currentState.selectedLyricsShareFontFamily != resolvedFontFamily
+                updateState { latest ->
+                    latest.copy(
+                        availableLyricsShareFonts = normalizedFonts,
+                        selectedLyricsShareFontFamily = resolvedFontFamily,
+                        isLyricsShareFontsLoading = false,
+                        shareCardModel = if (latest.isLyricsShareVisible) {
+                            deriveLyricsShareCardModel(
+                                snapshot = latest.snapshot,
+                                lyrics = latest.lyrics,
+                                selectedLineIndices = latest.selectedLyricsLineIndices,
+                                template = latest.selectedLyricsShareTemplate,
+                                fontFamilyName = resolvedFontFamily,
+                            )
+                        } else {
+                            latest.shareCardModel
+                        },
+                    )
+                }
+                if (shouldRebuild) {
+                    rebuildLyricsSharePreview()
+                }
+            },
+            onFailure = {
+                updateState { current ->
+                    current.copy(
+                        isLyricsShareFontsLoading = false,
+                        shareMessage = if (showFailureMessage) "读取系统字体失败" else current.shareMessage,
+                    )
+                }
+            },
+        )
+    }
+
+    private fun supportsLyricsShareFontSelection(): Boolean {
+        return lyricsShareFontPreferencesStore !== UnsupportedLyricsShareFontPreferencesStore
     }
 
     private fun invalidateLyricsSharePreviewRequests() {
@@ -763,12 +918,27 @@ private fun PlayerState.clearLyricsShareState(): PlayerState {
         sharePreviewBytes = null,
         sharePreviewSelection = emptySet(),
         sharePreviewTemplate = null,
+        sharePreviewFontFamilyName = null,
         sharePreviewError = null,
         isShareRendering = false,
         isShareSaving = false,
         isShareCopying = false,
         shareMessage = null,
     )
+}
+
+private fun resolveLyricsShareFontFamilySelection(
+    availableFonts: List<LyricsShareFontOption>,
+    preferredFontFamily: String?,
+): String? {
+    if (availableFonts.isEmpty()) return null
+    fun resolveCandidate(value: String?): String? {
+        val normalizedValue = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return availableFonts.firstOrNull { it.familyName.equals(normalizedValue, ignoreCase = true) }?.familyName
+    }
+    return resolveCandidate(preferredFontFamily)
+        ?: resolveCandidate(DEFAULT_LYRICS_SHARE_FONT_FAMILY)
+        ?: availableFonts.first().familyName
 }
 
 private data class PlaybackErrorKey(

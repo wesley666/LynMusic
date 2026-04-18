@@ -19,7 +19,9 @@ import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -28,6 +30,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import java.awt.GraphicsEnvironment
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -65,6 +68,15 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         }
     }
 
+    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = withContext(Dispatchers.IO) {
+        runCatching {
+            filterJvmLyricsShareFontFamilyNames(
+                osName = System.getProperty("os.name").orEmpty(),
+                availableFonts = listJvmFontFamilyNames(),
+            )
+        }
+    }
+
     private suspend fun loadArtworkImage(locator: String?): BufferedImage? {
         val artworkBytes = loadJvmArtworkBytes(locator)
         return artworkBytes?.let(::ByteArrayInputStream)?.use(ImageIO::read)
@@ -84,9 +96,10 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         model: LyricsShareCardModel,
         artworkImage: BufferedImage?,
     ): ByteArray {
+        val fontFamilyName = resolveJvmLyricsShareFontFamilyName(model.fontFamilyName)
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX
-        val titleFont = Font("Serif", Font.BOLD, LyricsShareCardSpec.TITLE_FONT_SIZE_PX.toInt())
-        val brandFont = Font("Serif", Font.PLAIN, LyricsShareCardSpec.BRAND_FONT_SIZE_PX.toInt())
+        val titleFont = buildJvmLyricsShareFont(fontFamilyName, Font.BOLD, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
+        val brandFont = buildJvmLyricsShareFont(fontFamilyName, Font.PLAIN, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
         val wrappedFooterLine = wrapSingleBlock(
@@ -115,7 +128,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val fittedLyrics = fitJvmLyricsLayout(
             lines = model.lyricsLines,
             graphics = probe,
-            fontFamily = "Serif",
+            fontFamily = fontFamilyName,
             fontStyle = Font.BOLD,
             baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
             baseLineGapPx = LyricsShareCardSpec.LYRICS_JVM_LINE_GAP_PX,
@@ -269,9 +282,10 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         model: LyricsShareCardModel,
         artworkImage: BufferedImage?,
     ): ByteArray {
+        val fontFamilyName = resolveJvmLyricsShareFontFamilyName(model.fontFamilyName)
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
-        val titleFont = Font("Serif", Font.BOLD, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX.toInt())
-        val brandFont = Font("Serif", Font.PLAIN, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX.toInt())
+        val titleFont = buildJvmLyricsShareFont(fontFamilyName, Font.BOLD, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
+        val brandFont = buildJvmLyricsShareFont(fontFamilyName, Font.PLAIN, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
         val probe = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB).createGraphics()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
         val wrappedFooterLine = wrapSingleBlock(
@@ -299,7 +313,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
         val fittedLyrics = fitJvmLyricsLayout(
             lines = model.lyricsLines,
             graphics = probe,
-            fontFamily = "Serif",
+            fontFamily = fontFamilyName,
             fontStyle = Font.BOLD,
             baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
             baseLineGapPx = LyricsShareArtworkTintSpec.LYRICS_JVM_LINE_GAP_PX,
@@ -507,7 +521,7 @@ private fun fitJvmLyricsLayout(
     var lineGapPx = baseLineGapPx.toFloat()
     val minFontSizePx = (baseFontSizePx * minFontScale).coerceAtLeast(1f)
     while (true) {
-        val font = Font(fontFamily, fontStyle, fontSizePx.roundToInt().coerceAtLeast(1))
+        val font = buildJvmLyricsShareFont(fontFamily, fontStyle, fontSizePx)
         val wrappedLines = wrapTextLines(lines, graphics, font, maxWidth)
         val effectiveLineGapPx = lineGapPx.roundToInt().coerceAtLeast(0)
         val lineHeight = graphics.getFontMetrics(font).height + effectiveLineGapPx
@@ -533,6 +547,106 @@ private fun fitJvmLyricsLayout(
         lineGapPx = (lineGapPx * shrinkStep).coerceAtLeast(0f)
     }
 }
+
+private fun resolveJvmLyricsShareFontFamilyName(requestedFontFamily: String?): String {
+    val availableFonts = listJvmFontFamilyNames()
+    fun resolveCandidate(candidate: String?): String? {
+        val normalizedCandidate = candidate?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return availableFonts.firstOrNull { it.equals(normalizedCandidate, ignoreCase = true) }
+    }
+    return resolveCandidate(requestedFontFamily)
+        ?: resolveCandidate(DEFAULT_LYRICS_SHARE_FONT_FAMILY)
+        ?: availableFonts.firstOrNull()
+        ?: Font.SERIF
+}
+
+private fun buildJvmLyricsShareFont(
+    fontFamily: String,
+    fontStyle: Int,
+    fontSizePx: Float,
+): Font {
+    return Font(fontFamily, fontStyle, fontSizePx.roundToInt().coerceAtLeast(1))
+}
+
+private fun listJvmFontFamilyNames(): List<String> {
+    return GraphicsEnvironment
+        .getLocalGraphicsEnvironment()
+        .availableFontFamilyNames
+        .mapNotNull { familyName -> familyName.trim().takeIf { it.isNotEmpty() } }
+        .distinctBy { it.lowercase() }
+        .sortedBy { it.lowercase() }
+}
+
+internal fun filterJvmLyricsShareFontFamilyNames(
+    osName: String,
+    availableFonts: List<String>,
+) : List<LyricsShareFontOption> {
+    val availableByName = linkedMapOf<String, String>()
+    availableFonts.forEach { familyName ->
+        val normalizedFamilyName = familyName.trim().takeIf { it.isNotEmpty() } ?: return@forEach
+        availableByName.putIfAbsent(normalizedFamilyName.lowercase(), normalizedFamilyName)
+    }
+    return lyricsShareFontWhitelistForDesktop(osName).mapNotNull { candidate ->
+        availableByName[candidate.familyName.lowercase()]?.let { resolvedFamilyName ->
+            LyricsShareFontOption(
+                familyName = resolvedFamilyName,
+                previewText = candidate.previewText,
+            )
+        }
+    }
+}
+
+internal fun lyricsShareFontWhitelistForDesktop(osName: String): List<JvmLyricsShareFontPreset> {
+    return when (resolveJvmLyricsShareDesktopPlatform(osName)) {
+        JvmLyricsShareDesktopPlatform.MACOS -> JVM_LYRICS_SHARE_FONT_WHITELIST_MACOS
+        JvmLyricsShareDesktopPlatform.WINDOWS -> JVM_LYRICS_SHARE_FONT_WHITELIST_WINDOWS
+        JvmLyricsShareDesktopPlatform.LINUX -> JVM_LYRICS_SHARE_FONT_WHITELIST_LINUX
+    }
+}
+
+internal fun resolveJvmLyricsShareDesktopPlatform(osName: String): JvmLyricsShareDesktopPlatform {
+    return when {
+        osName.contains("mac", ignoreCase = true) -> JvmLyricsShareDesktopPlatform.MACOS
+        osName.contains("win", ignoreCase = true) -> JvmLyricsShareDesktopPlatform.WINDOWS
+        else -> JvmLyricsShareDesktopPlatform.LINUX
+    }
+}
+
+internal enum class JvmLyricsShareDesktopPlatform {
+    MACOS,
+    WINDOWS,
+    LINUX,
+}
+
+internal data class JvmLyricsShareFontPreset(
+    val familyName: String,
+    val previewText: String,
+)
+
+private val JVM_LYRICS_SHARE_FONT_WHITELIST_MACOS = listOf(
+    JvmLyricsShareFontPreset("PingFang SC", "你好"),
+    JvmLyricsShareFontPreset("Songti SC", "你好"),
+    JvmLyricsShareFontPreset("Hiragino Sans GB", "你好"),
+    JvmLyricsShareFontPreset("Avenir Next", "Hello"),
+    JvmLyricsShareFontPreset("Baskerville", "Hello"),
+    JvmLyricsShareFontPreset("Times New Roman", "Hello"),
+)
+
+private val JVM_LYRICS_SHARE_FONT_WHITELIST_WINDOWS = listOf(
+    JvmLyricsShareFontPreset("SimSun", "你好"),
+    JvmLyricsShareFontPreset("Microsoft YaHei", "你好"),
+    JvmLyricsShareFontPreset("Segoe UI", "Hello"),
+    JvmLyricsShareFontPreset("Georgia", "Hello"),
+    JvmLyricsShareFontPreset("Constantia", "Hello"),
+)
+
+private val JVM_LYRICS_SHARE_FONT_WHITELIST_LINUX = listOf(
+    JvmLyricsShareFontPreset("Noto Sans CJK SC", "你好"),
+    JvmLyricsShareFontPreset("Noto Serif CJK SC", "你好"),
+    JvmLyricsShareFontPreset("Noto Sans", "Hello"),
+    JvmLyricsShareFontPreset("Noto Serif", "Hello"),
+    JvmLyricsShareFontPreset("DejaVu Serif", "Hello"),
+)
 
 private fun wrapTextLines(
     lines: List<String>,

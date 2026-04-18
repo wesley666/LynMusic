@@ -36,6 +36,7 @@ import kotlin.math.max
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
@@ -96,6 +97,10 @@ class AndroidLyricsSharePlatformService(
                 ?: error("系统剪贴板不可用。")
             clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, "歌词分享图片", uri))
         }
+    }
+
+    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
+        return Result.failure(IllegalStateException("当前平台暂不支持读取系统字体。"))
     }
 
     private suspend fun ensureWritePermissionIfNeeded(): Boolean {

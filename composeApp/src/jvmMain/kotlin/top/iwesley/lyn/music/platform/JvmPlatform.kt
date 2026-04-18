@@ -58,6 +58,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
@@ -190,6 +191,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             playbackGateway = playbackGateway,
             playbackPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = JvmLyricsSharePlatformService(),
+            lyricsShareFontPreferencesStore = appPreferencesStore,
         ),
     )
 }
@@ -217,7 +219,8 @@ private class JvmLyricsHttpClient : LyricsHttpClient {
 }
 
 private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DesktopVlcPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, DesktopVlcPreferencesStore, LyricsShareFontPreferencesStore,
+    LibrarySourceFilterPreferencesStore {
     private val settingsFile = File(File(System.getProperty("user.home")), ".lynmusic/settings.properties").apply {
         parentFile?.mkdirs()
     }
@@ -236,6 +239,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
         ),
     )
+    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow(readSelectedLyricsShareFontFamily())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
@@ -245,6 +249,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val desktopVlcManualPath: StateFlow<String?> = mutableDesktopVlcManualPath.asStateFlow()
     override val desktopVlcAutoDetectedPath: StateFlow<String?> = mutableDesktopVlcAutoDetectedPath.asStateFlow()
     override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
+    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -323,6 +328,18 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         )
     }
 
+    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
+        val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() }
+        val properties = loadProperties()
+        if (normalizedValue == null) {
+            properties.remove(KEY_LYRICS_SHARE_FONT_FAMILY)
+        } else {
+            properties.setProperty(KEY_LYRICS_SHARE_FONT_FAMILY, normalizedValue)
+        }
+        persistProperties(properties)
+        mutableSelectedLyricsShareFontFamily.value = normalizedValue
+    }
+
     private fun readUseSambaCache(): Boolean {
         return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: false
     }
@@ -343,6 +360,10 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     private fun readDesktopVlcManualPath(): String? {
         return loadProperties().getProperty(KEY_DESKTOP_VLC_MANUAL_PATH)?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun readSelectedLyricsShareFontFamily(): String? {
+        return loadProperties().getProperty(KEY_LYRICS_SHARE_FONT_FAMILY)?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {
@@ -411,6 +432,7 @@ private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
 private const val KEY_DESKTOP_VLC_MANUAL_PATH = "desktop_vlc_manual_path"
+private const val KEY_LYRICS_SHARE_FONT_FAMILY = "lyrics_share_font_family"
 
 private class JvmAudioTagGateway(
     private val database: LynMusicDatabase,

@@ -15,6 +15,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
@@ -83,6 +84,10 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
             UIPasteboard.generalPasteboard.image = loadUiImageFromPngBytes(pngBytes)
                 ?: error("无法创建图片。")
         }
+    }
+
+    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
+        return Result.failure(IllegalStateException("当前平台暂不支持读取系统字体。"))
     }
 
     private fun renderLyricsShareImage(

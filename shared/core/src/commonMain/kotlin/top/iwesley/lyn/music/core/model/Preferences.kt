@@ -25,6 +25,12 @@ interface CompactPlayerLyricsPreferencesStore {
     suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
 }
 
+interface LyricsShareFontPreferencesStore {
+    val selectedLyricsShareFontFamily: StateFlow<String?>
+
+    suspend fun setSelectedLyricsShareFontFamily(value: String?)
+}
+
 object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPreferencesStore {
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(false)
 
@@ -32,6 +38,16 @@ object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPrefe
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+}
+
+object UnsupportedLyricsShareFontPreferencesStore : LyricsShareFontPreferencesStore {
+    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow<String?>(null)
+
+    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily
+
+    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
+        mutableSelectedLyricsShareFontFamily.value = value?.trim()?.takeIf { it.isNotBlank() }
     }
 }
 
