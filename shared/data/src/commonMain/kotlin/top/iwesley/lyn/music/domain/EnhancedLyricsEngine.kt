@@ -20,6 +20,7 @@ data class EnhancedLyricsDisplayLine(
     val lineStartTimeMs: Long?,
     val lineEndTimeMs: Long? = null,
     val segments: List<EnhancedLyricsSegment> = emptyList(),
+    val translationText: String? = null,
 )
 
 data class EnhancedLyricsPresentation(
@@ -109,6 +110,7 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
                     text = visibleText,
                     lineStartTimeMs = lineStartTimeMs,
                     segments = segmentDrafts,
+                    source = ParsedDisplayLineSource.EnhancedInline,
                 )
                 return@forEach
             }
@@ -123,6 +125,7 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
                     displayLineDrafts += ParsedDisplayLineDraft(
                         text = lyricText,
                         lineStartTimeMs = timestampMs,
+                        source = ParsedDisplayLineSource.LineTimestamp,
                     )
                 }
                 return@forEach
@@ -136,15 +139,16 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
             displayLineDrafts += ParsedDisplayLineDraft(
                 text = lyricText,
                 lineStartTimeMs = null,
+                source = ParsedDisplayLineSource.Plain,
             )
         }
 
     if (documentLines.isEmpty()) return null
-    val orderedEntries = documentLines
-        .zip(displayLineDrafts)
+    val mergedEntries = mergeAdjacentTranslatedEslrcLines(documentLines.zip(displayLineDrafts))
+    val orderedEntries = mergedEntries
         .withIndex()
         .let { indexedEntries ->
-            if (documentLines.all { it.timestampMs != null }) {
+            if (mergedEntries.all { it.first.timestampMs != null }) {
                 indexedEntries.sortedWith(
                     compareBy<IndexedValue<Pair<LyricsLine, ParsedDisplayLineDraft>>> {
                         it.value.first.timestampMs ?: Long.MAX_VALUE
@@ -171,6 +175,8 @@ private data class ParsedDisplayLineDraft(
     val lineStartTimeMs: Long?,
     val lineEndTimeMs: Long? = null,
     val segments: List<ParsedSegmentDraft> = emptyList(),
+    val translationText: String? = null,
+    val source: ParsedDisplayLineSource = ParsedDisplayLineSource.Plain,
 )
 
 private data class ParsedSegmentDraft(
@@ -178,6 +184,75 @@ private data class ParsedSegmentDraft(
     val startTimeMs: Long,
     val endTimeMs: Long? = null,
 )
+
+private enum class ParsedDisplayLineSource {
+    Eslrc,
+    EnhancedInline,
+    LineTimestamp,
+    Plain,
+}
+
+private fun mergeAdjacentTranslatedEslrcLines(
+    entries: List<Pair<LyricsLine, ParsedDisplayLineDraft>>,
+): List<Pair<LyricsLine, ParsedDisplayLineDraft>> {
+    val mergedEntries = mutableListOf<Pair<LyricsLine, ParsedDisplayLineDraft>>()
+    var index = 0
+    while (index < entries.size) {
+        val current = entries[index]
+        val next = entries.getOrNull(index + 1)
+        if (next != null && shouldMergeTranslatedEslrcPair(current.second, next.second)) {
+            mergedEntries += current.first to current.second.copy(
+                translationText = next.second.text.trim(),
+            )
+            index += 2
+        } else {
+            mergedEntries += current
+            index += 1
+        }
+    }
+    return mergedEntries
+}
+
+private fun shouldMergeTranslatedEslrcPair(
+    primary: ParsedDisplayLineDraft,
+    translation: ParsedDisplayLineDraft,
+): Boolean {
+    val primaryStartTimeMs = primary.lineStartTimeMs ?: return false
+    return primary.source == ParsedDisplayLineSource.Eslrc &&
+        translation.source == ParsedDisplayLineSource.Eslrc &&
+        translation.lineStartTimeMs == primaryStartTimeMs &&
+        hasUsableEslrcWordTiming(primary) &&
+        isLikelyNonCjkPrimaryLine(primary.text) &&
+        isLikelyCjkTranslationLine(translation.text)
+}
+
+private fun hasUsableEslrcWordTiming(line: ParsedDisplayLineDraft): Boolean {
+    if (line.segments.size < 2) return false
+    return line.segments.any { segment ->
+        segment.endTimeMs?.let { endTimeMs -> endTimeMs > segment.startTimeMs } == true
+    } || line.segments.zipWithNext().any { (current, next) ->
+        next.startTimeMs > current.startTimeMs
+    }
+}
+
+private fun isLikelyNonCjkPrimaryLine(text: String): Boolean {
+    val normalized = text.trim()
+    if (normalized.isBlank() || normalized == "...") return false
+    if (normalized.any(::isCjkCharacter)) return false
+    return normalized.any { it.isLetterOrDigit() }
+}
+
+private fun isLikelyCjkTranslationLine(text: String): Boolean {
+    val normalized = text.trim()
+    if (normalized.isBlank() || normalized == "...") return false
+    return normalized.any(::isCjkCharacter)
+}
+
+private fun isCjkCharacter(char: Char): Boolean {
+    return char in '\u3400'..'\u4DBF' ||
+        char in '\u4E00'..'\u9FFF' ||
+        char in '\uF900'..'\uFAFF'
+}
 
 private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<EnhancedLyricsDisplayLine> {
     return drafts.mapIndexed { index, draft ->
@@ -193,6 +268,7 @@ private fun finalizeDisplayLines(drafts: List<ParsedDisplayLineDraft>): List<Enh
             text = draft.text,
             lineStartTimeMs = draft.lineStartTimeMs,
             lineEndTimeMs = resolvedLineEndTimeMs,
+            translationText = draft.translationText,
             segments = draft.segments.mapIndexed { segmentIndex, segment ->
                 val nextSegmentStartTimeMs = draft.segments
                     .getOrNull(segmentIndex + 1)
@@ -275,6 +351,7 @@ private fun parseEslrcDisplayLineDraft(rawLine: String): ParsedDisplayLineDraft?
         lineStartTimeMs = lineStart.timeMs,
         lineEndTimeMs = segments.last().endTimeMs,
         segments = segments,
+        source = ParsedDisplayLineSource.Eslrc,
     )
 }
 
