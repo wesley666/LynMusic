@@ -45,6 +45,7 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
+import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
@@ -57,6 +58,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.AppThemeId
@@ -69,6 +71,7 @@ import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildSambaLocator
@@ -81,6 +84,7 @@ import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
+import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -144,6 +148,12 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             appStorageGateway = createAndroidAppStorageGateway(activity.applicationContext, database),
             deviceInfoGateway = createAndroidDeviceInfoGateway(activity),
             audioTagGateway = AndroidAudioTagGateway(
+                context = activity.applicationContext,
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
+            sameNameLyricsFileGateway = AndroidSameNameLyricsFileGateway(
                 context = activity.applicationContext,
                 database = database,
                 secureCredentialStore = secureStore,
@@ -471,6 +481,61 @@ private class AndroidAudioTagGateway(
                 ).getOrThrow()
             }.getOrThrow()
         }
+    }
+}
+
+private class AndroidSameNameLyricsFileGateway(
+    private val context: Context,
+    private val database: LynMusicDatabase,
+    private val secureCredentialStore: SecureCredentialStore,
+    private val logger: DiagnosticLogger,
+) : SameNameLyricsFileGateway {
+    override suspend fun readSameNameLyrics(track: Track): Result<String?> {
+        return runCatching {
+            val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
+            when {
+                parseNavidromeSongLocator(track.mediaLocator) != null -> null
+                localFile != null -> readAndroidLocalSameNameLyricsFile(localFile)
+                parseSambaLocator(track.mediaLocator) != null -> readAndroidSambaSameNameLyrics(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    track = track,
+                    logger = logger,
+                )
+
+                else -> readAndroidSafSameNameLyrics(track) ?: readAndroidWebDavSameNameLyrics(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    track = track,
+                    logger = logger,
+                )
+            }
+        }
+    }
+
+    private suspend fun readAndroidSafSameNameLyrics(track: Track): String? {
+        val source = database.importSourceDao().getById(track.sourceId)
+            ?.takeIf { it.enabled && it.type == ImportSourceType.LOCAL_FOLDER.name }
+            ?: return null
+        val root = DocumentFile.fromTreeUri(context, Uri.parse(source.rootReference)) ?: return null
+        val lyricsRelativePath = sameNameLyricsRelativePath(track.relativePath) ?: return null
+        val document = findDocumentFile(root, lyricsRelativePath.split('/').filter { it.isNotBlank() })
+            ?.takeIf { it.isFile && it.length() in 1..SAME_NAME_LRC_MAX_BYTES }
+            ?: return null
+        val bytes = context.contentResolver.openInputStream(document.uri)?.use(::readSameNameLyricsStream)
+            ?: return null
+        logger.debug(LOCAL_IMPORT_LOG_TAG) {
+            "same-name-lrc-read source=${track.sourceId} relativePath=$lyricsRelativePath bytes=${bytes.size}"
+        }
+        return decodeAndroidSameNameLyricsBytes(bytes)
+    }
+
+    private fun findDocumentFile(root: DocumentFile, segments: List<String>): DocumentFile? {
+        var current = root
+        segments.forEach { segment ->
+            current = current.findFile(segment) ?: return null
+        }
+        return current
     }
 }
 
@@ -991,6 +1056,53 @@ private suspend fun readAndroidSambaTrackSnapshot(
         }
     } catch (throwable: Throwable) {
         throw IllegalStateException("读取 Samba 远端标签失败: ${throwable.message.orEmpty()}", throwable)
+    } finally {
+        runCatching { client.close() }
+    }
+}
+
+private suspend fun readAndroidSambaSameNameLyrics(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+    logger: DiagnosticLogger,
+): String? {
+    val target = resolveAndroidSambaTagReadTarget(
+        database = database,
+        secureCredentialStore = secureCredentialStore,
+        track = track,
+    ) ?: return null
+    val lyricsRemotePath = sameNameLyricsRelativePath(target.remotePath) ?: return null
+    val client = SMBClient()
+    return try {
+        client.connect(target.server, target.port).use { connection ->
+            val session = connection.authenticate(
+                AuthenticationContext(target.username, target.password.toCharArray(), ""),
+            )
+            session.use {
+                val share = session.connectShare(target.shareName) as DiskShare
+                share.use {
+                    if (!share.fileExists(lyricsRemotePath)) return null
+                    val sizeBytes = share.getFileInformation(lyricsRemotePath)
+                        .standardInformation
+                        .endOfFile
+                    if (sizeBytes <= 0L || sizeBytes > SAME_NAME_LRC_MAX_BYTES) return null
+                    logger.debug(SAMBA_LOG_TAG) {
+                        "same-name-lrc-read source=${target.sourceId} endpoint=${target.endpoint} remotePath=$lyricsRemotePath bytes=$sizeBytes"
+                    }
+                    share.openFile(
+                        lyricsRemotePath,
+                        setOf(AccessMask.GENERIC_READ),
+                        null,
+                        SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OPEN,
+                        null,
+                    ).use { smbFile ->
+                        decodeAndroidSameNameLyricsBytes(readSambaBytes(smbFile, 0L, sizeBytes.toInt()))
+                    }
+                }
+            }
+        }
     } finally {
         runCatching { client.close() }
     }

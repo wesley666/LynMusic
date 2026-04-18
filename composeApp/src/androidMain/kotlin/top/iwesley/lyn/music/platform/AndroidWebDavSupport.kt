@@ -30,7 +30,10 @@ import okhttp3.Response
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
+import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
@@ -41,6 +44,7 @@ import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
+import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
@@ -149,6 +153,38 @@ internal suspend fun resolveAndroidWebDavPlaybackTarget(
         ).createMediaSource(MediaItem.fromUri(Uri.parse(requestUrl))),
         requestUrl = requestUrl,
     )
+}
+
+internal suspend fun readAndroidWebDavSameNameLyrics(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+    logger: DiagnosticLogger,
+): String? {
+    val webDav = parseWebDavLocator(track.mediaLocator) ?: return null
+    val source = database.importSourceDao().getById(webDav.first)
+        ?.takeIf { it.enabled && it.type == ImportSourceType.WEBDAV.name }
+        ?: return null
+    val lyricsRelativePath = sameNameLyricsRelativePath(webDav.second) ?: return null
+    val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+    val requestUrl = buildWebDavTrackUrl(source.rootReference, lyricsRelativePath)
+    val session = createAndroidWebDavSession(
+        rootUrl = source.rootReference,
+        username = source.username.orEmpty(),
+        password = password,
+        allowInsecureTls = source.allowInsecureTls,
+    )
+    val bytes = downloadAndroidWebDavOptionalFile(
+        callFactory = session.client,
+        requestUrl = requestUrl,
+        authEnabled = session.authEnabled,
+        operation = "读取同名歌词",
+    ) ?: return null
+    if (bytes.isEmpty() || bytes.size > SAME_NAME_LRC_MAX_BYTES) return null
+    logger.debug(WEBDAV_LOG_TAG) {
+        "same-name-lrc-read source=${webDav.first} url=$requestUrl bytes=${bytes.size}"
+    }
+    return decodeAndroidSameNameLyricsBytes(bytes)
 }
 
 private fun collectAndroidWebDavTracks(
@@ -443,6 +479,35 @@ private fun downloadAndroidWebDavRange(
             skipAndroidWebDavBytes(stream, startByte)
         }
         readUpTo(stream, length)
+    }
+}
+
+private fun downloadAndroidWebDavOptionalFile(
+    callFactory: Call.Factory,
+    requestUrl: String,
+    authEnabled: Boolean,
+    operation: String,
+): ByteArray? {
+    val requestedLength = (SAME_NAME_LRC_MAX_BYTES + 1L).toInt()
+    val request = Request.Builder()
+        .url(requestUrl)
+        .get()
+        .header("Range", "bytes=0-${requestedLength - 1}")
+        .build()
+    val response = callFactory.newCall(request).execute()
+    return response.use { activeResponse ->
+        when {
+            activeResponse.code == 404 -> null
+            activeResponse.isSuccessful -> readUpTo(activeResponse.body.byteStream(), requestedLength)
+            else -> throw IOException(
+                describeWebDavHttpFailure(
+                    operation = operation,
+                    statusCode = activeResponse.code,
+                    authSent = authEnabled,
+                    serverDetail = activeResponse.header("WWW-Authenticate").orEmpty().ifBlank { activeResponse.message },
+                ),
+            )
+        }
     }
 }
 

@@ -30,6 +30,7 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -293,11 +294,15 @@ class LyricsRepositoryManualOverrideTest {
                 ),
             ),
         )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success("[00:01.00]sidecar line")),
+        )
         val repository = DefaultLyricsRepository(
             database = database,
             httpClient = RecordingLyricsHttpClient(),
             secureCredentialStore = MapCredentialStore(),
             audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
             logger = NoopDiagnosticLogger,
         )
 
@@ -307,6 +312,164 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals(MANUAL_LYRICS_OVERRIDE_SOURCE_ID, resolved.document.sourceId)
         assertEquals("manual line", resolved.document.lines.single().text)
         assertTrue(audioTagGateway.readTrackIds.isEmpty())
+        assertTrue(sameNameLyricsFileGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `non navidrome same name lrc wins over cached and embedded lyrics and caches result`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "cached-source",
+                rawPayload = "[00:01.00]cached line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success("[00:03.00]sidecar line")),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val sameNameRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, SAME_NAME_LRC_SOURCE_ID)
+
+        assertNotNull(resolved)
+        assertEquals(SAME_NAME_LRC_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("sidecar line", resolved.document.lines.single().text)
+        assertEquals("[00:03.00]sidecar line", assertNotNull(sameNameRow).rawPayload)
+        assertEquals(listOf(track.id), sameNameLyricsFileGateway.readTrackIds)
+        assertTrue(audioTagGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `same name lrc missing clears stale cache and falls back to embedded lyrics`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = SAME_NAME_LRC_SOURCE_ID,
+                rawPayload = "[00:01.00]stale sidecar line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success(null)),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val sameNameRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, SAME_NAME_LRC_SOURCE_ID)
+
+        assertNotNull(resolved)
+        assertEquals(EMBEDDED_LYRICS_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("tag line", resolved.document.lines.single().text)
+        assertNull(sameNameRow)
+        assertEquals(listOf(track.id), sameNameLyricsFileGateway.readTrackIds)
+        assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
+    }
+
+    @Test
+    fun `same name lrc read failure can use cached same name lyrics`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = SAME_NAME_LRC_SOURCE_ID,
+                rawPayload = "[00:01.00]cached sidecar line",
+                updatedAt = 10L,
+            ),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.failure(IllegalStateException("read failed"))),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals(SAME_NAME_LRC_SOURCE_ID, resolved.document.sourceId)
+        assertEquals("cached sidecar line", resolved.document.lines.single().text)
+        assertEquals(listOf(track.id), sameNameLyricsFileGateway.readTrackIds)
+        assertTrue(audioTagGateway.readTrackIds.isEmpty())
+    }
+
+    @Test
+    fun `navidrome automatic lyrics lookup does not read same name lrc`() = runTest {
+        val database = createTestDatabase()
+        val track = navidromeTrack()
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success("[00:01.00]sidecar line")),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNull(resolved)
+        assertTrue(sameNameLyricsFileGateway.readTrackIds.isEmpty())
     }
 
     @Test
@@ -511,6 +674,95 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("cached embedded line", candidates.single().document.lines.single().text)
         assertEquals(track.artworkLocator, candidates.single().artworkLocator)
         assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
+    }
+
+    @Test
+    fun `manual search lists same name lrc before embedded lyrics`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    artistName = track.artistName,
+                    albumTitle = track.albumTitle,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success("[00:01.00]sidecar line")),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track)
+
+        assertEquals(listOf(SAME_NAME_LRC_SOURCE_ID, EMBEDDED_LYRICS_SOURCE_ID), candidates.map { it.sourceId })
+        assertEquals(listOf("sidecar line", "tag line"), candidates.map { it.document.lines.single().text })
+        assertTrue(candidates.all { it.isTrackProvided })
+        assertEquals(listOf(track.id), sameNameLyricsFileGateway.readTrackIds)
+        assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
+    }
+
+    @Test
+    fun `manual search skips same name lrc when track provided candidate is disabled`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-manual",
+                urlTemplate = "https://lyrics.example/direct-manual",
+                priority = 100,
+            ),
+        )
+        val httpClient = RecordingLyricsHttpClient(
+            responses = mapOf(
+                "https://lyrics.example/direct-manual" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            {"data":[
+                              {"id":"direct","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"direct line"}
+                            ]}
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val sameNameLyricsFileGateway = RecordingSameNameLyricsFileGateway(
+            responses = mapOf(track.id to Result.success("[00:01.00]sidecar line")),
+        )
+        val audioTagGateway = RecordingFakeAudioTagGateway(
+            readSnapshots = mapOf(
+                track.id to sampleTagSnapshot(
+                    title = track.title,
+                    embeddedLyrics = "[00:02.00]tag line",
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(),
+            audioTagGateway = audioTagGateway,
+            sameNameLyricsFileGateway = sameNameLyricsFileGateway,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val candidates = repository.searchLyricsCandidates(track, includeTrackProvidedCandidate = false)
+
+        assertEquals(listOf("direct-manual"), candidates.map { it.sourceId })
+        assertEquals("direct line", candidates.single().document.lines.single().text)
+        assertTrue(sameNameLyricsFileGateway.readTrackIds.isEmpty())
+        assertTrue(audioTagGateway.readTrackIds.isEmpty())
     }
 
     @Test
@@ -1373,6 +1625,17 @@ private class RecordingFakeAudioTagGateway(
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
         return Result.failure(IllegalStateException("Unexpected write"))
+    }
+}
+
+private class RecordingSameNameLyricsFileGateway(
+    private val responses: Map<String, Result<String?>> = emptyMap(),
+) : SameNameLyricsFileGateway {
+    val readTrackIds = mutableListOf<String>()
+
+    override suspend fun readSameNameLyrics(track: Track): Result<String?> {
+        readTrackIds += track.id
+        return responses[track.id] ?: Result.success(null)
     }
 }
 

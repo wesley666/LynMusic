@@ -56,6 +56,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
+import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.AppThemeId
@@ -68,6 +69,7 @@ import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
@@ -84,6 +86,7 @@ import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
+import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -164,6 +167,11 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             appStorageGateway = createJvmAppStorageGateway(),
             deviceInfoGateway = createJvmDeviceInfoGateway(),
             audioTagGateway = JvmAudioTagGateway(
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
+            sameNameLyricsFileGateway = JvmSameNameLyricsFileGateway(
                 database = database,
                 secureCredentialStore = secureStore,
                 logger = logger,
@@ -454,6 +462,38 @@ private class JvmAudioTagGateway(
     }
 }
 
+private class JvmSameNameLyricsFileGateway(
+    private val database: LynMusicDatabase,
+    private val secureCredentialStore: SecureCredentialStore,
+    private val logger: DiagnosticLogger,
+) : SameNameLyricsFileGateway {
+    override suspend fun readSameNameLyrics(track: Track): Result<String?> {
+        return runCatching {
+            when {
+                parseNavidromeSongLocator(track.mediaLocator) != null -> null
+                resolveJvmLocalTrackPath(track.mediaLocator) != null ->
+                    readJvmLocalSameNameLyricsFile(requireNotNull(resolveJvmLocalTrackPath(track.mediaLocator)))
+
+                parseSambaLocator(track.mediaLocator) != null -> readJvmSambaSameNameLyrics(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    track = track,
+                    logger = logger,
+                )
+
+                parseWebDavLocator(track.mediaLocator) != null -> readJvmWebDavSameNameLyrics(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    track = track,
+                    logger = logger,
+                )
+
+                else -> null
+            }
+        }
+    }
+}
+
 private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
     override suspend fun pickArtworkBytes(): Result<ByteArray?> {
         return runCatching {
@@ -584,6 +624,53 @@ private suspend fun readJvmSambaTrackSnapshot(
         }
     } catch (throwable: Throwable) {
         throw IllegalStateException("读取 Samba 远端标签失败: ${throwable.message.orEmpty()}", throwable)
+    } finally {
+        runCatching { client.close() }
+    }
+}
+
+private suspend fun readJvmSambaSameNameLyrics(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+    logger: DiagnosticLogger,
+): String? {
+    val target = resolveJvmSambaTagReadTarget(
+        database = database,
+        secureCredentialStore = secureCredentialStore,
+        track = track,
+    ) ?: return null
+    val lyricsRemotePath = sameNameLyricsRelativePath(target.remotePath) ?: return null
+    val client = SMBClient()
+    return try {
+        client.connect(target.server, target.port).use { connection ->
+            val session = connection.authenticate(
+                AuthenticationContext(target.username, target.password.toCharArray(), ""),
+            )
+            session.use {
+                val share = session.connectShare(target.shareName) as DiskShare
+                share.use {
+                    if (!share.fileExists(lyricsRemotePath)) return null
+                    val sizeBytes = share.getFileInformation(lyricsRemotePath)
+                        .standardInformation
+                        .endOfFile
+                    if (sizeBytes <= 0L || sizeBytes > SAME_NAME_LRC_MAX_BYTES) return null
+                    logger.debug(SAMBA_LOG_TAG) {
+                        "same-name-lrc-read source=${target.sourceId} endpoint=${target.endpoint} remotePath=$lyricsRemotePath bytes=$sizeBytes"
+                    }
+                    share.openFile(
+                        lyricsRemotePath,
+                        setOf(AccessMask.GENERIC_READ),
+                        null,
+                        SMB2ShareAccess.ALL,
+                        SMB2CreateDisposition.FILE_OPEN,
+                        null,
+                    ).use { smbFile ->
+                        decodeJvmSameNameLyricsBytes(readSambaBytes(smbFile, 0L, sizeBytes.toInt()))
+                    }
+                }
+            }
+        }
     } finally {
         runCatching { client.close() }
     }

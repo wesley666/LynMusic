@@ -425,22 +425,24 @@ private fun parseNavidromeStructuredLyricsEntry(entry: JsonObject): ParsedNavidr
         }
     if (lineDrafts.isEmpty()) return null
 
-    val cueLinesByIndex = if (synced) {
+    val cueLinesByIndex: Map<Int, ParsedNavidromeCueLineDraft> = if (synced) {
         val mainAgentId = entry["agents"].asJsonObjectList()
             .firstOrNull { agent -> agent.string("role")?.equals("main", ignoreCase = true) == true }
             ?.string("id")
-        buildMap {
-            entry["cueLine"].asJsonObjectList()
+        val cueLinesByIndex = mutableMapOf<Int, ParsedNavidromeCueLineDraft>()
+        entry["cueLine"].asJsonObjectList()
             .mapNotNull(::parseNavidromeCueLineDraft)
             .filter { cueLine ->
                 mainAgentId == null ||
                     cueLine.agentId == null ||
                     cueLine.agentId == mainAgentId
             }
-                .forEach { cueLine ->
-                    putIfAbsent(cueLine.index, cueLine)
+            .forEach { cueLine ->
+                if (cueLine.index !in cueLinesByIndex) {
+                    cueLinesByIndex[cueLine.index] = cueLine
                 }
-        }
+            }
+        cueLinesByIndex
     } else {
         emptyMap()
     }

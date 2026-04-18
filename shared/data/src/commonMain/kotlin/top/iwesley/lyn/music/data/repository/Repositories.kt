@@ -35,6 +35,7 @@ import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
@@ -44,6 +45,7 @@ import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -1156,6 +1158,7 @@ class DefaultLyricsRepository(
     private val httpClient: LyricsHttpClient,
     private val secureCredentialStore: SecureCredentialStore,
     private val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
+    private val sameNameLyricsFileGateway: SameNameLyricsFileGateway = UnsupportedSameNameLyricsFileGateway,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
@@ -1198,8 +1201,14 @@ class DefaultLyricsRepository(
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
         } else {
+            resolveSameNameLyricsForPlayback(track, cachedRows)?.let { resolved ->
+                return resolved.withArtworkOverride(manualArtworkOverride)
+            }
             cachedRows
-                .firstNotNullOfOrNull(::resolveCachedLyrics)
+                .firstNotNullOfOrNull { cache ->
+                    cache.takeUnless { it.sourceId == SAME_NAME_LRC_SOURCE_ID }
+                        ?.let(::resolveCachedLyrics)
+                }
                 ?.let { resolved ->
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
@@ -1301,16 +1310,18 @@ class DefaultLyricsRepository(
     override suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean): List<LyricsSearchCandidate> {
         val trackLabel = track.logIdentity()
         val baseTrack = database.trackDao().getByIds(listOf(track.id)).firstOrNull()?.toDomain() ?: track
-        val trackProvidedCandidate = if (includeTrackProvidedCandidate) {
-            buildTrackProvidedLyricsCandidate(baseTrack)
+        val trackProvidedCandidates = if (includeTrackProvidedCandidate) {
+            buildTrackProvidedLyricsCandidates(baseTrack)
         } else {
-            null
+            emptyList()
         }
         val configs = enabledDirectLyricsConfigs()
         if (configs.isEmpty()) {
-            return if (trackProvidedCandidate != null) {
-                logger.debug(LYRICS_LOG_TAG) { "manual-track-provided-only track=$trackLabel source=${trackProvidedCandidate.sourceId}" }
-                listOf(trackProvidedCandidate)
+            return if (trackProvidedCandidates.isNotEmpty()) {
+                logger.debug(LYRICS_LOG_TAG) {
+                    "manual-track-provided-only track=$trackLabel sources=${trackProvidedCandidates.joinToString(",") { it.sourceId }}"
+                }
+                trackProvidedCandidates
             } else {
                 logger.warn(LYRICS_LOG_TAG) { "manual-no-enabled-direct-sources track=$trackLabel" }
                 emptyList()
@@ -1356,7 +1367,7 @@ class DefaultLyricsRepository(
             }
         }
         return buildList {
-            trackProvidedCandidate?.let(::add)
+            addAll(trackProvidedCandidates)
             addAll(rankedDirectCandidates.map { it.candidate })
         }
     }
@@ -1478,11 +1489,14 @@ class DefaultLyricsRepository(
         return result
     }
 
-    private suspend fun buildTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+    private suspend fun buildTrackProvidedLyricsCandidates(track: Track): List<LyricsSearchCandidate> {
         return if (parseNavidromeSongLocator(track.mediaLocator) != null) {
-            buildNavidromeTrackProvidedLyricsCandidate(track)
+            listOfNotNull(buildNavidromeTrackProvidedLyricsCandidate(track))
         } else {
-            buildEmbeddedTrackProvidedLyricsCandidate(track)
+            buildList {
+                buildSameNameTrackProvidedLyricsCandidate(track)?.let(::add)
+                buildEmbeddedTrackProvidedLyricsCandidate(track)?.let(::add)
+            }
         }
     }
 
@@ -1506,6 +1520,91 @@ class DefaultLyricsRepository(
             artworkLocator = normalizeArtworkLocator(track.artworkLocator),
             isTrackProvided = true,
         )
+    }
+
+    private suspend fun resolveSameNameLyricsForPlayback(
+        track: Track,
+        cachedRows: List<LyricsCacheEntity>,
+    ): ResolvedLyricsResult? {
+        val trackLabel = track.logIdentity()
+        return when (val lookup = readLiveSameNameLyricsDocument(track)) {
+            is SameNameLyricsLookup.Found -> {
+                storeLyricsDocument(
+                    track.id,
+                    lookup.document,
+                    cacheSourceId = SAME_NAME_LRC_SOURCE_ID,
+                )
+                logger.info(LYRICS_LOG_TAG) {
+                    "resolved track=$trackLabel source=$SAME_NAME_LRC_SOURCE_ID synced=${lookup.document.isSynced} " +
+                        "lines=${lookup.document.lines.size}"
+                }
+                ResolvedLyricsResult(document = lookup.document)
+            }
+
+            SameNameLyricsLookup.Missing -> {
+                database.lyricsCacheDao().deleteByTrackIdAndSourceId(track.id, SAME_NAME_LRC_SOURCE_ID)
+                null
+            }
+
+            is SameNameLyricsLookup.Failed -> {
+                logger.warn(LYRICS_LOG_TAG) {
+                    "same-name-lrc-read-failed track=$trackLabel reason=${lookup.throwable.message.orEmpty()}"
+                }
+                cachedRows
+                    .firstOrNull { it.sourceId == SAME_NAME_LRC_SOURCE_ID }
+                    ?.let(::resolveCachedLyrics)
+                    ?.also { logCacheHit(trackLabel, it.document) }
+            }
+        }
+    }
+
+    private suspend fun buildSameNameTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val document = when (val lookup = readLiveSameNameLyricsDocument(track)) {
+            is SameNameLyricsLookup.Found -> {
+                storeLyricsDocument(
+                    track.id,
+                    lookup.document,
+                    cacheSourceId = SAME_NAME_LRC_SOURCE_ID,
+                )
+                lookup.document
+            }
+
+            SameNameLyricsLookup.Missing -> {
+                database.lyricsCacheDao().deleteByTrackIdAndSourceId(track.id, SAME_NAME_LRC_SOURCE_ID)
+                null
+            }
+
+            is SameNameLyricsLookup.Failed -> {
+                logger.warn(LYRICS_LOG_TAG) {
+                    "manual-track-provided-same-name-lrc-failed track=${track.logIdentity()} reason=${lookup.throwable.message.orEmpty()}"
+                }
+                database.lyricsCacheDao()
+                    .getByTrackIdAndSourceId(track.id, SAME_NAME_LRC_SOURCE_ID)
+                    ?.let { row -> parseCachedLyrics(row.sourceId, row.rawPayload) }
+            }
+        } ?: return null
+        return LyricsSearchCandidate(
+            sourceId = SAME_NAME_LRC_SOURCE_ID,
+            sourceName = "同名歌词文件",
+            document = document,
+            title = track.title.takeIf { it.isNotBlank() },
+            artistName = track.artistName?.takeIf { it.isNotBlank() },
+            albumTitle = track.albumTitle?.takeIf { it.isNotBlank() },
+            durationSeconds = track.durationSecondsOrNull(),
+            artworkLocator = normalizeArtworkLocator(track.artworkLocator),
+            isTrackProvided = true,
+        )
+    }
+
+    private suspend fun readLiveSameNameLyricsDocument(track: Track): SameNameLyricsLookup {
+        if (parseNavidromeSongLocator(track.mediaLocator) != null) return SameNameLyricsLookup.Missing
+        val rawPayload = sameNameLyricsFileGateway.readSameNameLyrics(track).fold(
+            onSuccess = { it?.trim()?.takeIf { value -> value.isNotBlank() } },
+            onFailure = { throwable -> return SameNameLyricsLookup.Failed(throwable) },
+        ) ?: return SameNameLyricsLookup.Missing
+        val document = parseCachedLyrics(SAME_NAME_LRC_SOURCE_ID, rawPayload)
+            ?: return SameNameLyricsLookup.Missing
+        return SameNameLyricsLookup.Found(document)
     }
 
     private suspend fun readEmbeddedTrackLyrics(track: Track): LiveEmbeddedTrackLyricsResult {
@@ -2077,10 +2176,17 @@ private data class LiveEmbeddedTrackLyricsResult(
     val isSambaTrack: Boolean,
 )
 
+private sealed interface SameNameLyricsLookup {
+    data class Found(val document: LyricsDocument) : SameNameLyricsLookup
+    data class Failed(val throwable: Throwable) : SameNameLyricsLookup
+    data object Missing : SameNameLyricsLookup
+}
+
 internal fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
 const val MANUAL_LYRICS_OVERRIDE_SOURCE_ID = "manual-override"
+const val SAME_NAME_LRC_SOURCE_ID = "same-name-lrc"
 internal const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
 
 internal fun newId(prefix: String): String = "$prefix-${now()}-${Random.nextInt(1000, 9999)}"

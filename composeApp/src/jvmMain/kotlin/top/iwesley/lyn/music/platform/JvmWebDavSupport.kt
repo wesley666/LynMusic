@@ -27,7 +27,9 @@ import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
+import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
@@ -38,7 +40,9 @@ import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
+import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.warn
+import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 internal data class JvmWebDavPlaybackTarget(
@@ -248,6 +252,35 @@ internal suspend fun requestJvmWebDavMetadata(
     }.getOrNull().also {
         tempFile.delete()
     }
+}
+
+internal suspend fun readJvmWebDavSameNameLyrics(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    track: Track,
+    logger: DiagnosticLogger,
+): String? {
+    val webDav = parseWebDavLocator(track.mediaLocator) ?: return null
+    val source = database.importSourceDao().getById(webDav.first)
+        ?.takeIf { it.enabled && it.type == ImportSourceType.WEBDAV.name }
+        ?: return null
+    val lyricsRelativePath = sameNameLyricsRelativePath(webDav.second) ?: return null
+    val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+    val requestUrl = buildWebDavTrackUrl(source.rootReference, lyricsRelativePath)
+    val authEnabled = source.username.orEmpty().isNotBlank()
+    val bytes = downloadJvmWebDavOptionalFile(
+        requestUrl = requestUrl,
+        username = source.username.orEmpty(),
+        password = password,
+        allowInsecureTls = source.allowInsecureTls,
+        authEnabled = authEnabled,
+        operation = "读取同名歌词",
+    ) ?: return null
+    if (bytes.isEmpty() || bytes.size > SAME_NAME_LRC_MAX_BYTES) return null
+    logger.debug(WEBDAV_LOG_TAG) {
+        "same-name-lrc-read source=${webDav.first} url=$requestUrl bytes=${bytes.size}"
+    }
+    return decodeJvmSameNameLyricsBytes(bytes)
 }
 
 private fun collectJvmWebDavTracks(
@@ -667,6 +700,49 @@ private fun downloadJvmWebDavRange(
             readJvmWebDavBytes(input, length)
         }
     } finally {
+        connection.disconnect()
+    }
+}
+
+private fun downloadJvmWebDavOptionalFile(
+    requestUrl: String,
+    username: String,
+    password: String,
+    allowInsecureTls: Boolean,
+    authEnabled: Boolean,
+    operation: String,
+): ByteArray? {
+    val requestedLength = (SAME_NAME_LRC_MAX_BYTES + 1L).toInt()
+    val connection = openJvmWebDavConnection(
+        requestUrl = requestUrl,
+        username = username,
+        password = password,
+        allowInsecureTls = allowInsecureTls,
+    )
+    return try {
+        connection.requestMethod = "GET"
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 10_000
+        connection.setRequestProperty("Range", "bytes=0-${requestedLength - 1}")
+        connection.connect()
+        when (val statusCode = connection.responseCode) {
+            HttpURLConnection.HTTP_NOT_FOUND -> null
+            in 200..299 -> connection.inputStream.use { input ->
+                readJvmWebDavBytes(input, requestedLength)
+            }
+
+            else -> throw IOException(
+                describeWebDavHttpFailure(
+                    operation = operation,
+                    statusCode = statusCode,
+                    authSent = authEnabled,
+                    serverDetail = connection.getHeaderField("WWW-Authenticate").orEmpty().ifBlank { connection.responseMessage },
+                ),
+            )
+        }
+    } finally {
+        connection.inputStreamOrNull()?.close()
         connection.disconnect()
     }
 }

@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
+import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
@@ -25,6 +26,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
+import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -63,6 +65,7 @@ data class SharedRuntimeServices(
     val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
     val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
+    val sameNameLyricsFileGateway: SameNameLyricsFileGateway = UnsupportedSameNameLyricsFileGateway,
     val audioTagEditorPlatformService: AudioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
     val vlcPathPickerPlatformService: VlcPathPickerPlatformService = UnsupportedVlcPathPickerPlatformService,
     val logger: DiagnosticLogger = NoopDiagnosticLogger,
@@ -126,6 +129,7 @@ fun buildSharedGraph(
         httpClient = runtimeServices.lyricsHttpClient,
         secureCredentialStore = runtimeServices.secureCredentialStore,
         audioTagGateway = runtimeServices.audioTagGateway,
+        sameNameLyricsFileGateway = runtimeServices.sameNameLyricsFileGateway,
         artworkCacheStore = runtimeServices.artworkCacheStore,
         logger = runtimeServices.logger,
     )

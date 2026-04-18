@@ -417,6 +417,14 @@ object UnsupportedAudioTagGateway : AudioTagGateway {
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> = Result.failure(error)
 }
 
+interface SameNameLyricsFileGateway {
+    suspend fun readSameNameLyrics(track: Track): Result<String?>
+}
+
+object UnsupportedSameNameLyricsFileGateway : SameNameLyricsFileGateway {
+    override suspend fun readSameNameLyrics(track: Track): Result<String?> = Result.success(null)
+}
+
 interface AudioTagEditorPlatformService {
     suspend fun pickArtworkBytes(): Result<ByteArray?>
     suspend fun loadArtworkBytes(locator: String): Result<ByteArray?>
