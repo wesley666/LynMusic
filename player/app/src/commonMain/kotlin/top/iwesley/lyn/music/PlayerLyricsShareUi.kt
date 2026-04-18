@@ -7,6 +7,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -58,10 +60,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -71,11 +75,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
@@ -98,7 +105,9 @@ import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
+import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 internal fun PlayerLyricsPane(
@@ -1498,9 +1507,7 @@ private fun LyricsShareFontMenuButton(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 modifier = Modifier
-                    .heightIn(max = LyricsShareFontMenuMaxHeight)
                     .widthIn(min = LyricsShareFontMenuMinWidth, max = LyricsShareFontMenuMaxWidth),
-                scrollState = scrollState,
                 shape = RoundedCornerShape(20.dp),
                 containerColor = MaterialTheme.colorScheme.background,
                 shadowElevation = 12.dp,
@@ -1538,51 +1545,173 @@ private fun LyricsShareFontMenuButton(
                     }
 
                     else -> {
-                        availableFonts.forEach { option ->
-                            val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
-                            val isSelected = option.familyName == selectedFontFamily
-                            DropdownMenuItem(
-                                modifier = Modifier.height(LyricsShareFontMenuItemHeight),
-                                text = {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = option.familyName,
-                                            modifier = Modifier.weight(1f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                        Text(
-                                            text = option.previewText,
-                                            modifier = Modifier.weight(1f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontFamily = previewFontFamily,
-                                        )
-                                    }
-                                },
-                                trailingIcon = if (isSelected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Check,
-                                            contentDescription = null,
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    expanded = false
-                                    onFontSelected(option.familyName)
-                                },
-                            )
-                        }
+                        LyricsShareFontMenuList(
+                            availableFonts = availableFonts,
+                            selectedFontFamily = selectedFontFamily,
+                            scrollState = scrollState,
+                            onFontSelected = { familyName ->
+                                expanded = false
+                                onFontSelected(familyName)
+                            },
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareFontMenuList(
+    availableFonts: List<LyricsShareFontOption>,
+    selectedFontFamily: String?,
+    scrollState: androidx.compose.foundation.ScrollState,
+    onFontSelected: (String) -> Unit,
+) {
+    val shouldShowScrollbar by remember(scrollState.maxValue) {
+        derivedStateOf { scrollState.maxValue > 0 }
+    }
+    Box(
+        modifier = Modifier
+            .widthIn(min = LyricsShareFontMenuMinWidth, max = LyricsShareFontMenuMaxWidth)
+            .heightIn(max = LyricsShareFontMenuMaxHeight),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(end = if (shouldShowScrollbar) LyricsShareFontMenuScrollbarReservedPadding else 0.dp),
+        ) {
+            availableFonts.forEach { option ->
+                val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
+                val isSelected = option.familyName == selectedFontFamily
+                DropdownMenuItem(
+                    modifier = Modifier.height(LyricsShareFontMenuItemHeight),
+                    text = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = option.familyName,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = option.previewText,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontFamily = previewFontFamily,
+                            )
+                        }
+                    },
+                    trailingIcon = if (isSelected) {
+                        {
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onClick = { onFontSelected(option.familyName) },
+                )
+            }
+        }
+        LyricsShareFontMenuScrollbar(
+            scrollState = scrollState,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .padding(end = 6.dp, top = 8.dp, bottom = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun LyricsShareFontMenuScrollbar(
+    scrollState: androidx.compose.foundation.ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var trackSize by remember { mutableStateOf(IntSize.Zero) }
+    val metrics by remember(scrollState.value, scrollState.maxValue, trackSize) {
+        derivedStateOf {
+            calculateLyricsShareFontMenuScrollbarMetrics(
+                scrollValue = scrollState.value,
+                maxScrollValue = scrollState.maxValue,
+                trackHeightPx = trackSize.height,
+            )
+        }
+    }
+    val thumbHeightDp = with(density) { metrics.thumbHeightPx.toDp() }
+    val thumbOffsetDp = with(density) { metrics.thumbOffsetPx.toDp() }
+
+    fun scrollToTrackPosition(y: Float) {
+        val targetScrollValue = calculateLyricsShareFontMenuScrollbarTargetScrollValue(
+            pointerY = y,
+            trackHeightPx = trackSize.height,
+            maxScrollValue = scrollState.maxValue,
+        )
+        coroutineScope.launch {
+            scrollState.scrollTo(targetScrollValue)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .width(LyricsShareFontMenuScrollbarWidth)
+            .onSizeChanged { trackSize = it }
+            .pointerInput(scrollState.maxValue, trackSize, metrics.isVisible) {
+                detectTapGestures { offset ->
+                    if (metrics.isVisible) {
+                        scrollToTrackPosition(offset.y)
+                    }
+                }
+            }
+            .pointerInput(scrollState.maxValue, trackSize, metrics.isVisible) {
+                detectVerticalDragGestures(
+                    onDragStart = { offset ->
+                        if (metrics.isVisible) {
+                            scrollToTrackPosition(offset.y)
+                        }
+                    },
+                    onVerticalDrag = { change, _ ->
+                        if (metrics.isVisible) {
+                            change.consume()
+                            scrollToTrackPosition(change.position.y)
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        val shellColors = mainShellColors
+        if (metrics.isVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(LyricsShareFontMenuScrollbarTrackWidth)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(shellColors.cardBorder),
+            )
+            Box(
+                modifier = Modifier
+                    .offset(y = thumbOffsetDp)
+                    .height(thumbHeightDp)
+                    .width(LyricsShareFontMenuScrollbarThumbWidth)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.secondary)
+                    .border(
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.18f)),
+                        RoundedCornerShape(999.dp),
+                    ),
+            )
         }
     }
 }
@@ -1601,10 +1730,55 @@ internal fun calculateLyricsShareFontMenuScrollOffsetPx(
     return targetOffset.coerceIn(0, maxOffset)
 }
 
+internal data class LyricsShareFontMenuScrollbarMetrics(
+    val isVisible: Boolean,
+    val thumbHeightPx: Float,
+    val thumbOffsetPx: Float,
+)
+
+internal fun calculateLyricsShareFontMenuScrollbarMetrics(
+    scrollValue: Int,
+    maxScrollValue: Int,
+    trackHeightPx: Int,
+): LyricsShareFontMenuScrollbarMetrics {
+    if (maxScrollValue <= 0 || trackHeightPx <= 0) {
+        return LyricsShareFontMenuScrollbarMetrics(
+            isVisible = false,
+            thumbHeightPx = 0f,
+            thumbOffsetPx = 0f,
+        )
+    }
+    val viewportHeightPx = trackHeightPx.toFloat()
+    val contentHeightPx = maxScrollValue + viewportHeightPx
+    val visibleFraction = (viewportHeightPx / contentHeightPx).coerceIn(0.12f, 0.45f)
+    val scrollFraction = (scrollValue.toFloat() / maxScrollValue.toFloat()).coerceIn(0f, 1f)
+    val thumbHeightPx = trackHeightPx * visibleFraction
+    val thumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f) * scrollFraction
+    return LyricsShareFontMenuScrollbarMetrics(
+        isVisible = true,
+        thumbHeightPx = thumbHeightPx,
+        thumbOffsetPx = thumbOffsetPx,
+    )
+}
+
+internal fun calculateLyricsShareFontMenuScrollbarTargetScrollValue(
+    pointerY: Float,
+    trackHeightPx: Int,
+    maxScrollValue: Int,
+): Int {
+    if (trackHeightPx <= 0 || maxScrollValue <= 0) return 0
+    val fraction = (pointerY / trackHeightPx.toFloat()).coerceIn(0f, 1f)
+    return (fraction * maxScrollValue.toFloat()).roundToInt()
+}
+
 private val LyricsShareFontMenuMaxHeight = 320.dp
 private val LyricsShareFontMenuMinWidth = 360.dp
 private val LyricsShareFontMenuMaxWidth = 560.dp
 private val LyricsShareFontMenuItemHeight = 56.dp
+private val LyricsShareFontMenuScrollbarReservedPadding = 22.dp
+private val LyricsShareFontMenuScrollbarWidth = 18.dp
+private val LyricsShareFontMenuScrollbarTrackWidth = 4.dp
+private val LyricsShareFontMenuScrollbarThumbWidth = 8.dp
 
 @Composable
 private fun LyricsShareSelectionPane(
