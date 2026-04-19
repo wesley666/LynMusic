@@ -29,6 +29,7 @@ import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
@@ -140,6 +141,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
             playbackPreferencesStore = appPreferencesStore,
+            lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = IosLyricsSharePlatformService(),
             systemPlaybackControlsPlatformService = createIosSystemPlaybackControlsPlatformService(),
         ),
@@ -240,7 +242,7 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
 }
 
 private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, LyricsShareFontPreferencesStore, LibrarySourceFilterPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) false else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
@@ -257,12 +259,14 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
+    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow(readSelectedLyricsShareFontFamily())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
+    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -274,6 +278,16 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         defaults.setBool(enabled, KEY_SHOW_COMPACT_PLAYER_LYRICS)
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
+        val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() }
+        if (normalizedValue == null) {
+            defaults.removeObjectForKey(KEY_LYRICS_SHARE_FONT_FAMILY)
+        } else {
+            defaults.setObject(normalizedValue, KEY_LYRICS_SHARE_FONT_FAMILY)
+        }
+        mutableSelectedLyricsShareFontFamily.value = normalizedValue
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
@@ -311,6 +325,10 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private fun readSelectedTheme(): AppThemeId {
         val name = defaults.stringForKey(KEY_SELECTED_THEME)
         return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
+    }
+
+    private fun readSelectedLyricsShareFontFamily(): String? {
+        return defaults.stringForKey(KEY_LYRICS_SHARE_FONT_FAMILY)?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {
@@ -441,6 +459,7 @@ private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val KEY_SELECTED_THEME = "selected_theme"
+private const val KEY_LYRICS_SHARE_FONT_FAMILY = "lyrics_share_font_family"
 private const val KEY_CUSTOM_THEME_BACKGROUND_ARGB = "custom_theme_background_argb"
 private const val KEY_CUSTOM_THEME_ACCENT_ARGB = "custom_theme_accent_argb"
 private const val KEY_CUSTOM_THEME_FOCUS_ARGB = "custom_theme_focus_argb"

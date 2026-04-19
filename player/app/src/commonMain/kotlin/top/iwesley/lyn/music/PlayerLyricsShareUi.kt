@@ -1367,13 +1367,12 @@ internal fun LyricsShareOverlay(
                             }
                         }
                     } else {
-                        val showFontSelector = platform.name == "Desktop"
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (showFontSelector) {
+                            if (state.supportsLyricsShareFontSelection) {
                                 LyricsShareFontMenuButton(
                                     selectedFontFamily = state.selectedLyricsShareFontFamily,
                                     availableFonts = state.availableLyricsShareFonts,

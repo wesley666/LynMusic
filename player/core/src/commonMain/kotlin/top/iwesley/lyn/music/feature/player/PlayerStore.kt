@@ -46,6 +46,7 @@ data class PlayerState(
     val manualLyricsError: String? = null,
     val isLyricsShareVisible: Boolean = false,
     val selectedLyricsShareTemplate: LyricsShareTemplate = LyricsShareTemplate.NOTE,
+    val supportsLyricsShareFontSelection: Boolean = false,
     val availableLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
     val selectedLyricsShareFontFamily: String? = null,
     val isLyricsShareFontsLoading: Boolean = false,
@@ -119,7 +120,10 @@ class PlayerStore(
     private val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore = UnsupportedLyricsShareFontPreferencesStore,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
-    initialState = PlayerState(),
+    initialState = PlayerState(
+        supportsLyricsShareFontSelection =
+            lyricsShareFontPreferencesStore !== UnsupportedLyricsShareFontPreferencesStore,
+    ),
     scope = storeScope,
 ) {
     private var currentLyricsTrackId: String? = null

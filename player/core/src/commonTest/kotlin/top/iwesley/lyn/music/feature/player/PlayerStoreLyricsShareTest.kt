@@ -67,6 +67,7 @@ class PlayerStoreLyricsShareTest {
 
         val state = store.state.value
         assertTrue(state.isLyricsShareVisible)
+        assertFalse(state.supportsLyricsShareFontSelection)
         assertEquals(setOf(0), state.selectedLyricsLineIndices)
         assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
         assertEquals(1, shareService.buildPreviewCalls)
@@ -233,6 +234,7 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
+        assertTrue(state.supportsLyricsShareFontSelection)
         assertTrue(state.availableLyricsShareFonts.isEmpty())
         assertNull(state.lyricsShareFontsError)
         assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, state.selectedLyricsShareFontFamily)

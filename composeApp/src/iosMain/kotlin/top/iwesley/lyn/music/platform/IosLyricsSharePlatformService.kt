@@ -16,6 +16,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
+import org.jetbrains.skia.FontMgr
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import org.jetbrains.skia.Image
@@ -67,8 +68,12 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         }
     }
 
-    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
-        return Result.failure(IllegalStateException("当前平台暂不支持读取系统字体。"))
+    override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = withContext(Dispatchers.Default) {
+        runCatching {
+            prioritizeIosLyricsShareFontFamilyNames(
+                availableFonts = listSkiaLyricsShareFontFamilyNames(FontMgr.default),
+            )
+        }
     }
 }
 

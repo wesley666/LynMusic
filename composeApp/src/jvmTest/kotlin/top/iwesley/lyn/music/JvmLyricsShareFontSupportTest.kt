@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.platform.fitSkiaSingleLineWithEllipsis
 import top.iwesley.lyn.music.platform.isJvmLyricsShareAlphabeticFamilyName
 import top.iwesley.lyn.music.platform.listSkiaLyricsShareFontFamilyNames
 import top.iwesley.lyn.music.platform.lyricsShareFontWhitelistForDesktop
+import top.iwesley.lyn.music.platform.prioritizeIosLyricsShareFontFamilyNames
 import top.iwesley.lyn.music.platform.prioritizeJvmLyricsShareFontFamilyNames
 import top.iwesley.lyn.music.platform.resolveSkiaLyricsShareTypeface
 import top.iwesley.lyn.music.platform.tokenizeSkiaLyricsShareLine
@@ -147,6 +148,33 @@ class JvmLyricsShareFontSupportTest {
             listOf("Arial", "Courier New", ".Apple Symbols", "你好字体"),
             prioritized.map { it.familyName },
         )
+    }
+
+    @Test
+    fun `prioritizeIosLyricsShareFontFamilyNames keeps shared fallback fonts at top and appends others`() {
+        val prioritized = prioritizeIosLyricsShareFontFamilyNames(
+            availableFonts = listOf(".SF NS", "Arial", "Arial Unicode MS", "Hiragino Sans GB", "PingFang HK", "Zapfino"),
+        )
+
+        assertEquals(
+            listOf("PingFang HK", "Hiragino Sans GB", "Arial Unicode MS", "Arial", "Zapfino", ".SF NS"),
+            prioritized.map { it.familyName },
+        )
+        assertContentEquals(
+            listOf(true, true, true, false, false, false),
+            prioritized.map { it.isPrioritized },
+        )
+        assertTrue(prioritized.all { it.previewText == "你好 Hello" })
+    }
+
+    @Test
+    fun `prioritizeIosLyricsShareFontFamilyNames returns all fonts when fallback list has no matches`() {
+        val prioritized = prioritizeIosLyricsShareFontFamilyNames(
+            availableFonts = listOf(".SF NS", "Arial", "Zapfino"),
+        )
+
+        assertEquals(listOf("Arial", "Zapfino", ".SF NS"), prioritized.map { it.familyName })
+        assertTrue(prioritized.all { !it.isPrioritized && it.previewText == "你好 Hello" })
     }
 
     @Test

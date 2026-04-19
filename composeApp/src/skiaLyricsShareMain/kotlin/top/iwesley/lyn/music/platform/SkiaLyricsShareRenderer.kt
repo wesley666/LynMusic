@@ -435,7 +435,7 @@ internal fun resolveSkiaLyricsShareTypeface(
             fontMgr.matchFamilyStyleCharacter(
                 familyName = requestedFamily,
                 style = style,
-                bcp47 = SKIA_LYRICS_SHARE_LANGUAGE_HINTS,
+                bcp47 = skiaLyricsShareLanguageHints,
                 character = codePoint,
             ) ?: fontMgr.matchFamilyStyle(requestedFamily, style)
 
@@ -445,13 +445,13 @@ internal fun resolveSkiaLyricsShareTypeface(
     val fallbackTypeface = when {
         codePoint != null ->
             fontMgr.matchFamiliesStyleCharacter(
-                families = SKIA_LYRICS_SHARE_FALLBACK_FONT_FAMILIES,
+                families = skiaLyricsShareFallbackFontFamilies,
                 style = style,
-                bcp47 = SKIA_LYRICS_SHARE_LANGUAGE_HINTS,
+                bcp47 = skiaLyricsShareLanguageHints,
                 character = codePoint,
-            ) ?: fontMgr.matchFamiliesStyle(SKIA_LYRICS_SHARE_FALLBACK_FONT_FAMILIES, style)
+            ) ?: fontMgr.matchFamiliesStyle(skiaLyricsShareFallbackFontFamilies, style)
 
-        else -> fontMgr.matchFamiliesStyle(SKIA_LYRICS_SHARE_FALLBACK_FONT_FAMILIES, style)
+        else -> fontMgr.matchFamiliesStyle(skiaLyricsShareFallbackFontFamilies, style)
     }
 
     val defaultTypeface = when {
@@ -459,7 +459,7 @@ internal fun resolveSkiaLyricsShareTypeface(
             fontMgr.matchFamilyStyleCharacter(
                 familyName = null,
                 style = style,
-                bcp47 = SKIA_LYRICS_SHARE_LANGUAGE_HINTS,
+                bcp47 = skiaLyricsShareLanguageHints,
                 character = codePoint,
             ) ?: fontMgr.matchFamilyStyle(null, style)
 
@@ -798,18 +798,3 @@ private fun encodeSkiaSurface(surface: Surface): ByteArray {
         ?: error("无法导出 PNG 数据。")
     return encoded.bytes
 }
-
-private val SKIA_LYRICS_SHARE_LANGUAGE_HINTS = arrayOf("zh-Hans", "zh-Hant", "ja", "ko", "en")
-
-private val SKIA_LYRICS_SHARE_FALLBACK_FONT_FAMILIES = arrayOf<String?>(
-    "PingFang SC",
-    "PingFang TC",
-    "PingFang HK",
-    "Hiragino Sans GB",
-    "Hiragino Sans",
-    "STHeiti",
-    "Heiti SC",
-    "Heiti TC",
-    "Apple SD Gothic Neo",
-    "Arial Unicode MS",
-)
