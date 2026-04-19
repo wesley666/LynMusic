@@ -137,6 +137,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     }
     val secureStore = createJvmSecureCredentialStore(logger)
     val appPreferencesStore = JvmAppPreferencesStore()
+    val lyricsShareFontLibraryPlatformService = JvmLyricsShareFontLibraryPlatformService()
     val playbackGateway = JvmPlaybackGateway(
         database = database,
         secureCredentialStore = secureStore,
@@ -166,6 +167,8 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             desktopVlcPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
+            lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
+            lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
             appStorageGateway = createJvmAppStorageGateway(),
@@ -190,7 +193,8 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = playbackGateway,
             playbackPreferencesStore = appPreferencesStore,
-            lyricsSharePlatformService = JvmLyricsSharePlatformService(),
+            lyricsSharePlatformService = JvmLyricsSharePlatformService(lyricsShareFontLibraryPlatformService),
+            lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
         ),
     )
@@ -239,7 +243,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             autoDetectedPath = mutableDesktopVlcAutoDetectedPath.value,
         ),
     )
-    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow(readSelectedLyricsShareFontFamily())
+    private val mutableSelectedLyricsShareFontKey = MutableStateFlow(readSelectedLyricsShareFontKey())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
@@ -249,7 +253,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val desktopVlcManualPath: StateFlow<String?> = mutableDesktopVlcManualPath.asStateFlow()
     override val desktopVlcAutoDetectedPath: StateFlow<String?> = mutableDesktopVlcAutoDetectedPath.asStateFlow()
     override val desktopVlcEffectivePath: StateFlow<String?> = mutableDesktopVlcEffectivePath.asStateFlow()
-    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily.asStateFlow()
+    override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -328,16 +332,16 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         )
     }
 
-    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
+    override suspend fun setSelectedLyricsShareFontKey(value: String?) {
         val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() }
         val properties = loadProperties()
         if (normalizedValue == null) {
-            properties.remove(KEY_LYRICS_SHARE_FONT_FAMILY)
+            properties.remove(KEY_LYRICS_SHARE_FONT_KEY)
         } else {
-            properties.setProperty(KEY_LYRICS_SHARE_FONT_FAMILY, normalizedValue)
+            properties.setProperty(KEY_LYRICS_SHARE_FONT_KEY, normalizedValue)
         }
         persistProperties(properties)
-        mutableSelectedLyricsShareFontFamily.value = normalizedValue
+        mutableSelectedLyricsShareFontKey.value = normalizedValue
     }
 
     private fun readUseSambaCache(): Boolean {
@@ -362,8 +366,8 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         return loadProperties().getProperty(KEY_DESKTOP_VLC_MANUAL_PATH)?.trim()?.takeIf { it.isNotBlank() }
     }
 
-    private fun readSelectedLyricsShareFontFamily(): String? {
-        return loadProperties().getProperty(KEY_LYRICS_SHARE_FONT_FAMILY)?.trim()?.takeIf { it.isNotBlank() }
+    private fun readSelectedLyricsShareFontKey(): String? {
+        return loadProperties().getProperty(KEY_LYRICS_SHARE_FONT_KEY)?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun readCustomThemeTokens(): AppThemeTokens {
@@ -432,7 +436,7 @@ private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
 private const val KEY_DESKTOP_VLC_MANUAL_PATH = "desktop_vlc_manual_path"
-private const val KEY_LYRICS_SHARE_FONT_FAMILY = "lyrics_share_font_family"
+private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
 
 private class JvmAudioTagGateway(
     private val database: LynMusicDatabase,

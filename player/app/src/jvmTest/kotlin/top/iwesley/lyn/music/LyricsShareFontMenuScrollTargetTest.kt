@@ -71,11 +71,11 @@ class LyricsShareFontMenuScrollTargetTest {
     fun `index entries add favorites entry and ignore prioritized letters`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("PingFang SC", isPrioritized = true),
-                LyricsShareFontOption("Baskerville", isPrioritized = true),
-                LyricsShareFontOption("Courier New"),
-                LyricsShareFontOption("Arial"),
-                LyricsShareFontOption("你好字体"),
+                LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", isPrioritized = true),
+                LyricsShareFontOption(fontKey = "Baskerville", displayName = "Baskerville", isPrioritized = true),
+                LyricsShareFontOption(fontKey = "Courier New", displayName = "Courier New"),
+                LyricsShareFontOption(fontKey = "Arial", displayName = "Arial"),
+                LyricsShareFontOption(fontKey = "你好字体", displayName = "你好字体"),
             )
         )
 
@@ -91,9 +91,9 @@ class LyricsShareFontMenuScrollTargetTest {
     fun `non latin leading font maps to hash group after letters`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("你好字体"),
-                LyricsShareFontOption(".Apple Symbols"),
-                LyricsShareFontOption("Avenir Next"),
+                LyricsShareFontOption(fontKey = "你好字体", displayName = "你好字体"),
+                LyricsShareFontOption(fontKey = ".Apple Symbols", displayName = ".Apple Symbols"),
+                LyricsShareFontOption(fontKey = "Avenir Next", displayName = "Avenir Next"),
             )
         )
 
@@ -107,8 +107,8 @@ class LyricsShareFontMenuScrollTargetTest {
     fun `index entries skip favorites entry when nothing is prioritized`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("Avenir Next"),
-                LyricsShareFontOption("Courier New"),
+                LyricsShareFontOption(fontKey = "Avenir Next", displayName = "Avenir Next"),
+                LyricsShareFontOption(fontKey = "Courier New", displayName = "Courier New"),
             )
         )
 
@@ -122,11 +122,11 @@ class LyricsShareFontMenuScrollTargetTest {
     fun `entry firstIndex points to first matching non prioritized font in displayed list`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("Baskerville", isPrioritized = true),
-                LyricsShareFontOption("PingFang SC", isPrioritized = true),
-                LyricsShareFontOption("Arial"),
-                LyricsShareFontOption("Avenir Next"),
-                LyricsShareFontOption("Courier New"),
+                LyricsShareFontOption(fontKey = "Baskerville", displayName = "Baskerville", isPrioritized = true),
+                LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", isPrioritized = true),
+                LyricsShareFontOption(fontKey = "Arial", displayName = "Arial"),
+                LyricsShareFontOption(fontKey = "Avenir Next", displayName = "Avenir Next"),
+                LyricsShareFontOption(fontKey = "Courier New", displayName = "Courier New"),
             )
         )
 
@@ -143,9 +143,9 @@ class LyricsShareFontMenuScrollTargetTest {
     fun `prioritized letter still appears when regular section has same letter`() {
         val entries = buildLyricsShareFontMenuIndexEntries(
             listOf(
-                LyricsShareFontOption("PingFang SC", isPrioritized = true),
-                LyricsShareFontOption("Arial"),
-                LyricsShareFontOption("Papyrus"),
+                LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", isPrioritized = true),
+                LyricsShareFontOption(fontKey = "Arial", displayName = "Arial"),
+                LyricsShareFontOption(fontKey = "Papyrus", displayName = "Papyrus"),
             )
         )
 
@@ -215,5 +215,42 @@ class LyricsShareFontMenuScrollTargetTest {
         )
 
         assertEquals(-1, targetIndex)
+    }
+
+    @Test
+    fun `button label uses imported font display name before list loads`() {
+        val label = buildLyricsShareFontButtonLabel(
+            selectedFontKey = "imported:abcdef123456",
+            selectedFontDisplayName = "霞鹜文楷",
+            availableFonts = emptyList(),
+        )
+
+        assertEquals("字体 · 霞鹜文楷", label)
+    }
+
+    @Test
+    fun `button label falls back to default instead of imported font hash when name is missing`() {
+        val label = buildLyricsShareFontButtonLabel(
+            selectedFontKey = "imported:abcdef123456",
+            availableFonts = emptyList(),
+        )
+
+        assertEquals("字体 · Serif", label)
+    }
+
+    @Test
+    fun `button label prefers latest imported font display name after list loads`() {
+        val label = buildLyricsShareFontButtonLabel(
+            selectedFontKey = "imported:abcdef123456",
+            selectedFontDisplayName = "旧名字",
+            availableFonts = listOf(
+                LyricsShareFontOption(
+                    fontKey = "imported:abcdef123456",
+                    displayName = "新名字",
+                ),
+            ),
+        )
+
+        assertEquals("字体 · 新名字", label)
     }
 }

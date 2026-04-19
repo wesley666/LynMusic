@@ -37,12 +37,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -80,13 +84,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
-import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
@@ -98,6 +104,7 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
+import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
@@ -1313,57 +1320,99 @@ internal fun LyricsShareOverlay(
                         }
                     }
                     if (mobileActions) {
+                        val mobileActionContentPadding = PaddingValues(
+                            horizontal = 0.dp,
+                            vertical = 12.dp,
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(if (narrowActions) 8.dp else 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            if (state.supportsLyricsShareFontSelection) {
+                                LyricsShareFontMenuButton(
+                                    selectedFontKey = state.selectedLyricsShareFontKey,
+                                    selectedFontDisplayName = state.selectedLyricsShareFontDisplayName,
+                                    availableFonts = state.availableLyricsShareFonts,
+                                    isLoading = state.isLyricsShareFontsLoading,
+                                    errorMessage = state.lyricsShareFontsError,
+                                    onRequestFonts = {
+                                        onPlayerIntent(PlayerIntent.RequestLyricsShareFonts)
+                                    },
+                                    onFontSelected = {
+                                        onPlayerIntent(PlayerIntent.LyricsShareFontChanged(it))
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    iconOnly = true,
+                                    contentPadding = mobileActionContentPadding,
+                                )
+                            }
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.ClearLyricsSelection) },
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics { contentDescription = "清空选择" },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                                contentPadding = PaddingValues(
-                                    horizontal = if (narrowActions) 8.dp else 16.dp,
-                                    vertical = 12.dp,
-                                ),
+                                contentPadding = mobileActionContentPadding,
                             ) {
-                                Text("清空", maxLines = 1)
+                                Icon(
+                                    imageVector = Icons.Rounded.ClearAll,
+                                    contentDescription = null,
+                                )
                             }
                             OutlinedButton(
                                 onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
                                 enabled = exportActionsEnabled,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics {
+                                        contentDescription =
+                                            if (state.isShareCopying) "复制中" else "复制图片"
+                                    },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                                contentPadding = PaddingValues(
-                                    horizontal = if (narrowActions) 8.dp else 16.dp,
-                                    vertical = 12.dp,
-                                ),
+                                contentPadding = mobileActionContentPadding,
                             ) {
-                                Text(
-                                    if (state.isShareCopying) "复制中..." else "复制图片",
-                                    maxLines = 1
-                                )
+                                if (state.isShareCopying) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = null,
+                                    )
+                                }
                             }
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
                                 enabled = exportActionsEnabled,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .semantics {
+                                        contentDescription =
+                                            if (state.isShareSaving) "保存中" else "保存到本地"
+                                    },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary,
                                     disabledContainerColor = shellColors.navContainer,
                                     disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
-                                contentPadding = PaddingValues(
-                                    horizontal = if (narrowActions) 8.dp else 16.dp,
-                                    vertical = 12.dp,
-                                ),
+                                contentPadding = mobileActionContentPadding,
                             ) {
-                                Text(
-                                    if (state.isShareSaving) "保存中..." else "保存到本地",
-                                    maxLines = 1
-                                )
+                                if (state.isShareSaving) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = null,
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -1374,7 +1423,8 @@ internal fun LyricsShareOverlay(
                         ) {
                             if (state.supportsLyricsShareFontSelection) {
                                 LyricsShareFontMenuButton(
-                                    selectedFontFamily = state.selectedLyricsShareFontFamily,
+                                    selectedFontKey = state.selectedLyricsShareFontKey,
+                                    selectedFontDisplayName = state.selectedLyricsShareFontDisplayName,
                                     availableFonts = state.availableLyricsShareFonts,
                                     isLoading = state.isLyricsShareFontsLoading,
                                     errorMessage = state.lyricsShareFontsError,
@@ -1441,13 +1491,16 @@ internal fun shouldEnableLyricsShareFullscreen(
 
 @Composable
 private fun LyricsShareFontMenuButton(
-    selectedFontFamily: String?,
+    selectedFontKey: String?,
+    selectedFontDisplayName: String?,
     availableFonts: List<LyricsShareFontOption>,
     isLoading: Boolean,
     errorMessage: String?,
     onRequestFonts: () -> Unit,
     onFontSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
+    iconOnly: Boolean = false,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
 ) {
     val shellColors = mainShellColors
     var expanded by remember { mutableStateOf(false) }
@@ -1456,9 +1509,9 @@ private fun LyricsShareFontMenuButton(
     val density = LocalDensity.current
     val showLoading = pendingMenuLoad || isLoading
     val showError = !showLoading && availableFonts.isEmpty() && !errorMessage.isNullOrBlank()
-    val selectedIndex = remember(availableFonts, selectedFontFamily) {
+    val selectedIndex = remember(availableFonts, selectedFontKey) {
         availableFonts.indexOfFirst { option ->
-            selectedFontFamily?.let { option.familyName.equals(it, ignoreCase = true) } == true
+            selectedFontKey?.let { option.fontKey.equals(it, ignoreCase = true) } == true
         }
     }
     val initialScrollOffset = remember(availableFonts, selectedIndex, density) {
@@ -1469,7 +1522,11 @@ private fun LyricsShareFontMenuButton(
             menuMaxHeightPx = with(density) { LyricsShareFontMenuMaxHeight.roundToPx() },
         )
     }
-    val buttonLabel = "字体 · ${selectedFontFamily ?: DEFAULT_LYRICS_SHARE_FONT_FAMILY}"
+    val buttonLabel = buildLyricsShareFontButtonLabel(
+        selectedFontKey = selectedFontKey,
+        selectedFontDisplayName = selectedFontDisplayName,
+        availableFonts = availableFonts,
+    )
     LaunchedEffect(expanded, isLoading, availableFonts, errorMessage) {
         if (!expanded || isLoading || availableFonts.isNotEmpty() || !errorMessage.isNullOrBlank()) {
             pendingMenuLoad = false
@@ -1491,6 +1548,7 @@ private fun LyricsShareFontMenuButton(
 
     Box(modifier = modifier) {
         OutlinedButton(
+            modifier = if (iconOnly) Modifier.fillMaxWidth() else Modifier,
             onClick = {
                 if (!expanded) {
                     menuSessionId += 1
@@ -1499,10 +1557,18 @@ private fun LyricsShareFontMenuButton(
                 requestFontsIfNeeded()
             },
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+            contentPadding = contentPadding,
         ) {
-            Text(buttonLabel, maxLines = 1)
+            if (iconOnly) {
+                Icon(
+                    imageVector = Icons.Rounded.TextFields,
+                    contentDescription = buttonLabel,
+                )
+            } else {
+                Text(buttonLabel, maxLines = 1)
+            }
         }
-        key(menuSessionId, showLoading, showError, availableFonts, selectedFontFamily) {
+        key(menuSessionId, showLoading, showError, availableFonts, selectedFontKey) {
             val scrollState = rememberScrollState(initial = if (availableFonts.isNotEmpty() && !showLoading) initialScrollOffset else 0)
             DropdownMenu(
                 expanded = expanded,
@@ -1548,11 +1614,11 @@ private fun LyricsShareFontMenuButton(
                     else -> {
                         LyricsShareFontMenuList(
                             availableFonts = availableFonts,
-                            selectedFontFamily = selectedFontFamily,
+                            selectedFontKey = selectedFontKey,
                             scrollState = scrollState,
-                            onFontSelected = { familyName ->
+                            onFontSelected = { fontKey ->
                                 expanded = false
-                                onFontSelected(familyName)
+                                onFontSelected(fontKey)
                             },
                         )
                     }
@@ -1562,10 +1628,31 @@ private fun LyricsShareFontMenuButton(
     }
 }
 
+internal fun buildLyricsShareFontButtonLabel(
+    selectedFontKey: String?,
+    selectedFontDisplayName: String? = null,
+    availableFonts: List<LyricsShareFontOption>,
+): String {
+    val displayName = availableFonts.firstOrNull { option ->
+        selectedFontKey?.let { option.fontKey.equals(it, ignoreCase = true) } == true
+    }?.displayName
+    val cachedDisplayName = selectedFontDisplayName
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+    val fallbackName = when {
+        displayName != null -> displayName
+        cachedDisplayName != null -> cachedDisplayName
+        selectedFontKey?.let(::parseLyricsShareImportedFontHash) != null -> DEFAULT_LYRICS_SHARE_FONT_KEY
+        selectedFontKey != null -> selectedFontKey
+        else -> DEFAULT_LYRICS_SHARE_FONT_KEY
+    }
+    return "字体 · $fallbackName"
+}
+
 @Composable
 private fun LyricsShareFontMenuList(
     availableFonts: List<LyricsShareFontOption>,
-    selectedFontFamily: String?,
+    selectedFontKey: String?,
     scrollState: androidx.compose.foundation.ScrollState,
     onFontSelected: (String) -> Unit,
 ) {
@@ -1591,8 +1678,9 @@ private fun LyricsShareFontMenuList(
                 .padding(end = if (shouldShowIndexBar) LyricsShareFontMenuIndexReservedPadding else 0.dp),
         ) {
             availableFonts.forEach { option ->
-                val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
-                val isSelected = option.familyName == selectedFontFamily
+                val previewFontFamily = lyricsSharePreviewFontFamily(option.displayName)
+                val previewBitmap = rememberPlatformImageBitmap(option.previewPngBytes)
+                val isSelected = option.fontKey == selectedFontKey
                 DropdownMenuItem(
                     modifier = Modifier.height(LyricsShareFontMenuItemHeight),
                     text = {
@@ -1602,18 +1690,30 @@ private fun LyricsShareFontMenuList(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = option.familyName,
+                                text = option.displayName,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = option.previewText,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontFamily = previewFontFamily,
-                            )
+                            if (previewBitmap != null) {
+                                Image(
+                                    bitmap = previewBitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.FillBounds,
+                                )
+                            } else {
+                                Text(
+                                    text = option.previewText,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontFamily = previewFontFamily,
+                                )
+                            }
                         }
                     },
                     trailingIcon = if (isSelected) {
@@ -1626,7 +1726,7 @@ private fun LyricsShareFontMenuList(
                     } else {
                         null
                     },
-                    onClick = { onFontSelected(option.familyName) },
+                    onClick = { onFontSelected(option.fontKey) },
                 )
             }
         }
@@ -1824,7 +1924,7 @@ internal fun buildLyricsShareFontMenuIndexEntries(
     val firstIndexByLabel = linkedMapOf<String, Int>()
     availableFonts.forEachIndexed { index, option ->
         if (option.isPrioritized) return@forEachIndexed
-        val label = option.familyName
+        val label = option.displayName
             .trim()
             .firstOrNull()
             ?.uppercaseChar()
@@ -2229,7 +2329,7 @@ private fun LyricsShareNoteCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
-    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontFamilyName)
+    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontKey)
     val primaryTextColor = Color(0xFF3C2E24)
     val footerTextColor = composeColorFromArgb(LyricsShareCardSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = Color(0xFF70584B)
@@ -2302,7 +2402,7 @@ private fun LyricsShareArtworkTintCard(
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
-    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontFamilyName)
+    val previewFontFamily = lyricsSharePreviewFontFamily(model.fontKey)
     val backgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
     val topTint = composeColorFromArgb(
         argbWithAlpha(

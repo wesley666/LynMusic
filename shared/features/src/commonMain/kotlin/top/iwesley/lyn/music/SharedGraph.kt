@@ -13,6 +13,8 @@ import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
@@ -26,6 +28,8 @@ import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
@@ -64,6 +68,10 @@ data class SharedRuntimeServices(
     },
     val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
+    val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
+        UnsupportedLyricsShareFontLibraryPlatformService,
+    val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore =
+        UnsupportedLyricsShareFontPreferencesStore,
     val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
     val sameNameLyricsFileGateway: SameNameLyricsFileGateway = UnsupportedSameNameLyricsFileGateway,
     val audioTagEditorPlatformService: AudioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
@@ -188,6 +196,8 @@ fun buildSharedGraph(
             scope = scope,
             appStorageGateway = runtimeServices.appStorageGateway,
             deviceInfoGateway = runtimeServices.deviceInfoGateway,
+            lyricsShareFontLibraryPlatformService = runtimeServices.lyricsShareFontLibraryPlatformService,
+            lyricsShareFontPreferencesStore = runtimeServices.lyricsShareFontPreferencesStore,
             vlcPathPickerPlatformService = runtimeServices.vlcPathPickerPlatformService,
         ),
         lyricsRepository = lyricsRepository,

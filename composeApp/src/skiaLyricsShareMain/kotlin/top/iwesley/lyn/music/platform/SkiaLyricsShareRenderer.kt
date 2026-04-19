@@ -27,16 +27,18 @@ internal object SkiaLyricsShareRenderer {
     fun render(
         model: LyricsShareCardModel,
         artworkImage: Image?,
+        importedFontPath: String? = null,
     ): ByteArray {
         return when (model.template) {
-            LyricsShareTemplate.NOTE -> renderNoteLyricsShareImage(model, artworkImage)
-            LyricsShareTemplate.ARTWORK_TINT -> renderArtworkTintLyricsShareImage(model, artworkImage)
+            LyricsShareTemplate.NOTE -> renderNoteLyricsShareImage(model, artworkImage, importedFontPath)
+            LyricsShareTemplate.ARTWORK_TINT -> renderArtworkTintLyricsShareImage(model, artworkImage, importedFontPath)
         }
     }
 
     private fun renderNoteLyricsShareImage(
         model: LyricsShareCardModel,
         artworkImage: Image?,
+        importedFontPath: String?,
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2f - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2f
@@ -45,17 +47,20 @@ internal object SkiaLyricsShareRenderer {
         val lyricsTypeface = resolveSkiaLyricsShareTypeface(
             text = model.lyricsLines.joinToString(separator = "\n"),
             style = FontStyle.BOLD,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val footerTypeface = resolveSkiaLyricsShareTypeface(
             text = footerText,
             style = FontStyle.BOLD,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val brandTypeface = resolveSkiaLyricsShareTypeface(
             text = LyricsShareCardSpec.BRAND_TEXT,
             style = FontStyle.NORMAL,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val titleFont = Font(footerTypeface, LyricsShareCardSpec.TITLE_FONT_SIZE_PX)
         val brandFont = Font(brandTypeface, LyricsShareCardSpec.BRAND_FONT_SIZE_PX)
@@ -224,6 +229,7 @@ internal object SkiaLyricsShareRenderer {
     private fun renderArtworkTintLyricsShareImage(
         model: LyricsShareCardModel,
         artworkImage: Image?,
+        importedFontPath: String?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2f
@@ -233,17 +239,20 @@ internal object SkiaLyricsShareRenderer {
         val lyricsTypeface = resolveSkiaLyricsShareTypeface(
             text = model.lyricsLines.joinToString(separator = "\n"),
             style = FontStyle.BOLD,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val footerTypeface = resolveSkiaLyricsShareTypeface(
             text = footerText,
             style = FontStyle.BOLD,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val brandTypeface = resolveSkiaLyricsShareTypeface(
             text = LyricsShareCardSpec.BRAND_TEXT,
             style = FontStyle.NORMAL,
-            requestedFamilyName = model.fontFamilyName,
+            requestedFontKey = model.fontKey,
+            importedFontPath = importedFontPath,
         )
         val titleFont = Font(footerTypeface, LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX)
         val brandFont = Font(brandTypeface, LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX)
@@ -423,10 +432,15 @@ internal fun listSkiaLyricsShareFontFamilyNames(
 internal fun resolveSkiaLyricsShareTypeface(
     text: String,
     style: FontStyle,
-    requestedFamilyName: String?,
+    requestedFontKey: String?,
+    importedFontPath: String? = null,
     fontMgr: FontMgr = FontMgr.default,
 ): Typeface? {
-    val requestedFamily = requestedFamilyName?.trim()?.takeIf { it.isNotEmpty() }
+    val importedTypeface = importedFontPath
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { path -> fontMgr.makeFromFile(path) }
+    val requestedFamily = requestedFontKey?.trim()?.takeIf { it.isNotEmpty() }
     val codePoint = preferredSkiaLyricsShareCodePoint(text)
 
     val requestedTypeface = when {
@@ -466,7 +480,7 @@ internal fun resolveSkiaLyricsShareTypeface(
         else -> fontMgr.matchFamilyStyle(null, style)
     }
 
-    return requestedTypeface ?: fallbackTypeface ?: defaultTypeface
+    return importedTypeface ?: requestedTypeface ?: fallbackTypeface ?: defaultTypeface
 }
 
 private data class SkiaFittedLyricsLayout(

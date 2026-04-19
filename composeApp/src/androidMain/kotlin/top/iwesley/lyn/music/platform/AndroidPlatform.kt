@@ -59,6 +59,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
@@ -123,6 +124,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     )
     val secureStore = AndroidCredentialStore(activity.applicationContext)
     val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
+    val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
     GlobalDiagnosticLogger.installStrategy(logger)
     val navidromeHttpClient = AndroidLyricsHttpClient()
@@ -146,6 +148,8 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
             librarySourceFilterPreferencesStore = appPreferencesStore,
+            lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
+            lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
             appStorageGateway = createAndroidAppStorageGateway(activity.applicationContext, database),
@@ -171,7 +175,9 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, appPreferencesStore, logger),
             playbackPreferencesStore = appPreferencesStore,
-            lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity),
+            lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
+            lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
+            lyricsShareFontPreferencesStore = appPreferencesStore,
             systemPlaybackControlsPlatformService = createAndroidSystemPlaybackControlsPlatformService(activity.applicationContext),
         ),
     )
@@ -273,7 +279,7 @@ private class AndroidCredentialStore(
 private class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, CompactPlayerLyricsPreferencesStore,
-    LibrarySourceFilterPreferencesStore {
+    LibrarySourceFilterPreferencesStore, LyricsShareFontPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -291,12 +297,16 @@ private class AndroidAppPreferencesStore(
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
+    private val mutableSelectedLyricsShareFontKey = MutableStateFlow(
+        preferences.getString(KEY_LYRICS_SHARE_FONT_KEY, null)?.trim()?.takeIf { it.isNotBlank() },
+    )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
+    override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
 
@@ -308,6 +318,12 @@ private class AndroidAppPreferencesStore(
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, enabled).apply()
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setSelectedLyricsShareFontKey(value: String?) {
+        val normalizedValue = value?.trim()?.takeIf { it.isNotBlank() }
+        preferences.edit().putString(KEY_LYRICS_SHARE_FONT_KEY, normalizedValue).apply()
+        mutableSelectedLyricsShareFontKey.value = normalizedValue
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
@@ -1738,6 +1754,7 @@ private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"

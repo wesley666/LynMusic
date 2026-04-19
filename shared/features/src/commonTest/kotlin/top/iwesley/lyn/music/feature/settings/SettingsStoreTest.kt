@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -25,6 +26,10 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DeviceInfoSnapshot
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.LyricsShareFontKind
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
@@ -49,6 +54,160 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsStoreTest {
+
+    @Test
+    fun `store exposes lyrics share font import support when platform service is available`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            lyricsShareFontLibraryPlatformService = FakeLyricsShareFontLibraryPlatformService(),
+        )
+
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.supportsLyricsShareFontImport)
+        scope.cancel()
+    }
+
+    @Test
+    fun `loading imported lyrics share fonts writes list into state`() = runTest {
+        val repository = FakeSettingsRepository()
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService(
+            initialFonts = listOf(
+                LyricsShareFontOption(
+                    fontKey = "imported:abc",
+                    displayName = "My Imported Font",
+                    previewText = "你好 Hello",
+                    kind = LyricsShareFontKind.IMPORTED,
+                ),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadLyricsShareImportedFonts)
+        advanceUntilIdle()
+
+        assertEquals(1, fontLibrary.listCalls)
+        assertEquals(listOf("imported:abc"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertFalse(store.state.value.lyricsShareFontsLoading)
+        scope.cancel()
+    }
+
+    @Test
+    fun `importing lyrics share font refreshes imported list and message`() = runTest {
+        val repository = FakeSettingsRepository()
+        val importedFont = LyricsShareFontOption(
+            fontKey = "imported:def",
+            displayName = "Fancy Imported Font",
+            previewText = "你好 Hello",
+            kind = LyricsShareFontKind.IMPORTED,
+        )
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService().apply {
+            nextImportResult = Result.success(importedFont)
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+        )
+        val effects = mutableListOf<SettingsEffect>()
+        val effectJob = launch { store.effects.collect { effects += it } }
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ImportLyricsShareFont)
+        advanceUntilIdle()
+
+        assertEquals(1, fontLibrary.importCalls)
+        assertEquals(listOf("imported:def"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertEquals("字体已导入。", store.state.value.message)
+        assertFalse(store.state.value.importingLyricsShareFont)
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        effectJob.cancel()
+        scope.cancel()
+    }
+
+    @Test
+    fun `importing lyrics share font emits change effect even when list refresh fails`() = runTest {
+        val repository = FakeSettingsRepository()
+        val importedFont = LyricsShareFontOption(
+            fontKey = "imported:def",
+            displayName = "Fancy Imported Font",
+            previewText = "你好 Hello",
+            kind = LyricsShareFontKind.IMPORTED,
+        )
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService().apply {
+            nextImportResult = Result.success(importedFont)
+            nextListResult = Result.failure(IllegalStateException("读取失败"))
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+        )
+        val effects = mutableListOf<SettingsEffect>()
+        val effectJob = launch { store.effects.collect { effects += it } }
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.ImportLyricsShareFont)
+        advanceUntilIdle()
+
+        assertEquals(1, fontLibrary.importCalls)
+        assertEquals("读取失败", store.state.value.message)
+        assertFalse(store.state.value.importingLyricsShareFont)
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        effectJob.cancel()
+        scope.cancel()
+    }
+
+    @Test
+    fun `deleting selected imported font clears saved key and refreshes list`() = runTest {
+        val repository = FakeSettingsRepository()
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService(
+            initialFonts = listOf(
+                LyricsShareFontOption(
+                    fontKey = "imported:gone",
+                    displayName = "Imported Font",
+                    previewText = "你好 Hello",
+                    kind = LyricsShareFontKind.IMPORTED,
+                ),
+            ),
+        )
+        val fontPreferencesStore = FakeLyricsShareFontPreferencesStore(initialFontKey = "imported:gone")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(
+            repository,
+            scope,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+            lyricsShareFontPreferencesStore = fontPreferencesStore,
+        )
+        val effects = mutableListOf<SettingsEffect>()
+        val effectJob = launch { store.effects.collect { effects += it } }
+
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.LoadLyricsShareImportedFonts)
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.DeleteLyricsShareImportedFont("imported:gone"))
+        advanceUntilIdle()
+
+        assertEquals(listOf("imported:gone"), fontLibrary.deletedFontKeys)
+        assertTrue(store.state.value.importedLyricsShareFonts.isEmpty())
+        assertEquals(null, fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertEquals("字体已删除。", store.state.value.message)
+        assertEquals(null, store.state.value.deletingLyricsShareFontKey)
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        effectJob.cancel()
+        scope.cancel()
+    }
 
     @Test
     fun `store loads persisted theme state`() = runTest {
@@ -1056,6 +1215,61 @@ private class FakeDeviceInfoGateway(
             return Result.failure(failure)
         }
         return Result.success(currentSnapshot)
+    }
+}
+
+private class FakeLyricsShareFontLibraryPlatformService(
+    initialFonts: List<LyricsShareFontOption> = emptyList(),
+) : LyricsShareFontLibraryPlatformService {
+    private val mutableFonts = initialFonts.toMutableList()
+
+    var nextListResult: Result<List<LyricsShareFontOption>>? = null
+    var nextImportResult: Result<LyricsShareFontOption?> = Result.success(null)
+    var nextDeleteResult: Result<Unit> = Result.success(Unit)
+    var listCalls: Int = 0
+        private set
+    var importCalls: Int = 0
+        private set
+    val deletedFontKeys = mutableListOf<String>()
+
+    override suspend fun listImportedFonts(): Result<List<LyricsShareFontOption>> {
+        listCalls += 1
+        val result = nextListResult
+        nextListResult = null
+        return result ?: Result.success(mutableFonts.toList())
+    }
+
+    override suspend fun importFont(): Result<LyricsShareFontOption?> {
+        importCalls += 1
+        val result = nextImportResult
+        result.getOrNull()?.let { imported ->
+            mutableFonts.removeAll { it.fontKey == imported.fontKey }
+            mutableFonts.add(imported)
+        }
+        return result
+    }
+
+    override suspend fun deleteImportedFont(fontKey: String): Result<Unit> {
+        deletedFontKeys += fontKey
+        val result = nextDeleteResult
+        if (result.isSuccess) {
+            mutableFonts.removeAll { it.fontKey == fontKey }
+        }
+        return result
+    }
+
+    override suspend fun resolveImportedFontPath(fontKey: String): Result<String?> = Result.success(null)
+}
+
+private class FakeLyricsShareFontPreferencesStore(
+    initialFontKey: String? = null,
+) : LyricsShareFontPreferencesStore {
+    private val mutableSelectedLyricsShareFontKey = MutableStateFlow(initialFontKey)
+
+    override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey.asStateFlow()
+
+    override suspend fun setSelectedLyricsShareFontKey(value: String?) {
+        mutableSelectedLyricsShareFontKey.value = value
     }
 }
 

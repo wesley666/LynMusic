@@ -26,9 +26,9 @@ interface CompactPlayerLyricsPreferencesStore {
 }
 
 interface LyricsShareFontPreferencesStore {
-    val selectedLyricsShareFontFamily: StateFlow<String?>
+    val selectedLyricsShareFontKey: StateFlow<String?>
 
-    suspend fun setSelectedLyricsShareFontFamily(value: String?)
+    suspend fun setSelectedLyricsShareFontKey(value: String?)
 }
 
 object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPreferencesStore {
@@ -42,12 +42,12 @@ object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPrefe
 }
 
 object UnsupportedLyricsShareFontPreferencesStore : LyricsShareFontPreferencesStore {
-    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow<String?>(null)
+    private val mutableSelectedLyricsShareFontKey = MutableStateFlow<String?>(null)
 
-    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily
+    override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey
 
-    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
-        mutableSelectedLyricsShareFontFamily.value = value?.trim()?.takeIf { it.isNotBlank() }
+    override suspend fun setSelectedLyricsShareFontKey(value: String?) {
+        mutableSelectedLyricsShareFontKey.value = value?.trim()?.takeIf { it.isNotBlank() }
     }
 }
 

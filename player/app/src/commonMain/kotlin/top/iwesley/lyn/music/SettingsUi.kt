@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -41,7 +42,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -67,6 +70,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import lynmusic.player.app.generated.resources.Res
@@ -77,6 +81,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.BuildMetadata
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
@@ -87,6 +92,7 @@ import top.iwesley.lyn.music.feature.settings.CustomThemeColorRole
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
+import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
 @Composable
@@ -786,6 +792,11 @@ private fun LyricsSettingsPane(
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
+    LaunchedEffect(state.supportsLyricsShareFontImport) {
+        if (state.supportsLyricsShareFontImport) {
+            onSettingsIntent(SettingsIntent.LoadLyricsShareImportedFonts)
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -797,6 +808,12 @@ private fun LyricsSettingsPane(
             SectionTitle(
                 title = "歌词",
                 subtitle = "配置歌词 API 和搜索源。",
+            )
+        }
+        if (state.supportsLyricsShareFontImport) {
+            LyricsShareFontImportCard(
+                state = state,
+                onSettingsIntent = onSettingsIntent,
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -1078,6 +1095,194 @@ private fun LyricsSettingsPane(
             }
         }
     }
+}
+
+@Composable
+private fun LyricsShareFontImportCard(
+    state: SettingsState,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+) {
+    MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("歌词分享字体", fontWeight = FontWeight.Bold)
+            Text(
+                "导入 .ttf / .otf 字体后，可在歌词分享页里直接选择并参与最终出图。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (state.importedLyricsShareFonts.isEmpty()) {
+                        "尚未导入字体"
+                    } else {
+                        "已导入 ${state.importedLyricsShareFonts.size} 个字体"
+                    },
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium,
+                )
+                Button(
+                    onClick = { onSettingsIntent(SettingsIntent.ImportLyricsShareFont) },
+                    enabled = !state.importingLyricsShareFont && state.deletingLyricsShareFontKey == null,
+                ) {
+                    Text(if (state.importingLyricsShareFont) "导入中..." else "导入字体")
+                }
+            }
+            when {
+                state.lyricsShareFontsLoading -> {
+                    Text("正在读取已导入字体...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                state.importedLyricsShareFonts.isEmpty() -> {
+                    Text("当前没有已导入字体。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                else -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        state.importedLyricsShareFonts.forEach { option ->
+                            LyricsShareImportedFontRow(
+                                option = option,
+                                deleting = state.deletingLyricsShareFontKey == option.fontKey,
+                                onDelete = {
+                                    onSettingsIntent(SettingsIntent.DeleteLyricsShareImportedFont(option.fontKey))
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareImportedFontRow(
+    option: LyricsShareFontOption,
+    deleting: Boolean,
+    onDelete: () -> Unit,
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                border = BorderStroke(1.dp, mainShellColors.cardBorder),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(14.dp),
+    ) {
+        val compactLayout = maxWidth < 420.dp
+        if (compactLayout) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LyricsShareImportedFontName(
+                        displayName = option.displayName,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = onDelete,
+                        enabled = !deleting,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        if (deleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = "删除字体",
+                            )
+                        }
+                    }
+                }
+                LyricsShareImportedFontPreview(
+                    option = option,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LyricsShareImportedFontPreview(
+                    option = option,
+                    modifier = Modifier.size(width = 144.dp, height = 56.dp),
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    LyricsShareImportedFontName(option.displayName)
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = !deleting,
+                ) {
+                    Text(if (deleting) "删除中..." else "删除")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareImportedFontPreview(
+    option: LyricsShareFontOption,
+    modifier: Modifier = Modifier,
+) {
+    val previewBitmap = rememberPlatformImageBitmap(option.previewPngBytes)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (previewBitmap != null) {
+            Image(
+                bitmap = previewBitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds,
+            )
+        } else {
+            Text(
+                text = option.previewText,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LyricsShareImportedFontName(
+    displayName: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = displayName,
+        modifier = modifier,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        softWrap = false,
+    )
 }
 
 private fun settingsSectionTitle(section: SettingsSection): String {

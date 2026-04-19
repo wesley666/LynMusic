@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 
 internal val skiaLyricsShareLanguageHints = arrayOf("zh-Hans", "zh-Hant", "ja", "ko", "en")
@@ -8,8 +9,6 @@ internal val skiaLyricsShareFallbackFontFamilies = arrayOf<String?>(
     "PingFang SC",
     "Times New Roman"
 )
-
-internal const val SKIA_LYRICS_SHARE_DEFAULT_PREVIEW_TEXT = "你好 Hello"
 
 internal fun skiaLyricsShareFallbackFontFamilyNames(): List<String> {
     return skiaLyricsShareFallbackFontFamilies
@@ -40,8 +39,9 @@ internal fun prioritizeIosLyricsShareFontFamilyNames(
         availableByName[candidateFamilyName.lowercase()]?.let { resolvedFamilyName ->
             prioritizedKeys += resolvedFamilyName.lowercase()
             LyricsShareFontOption(
-                familyName = resolvedFamilyName,
-                previewText = SKIA_LYRICS_SHARE_DEFAULT_PREVIEW_TEXT,
+                fontKey = resolvedFamilyName,
+                displayName = resolvedFamilyName,
+                previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                 isPrioritized = true,
             )
         }
@@ -51,8 +51,9 @@ internal fun prioritizeIosLyricsShareFontFamilyNames(
     val (alphabeticFamilies, nonAlphabeticFamilies) = remainingFamilies.partition(::isSkiaLyricsShareAlphabeticFamilyName)
     val otherFonts = (alphabeticFamilies + nonAlphabeticFamilies).map { familyName ->
         LyricsShareFontOption(
-            familyName = familyName,
-            previewText = SKIA_LYRICS_SHARE_DEFAULT_PREVIEW_TEXT,
+            fontKey = familyName,
+            displayName = familyName,
+            previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
         )
     }
     return prioritizedFonts + otherFonts

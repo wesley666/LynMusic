@@ -12,6 +12,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -33,13 +34,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
+import top.iwesley.lyn.music.core.model.LyricsShareFontKind
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
@@ -47,6 +52,8 @@ import kotlin.coroutines.resume
 
 class AndroidLyricsSharePlatformService(
     activity: ComponentActivity,
+    private val fontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
+        UnsupportedLyricsShareFontLibraryPlatformService,
 ) : LyricsSharePlatformService {
     private val context = activity.applicationContext
     private val artworkCacheStore = createAndroidArtworkCacheStore(context)
@@ -61,7 +68,8 @@ class AndroidLyricsSharePlatformService(
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
             val artwork = loadArtworkBitmap(model.artworkLocator)
-            renderLyricsShareBitmap(model, artwork)
+            val importedTypeface = resolveAndroidLyricsShareImportedTypeface(fontLibraryPlatformService, model.fontKey)
+            renderLyricsShareBitmap(model, artwork, importedTypeface)
         }
     }
 
@@ -100,7 +108,19 @@ class AndroidLyricsSharePlatformService(
     }
 
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
-        return Result.failure(IllegalStateException("当前平台暂不支持读取系统字体。"))
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val importedFonts = fontLibraryPlatformService.listImportedFonts().getOrDefault(emptyList())
+                    .filter { it.kind == LyricsShareFontKind.IMPORTED }
+                importedFonts + listOf(
+                    LyricsShareFontOption(
+                        fontKey = "Serif",
+                        displayName = "Serif",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                    ),
+                )
+            }
+        }
     }
 
     private suspend fun ensureWritePermissionIfNeeded(): Boolean {
@@ -180,16 +200,18 @@ class AndroidLyricsSharePlatformService(
     private fun renderLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
+        importedTypeface: Typeface?,
     ): ByteArray {
         return when (model.template) {
-            LyricsShareTemplate.NOTE -> renderNoteLyricsShareBitmap(model, artworkBitmap)
-            LyricsShareTemplate.ARTWORK_TINT -> renderArtworkTintLyricsShareBitmap(model, artworkBitmap)
+            LyricsShareTemplate.NOTE -> renderNoteLyricsShareBitmap(model, artworkBitmap, importedTypeface)
+            LyricsShareTemplate.ARTWORK_TINT -> renderArtworkTintLyricsShareBitmap(model, artworkBitmap, importedTypeface)
         }
     }
 
     private fun renderNoteLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
+        importedTypeface: Typeface?,
     ): ByteArray {
         val width = LyricsShareCardSpec.IMAGE_WIDTH_PX
         val canvasPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -211,11 +233,13 @@ class AndroidLyricsSharePlatformService(
             color = LyricsShareCardSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareCardSpec.TITLE_FONT_SIZE_PX
             isFakeBoldText = true
+            typeface = importedTypeface
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.TEXT_SECONDARY_ARGB
             textSize = LyricsShareCardSpec.BRAND_FONT_SIZE_PX
             textAlign = Paint.Align.LEFT
+            typeface = importedTypeface
         }
 
         val availableWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
@@ -247,6 +271,7 @@ class AndroidLyricsSharePlatformService(
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
+            typeface = importedTypeface,
         )
 
         val contentHeight =
@@ -354,6 +379,7 @@ class AndroidLyricsSharePlatformService(
     private fun renderArtworkTintLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
+        importedTypeface: Typeface?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
         val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkBitmap)
@@ -409,11 +435,13 @@ class AndroidLyricsSharePlatformService(
             color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
             isFakeBoldText = true
+            typeface = importedTypeface
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB
             textSize = LyricsShareArtworkTintSpec.BRAND_FONT_SIZE_PX
             textAlign = Paint.Align.LEFT
+            typeface = importedTypeface
         }
 
         val availableWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
@@ -444,6 +472,7 @@ class AndroidLyricsSharePlatformService(
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
+            typeface = importedTypeface,
         )
         val contentHeight =
             LyricsShareArtworkTintSpec.OUTER_PADDING_PX +
@@ -560,6 +589,7 @@ private fun fitAndroidLyricsLayout(
     fixedHeight: Int,
     minFontScale: Float,
     shrinkStep: Float,
+    typeface: Typeface?,
 ): AndroidFittedLyricsLayout {
     var fontSizePx = baseFontSizePx
     var lineSpacingExtraPx = baseLineSpacingExtraPx
@@ -569,6 +599,7 @@ private fun fitAndroidLyricsLayout(
             color = textColor
             textSize = fontSizePx
             isFakeBoldText = true
+            this.typeface = typeface
         }
         val layout = createTextLayout(
             text = text,
@@ -587,6 +618,16 @@ private fun fitAndroidLyricsLayout(
         fontSizePx = nextFontSizePx
         lineSpacingExtraPx = (lineSpacingExtraPx * shrinkStep).coerceAtLeast(0f)
     }
+}
+
+private suspend fun resolveAndroidLyricsShareImportedTypeface(
+    fontLibraryPlatformService: LyricsShareFontLibraryPlatformService,
+    fontKey: String?,
+): Typeface? {
+    val normalizedFontKey = fontKey?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val fontPath = fontLibraryPlatformService.resolveImportedFontPath(normalizedFontKey).getOrNull()
+        ?: return null
+    return runCatching { Typeface.createFromFile(fontPath) }.getOrNull()
 }
 
 private fun createTextLayout(

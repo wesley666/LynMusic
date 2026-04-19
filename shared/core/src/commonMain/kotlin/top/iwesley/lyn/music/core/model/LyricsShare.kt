@@ -5,10 +5,18 @@ enum class LyricsShareTemplate {
     ARTWORK_TINT,
 }
 
+enum class LyricsShareFontKind {
+    SYSTEM,
+    IMPORTED,
+}
+
 data class LyricsShareFontOption(
-    val familyName: String,
-    val previewText: String = familyName,
+    val fontKey: String,
+    val displayName: String,
+    val previewText: String = displayName,
     val isPrioritized: Boolean = false,
+    val kind: LyricsShareFontKind = LyricsShareFontKind.SYSTEM,
+    val previewPngBytes: ByteArray? = null,
 )
 
 data class LyricsShareCardModel(
@@ -18,7 +26,7 @@ data class LyricsShareCardModel(
     val template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     val artworkTintTheme: ArtworkTintTheme? = null,
     val lyricsLines: List<String>,
-    val fontFamilyName: String? = null,
+    val fontKey: String? = null,
 )
 
 data class LyricsShareSaveResult(
@@ -30,6 +38,13 @@ interface LyricsSharePlatformService {
     suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult>
     suspend fun copyImage(pngBytes: ByteArray): Result<Unit>
     suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>>
+}
+
+interface LyricsShareFontLibraryPlatformService {
+    suspend fun listImportedFonts(): Result<List<LyricsShareFontOption>>
+    suspend fun importFont(): Result<LyricsShareFontOption?>
+    suspend fun deleteImportedFont(fontKey: String): Result<Unit>
+    suspend fun resolveImportedFontPath(fontKey: String): Result<String?>
 }
 
 object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
@@ -45,7 +60,32 @@ object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = Result.failure(fontError)
 }
 
-const val DEFAULT_LYRICS_SHARE_FONT_FAMILY: String = "Serif"
+object UnsupportedLyricsShareFontLibraryPlatformService : LyricsShareFontLibraryPlatformService {
+    private val error = IllegalStateException("当前平台暂不支持歌词分享字体导入。")
+
+    override suspend fun listImportedFonts(): Result<List<LyricsShareFontOption>> = Result.success(emptyList())
+
+    override suspend fun importFont(): Result<LyricsShareFontOption?> = Result.failure(error)
+
+    override suspend fun deleteImportedFont(fontKey: String): Result<Unit> = Result.failure(error)
+
+    override suspend fun resolveImportedFontPath(fontKey: String): Result<String?> = Result.success(null)
+}
+
+const val DEFAULT_LYRICS_SHARE_FONT_KEY: String = "Serif"
+const val DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT: String = "你好 Hello"
+const val LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX: String = "imported:"
+
+fun buildLyricsShareImportedFontKey(contentHash: String): String {
+    return "$LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX${contentHash.trim().lowercase()}"
+}
+
+fun parseLyricsShareImportedFontHash(fontKey: String): String? {
+    return fontKey
+        .trim()
+        .removePrefix(LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX)
+        .takeIf { fontKey.startsWith(LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX) && it.isNotBlank() }
+}
 
 object LyricsShareCardSpec {
     const val BRAND_TEXT: String = "Via LynMusic"

@@ -10,16 +10,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.LyricsShareFontKind
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 
-class JvmLyricsSharePlatformService : LyricsSharePlatformService {
+class JvmLyricsSharePlatformService(
+    private val fontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
+        UnsupportedLyricsShareFontLibraryPlatformService,
+) : LyricsSharePlatformService {
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
             val artwork = loadArtworkImage(model.artworkLocator)
-            SkiaLyricsShareRenderer.render(model, artwork)
+            val importedFontPath = fontLibraryPlatformService.resolveImportedFontPath(model.fontKey.orEmpty()).getOrNull()
+            SkiaLyricsShareRenderer.render(model, artwork, importedFontPath)
         }
     }
 
@@ -51,8 +59,10 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
 
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = withContext(Dispatchers.IO) {
         runCatching {
+            val importedFonts = fontLibraryPlatformService.listImportedFonts().getOrDefault(emptyList())
             prioritizeJvmLyricsShareFontFamilyNames(
                 osName = System.getProperty("os.name").orEmpty(),
+                importedFonts = importedFonts,
                 availableFonts = listSkiaLyricsShareFontFamilyNames(),
             )
         }
@@ -66,6 +76,7 @@ class JvmLyricsSharePlatformService : LyricsSharePlatformService {
 
 internal fun prioritizeJvmLyricsShareFontFamilyNames(
     osName: String,
+    importedFonts: List<LyricsShareFontOption>,
     availableFonts: List<String>,
 ): List<LyricsShareFontOption> {
     val availableByName = linkedMapOf<String, String>()
@@ -78,7 +89,8 @@ internal fun prioritizeJvmLyricsShareFontFamilyNames(
         availableByName[candidate.familyName.lowercase()]?.let { resolvedFamilyName ->
             prioritizedKeys += resolvedFamilyName.lowercase()
             LyricsShareFontOption(
-                familyName = resolvedFamilyName,
+                fontKey = resolvedFamilyName,
+                displayName = resolvedFamilyName,
                 previewText = candidate.previewText,
                 isPrioritized = true,
             )
@@ -89,11 +101,12 @@ internal fun prioritizeJvmLyricsShareFontFamilyNames(
     val (alphabeticFamilies, nonAlphabeticFamilies) = remainingFamilies.partition(::isJvmLyricsShareAlphabeticFamilyName)
     val otherFonts = (alphabeticFamilies + nonAlphabeticFamilies).map { familyName ->
         LyricsShareFontOption(
-            familyName = familyName,
-            previewText = "你好 Hello",
+            fontKey = familyName,
+            displayName = familyName,
+            previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
         )
     }
-    return prioritizedFonts + otherFonts
+    return importedFonts.filter { it.kind == LyricsShareFontKind.IMPORTED } + prioritizedFonts + otherFonts
 }
 
 internal fun isJvmLyricsShareAlphabeticFamilyName(

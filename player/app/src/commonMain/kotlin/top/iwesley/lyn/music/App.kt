@@ -42,6 +42,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
+import top.iwesley.lyn.music.feature.settings.SettingsEffect
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -97,6 +98,7 @@ fun buildPlayerAppComponent(
             lyricsRepository = sharedGraph.lyricsRepository,
             storeScope = sharedGraph.scope,
             lyricsSharePlatformService = playerRuntimeServices.lyricsSharePlatformService,
+            lyricsShareFontLibraryPlatformService = playerRuntimeServices.lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = playerRuntimeServices.lyricsShareFontPreferencesStore,
             logger = sharedGraph.logger,
         ),
@@ -158,6 +160,14 @@ fun App(component: LynMusicAppComponent) {
                 selectedTab = selectedTab,
                 pendingPlaylistTrack = pendingPlaylistTrack,
             )
+        }
+        LaunchedEffect(component) {
+            component.settingsStore.effects.collect { effect ->
+                when (effect) {
+                    SettingsEffect.LyricsShareFontsChanged ->
+                        component.playerStore.dispatch(PlayerIntent.InvalidateLyricsShareFontCache)
+                }
+            }
         }
         LynMusicTheme(
             themeTokens = shellThemeTokens,

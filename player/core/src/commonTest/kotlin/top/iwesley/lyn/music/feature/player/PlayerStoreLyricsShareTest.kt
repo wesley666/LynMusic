@@ -17,12 +17,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
+import top.iwesley.lyn.music.core.model.LyricsShareFontKind
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -208,10 +210,10 @@ class PlayerStoreLyricsShareTest {
         val shareService = FakeLyricsSharePlatformService(
             fontListResult = Result.success(
                 listOf(
-                    LyricsShareFontOption("PingFang SC", "你好"),
-                    LyricsShareFontOption("Serif", "Hello"),
-                    LyricsShareFontOption("pingfang sc", "不同预览"),
-                    LyricsShareFontOption("Arial", "Hello"),
+                    LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
+                    LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
+                    LyricsShareFontOption(fontKey = "pingfang sc", displayName = "pingfang sc", previewText = "不同预览"),
+                    LyricsShareFontOption(fontKey = "Arial", displayName = "Arial", previewText = "Hello"),
                 ),
             ),
         )
@@ -237,11 +239,141 @@ class PlayerStoreLyricsShareTest {
         assertTrue(state.supportsLyricsShareFontSelection)
         assertTrue(state.availableLyricsShareFonts.isEmpty())
         assertNull(state.lyricsShareFontsError)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, state.selectedLyricsShareFontFamily)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, state.shareCardModel?.fontFamilyName)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, shareService.lastPreviewModel?.fontFamilyName)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
         assertEquals(0, shareService.listAvailableFontFamiliesCalls)
         assertEquals(1, shareService.buildPreviewCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `open lyrics share resolves imported font display name without loading full font list`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val importedFontKey = "imported:abcdef123456"
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val fontPreferencesStore = FakeLyricsShareFontPreferencesStore(importedFontKey)
+        val shareService = FakeLyricsSharePlatformService()
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService(
+            resolvedPaths = mapOf(importedFontKey to "/tmp/abcdef123456__霞鹜文楷.ttf"),
+            listResult = Result.success(
+                listOf(
+                    LyricsShareFontOption(
+                        fontKey = importedFontKey,
+                        displayName = "霞鹜文楷",
+                        kind = LyricsShareFontKind.IMPORTED,
+                    ),
+                ),
+            ),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+            lyricsShareFontPreferencesStore = fontPreferencesStore,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(importedFontKey, state.selectedLyricsShareFontKey)
+        assertEquals("霞鹜文楷", state.selectedLyricsShareFontDisplayName)
+        assertEquals(importedFontKey, state.shareCardModel?.fontKey)
+        assertEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
+        assertEquals(importedFontKey, fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertEquals(1, fontLibrary.listImportedFontsCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `open lyrics share clears missing imported font and falls back to default font`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val importedFontKey = "imported:missing123456"
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val fontPreferencesStore = FakeLyricsShareFontPreferencesStore(importedFontKey)
+        val shareService = FakeLyricsSharePlatformService()
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService()
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+            lyricsShareFontPreferencesStore = fontPreferencesStore,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertNull(state.selectedLyricsShareFontDisplayName)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
+        assertNull(fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertEquals(0, fontLibrary.listImportedFontsCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `open lyrics share falls back to imported font file name when imported font list fails`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val importedFontKey = "imported:abcdef123456"
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val fontPreferencesStore = FakeLyricsShareFontPreferencesStore(importedFontKey)
+        val shareService = FakeLyricsSharePlatformService()
+        val fontLibrary = FakeLyricsShareFontLibraryPlatformService(
+            resolvedPaths = mapOf(importedFontKey to "/tmp/abcdef123456__文件名.otf"),
+            listResult = Result.failure(IllegalStateException("字体列表读取失败")),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+            lyricsShareFontLibraryPlatformService = fontLibrary,
+            lyricsShareFontPreferencesStore = fontPreferencesStore,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(importedFontKey, state.selectedLyricsShareFontKey)
+        assertEquals("文件名", state.selectedLyricsShareFontDisplayName)
+        assertEquals(importedFontKey, state.shareCardModel?.fontKey)
+        assertEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
+        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertEquals(1, fontLibrary.listImportedFontsCalls)
         scope.cancel()
     }
 
@@ -253,10 +385,10 @@ class PlayerStoreLyricsShareTest {
         val shareService = FakeLyricsSharePlatformService(
             fontListResult = Result.success(
                 listOf(
-                    LyricsShareFontOption("PingFang SC", "你好"),
-                    LyricsShareFontOption("Serif", "Hello"),
-                    LyricsShareFontOption("pingfang sc", "不同预览"),
-                    LyricsShareFontOption("Arial", "Hello"),
+                    LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
+                    LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
+                    LyricsShareFontOption(fontKey = "pingfang sc", displayName = "pingfang sc", previewText = "不同预览"),
+                    LyricsShareFontOption(fontKey = "Arial", displayName = "Arial", previewText = "Hello"),
                 ),
             ),
         )
@@ -281,12 +413,12 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(listOf("PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.familyName })
+        assertEquals(listOf("PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.fontKey })
         assertEquals(listOf("你好", "Hello", "Hello"), state.availableLyricsShareFonts.map { it.previewText })
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, state.selectedLyricsShareFontFamily)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, state.shareCardModel?.fontFamilyName)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, shareService.lastPreviewModel?.fontFamilyName)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_FAMILY, fontPreferencesStore.selectedLyricsShareFontFamily.value)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, fontPreferencesStore.selectedLyricsShareFontKey.value)
         assertEquals(1, shareService.listAvailableFontFamiliesCalls)
         assertEquals(1, shareService.buildPreviewCalls)
         scope.cancel()
@@ -325,15 +457,15 @@ class PlayerStoreLyricsShareTest {
         delayedFonts.complete(
             Result.success(
                 listOf(
-                    LyricsShareFontOption("Serif", "Hello"),
-                    LyricsShareFontOption("PingFang SC", "你好"),
+                    LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
+                    LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
                 ),
             ),
         )
         advanceUntilIdle()
 
         assertFalse(store.state.value.isLyricsShareFontsLoading)
-        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.familyName })
+        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
         scope.cancel()
     }
 
@@ -373,11 +505,11 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("PingFang SC", state.selectedLyricsShareFontFamily)
-        assertEquals("PingFang SC", state.shareCardModel?.fontFamilyName)
-        assertEquals("PingFang SC", state.sharePreviewFontFamilyName)
-        assertEquals("PingFang SC", shareService.lastPreviewModel?.fontFamilyName)
-        assertEquals("PingFang SC", fontPreferencesStore.selectedLyricsShareFontFamily.value)
+        assertEquals("PingFang SC", state.selectedLyricsShareFontKey)
+        assertEquals("PingFang SC", state.shareCardModel?.fontKey)
+        assertEquals("PingFang SC", state.sharePreviewFontKey)
+        assertEquals("PingFang SC", shareService.lastPreviewModel?.fontKey)
+        assertEquals("PingFang SC", fontPreferencesStore.selectedLyricsShareFontKey.value)
         assertEquals(2, shareService.buildPreviewCalls)
         assertTrue(state.hasFreshSharePreview)
         scope.cancel()
@@ -402,8 +534,8 @@ class PlayerStoreLyricsShareTest {
             lyricsSharePlatformService = FakeLyricsSharePlatformService(
                 fontListResult = Result.success(
                     listOf(
-                        LyricsShareFontOption("PingFang SC"),
-                        LyricsShareFontOption("Serif"),
+                        LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC"),
+                        LyricsShareFontOption(fontKey = "Serif", displayName = "Serif"),
                     ),
                 ),
             ),
@@ -416,8 +548,8 @@ class PlayerStoreLyricsShareTest {
         serifStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("Serif", serifStore.state.value.selectedLyricsShareFontFamily)
-        assertEquals("Serif", serifPrefs.selectedLyricsShareFontFamily.value)
+        assertEquals("Serif", serifStore.state.value.selectedLyricsShareFontKey)
+        assertEquals("Serif", serifPrefs.selectedLyricsShareFontKey.value)
 
         val firstAvailablePrefs = FakeLyricsShareFontPreferencesStore("Missing Font")
         val firstAvailableStore = PlayerStore(
@@ -433,8 +565,8 @@ class PlayerStoreLyricsShareTest {
             lyricsSharePlatformService = FakeLyricsSharePlatformService(
                 fontListResult = Result.success(
                     listOf(
-                        LyricsShareFontOption("PingFang SC"),
-                        LyricsShareFontOption("Arial"),
+                        LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC"),
+                        LyricsShareFontOption(fontKey = "Arial", displayName = "Arial"),
                     ),
                 ),
             ),
@@ -447,8 +579,115 @@ class PlayerStoreLyricsShareTest {
         firstAvailableStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("PingFang SC", firstAvailableStore.state.value.selectedLyricsShareFontFamily)
-        assertEquals("PingFang SC", firstAvailablePrefs.selectedLyricsShareFontFamily.value)
+        assertEquals("PingFang SC", firstAvailableStore.state.value.selectedLyricsShareFontKey)
+        assertEquals("PingFang SC", firstAvailablePrefs.selectedLyricsShareFontKey.value)
+        scope.cancel()
+    }
+
+    @Test
+    fun `invalidating lyrics share font cache reloads fonts on next request`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeReloadableLyricsSharePlatformService(
+            initialFontListResult = Result.success(
+                listOf(
+                    LyricsShareFontOption(fontKey = "Serif", displayName = "Serif"),
+                ),
+            ),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+            lyricsShareFontPreferencesStore = FakeLyricsShareFontPreferencesStore(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.RequestLyricsShareFonts)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Serif"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
+        assertEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
+
+        shareService.fontListResult = Result.success(
+            listOf(
+                LyricsShareFontOption(fontKey = "Serif", displayName = "Serif"),
+                LyricsShareFontOption(fontKey = "New Font", displayName = "New Font"),
+            ),
+        )
+        store.dispatch(PlayerIntent.InvalidateLyricsShareFontCache)
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
+        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
+        assertEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
+
+        store.dispatch(PlayerIntent.RequestLyricsShareFonts)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Serif", "New Font"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertEquals(2, shareService.listAvailableFontFamiliesCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `invalidating lyrics share font cache ignores stale in-flight font lookup result`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val delayedFonts = CompletableDeferred<Result<List<LyricsShareFontOption>>>()
+        val shareService = FakeDeferredFontLookupLyricsSharePlatformService(delayedFonts)
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+            lyricsShareFontPreferencesStore = FakeLyricsShareFontPreferencesStore(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.RequestLyricsShareFonts)
+        runCurrent()
+
+        assertTrue(store.state.value.isLyricsShareFontsLoading)
+
+        store.dispatch(PlayerIntent.InvalidateLyricsShareFontCache)
+        runCurrent()
+
+        assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
+        assertFalse(store.state.value.isLyricsShareFontsLoading)
+
+        delayedFonts.complete(
+            Result.success(
+                listOf(
+                    LyricsShareFontOption(fontKey = "Stale Font", displayName = "Stale Font"),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
+        assertFalse(store.state.value.isLyricsShareFontsLoading)
+        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, store.state.value.selectedLyricsShareFontKey)
+        assertNull(store.state.value.selectedLyricsShareFontDisplayName)
+        assertEquals(1, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
     }
 
@@ -566,15 +805,15 @@ class PlayerStoreLyricsShareTest {
 
         shareService.fontListResult = Result.success(
             listOf(
-                LyricsShareFontOption("Serif", "Hello"),
-                LyricsShareFontOption("PingFang SC", "你好"),
+                LyricsShareFontOption(fontKey = "Serif", displayName = "Serif", previewText = "Hello"),
+                LyricsShareFontOption(fontKey = "PingFang SC", displayName = "PingFang SC", previewText = "你好"),
             ),
         )
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.familyName })
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontFamily)
+        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
         assertNull(store.state.value.lyricsShareFontsError)
         assertEquals(2, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
@@ -924,14 +1163,42 @@ private class FakeDeferredFontLookupLyricsSharePlatformService(
 }
 
 private class FakeLyricsShareFontPreferencesStore(
-    initialFontFamily: String? = null,
+    initialFontKey: String? = null,
 ) : LyricsShareFontPreferencesStore {
-    private val mutableSelectedLyricsShareFontFamily = MutableStateFlow(initialFontFamily)
+    private val mutableSelectedLyricsShareFontKey = MutableStateFlow(initialFontKey)
 
-    override val selectedLyricsShareFontFamily: StateFlow<String?> = mutableSelectedLyricsShareFontFamily.asStateFlow()
+    override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey.asStateFlow()
 
-    override suspend fun setSelectedLyricsShareFontFamily(value: String?) {
-        mutableSelectedLyricsShareFontFamily.value = value
+    override suspend fun setSelectedLyricsShareFontKey(value: String?) {
+        mutableSelectedLyricsShareFontKey.value = value
+    }
+}
+
+private class FakeLyricsShareFontLibraryPlatformService(
+    private val resolvedPaths: Map<String, String?> = emptyMap(),
+    private val listResult: Result<List<LyricsShareFontOption>> = Result.success(emptyList()),
+) : LyricsShareFontLibraryPlatformService {
+    var listImportedFontsCalls: Int = 0
+        private set
+    var resolveImportedFontPathCalls: Int = 0
+        private set
+
+    override suspend fun listImportedFonts(): Result<List<LyricsShareFontOption>> {
+        listImportedFontsCalls += 1
+        return listResult
+    }
+
+    override suspend fun importFont(): Result<LyricsShareFontOption?> {
+        return Result.success(null)
+    }
+
+    override suspend fun deleteImportedFont(fontKey: String): Result<Unit> {
+        return Result.success(Unit)
+    }
+
+    override suspend fun resolveImportedFontPath(fontKey: String): Result<String?> {
+        resolveImportedFontPathCalls += 1
+        return Result.success(resolvedPaths[fontKey])
     }
 }
 

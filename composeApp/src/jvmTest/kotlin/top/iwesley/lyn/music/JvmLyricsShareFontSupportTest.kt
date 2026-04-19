@@ -7,7 +7,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
-import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_FAMILY
+import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
@@ -21,6 +21,7 @@ import top.iwesley.lyn.music.platform.lyricsShareFontWhitelistForDesktop
 import top.iwesley.lyn.music.platform.prioritizeIosLyricsShareFontFamilyNames
 import top.iwesley.lyn.music.platform.prioritizeJvmLyricsShareFontFamilyNames
 import top.iwesley.lyn.music.platform.resolveSkiaLyricsShareTypeface
+import top.iwesley.lyn.music.platform.skiaLyricsShareFallbackFontFamilyNames
 import top.iwesley.lyn.music.platform.tokenizeSkiaLyricsShareLine
 import top.iwesley.lyn.music.platform.wrapSingleSkiaLyricsShareLine
 import org.jetbrains.skia.Font
@@ -53,14 +54,14 @@ class JvmLyricsShareFontSupportTest {
                 .let { (alphabeticFonts, nonAlphabeticFonts) -> alphabeticFonts + nonAlphabeticFonts }
 
         assertTrue(fonts.isNotEmpty())
-        assertEquals(fonts.map { it.familyName.lowercase() }.distinct(), fonts.map { it.familyName.lowercase() })
+        assertEquals(fonts.map { it.fontKey.lowercase() }.distinct(), fonts.map { it.fontKey.lowercase() })
         assertContentEquals(
             expectedOrder.map { it.lowercase() },
-            fonts.map { it.familyName.lowercase() },
+            fonts.map { it.fontKey.lowercase() },
         )
         assertContentEquals(
             prioritizedPrefix.map { it.first },
-            fonts.take(prioritizedPrefix.size).map { it.familyName },
+            fonts.take(prioritizedPrefix.size).map { it.fontKey },
         )
         assertContentEquals(
             prioritizedPrefix.map { it.second },
@@ -74,12 +75,13 @@ class JvmLyricsShareFontSupportTest {
     fun `prioritizeJvmLyricsShareFontFamilyNames keeps macos whitelist at top and appends others`() {
         val prioritized = prioritizeJvmLyricsShareFontFamilyNames(
             osName = "macOS 15.0",
+            importedFonts = emptyList(),
             availableFonts = listOf("Times New Roman", "Baskerville", "PingFang SC", "Avenir Next", "Arial"),
         )
 
         assertEquals(
             listOf("PingFang SC", "Avenir Next", "Baskerville", "Times New Roman", "Arial"),
-            prioritized.map { it.familyName },
+            prioritized.map { it.fontKey },
         )
         assertEquals(
             listOf("你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello"),
@@ -95,12 +97,13 @@ class JvmLyricsShareFontSupportTest {
     fun `prioritizeJvmLyricsShareFontFamilyNames keeps windows whitelist at top and appends others`() {
         val prioritized = prioritizeJvmLyricsShareFontFamilyNames(
             osName = "Windows 11",
+            importedFonts = emptyList(),
             availableFonts = listOf("Georgia", "Segoe UI", "SimSun", "Arial", "Microsoft YaHei"),
         )
 
         assertEquals(
             listOf("SimSun", "Microsoft YaHei", "Segoe UI", "Georgia", "Arial"),
-            prioritized.map { it.familyName },
+            prioritized.map { it.fontKey },
         )
         assertEquals(
             listOf("你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello"),
@@ -112,12 +115,13 @@ class JvmLyricsShareFontSupportTest {
     fun `prioritizeJvmLyricsShareFontFamilyNames keeps linux whitelist at top and appends others`() {
         val prioritized = prioritizeJvmLyricsShareFontFamilyNames(
             osName = "Linux",
+            importedFonts = emptyList(),
             availableFonts = listOf("DejaVu Serif", "Noto Serif", "Noto Sans", "Arial", "Noto Sans CJK SC"),
         )
 
         assertEquals(
             listOf("Noto Sans CJK SC", "Noto Sans", "Noto Serif", "DejaVu Serif", "Arial"),
-            prioritized.map { it.familyName },
+            prioritized.map { it.fontKey },
         )
         assertEquals(
             listOf("你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello", "你好 Hello"),
@@ -129,10 +133,11 @@ class JvmLyricsShareFontSupportTest {
     fun `prioritizeJvmLyricsShareFontFamilyNames returns all fonts when whitelist has no matches`() {
         val prioritized = prioritizeJvmLyricsShareFontFamilyNames(
             osName = "Linux",
+            importedFonts = emptyList(),
             availableFonts = listOf("Arial", "Courier New"),
         )
 
-        assertEquals(listOf("Arial", "Courier New"), prioritized.map { it.familyName })
+        assertEquals(listOf("Arial", "Courier New"), prioritized.map { it.fontKey })
         assertTrue(prioritized.all { !it.isPrioritized })
         assertContentEquals(listOf("你好 Hello", "你好 Hello"), prioritized.map { it.previewText })
     }
@@ -141,12 +146,13 @@ class JvmLyricsShareFontSupportTest {
     fun `prioritizeJvmLyricsShareFontFamilyNames moves non alphabetic families to end`() {
         val prioritized = prioritizeJvmLyricsShareFontFamilyNames(
             osName = "Linux",
+            importedFonts = emptyList(),
             availableFonts = listOf(".Apple Symbols", "Arial", "你好字体", "Courier New"),
         )
 
         assertEquals(
             listOf("Arial", "Courier New", ".Apple Symbols", "你好字体"),
-            prioritized.map { it.familyName },
+            prioritized.map { it.fontKey },
         )
     }
 
@@ -155,13 +161,18 @@ class JvmLyricsShareFontSupportTest {
         val prioritized = prioritizeIosLyricsShareFontFamilyNames(
             availableFonts = listOf(".SF NS", "Arial", "Arial Unicode MS", "Hiragino Sans GB", "PingFang HK", "Zapfino"),
         )
+        val expectedPrioritizedPrefix = skiaLyricsShareFallbackFontFamilyNames().filter { familyName ->
+            familyName in listOf(".SF NS", "Arial", "Arial Unicode MS", "Hiragino Sans GB", "PingFang HK", "Zapfino")
+        }
+        val expectedRemaining = listOf("Arial", "Arial Unicode MS", "Hiragino Sans GB", "PingFang HK", "Zapfino", ".SF NS")
+            .filterNot { it in expectedPrioritizedPrefix }
 
         assertEquals(
-            listOf("PingFang HK", "Hiragino Sans GB", "Arial Unicode MS", "Arial", "Zapfino", ".SF NS"),
-            prioritized.map { it.familyName },
+            expectedPrioritizedPrefix + expectedRemaining,
+            prioritized.map { it.fontKey },
         )
         assertContentEquals(
-            listOf(true, true, true, false, false, false),
+            List(expectedPrioritizedPrefix.size) { true } + List(expectedRemaining.size) { false },
             prioritized.map { it.isPrioritized },
         )
         assertTrue(prioritized.all { it.previewText == "你好 Hello" })
@@ -173,23 +184,23 @@ class JvmLyricsShareFontSupportTest {
             availableFonts = listOf(".SF NS", "Arial", "Zapfino"),
         )
 
-        assertEquals(listOf("Arial", "Zapfino", ".SF NS"), prioritized.map { it.familyName })
+        assertEquals(listOf("Arial", "Zapfino", ".SF NS"), prioritized.map { it.fontKey })
         assertTrue(prioritized.all { !it.isPrioritized && it.previewText == "你好 Hello" })
     }
 
     @Test
     fun `buildPreview succeeds with a valid system font family`() = runBlocking {
-        val fontFamily = service.listAvailableFontFamilies().getOrThrow().first().familyName
+        val fontKey = service.listAvailableFontFamilies().getOrThrow().first().fontKey
 
-        val preview = renderPreview(fontFamilyName = fontFamily)
+        val preview = renderPreview(fontKey = fontKey)
 
         assertTrue(preview.isNotEmpty())
     }
 
     @Test
     fun `buildPreview falls back when font family is invalid`() {
-        val expected = renderPreview(fontFamilyName = DEFAULT_LYRICS_SHARE_FONT_FAMILY)
-        val actual = renderPreview(fontFamilyName = "Definitely Missing Font Family")
+        val expected = renderPreview(fontKey = DEFAULT_LYRICS_SHARE_FONT_KEY)
+        val actual = renderPreview(fontKey = "Definitely Missing Font Family")
 
         assertContentEquals(expected, actual)
     }
@@ -197,11 +208,11 @@ class JvmLyricsShareFontSupportTest {
     @Test
     fun `buildPreview renders note and artwork tint templates with expected width bounds`() {
         val note = renderPreview(
-            fontFamilyName = null,
+            fontKey = null,
             template = LyricsShareTemplate.NOTE,
         )
         val artworkTint = renderPreview(
-            fontFamilyName = null,
+            fontKey = null,
             template = LyricsShareTemplate.ARTWORK_TINT,
         )
 
@@ -218,7 +229,7 @@ class JvmLyricsShareFontSupportTest {
     }
 
     private fun renderPreview(
-        fontFamilyName: String?,
+        fontKey: String?,
         template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     ): ByteArray {
         return runBlocking {
@@ -229,7 +240,7 @@ class JvmLyricsShareFontSupportTest {
                     artworkLocator = null,
                     template = template,
                     lyricsLines = listOf("第一句", "第二句"),
-                    fontFamilyName = fontFamilyName,
+                    fontKey = fontKey,
                 ),
             ).getOrThrow()
         }

@@ -13,12 +13,17 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DeviceInfoSnapshot
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
+import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
@@ -50,6 +55,11 @@ data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
+    val supportsLyricsShareFontImport: Boolean = false,
+    val importedLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
+    val lyricsShareFontsLoading: Boolean = false,
+    val importingLyricsShareFont: Boolean = false,
+    val deletingLyricsShareFontKey: String? = null,
     val selectedTheme: AppThemeId = AppThemeId.Ocean,
     val customThemeTokens: AppThemeTokens = defaultCustomThemeTokens(),
     val textPalettePreferences: AppThemeTextPalettePreferences = defaultThemeTextPalettePreferences(),
@@ -111,6 +121,9 @@ sealed interface SettingsIntent {
     data class LoadStorageUsage(val force: Boolean = false) : SettingsIntent
     data class ClearStorageCategory(val category: AppStorageCategory) : SettingsIntent
     data class LoadDeviceInfo(val force: Boolean = false) : SettingsIntent
+    data object LoadLyricsShareImportedFonts : SettingsIntent
+    data object ImportLyricsShareFont : SettingsIntent
+    data class DeleteLyricsShareImportedFont(val fontKey: String) : SettingsIntent
     data object ImportWorkflow : SettingsIntent
     data object CreateNew : SettingsIntent
     data object CreateNewWorkflow : SettingsIntent
@@ -126,16 +139,25 @@ sealed interface SettingsIntent {
     data object ClearMessage : SettingsIntent
 }
 
-sealed interface SettingsEffect
+sealed interface SettingsEffect {
+    data object LyricsShareFontsChanged : SettingsEffect
+}
 
 class SettingsStore(
     private val repository: SettingsRepository,
     scope: CoroutineScope,
     private val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     private val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
+    private val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
+        UnsupportedLyricsShareFontLibraryPlatformService,
+    private val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore =
+        UnsupportedLyricsShareFontPreferencesStore,
     private val vlcPathPickerPlatformService: VlcPathPickerPlatformService = UnsupportedVlcPathPickerPlatformService,
 ) : BaseStore<SettingsState, SettingsIntent, SettingsEffect>(
-    initialState = SettingsState(),
+    initialState = SettingsState(
+        supportsLyricsShareFontImport =
+            lyricsShareFontLibraryPlatformService !== UnsupportedLyricsShareFontLibraryPlatformService,
+    ),
     scope = scope,
 ) {
     init {
@@ -234,6 +256,12 @@ class SettingsStore(
             is SettingsIntent.ClearStorageCategory -> clearStorageCategory(intent.category)
 
             is SettingsIntent.LoadDeviceInfo -> loadDeviceInfo(force = intent.force)
+
+            SettingsIntent.LoadLyricsShareImportedFonts -> loadLyricsShareImportedFonts()
+
+            SettingsIntent.ImportLyricsShareFont -> importLyricsShareFont()
+
+            is SettingsIntent.DeleteLyricsShareImportedFont -> deleteLyricsShareImportedFont(intent.fontKey)
 
             is SettingsIntent.ThemeTextPaletteSelected -> {
                 repository.setTextPalette(intent.themeId, intent.value)
@@ -685,6 +713,118 @@ class SettingsStore(
                     latest.copy(
                         deviceInfoLoading = false,
                         message = error.message ?: "读取设备信息失败。",
+                    )
+                },
+            )
+        }
+    }
+
+    private suspend fun loadLyricsShareImportedFonts(force: Boolean = false) {
+        val current = state.value
+        if (!current.supportsLyricsShareFontImport) return
+        if (current.lyricsShareFontsLoading || current.importingLyricsShareFont || current.deletingLyricsShareFontKey != null) {
+            return
+        }
+        if (!force && current.importedLyricsShareFonts.isNotEmpty()) return
+        updateState {
+            it.copy(
+                lyricsShareFontsLoading = true,
+            )
+        }
+        val result = lyricsShareFontLibraryPlatformService.listImportedFonts()
+        updateState { latest ->
+            result.fold(
+                onSuccess = { fonts ->
+                    latest.copy(
+                        importedLyricsShareFonts = fonts,
+                        lyricsShareFontsLoading = false,
+                    )
+                },
+                onFailure = { error ->
+                    latest.copy(
+                        lyricsShareFontsLoading = false,
+                        message = error.message ?: "读取已导入字体失败。",
+                    )
+                },
+            )
+        }
+    }
+
+    private suspend fun importLyricsShareFont() {
+        val current = state.value
+        if (!current.supportsLyricsShareFontImport) return
+        if (current.importingLyricsShareFont || current.lyricsShareFontsLoading || current.deletingLyricsShareFontKey != null) {
+            return
+        }
+        updateState { it.copy(importingLyricsShareFont = true) }
+        val result = lyricsShareFontLibraryPlatformService.importFont()
+        val importedOption = result.getOrNull()
+        if (result.isSuccess && importedOption != null) {
+            emitEffect(SettingsEffect.LyricsShareFontsChanged)
+            val listResult = lyricsShareFontLibraryPlatformService.listImportedFonts()
+            updateState { latest ->
+                listResult.fold(
+                    onSuccess = { fonts ->
+                        latest.copy(
+                            importedLyricsShareFonts = fonts,
+                            importingLyricsShareFont = false,
+                            message = "字体已导入。",
+                        )
+                    },
+                    onFailure = { error ->
+                        latest.copy(
+                            importingLyricsShareFont = false,
+                            message = error.message ?: "字体已导入，但刷新列表失败。",
+                        )
+                    },
+                )
+            }
+        } else {
+            updateState { latest ->
+                latest.copy(
+                    importingLyricsShareFont = false,
+                    message = result.exceptionOrNull()?.message
+                        ?: if (importedOption == null) "已取消导入。" else "字体导入失败。",
+                )
+            }
+        }
+    }
+
+    private suspend fun deleteLyricsShareImportedFont(fontKey: String) {
+        val current = state.value
+        if (!current.supportsLyricsShareFontImport) return
+        if (current.lyricsShareFontsLoading || current.importingLyricsShareFont || current.deletingLyricsShareFontKey != null) {
+            return
+        }
+        updateState { it.copy(deletingLyricsShareFontKey = fontKey) }
+        val deleteResult = lyricsShareFontLibraryPlatformService.deleteImportedFont(fontKey)
+        if (deleteResult.isFailure) {
+            updateState {
+                it.copy(
+                    deletingLyricsShareFontKey = null,
+                    message = deleteResult.exceptionOrNull()?.message ?: "删除字体失败。",
+                )
+            }
+            return
+        }
+        emitEffect(SettingsEffect.LyricsShareFontsChanged)
+        if (lyricsShareFontPreferencesStore.selectedLyricsShareFontKey.value == fontKey) {
+            lyricsShareFontPreferencesStore.setSelectedLyricsShareFontKey(null)
+        }
+        val listResult = lyricsShareFontLibraryPlatformService.listImportedFonts()
+        updateState { latest ->
+            listResult.fold(
+                onSuccess = { fonts ->
+                    latest.copy(
+                        importedLyricsShareFonts = fonts,
+                        deletingLyricsShareFontKey = null,
+                        message = "字体已删除。",
+                    )
+                },
+                onFailure = { error ->
+                    latest.copy(
+                        deletingLyricsShareFontKey = null,
+                        message = error.message ?: "字体已删除，但刷新列表失败。",
                     )
                 },
             )

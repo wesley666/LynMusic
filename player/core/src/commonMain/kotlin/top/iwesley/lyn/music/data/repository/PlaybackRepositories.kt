@@ -15,6 +15,7 @@ import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
@@ -26,6 +27,7 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatformService
@@ -548,6 +550,8 @@ data class PlayerRuntimeServices(
     val playbackGateway: PlaybackGateway,
     val playbackPreferencesStore: PlaybackPreferencesStore,
     val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
+    val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
+        UnsupportedLyricsShareFontLibraryPlatformService,
     val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore = UnsupportedLyricsShareFontPreferencesStore,
     val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
 )
