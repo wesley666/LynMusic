@@ -105,6 +105,7 @@ import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -1568,8 +1569,15 @@ private fun LyricsShareFontMenuList(
     scrollState: androidx.compose.foundation.ScrollState,
     onFontSelected: (String) -> Unit,
 ) {
-    val shouldShowScrollbar by remember(scrollState.maxValue) {
-        derivedStateOf { scrollState.maxValue > 0 }
+    val density = LocalDensity.current
+    val itemHeightPx = remember(density) {
+        with(density) { LyricsShareFontMenuItemHeight.roundToPx() }
+    }
+    val indexEntries = remember(availableFonts) {
+        buildLyricsShareFontMenuIndexEntries(availableFonts)
+    }
+    val shouldShowIndexBar by remember(scrollState.maxValue, indexEntries) {
+        derivedStateOf { scrollState.maxValue > 0 && indexEntries.isNotEmpty() }
     }
     Box(
         modifier = Modifier
@@ -1580,7 +1588,7 @@ private fun LyricsShareFontMenuList(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
-                .padding(end = if (shouldShowScrollbar) LyricsShareFontMenuScrollbarReservedPadding else 0.dp),
+                .padding(end = if (shouldShowIndexBar) LyricsShareFontMenuIndexReservedPadding else 0.dp),
         ) {
             availableFonts.forEach { option ->
                 val previewFontFamily = lyricsSharePreviewFontFamily(option.familyName)
@@ -1622,40 +1630,61 @@ private fun LyricsShareFontMenuList(
                 )
             }
         }
-        LyricsShareFontMenuScrollbar(
-            scrollState = scrollState,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight()
-                .padding(end = 6.dp, top = 8.dp, bottom = 8.dp),
-        )
+        if (shouldShowIndexBar) {
+            LyricsShareFontMenuLetterIndexBar(
+                entries = indexEntries,
+                scrollState = scrollState,
+                itemHeightPx = itemHeightPx,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 6.dp, top = 8.dp, bottom = 8.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun LyricsShareFontMenuScrollbar(
+private fun LyricsShareFontMenuLetterIndexBar(
+    entries: List<LyricsShareFontMenuIndexEntry>,
     scrollState: androidx.compose.foundation.ScrollState,
+    itemHeightPx: Int,
     modifier: Modifier = Modifier,
 ) {
+    if (entries.isEmpty()) return
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     var trackSize by remember { mutableStateOf(IntSize.Zero) }
-    val metrics by remember(scrollState.value, scrollState.maxValue, trackSize) {
-        derivedStateOf {
-            calculateLyricsShareFontMenuScrollbarMetrics(
-                scrollValue = scrollState.value,
-                maxScrollValue = scrollState.maxValue,
-                trackHeightPx = trackSize.height,
-            )
+    var activeEntryIndex by remember { mutableStateOf<Int?>(null) }
+    var dragActive by remember { mutableStateOf(false) }
+    val activeLabel = activeEntryIndex?.let { index -> entries.getOrNull(index)?.label }
+    val hintOffsetY = remember(activeEntryIndex, entries, trackSize.height, density) {
+        val index = activeEntryIndex ?: return@remember 0.dp
+        if (trackSize.height <= 0 || entries.isEmpty()) return@remember 0.dp
+        val slotHeightPx = trackSize.height.toFloat() / entries.size.toFloat()
+        val bubbleSizePx = with(density) { LyricsShareFontMenuIndexHintSize.roundToPx().toFloat() }
+        val targetOffsetPx = slotHeightPx * index + (slotHeightPx - bubbleSizePx) / 2f
+        with(density) { targetOffsetPx.roundToInt().toDp() }
+    }
+
+    LaunchedEffect(activeEntryIndex, dragActive) {
+        if (activeEntryIndex != null && !dragActive) {
+            delay(700)
+            activeEntryIndex = null
         }
     }
-    val thumbHeightDp = with(density) { metrics.thumbHeightPx.toDp() }
-    val thumbOffsetDp = with(density) { metrics.thumbOffsetPx.toDp() }
 
-    fun scrollToTrackPosition(y: Float) {
-        val targetScrollValue = calculateLyricsShareFontMenuScrollbarTargetScrollValue(
-            pointerY = y,
+    fun jumpToEntryAt(pointerY: Float) {
+        val targetIndex = calculateLyricsShareFontMenuIndexTarget(
+            pointerY = pointerY,
             trackHeightPx = trackSize.height,
+            entryCount = entries.size,
+        )
+        if (targetIndex < 0) return
+        activeEntryIndex = targetIndex
+        val targetScrollValue = calculateLyricsShareFontMenuIndexScrollOffset(
+            firstIndex = entries[targetIndex].firstIndex,
+            itemHeightPx = itemHeightPx,
             maxScrollValue = scrollState.maxValue,
         )
         coroutineScope.launch {
@@ -1665,53 +1694,77 @@ private fun LyricsShareFontMenuScrollbar(
 
     Box(
         modifier = modifier
-            .width(LyricsShareFontMenuScrollbarWidth)
+            .width(LyricsShareFontMenuIndexWidth)
             .onSizeChanged { trackSize = it }
-            .pointerInput(scrollState.maxValue, trackSize, metrics.isVisible) {
+            .pointerInput(entries, trackSize.height, scrollState.maxValue) {
                 detectTapGestures { offset ->
-                    if (metrics.isVisible) {
-                        scrollToTrackPosition(offset.y)
-                    }
+                    dragActive = false
+                    jumpToEntryAt(offset.y)
                 }
             }
-            .pointerInput(scrollState.maxValue, trackSize, metrics.isVisible) {
+            .pointerInput(entries, trackSize.height, scrollState.maxValue) {
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
-                        if (metrics.isVisible) {
-                            scrollToTrackPosition(offset.y)
-                        }
+                        dragActive = true
+                        jumpToEntryAt(offset.y)
                     },
                     onVerticalDrag = { change, _ ->
-                        if (metrics.isVisible) {
-                            change.consume()
-                            scrollToTrackPosition(change.position.y)
-                        }
+                        change.consume()
+                        dragActive = true
+                        jumpToEntryAt(change.position.y)
+                    },
+                    onDragEnd = {
+                        dragActive = false
+                        activeEntryIndex = null
+                    },
+                    onDragCancel = {
+                        dragActive = false
+                        activeEntryIndex = null
                     },
                 )
             },
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = Alignment.Center,
     ) {
         val shellColors = mainShellColors
-        if (metrics.isVisible) {
-            Box(
+        Column(
+            modifier = Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceEvenly,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            entries.forEachIndexed { index, entry ->
+                val isActive = activeEntryIndex == index
+                Text(
+                    text = entry.label,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else shellColors.secondaryText,
+                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        if (activeLabel != null) {
+            ElevatedCard(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .width(LyricsShareFontMenuScrollbarTrackWidth)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(shellColors.cardBorder),
-            )
-            Box(
-                modifier = Modifier
-                    .offset(y = thumbOffsetDp)
-                    .height(thumbHeightDp)
-                    .width(LyricsShareFontMenuScrollbarThumbWidth)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.secondary)
-                    .border(
-                        BorderStroke(1.dp, MaterialTheme.colorScheme.onSecondary.copy(alpha = 0.18f)),
-                        RoundedCornerShape(999.dp),
-                    ),
-            )
+                    .align(Alignment.TopStart)
+                    .offset(x = -LyricsShareFontMenuIndexHintOffsetX, y = hintOffsetY)
+                    .size(LyricsShareFontMenuIndexHintSize),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.secondary,
+                    contentColor = MaterialTheme.colorScheme.onSecondary,
+                ),
+                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = activeLabel,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }
@@ -1730,55 +1783,61 @@ internal fun calculateLyricsShareFontMenuScrollOffsetPx(
     return targetOffset.coerceIn(0, maxOffset)
 }
 
-internal data class LyricsShareFontMenuScrollbarMetrics(
-    val isVisible: Boolean,
-    val thumbHeightPx: Float,
-    val thumbOffsetPx: Float,
+internal data class LyricsShareFontMenuIndexEntry(
+    val label: String,
+    val firstIndex: Int,
 )
 
-internal fun calculateLyricsShareFontMenuScrollbarMetrics(
-    scrollValue: Int,
-    maxScrollValue: Int,
-    trackHeightPx: Int,
-): LyricsShareFontMenuScrollbarMetrics {
-    if (maxScrollValue <= 0 || trackHeightPx <= 0) {
-        return LyricsShareFontMenuScrollbarMetrics(
-            isVisible = false,
-            thumbHeightPx = 0f,
-            thumbOffsetPx = 0f,
-        )
+internal fun buildLyricsShareFontMenuIndexEntries(
+    availableFonts: List<LyricsShareFontOption>,
+): List<LyricsShareFontMenuIndexEntry> {
+    val entries = mutableListOf<LyricsShareFontMenuIndexEntry>()
+    val seenLabels = mutableSetOf<String>()
+    availableFonts.forEachIndexed { index, option ->
+        val label = option.familyName
+            .trim()
+            .firstOrNull()
+            ?.uppercaseChar()
+            ?.takeIf { it in 'A'..'Z' }
+            ?.toString()
+            ?: "#"
+        if (seenLabels.add(label)) {
+            entries += LyricsShareFontMenuIndexEntry(
+                label = label,
+                firstIndex = index,
+            )
+        }
     }
-    val viewportHeightPx = trackHeightPx.toFloat()
-    val contentHeightPx = maxScrollValue + viewportHeightPx
-    val visibleFraction = (viewportHeightPx / contentHeightPx).coerceIn(0.12f, 0.45f)
-    val scrollFraction = (scrollValue.toFloat() / maxScrollValue.toFloat()).coerceIn(0f, 1f)
-    val thumbHeightPx = trackHeightPx * visibleFraction
-    val thumbOffsetPx = (trackHeightPx - thumbHeightPx).coerceAtLeast(0f) * scrollFraction
-    return LyricsShareFontMenuScrollbarMetrics(
-        isVisible = true,
-        thumbHeightPx = thumbHeightPx,
-        thumbOffsetPx = thumbOffsetPx,
-    )
+    return entries
 }
 
-internal fun calculateLyricsShareFontMenuScrollbarTargetScrollValue(
+internal fun calculateLyricsShareFontMenuIndexTarget(
     pointerY: Float,
     trackHeightPx: Int,
-    maxScrollValue: Int,
+    entryCount: Int,
 ): Int {
-    if (trackHeightPx <= 0 || maxScrollValue <= 0) return 0
+    if (trackHeightPx <= 0 || entryCount <= 0) return -1
     val fraction = (pointerY / trackHeightPx.toFloat()).coerceIn(0f, 1f)
-    return (fraction * maxScrollValue.toFloat()).roundToInt()
+    return (fraction * entryCount.toFloat()).toInt().coerceAtMost(entryCount - 1)
 }
 
-private val LyricsShareFontMenuMaxHeight = 320.dp
+internal fun calculateLyricsShareFontMenuIndexScrollOffset(
+    firstIndex: Int,
+    itemHeightPx: Int,
+    maxScrollValue: Int,
+): Int {
+    if (firstIndex < 0 || itemHeightPx <= 0 || maxScrollValue <= 0) return 0
+    return (firstIndex * itemHeightPx).coerceIn(0, maxScrollValue)
+}
+
+private val LyricsShareFontMenuMaxHeight = 420.dp
 private val LyricsShareFontMenuMinWidth = 360.dp
 private val LyricsShareFontMenuMaxWidth = 560.dp
 private val LyricsShareFontMenuItemHeight = 56.dp
-private val LyricsShareFontMenuScrollbarReservedPadding = 22.dp
-private val LyricsShareFontMenuScrollbarWidth = 18.dp
-private val LyricsShareFontMenuScrollbarTrackWidth = 4.dp
-private val LyricsShareFontMenuScrollbarThumbWidth = 8.dp
+private val LyricsShareFontMenuIndexReservedPadding = 28.dp
+private val LyricsShareFontMenuIndexWidth = 24.dp
+private val LyricsShareFontMenuIndexHintSize = 36.dp
+private val LyricsShareFontMenuIndexHintOffsetX = 46.dp
 
 @Composable
 private fun LyricsShareSelectionPane(

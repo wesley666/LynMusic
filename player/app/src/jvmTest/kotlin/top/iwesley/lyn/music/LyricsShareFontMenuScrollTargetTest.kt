@@ -1,9 +1,9 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 class LyricsShareFontMenuScrollTargetTest {
     @Test
@@ -67,68 +67,113 @@ class LyricsShareFontMenuScrollTargetTest {
     }
 
     @Test
-    fun `scrollbar stays hidden when list cannot scroll`() {
-        val metrics = calculateLyricsShareFontMenuScrollbarMetrics(
-            scrollValue = 0,
-            maxScrollValue = 0,
-            trackHeightPx = 320,
+    fun `index entries keep first occurrence order`() {
+        val entries = buildLyricsShareFontMenuIndexEntries(
+            listOf(
+                LyricsShareFontOption("Avenir Next"),
+                LyricsShareFontOption("Arial"),
+                LyricsShareFontOption("Baskerville"),
+                LyricsShareFontOption("Bodoni 72"),
+                LyricsShareFontOption("Courier New"),
+            )
         )
 
-        assertFalse(metrics.isVisible)
-        assertEquals(0f, metrics.thumbHeightPx)
-        assertEquals(0f, metrics.thumbOffsetPx)
+        assertContentEquals(
+            listOf("A", "B", "C"),
+            entries.map { it.label },
+        )
     }
 
     @Test
-    fun `scrollbar metrics reflect current scroll position`() {
-        val metrics = calculateLyricsShareFontMenuScrollbarMetrics(
-            scrollValue = 140,
-            maxScrollValue = 280,
-            trackHeightPx = 320,
+    fun `non latin leading font maps to hash group`() {
+        val entries = buildLyricsShareFontMenuIndexEntries(
+            listOf(
+                LyricsShareFontOption("你好字体"),
+                LyricsShareFontOption(".Apple Symbols"),
+                LyricsShareFontOption("Avenir Next"),
+            )
         )
 
-        assertTrue(metrics.isVisible)
-        assertEquals(144f, metrics.thumbHeightPx)
-        assertEquals(88f, metrics.thumbOffsetPx)
+        assertContentEquals(
+            listOf("#", "A"),
+            entries.map { it.label },
+        )
     }
 
     @Test
-    fun `scrollbar thumb clamps near bottom when fully scrolled`() {
-        val metrics = calculateLyricsShareFontMenuScrollbarMetrics(
-            scrollValue = 280,
-            maxScrollValue = 280,
-            trackHeightPx = 320,
+    fun `entry firstIndex points to first matching font`() {
+        val entries = buildLyricsShareFontMenuIndexEntries(
+            listOf(
+                LyricsShareFontOption("Avenir Next"),
+                LyricsShareFontOption("Arial"),
+                LyricsShareFontOption("Baskerville"),
+                LyricsShareFontOption("Courier New"),
+            )
         )
 
-        assertTrue(metrics.isVisible)
-        assertEquals(176f, metrics.thumbOffsetPx)
+        assertEquals(0, entries[0].firstIndex)
+        assertEquals(2, entries[1].firstIndex)
+        assertEquals(3, entries[2].firstIndex)
     }
 
     @Test
-    fun `track click maps to proportional scroll value`() {
-        val scrollValue = calculateLyricsShareFontMenuScrollbarTargetScrollValue(
-            pointerY = 80f,
+    fun `pointer at top maps to first index entry`() {
+        val targetIndex = calculateLyricsShareFontMenuIndexTarget(
+            pointerY = 0f,
             trackHeightPx = 320,
-            maxScrollValue = 280,
+            entryCount = 4,
         )
 
-        assertEquals(70, scrollValue)
+        assertEquals(0, targetIndex)
     }
 
     @Test
-    fun `track drag clamps to scroll range`() {
-        val top = calculateLyricsShareFontMenuScrollbarTargetScrollValue(
+    fun `pointer at bottom maps to last index entry`() {
+        val targetIndex = calculateLyricsShareFontMenuIndexTarget(
+            pointerY = 320f,
+            trackHeightPx = 320,
+            entryCount = 4,
+        )
+
+        assertEquals(3, targetIndex)
+    }
+
+    @Test
+    fun `middle pointer maps to middle entry`() {
+        val targetIndex = calculateLyricsShareFontMenuIndexTarget(
+            pointerY = 150f,
+            trackHeightPx = 320,
+            entryCount = 4,
+        )
+
+        assertEquals(1, targetIndex)
+    }
+
+    @Test
+    fun `out of range pointer clamps to valid entry`() {
+        val top = calculateLyricsShareFontMenuIndexTarget(
             pointerY = -40f,
             trackHeightPx = 320,
-            maxScrollValue = 280,
+            entryCount = 4,
         )
-        val bottom = calculateLyricsShareFontMenuScrollbarTargetScrollValue(
+        val bottom = calculateLyricsShareFontMenuIndexTarget(
             pointerY = 480f,
             trackHeightPx = 320,
-            maxScrollValue = 280,
+            entryCount = 4,
         )
 
         assertEquals(0, top)
-        assertEquals(280, bottom)
+        assertEquals(3, bottom)
+    }
+
+    @Test
+    fun `invalid track height keeps target missing`() {
+        val targetIndex = calculateLyricsShareFontMenuIndexTarget(
+            pointerY = 40f,
+            trackHeightPx = 0,
+            entryCount = 4,
+        )
+
+        assertEquals(-1, targetIndex)
     }
 }
