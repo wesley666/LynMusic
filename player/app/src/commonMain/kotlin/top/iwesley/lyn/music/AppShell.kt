@@ -447,11 +447,14 @@ private fun DesktopNav(
 
 @Composable
 private fun HeroHeader() {
+    val desktopWindowChrome = currentDesktopWindowChrome
     Text(
         text = "LynMusic",
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.ExtraBold,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (desktopWindowChrome.immersiveTitleBarEnabled) 84.dp else 0.dp),
     )
 }
 

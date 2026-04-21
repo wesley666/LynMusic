@@ -111,7 +111,10 @@ fun buildPlayerAppComponent(
 }
 
 @Composable
-fun App(component: LynMusicAppComponent) {
+fun App(
+    component: LynMusicAppComponent,
+    desktopWindowChrome: DesktopWindowChrome = DesktopWindowChrome(),
+) {
     DisposableEffect(component) {
         onDispose { component.dispose() }
     }
@@ -142,7 +145,10 @@ fun App(component: LynMusicAppComponent) {
             )
         }
 
-    CompositionLocalProvider(LocalPlatformDescriptor provides component.platform) {
+    CompositionLocalProvider(
+        LocalPlatformDescriptor provides component.platform,
+        LocalDesktopWindowChrome provides desktopWindowChrome,
+    ) {
         LaunchedEffect(component) {
             withFrameNanos { }
             component.playerStore.startHydration()

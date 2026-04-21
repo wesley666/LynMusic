@@ -805,6 +805,7 @@ private fun PlayerOverlay(
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
     val track = state.snapshot.currentTrack ?: return
+    val desktopWindowChrome = currentDesktopWindowChrome
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
     val playbackStatusColor = Color.White.copy(alpha = 0.6f)
@@ -863,6 +864,12 @@ private fun PlayerOverlay(
                 density = LocalDensity.current,
             )
             val mobilePlayback = platform.isMobilePlatform()
+            val immersiveDesktopTrafficLightsInset =
+                if (!mobilePlayback && desktopWindowChrome.immersiveTitleBarEnabled) {
+                    84.dp
+                } else {
+                    0.dp
+                }
             val wide = layoutProfile.isExpandedLayout
             val useTapToRevealLyrics = layoutProfile.isCompactLayout
             LaunchedEffect(platform.name, maxWidth, maxHeight) {
@@ -881,7 +888,10 @@ private fun PlayerOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    IconButton(onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) }) {
+                    IconButton(
+                        onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
+                        modifier = Modifier.padding(start = immersiveDesktopTrafficLightsInset),
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.KeyboardArrowDown,
                             contentDescription = "收起播放页",
