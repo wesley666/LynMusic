@@ -866,7 +866,7 @@ private fun PlayerOverlay(
             val mobilePlayback = platform.isMobilePlatform()
             val immersiveDesktopTrafficLightsInset =
                 if (!mobilePlayback && desktopWindowChrome.immersiveTitleBarEnabled) {
-                    84.dp
+                    0.dp
                 } else {
                     0.dp
                 }
