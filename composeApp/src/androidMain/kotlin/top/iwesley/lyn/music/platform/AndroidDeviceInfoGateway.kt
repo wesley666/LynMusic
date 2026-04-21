@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.platform
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,6 +26,7 @@ private class AndroidDeviceInfoGateway(
                 resolution = formatResolution(resolutionWidthPx, resolutionHeightPx),
                 resolutionWidthPx = resolutionWidthPx,
                 resolutionHeightPx = resolutionHeightPx,
+                systemDensityScale = androidSystemDensityScale(activity),
                 cpuDescription = androidCpuDescription(),
                 totalMemoryBytes = androidTotalMemoryBytes(activity.applicationContext),
                 deviceModel = androidDeviceModel(),
@@ -54,6 +56,14 @@ private fun androidResolutionPx(activity: ComponentActivity): Pair<Int?, Int?> {
     val width = displayMode?.physicalWidth?.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels.takeIf { it > 0 }
     val height = displayMode?.physicalHeight?.takeIf { it > 0 } ?: activity.resources.displayMetrics.heightPixels.takeIf { it > 0 }
     return width to height
+}
+
+private fun androidSystemDensityScale(activity: ComponentActivity): Float? {
+    val configurationDensityDpi = activity.resources.configuration.densityDpi.takeIf { it > 0 }
+    if (configurationDensityDpi != null) {
+        return configurationDensityDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
+    }
+    return activity.resources.displayMetrics.density.takeIf { it.isFinite() && it > 0f }
 }
 
 private fun androidCpuDescription(): String? {

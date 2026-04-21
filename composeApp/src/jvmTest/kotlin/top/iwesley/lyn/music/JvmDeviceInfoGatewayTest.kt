@@ -35,6 +35,7 @@ class JvmDeviceInfoGatewayTest {
         assertEquals("3024 × 1964 px", snapshot.resolution)
         assertEquals(3024, snapshot.resolutionWidthPx)
         assertEquals(1964, snapshot.resolutionHeightPx)
+        assertNull(snapshot.systemDensityScale)
         assertEquals("Apple M3 · aarch64 · 8 核", snapshot.cpuDescription)
         assertEquals(16L * 1024 * 1024 * 1024, snapshot.totalMemoryBytes)
         assertNull(snapshot.deviceModel)

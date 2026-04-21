@@ -1379,6 +1379,8 @@ private fun AboutDeviceSettingsPane(
     val shellColors = mainShellColors
     val snapshot = state.deviceInfoSnapshot
     val localDensity = LocalDensity.current
+    val showsAndroidDisplayMetrics =
+        currentPlatformDescriptor.capabilities.supportsAppDisplayScaleAdjustment
     val summaryTitle = when {
         snapshot?.deviceModel?.isNotBlank() == true -> snapshot.deviceModel
         snapshot?.systemName?.isNotBlank() == true -> snapshot.systemName
@@ -1461,19 +1463,57 @@ private fun AboutDeviceSettingsPane(
                 label = "分辨率",
                 value = deviceInfoDisplayValue(snapshot?.resolution, state.deviceInfoLoading),
             )
-            AboutDeviceFieldRow(
-                label = "DP 分辨率",
-                value = deviceInfoDpResolutionValue(
-                    widthPx = snapshot?.resolutionWidthPx,
-                    heightPx = snapshot?.resolutionHeightPx,
-                    density = localDensity.density,
-                    loading = state.deviceInfoLoading,
-                ),
-            )
-            AboutDeviceFieldRow(
-                label = "像素密度",
-                value = deviceInfoDensityValue(localDensity.density),
-            )
+            if (showsAndroidDisplayMetrics) {
+                AboutDeviceFieldRow(
+                    label = "应用 DP 分辨率",
+                    value = deviceInfoDpResolutionValue(
+                        widthPx = snapshot?.resolutionWidthPx,
+                        heightPx = snapshot?.resolutionHeightPx,
+                        density = localDensity.density,
+                        loading = state.deviceInfoLoading,
+                    ),
+                )
+                AboutDeviceFieldRow(
+                    label = "系统 DP 分辨率",
+                    value = deviceInfoDpResolutionValue(
+                        widthPx = snapshot?.resolutionWidthPx,
+                        heightPx = snapshot?.resolutionHeightPx,
+                        density = snapshot?.systemDensityScale,
+                        loading = state.deviceInfoLoading,
+                    ),
+                )
+                AboutDeviceFieldRow(
+                    label = "应用像素密度",
+                    value = deviceInfoDensityValue(
+                        density = localDensity.density,
+                        loading = false,
+                    ),
+                )
+                AboutDeviceFieldRow(
+                    label = "系统像素密度",
+                    value = deviceInfoDensityValue(
+                        density = snapshot?.systemDensityScale,
+                        loading = state.deviceInfoLoading,
+                    ),
+                )
+            } else {
+                AboutDeviceFieldRow(
+                    label = "DP 分辨率",
+                    value = deviceInfoDpResolutionValue(
+                        widthPx = snapshot?.resolutionWidthPx,
+                        heightPx = snapshot?.resolutionHeightPx,
+                        density = localDensity.density,
+                        loading = state.deviceInfoLoading,
+                    ),
+                )
+                AboutDeviceFieldRow(
+                    label = "像素密度",
+                    value = deviceInfoDensityValue(
+                        density = localDensity.density,
+                        loading = false,
+                    ),
+                )
+            }
             AboutDeviceFieldRow(
                 label = "字体缩放",
                 value = deviceInfoFontScaleValue(localDensity.fontScale),
@@ -1927,7 +1967,7 @@ private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
 internal fun deviceInfoDpResolutionValue(
     widthPx: Int?,
     heightPx: Int?,
-    density: Float,
+    density: Float?,
     loading: Boolean,
 ): String {
     val resolvedWidth = widthPx?.takeIf { it > 0 }
@@ -1935,14 +1975,19 @@ internal fun deviceInfoDpResolutionValue(
     if (resolvedWidth == null || resolvedHeight == null) {
         return if (loading) "正在读取..." else "不可用"
     }
-    if (!density.isFinite() || density <= 0f) return "不可用"
-    val widthDp = (resolvedWidth / density).roundToInt()
-    val heightDp = (resolvedHeight / density).roundToInt()
+    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f } ?: return "不可用"
+    val widthDp = (resolvedWidth / resolvedDensity).roundToInt()
+    val heightDp = (resolvedHeight / resolvedDensity).roundToInt()
     return "$widthDp × $heightDp dp"
 }
 
-internal fun deviceInfoDensityValue(density: Float): String {
-    return formatDeviceInfoDecimal(density)?.let { "$it px/dp" } ?: "不可用"
+internal fun deviceInfoDensityValue(
+    density: Float?,
+    loading: Boolean,
+): String {
+    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f }
+        ?: return if (loading) "正在读取..." else "不可用"
+    return formatDeviceInfoDecimal(resolvedDensity)?.let { "$it px/dp" } ?: "不可用"
 }
 
 internal fun deviceInfoFontScaleValue(fontScale: Float): String {
