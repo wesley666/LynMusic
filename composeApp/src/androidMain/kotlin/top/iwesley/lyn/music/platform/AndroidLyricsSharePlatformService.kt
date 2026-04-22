@@ -483,9 +483,6 @@ class AndroidLyricsSharePlatformService(
         val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.PLACEHOLDER_ARGB
         }
-        val artworkShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareArtworkTintSpec.ARTWORK_SHADOW_ARGB
-        }
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
@@ -551,18 +548,6 @@ class AndroidLyricsSharePlatformService(
 
         val artworkLeft = LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
         val artworkTop = (LyricsShareArtworkTintSpec.OUTER_PADDING_PX + LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX).toFloat()
-        val shadowRect = RectF(
-            artworkLeft,
-            artworkTop + 10f,
-            artworkLeft + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
-            artworkTop + 10f + LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX,
-        )
-        canvas.drawRoundRect(
-            shadowRect,
-            LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
-            LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
-            artworkShadowPaint,
-        )
         val artworkRect = RectF(
             artworkLeft,
             artworkTop,

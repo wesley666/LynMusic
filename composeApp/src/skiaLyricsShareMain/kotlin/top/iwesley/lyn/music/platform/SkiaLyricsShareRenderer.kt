@@ -343,10 +343,6 @@ internal object SkiaLyricsShareRenderer {
             isAntiAlias = true
             color = LyricsShareArtworkTintSpec.PLACEHOLDER_ARGB
         }
-        val artworkShadowPaint = Paint().apply {
-            isAntiAlias = true
-            color = LyricsShareArtworkTintSpec.ARTWORK_SHADOW_ARGB
-        }
         val textPrimaryPaint = Paint().apply {
             isAntiAlias = true
             color = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB
@@ -366,17 +362,6 @@ internal object SkiaLyricsShareRenderer {
 
         val artworkX = LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
         val artworkY = LyricsShareArtworkTintSpec.OUTER_PADDING_PX + LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX.toFloat()
-        canvas.drawRRect(
-            RRect.makeXYWH(
-                artworkX,
-                artworkY + 10f,
-                LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX.toFloat(),
-                LyricsShareArtworkTintSpec.ARTWORK_SIZE_PX.toFloat(),
-                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
-                LyricsShareArtworkTintSpec.ARTWORK_RADIUS_PX.toFloat(),
-            ),
-            artworkShadowPaint,
-        )
         val artworkRect = Rect.makeXYWH(
             artworkX,
             artworkY,
