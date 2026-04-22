@@ -144,10 +144,12 @@ internal data class JvmLyricsShareFontPreset(
 )
 
 private val JVM_LYRICS_SHARE_FONT_WHITELIST_MACOS = listOf(
-    JvmLyricsShareFontPreset("PingFang SC", "你好 Hello"),
     JvmLyricsShareFontPreset("Songti SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("PingFang SC", "你好 Hello"),
     JvmLyricsShareFontPreset("Hiragino Sans GB", "你好 Hello"),
     JvmLyricsShareFontPreset("LingWai SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Xingkai SC", "你好 Hello"),
+    JvmLyricsShareFontPreset("Wawati SC", "你好 Hello"),
     JvmLyricsShareFontPreset("Avenir Next", "你好 Hello"),
     JvmLyricsShareFontPreset("Baskerville", "你好 Hello"),
     JvmLyricsShareFontPreset("Times New Roman", "你好 Hello"),
