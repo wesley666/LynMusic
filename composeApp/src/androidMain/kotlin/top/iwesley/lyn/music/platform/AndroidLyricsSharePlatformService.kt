@@ -3,7 +3,6 @@ package top.iwesley.lyn.music.platform
 import android.Manifest
 import android.content.ClipData
 import android.content.ContentValues
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -14,7 +13,6 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.media.MediaScannerConnection
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -68,7 +66,7 @@ class AndroidLyricsSharePlatformService(
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
             val artwork = loadArtworkBitmap(model.artworkLocator)
-            val importedTypeface = resolveAndroidLyricsShareImportedTypeface(fontLibraryPlatformService, model.fontKey)
+            val importedTypeface = resolveAndroidLyricsShareTypeface(fontLibraryPlatformService, model.fontKey)
             renderLyricsShareBitmap(model, artwork, importedTypeface)
         }
     }
@@ -114,9 +112,66 @@ class AndroidLyricsSharePlatformService(
                     .filter { it.kind == LyricsShareFontKind.IMPORTED }
                 importedFonts + listOf(
                     LyricsShareFontOption(
-                        fontKey = "Serif",
-                        displayName = "Serif",
+                        fontKey = "sans-serif",
+                        displayName = "无衬线",
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        isPrioritized = true,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "sans-serif-medium",
+                        displayName = "无衬线中黑体",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        isPrioritized = true,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "sans-serif-black",
+                        displayName = "无衬线重黑体",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "serif",
+                        displayName = "衬线",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "monospace",
+                        displayName = "等宽",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "serif-monospace",
+                        displayName = "衬线等宽",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "sans-serif-condensed",
+                        displayName = "无衬线紧凑体",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "sans-serif-condensed-medium",
+                        displayName = "无衬线紧凑中黑体",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "cursive",
+                        displayName = "Cursive",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
+                    ),
+                    LyricsShareFontOption(
+                        fontKey = "casual",
+                        displayName = "Casual",
+                        previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
+                        kind = LyricsShareFontKind.SYSTEM,
                     ),
                 )
             }
@@ -620,14 +675,17 @@ private fun fitAndroidLyricsLayout(
     }
 }
 
-private suspend fun resolveAndroidLyricsShareImportedTypeface(
+private suspend fun resolveAndroidLyricsShareTypeface(
     fontLibraryPlatformService: LyricsShareFontLibraryPlatformService,
     fontKey: String?,
 ): Typeface? {
     val normalizedFontKey = fontKey?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val fontPath = fontLibraryPlatformService.resolveImportedFontPath(normalizedFontKey).getOrNull()
-        ?: return null
-    return runCatching { Typeface.createFromFile(fontPath) }.getOrNull()
+    if (!fontPath.isNullOrBlank()) {
+        return runCatching { Typeface.createFromFile(fontPath) }.getOrNull()
+    }
+
+    return runCatching { Typeface.create(normalizedFontKey, Typeface.NORMAL) }.getOrNull()
 }
 
 private fun createTextLayout(

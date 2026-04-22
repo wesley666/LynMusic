@@ -19,7 +19,7 @@ actual fun lyricsSharePreviewFontFamily(
         }.getOrNull()
     }
     if (fontKey?.let(::parseLyricsShareImportedFontHash) != null) return null
-    val familyName = (displayName ?: fontKey)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val familyName = (fontKey ?: displayName)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     return when (familyName.lowercase()) {
         "serif" -> FontFamily.Serif
         "sans-serif", "sansserif" -> FontFamily.SansSerif
