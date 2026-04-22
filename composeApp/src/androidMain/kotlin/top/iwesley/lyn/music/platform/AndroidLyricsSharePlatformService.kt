@@ -232,7 +232,7 @@ class AndroidLyricsSharePlatformService(
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareCardSpec.TITLE_FONT_SIZE_PX
-            isFakeBoldText = true
+            isFakeBoldText = false
             typeface = importedTypeface
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -434,7 +434,7 @@ class AndroidLyricsSharePlatformService(
         val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB
             textSize = LyricsShareArtworkTintSpec.TITLE_FONT_SIZE_PX
-            isFakeBoldText = true
+            isFakeBoldText = false
             typeface = importedTypeface
         }
         val brandPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -598,7 +598,7 @@ private fun fitAndroidLyricsLayout(
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = textColor
             textSize = fontSizePx
-            isFakeBoldText = true
+            isFakeBoldText = false
             this.typeface = typeface
         }
         val layout = createTextLayout(
