@@ -83,6 +83,7 @@ fun buildPlayerAppComponent(
     val playbackRepository = DefaultPlaybackRepository(
         database = sharedGraph.database,
         gateway = playerRuntimeServices.playbackGateway,
+        playbackPreferencesStore = playerRuntimeServices.playbackPreferencesStore,
         scope = sharedGraph.scope,
         systemPlaybackControlsPlatformService = playerRuntimeServices.systemPlaybackControlsPlatformService,
         logger = sharedGraph.logger,

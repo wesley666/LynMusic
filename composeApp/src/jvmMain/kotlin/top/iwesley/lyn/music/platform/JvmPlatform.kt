@@ -59,6 +59,7 @@ import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
+import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
 import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
@@ -69,6 +70,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -229,6 +231,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         parentFile?.mkdirs()
     }
     private val mutableUseSambaCache = MutableStateFlow(readUseSambaCache())
+    private val mutablePlaybackVolume = MutableStateFlow(readPlaybackVolume())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(readShowCompactPlayerLyrics())
     private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
     private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
@@ -246,6 +249,7 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableSelectedLyricsShareFontKey = MutableStateFlow(readSelectedLyricsShareFontKey())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
@@ -262,6 +266,14 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         properties.setProperty(KEY_USE_SAMBA_CACHE, enabled.toString())
         persistProperties(properties)
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setPlaybackVolume(volume: Float) {
+        val normalizedVolume = normalizePlaybackVolume(volume)
+        val properties = loadProperties()
+        properties.setProperty(KEY_PLAYBACK_VOLUME, normalizedVolume.toString())
+        persistProperties(properties)
+        mutablePlaybackVolume.value = normalizedVolume
     }
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
@@ -346,6 +358,10 @@ private class JvmAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
 
     private fun readUseSambaCache(): Boolean {
         return loadProperties().getProperty(KEY_USE_SAMBA_CACHE)?.toBooleanStrictOrNull() ?: false
+    }
+
+    private fun readPlaybackVolume(): Float {
+        return normalizePlaybackVolume(loadProperties().getProperty(KEY_PLAYBACK_VOLUME)?.toFloatOrNull() ?: DEFAULT_PLAYBACK_VOLUME)
     }
 
     private fun readShowCompactPlayerLyrics(): Boolean {
@@ -1744,6 +1760,7 @@ private fun joinSegments(left: String, right: String): String {
 }
 
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"

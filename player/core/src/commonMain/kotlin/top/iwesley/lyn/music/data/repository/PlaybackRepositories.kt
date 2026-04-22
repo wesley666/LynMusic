@@ -33,6 +33,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedLyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
+import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -54,12 +55,19 @@ interface PlaybackRepository {
 class DefaultPlaybackRepository(
     private val database: LynMusicDatabase,
     private val gateway: PlaybackGateway,
+    private val playbackPreferencesStore: PlaybackPreferencesStore,
     private val scope: CoroutineScope,
     private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
     hydrateImmediately: Boolean = true,
 ) : PlaybackRepository {
-    private val mutableSnapshot = MutableStateFlow(PlaybackSnapshot(isHydratingPlayback = true))
+    private val initialPlaybackVolume = normalizePlaybackVolume(playbackPreferencesStore.playbackVolume.value)
+    private val mutableSnapshot = MutableStateFlow(
+        PlaybackSnapshot(
+            isHydratingPlayback = true,
+            volume = initialPlaybackVolume,
+        ),
+    )
     private val playbackCommandMutex = Mutex()
     @Volatile
     private var latestLoadRequestId = 0L
@@ -82,6 +90,9 @@ class DefaultPlaybackRepository(
                 seekTo = { positionMs -> seekTo(positionMs) },
             ),
         )
+        runBlocking {
+            gateway.setVolume(initialPlaybackVolume)
+        }
         if (hydrateImmediately) {
             runBlocking {
                 hydratePersistedQueueIfNeeded()
@@ -261,10 +272,11 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun setVolume(volume: Float) {
-        val normalized = volume.coerceIn(0f, 1f)
+        val normalized = normalizePlaybackVolume(volume)
         playbackCommandMutex.withLock {
             gateway.setVolume(normalized)
             mutableSnapshot.update { it.copy(volume = normalized) }
+            playbackPreferencesStore.setPlaybackVolume(normalized)
         }
     }
 
@@ -428,6 +440,7 @@ class DefaultPlaybackRepository(
                     isPlaying = false,
                     positionMs = persisted.positionMs,
                     durationMs = tracks[index].durationMs,
+                    volume = mutableSnapshot.value.volume,
                     metadataTitle = null,
                     metadataArtistName = null,
                     metadataAlbumTitle = null,

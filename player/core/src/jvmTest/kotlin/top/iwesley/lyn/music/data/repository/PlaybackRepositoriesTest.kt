@@ -17,14 +17,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackMode
+import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
@@ -38,8 +41,14 @@ class PlaybackRepositoriesTest {
     fun `manual next advances to next track in repeat one`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -66,8 +75,14 @@ class PlaybackRepositoriesTest {
     fun `manual previous switches track in repeat one even after five seconds`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -96,8 +111,14 @@ class PlaybackRepositoriesTest {
     fun `natural completion stays on current track in repeat one`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -126,8 +147,14 @@ class PlaybackRepositoriesTest {
     fun `concurrent skip next commands keep latest requested track while stale load finishes later`() = runTest {
         val database = createTestDatabase()
         val gateway = BlockingPlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -163,6 +190,7 @@ class PlaybackRepositoriesTest {
     fun `restore queue and live refresh use manual artwork override`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val trackEntity = TrackEntity(
             id = "track-1",
@@ -200,7 +228,12 @@ class PlaybackRepositoriesTest {
                 updatedAt = 1L,
             ),
         )
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -223,6 +256,7 @@ class PlaybackRepositoriesTest {
     fun `temporary playback artwork override survives live track refresh`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val trackEntity = TrackEntity(
             id = "track-1",
@@ -242,7 +276,12 @@ class PlaybackRepositoriesTest {
             modifiedAt = 0L,
         )
         database.trackDao().upsertAll(listOf(trackEntity))
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -275,8 +314,14 @@ class PlaybackRepositoriesTest {
     fun `play tracks surfaces gateway load failure without throwing`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway(loadFailure = IllegalStateException("No route to host"))
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -297,8 +342,14 @@ class PlaybackRepositoriesTest {
     fun `repeated gateway error still surfaces after switching tracks`() = runTest {
         val database = createTestDatabase()
         val gateway = RepeatingErrorPlaybackGateway("未检测到 VLC，请安装或手动选择 VLC 路径。")
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -336,8 +387,14 @@ class PlaybackRepositoriesTest {
             ),
         )
         val gateway = FakePlaybackGateway(loadFailure = IllegalStateException("No route to host"))
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
 
         try {
             advanceUntilIdle()
@@ -357,9 +414,16 @@ class PlaybackRepositoriesTest {
     fun `system controls service receives snapshot updates`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val systemControls = FakeSystemPlaybackControlsPlatformService()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope, systemControls)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            systemPlaybackControlsPlatformService = systemControls,
+        )
 
         try {
             advanceUntilIdle()
@@ -383,9 +447,16 @@ class PlaybackRepositoriesTest {
     fun `system controls callbacks route to repository commands`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
         val systemControls = FakeSystemPlaybackControlsPlatformService()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(database, gateway, scope, systemControls)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            systemPlaybackControlsPlatformService = systemControls,
+        )
 
         try {
             advanceUntilIdle()
@@ -409,6 +480,140 @@ class PlaybackRepositoriesTest {
             assertEquals(true, repository.snapshot.value.isPlaying)
         } finally {
             repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `repository restores persisted volume before hydrating queue`() = runTest {
+        val database = createTestDatabase()
+        database.trackDao().upsertAll(listOf(sampleTrackEntity("track-1", "First Song")))
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-1",
+                currentIndex = 0,
+                positionMs = 8_000L,
+                mode = PlaybackMode.ORDER.name,
+                updatedAt = 1L,
+            ),
+        )
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore(initialPlaybackVolume = 0.35f)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            assertEquals(listOf("setVolume", "load"), gateway.eventLog.take(2))
+            assertEquals(0.35f, repository.snapshot.value.volume)
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(8_000L, repository.snapshot.value.positionMs)
+            assertEquals(0.35f, gateway.volumeCalls.first())
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `set volume updates snapshot gateway and persisted preferences`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            repository.setVolume(0.35f)
+
+            assertEquals(0.35f, repository.snapshot.value.volume)
+            assertEquals(0.35f, gateway.volumeCalls.last())
+            assertEquals(listOf(0.35f), playbackPreferencesStore.persistedVolumes)
+            assertEquals(0.35f, playbackPreferencesStore.playbackVolume.value)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `set volume clamps values before persisting`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            repository.setVolume(-1f)
+            repository.setVolume(2f)
+
+            assertEquals(listOf(0f, 1f), playbackPreferencesStore.persistedVolumes)
+            assertEquals(1f, repository.snapshot.value.volume)
+            assertEquals(1f, gateway.volumeCalls.last())
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `missing or invalid persisted volume falls back to default`() = runTest {
+        val database = createTestDatabase()
+        val missingGateway = FakePlaybackGateway()
+        val invalidGateway = FakePlaybackGateway()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val missingRepository = DefaultPlaybackRepository(
+            database = database,
+            gateway = missingGateway,
+            playbackPreferencesStore = FakePlaybackPreferencesStore(initialPlaybackVolume = null),
+            scope = scope,
+            hydrateImmediately = false,
+        )
+        val invalidRepository = DefaultPlaybackRepository(
+            database = database,
+            gateway = invalidGateway,
+            playbackPreferencesStore = FakePlaybackPreferencesStore(initialPlaybackVolume = Float.NaN),
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            assertEquals(DEFAULT_PLAYBACK_VOLUME, missingRepository.snapshot.value.volume)
+            assertEquals(DEFAULT_PLAYBACK_VOLUME, missingGateway.volumeCalls.single())
+            assertEquals(DEFAULT_PLAYBACK_VOLUME, invalidRepository.snapshot.value.volume)
+            assertEquals(DEFAULT_PLAYBACK_VOLUME, invalidGateway.volumeCalls.single())
+        } finally {
+            invalidRepository.close()
+            missingRepository.close()
             scope.cancel()
             database.close()
         }
@@ -508,13 +713,37 @@ private fun sampleTrackEntity(id: String, title: String): TrackEntity {
     )
 }
 
+private class FakePlaybackPreferencesStore(
+    initialPlaybackVolume: Float? = null,
+) : PlaybackPreferencesStore {
+    private val mutableUseSambaCache = MutableStateFlow(false)
+    private val mutablePlaybackVolume = MutableStateFlow(initialPlaybackVolume ?: DEFAULT_PLAYBACK_VOLUME)
+
+    val persistedVolumes = mutableListOf<Float>()
+
+    override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
+
+    override suspend fun setUseSambaCache(enabled: Boolean) {
+        mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setPlaybackVolume(volume: Float) {
+        val normalizedVolume = normalizePlaybackVolume(volume)
+        persistedVolumes += normalizedVolume
+        mutablePlaybackVolume.value = normalizedVolume
+    }
+}
+
 private class FakePlaybackGateway(
     private val loadFailure: Throwable? = null,
 ) : PlaybackGateway {
     private val mutableState = MutableStateFlow(PlaybackGatewayState())
 
+    val eventLog = mutableListOf<String>()
     val loadCalls = mutableListOf<LoadCall>()
     val seekCalls = mutableListOf<Long>()
+    val volumeCalls = mutableListOf<Float>()
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
@@ -533,6 +762,7 @@ private class FakePlaybackGateway(
             )
             throw throwable
         }
+        eventLog += "load"
         loadCalls += LoadCall(track, playWhenReady, startPositionMs)
         if (!loadToken.isCurrent()) {
             return
@@ -559,6 +789,8 @@ private class FakePlaybackGateway(
     }
 
     override suspend fun setVolume(volume: Float) {
+        eventLog += "setVolume"
+        volumeCalls += volume
         mutableState.value = mutableState.value.copy(volume = volume)
     }
 

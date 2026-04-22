@@ -36,6 +36,7 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.AppThemeId
@@ -44,6 +45,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -247,6 +249,7 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) false else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
     )
+    private val mutablePlaybackVolume = MutableStateFlow(readPlaybackVolume())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(
         if (defaults.objectForKey(KEY_SHOW_COMPACT_PLAYER_LYRICS) == null) {
             false
@@ -262,6 +265,7 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private val mutableSelectedLyricsShareFontKey = MutableStateFlow(readSelectedLyricsShareFontKey())
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
@@ -273,6 +277,12 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override suspend fun setUseSambaCache(enabled: Boolean) {
         defaults.setBool(enabled, KEY_USE_SAMBA_CACHE)
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setPlaybackVolume(volume: Float) {
+        val normalizedVolume = normalizePlaybackVolume(volume)
+        defaults.setDouble(normalizedVolume.toDouble(), KEY_PLAYBACK_VOLUME)
+        mutablePlaybackVolume.value = normalizedVolume
     }
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
@@ -320,6 +330,15 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = defaults.stringForKey(key)
         return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+    }
+
+    private fun readPlaybackVolume(): Float {
+        val storedVolume = if (defaults.objectForKey(KEY_PLAYBACK_VOLUME) == null) {
+            DEFAULT_PLAYBACK_VOLUME
+        } else {
+            defaults.doubleForKey(KEY_PLAYBACK_VOLUME).toFloat()
+        }
+        return normalizePlaybackVolume(storedVolume)
     }
 
     private fun readSelectedTheme(): AppThemeId {
@@ -455,6 +474,7 @@ private fun NSData.toUtf8String(): String {
 
 private const val IOS_KEYCHAIN_SERVICE = "top.iwesley.lyn.music.credentials"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"

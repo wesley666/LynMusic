@@ -63,6 +63,7 @@ import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
+import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
 import top.iwesley.lyn.music.core.model.SAME_NAME_LRC_MAX_BYTES
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
@@ -74,6 +75,7 @@ import top.iwesley.lyn.music.core.model.appDisplayScalePresetOrDefault
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -290,6 +292,7 @@ private class AndroidAppPreferencesStore(
     private val mutableUseSambaCache = MutableStateFlow(
         preferences.getBoolean(KEY_USE_SAMBA_CACHE, false),
     )
+    private val mutablePlaybackVolume = MutableStateFlow(readPlaybackVolume())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, false),
     )
@@ -310,6 +313,7 @@ private class AndroidAppPreferencesStore(
     )
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
+    override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
@@ -322,6 +326,12 @@ private class AndroidAppPreferencesStore(
     override suspend fun setUseSambaCache(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_USE_SAMBA_CACHE, enabled).apply()
         mutableUseSambaCache.value = enabled
+    }
+
+    override suspend fun setPlaybackVolume(volume: Float) {
+        val normalizedVolume = normalizePlaybackVolume(volume)
+        preferences.edit().putFloat(KEY_PLAYBACK_VOLUME, normalizedVolume).apply()
+        mutablePlaybackVolume.value = normalizedVolume
     }
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
@@ -372,6 +382,10 @@ private class AndroidAppPreferencesStore(
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = preferences.getString(key, null)
         return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+    }
+
+    private fun readPlaybackVolume(): Float {
+        return normalizePlaybackVolume(preferences.getFloat(KEY_PLAYBACK_VOLUME, DEFAULT_PLAYBACK_VOLUME))
     }
 
     private fun readSelectedTheme(): AppThemeId {
@@ -1771,6 +1785,7 @@ private fun storeAndroidRemoteArtwork(
 private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
+private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_APP_DISPLAY_SCALE_PRESET = "app_display_scale_preset"
 private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
