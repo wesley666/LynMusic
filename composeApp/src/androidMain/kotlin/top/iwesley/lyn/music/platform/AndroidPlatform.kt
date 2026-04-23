@@ -127,11 +127,14 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             name = activity.applicationContext.getDatabasePath("lynmusic.db").absolutePath,
         ),
     )
-    val secureStore = AndroidCredentialStore(activity.applicationContext)
-    val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
-    val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
     GlobalDiagnosticLogger.installStrategy(logger)
+    val secureStore = AndroidCredentialStore(
+        context = activity.applicationContext,
+        logger = logger,
+    )
+    val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
+    val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val navidromeHttpClient = AndroidLyricsHttpClient()
     val platform = PlatformDescriptor(
         name = "Android",
@@ -214,6 +217,7 @@ private class AndroidLyricsHttpClient : LyricsHttpClient {
 
 private class AndroidCredentialStore(
     context: Context,
+    private val logger: DiagnosticLogger,
 ) : SecureCredentialStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.credentials", Context.MODE_PRIVATE)
@@ -233,8 +237,11 @@ private class AndroidCredentialStore(
         }
         return runCatching {
             decrypt(stored)
-        }.getOrElse {
-            preferences.edit().remove(key).apply()
+        }.getOrElse { throwable ->
+            logger.warn(CREDENTIAL_LOG_TAG) {
+                "Failed to decrypt credential for key=$key. Keeping the stored value so transient keystore " +
+                    "failures do not erase Navidrome credentials. cause=${throwable::class.simpleName ?: "Unknown"}"
+            }
             null
         }
     }
@@ -256,17 +263,23 @@ private class AndroidCredentialStore(
         require(payload.size > GCM_IV_LENGTH_BYTES) { "Encrypted credential payload is invalid." }
         val iv = payload.copyOfRange(0, GCM_IV_LENGTH_BYTES)
         val encrypted = payload.copyOfRange(GCM_IV_LENGTH_BYTES, payload.size)
+        val secretKey = getExistingSecretKeyOrNull()
+            ?: error("Android credential master key is unavailable for decryption.")
         val cipher = Cipher.getInstance(AES_TRANSFORMATION)
         cipher.init(
             Cipher.DECRYPT_MODE,
-            getOrCreateSecretKey(),
+            secretKey,
             GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv),
         )
         return cipher.doFinal(encrypted).decodeToString()
     }
 
+    private fun getExistingSecretKeyOrNull(): SecretKey? {
+        return keyStore.getKey(CREDENTIAL_KEY_ALIAS, null) as? SecretKey
+    }
+
     private fun getOrCreateSecretKey(): SecretKey {
-        val existing = keyStore.getKey(CREDENTIAL_KEY_ALIAS, null) as? SecretKey
+        val existing = getExistingSecretKeyOrNull()
         if (existing != null) return existing
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         generator.init(
@@ -1784,6 +1797,7 @@ private fun storeAndroidRemoteArtwork(
 
 private const val SAMBA_LOG_TAG = "Samba"
 private const val METADATA_LOG_TAG = "Metadata"
+private const val CREDENTIAL_LOG_TAG = "CredentialStore"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
