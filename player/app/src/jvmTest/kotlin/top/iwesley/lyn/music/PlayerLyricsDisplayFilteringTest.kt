@@ -1,0 +1,98 @@
+package top.iwesley.lyn.music
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
+import top.iwesley.lyn.music.domain.EnhancedLyricsPresentation
+
+class PlayerLyricsDisplayFilteringTest {
+    @Test
+    fun `build visible lyrics lines filters structure tags and keeps raw indices aligned`() {
+        val lyrics = syncedLyricsDocument(
+            LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
+            LyricsLine(timestampMs = 2_000L, text = "第一句"),
+            LyricsLine(timestampMs = 3_000L, text = "[Chorus]"),
+            LyricsLine(timestampMs = 4_000L, text = "第二句"),
+        )
+        val enhancedPresentation = EnhancedLyricsPresentation(
+            lines = listOf(
+                EnhancedLyricsDisplayLine(text = "[Verse]", lineStartTimeMs = 1_000L),
+                EnhancedLyricsDisplayLine(text = "第一句", lineStartTimeMs = 2_000L, translationText = "line 1"),
+                EnhancedLyricsDisplayLine(text = "[Chorus]", lineStartTimeMs = 3_000L),
+                EnhancedLyricsDisplayLine(text = "第二句", lineStartTimeMs = 4_000L, translationText = "line 2"),
+            ),
+        )
+
+        val visibleLines = buildVisiblePlayerLyricsLines(lyrics, enhancedPresentation)
+
+        assertEquals(listOf(1, 3), visibleLines.map { it.rawIndex })
+        assertEquals(listOf("第一句", "第二句"), visibleLines.map { it.line.text })
+        assertEquals(listOf("line 1", "line 2"), visibleLines.map { it.enhancedLine?.translationText })
+    }
+
+    @Test
+    fun `visible highlighted index skips hidden structure tags`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
+                LyricsLine(timestampMs = 2_000L, text = "第一句"),
+                LyricsLine(timestampMs = 3_000L, text = "第二句"),
+                LyricsLine(timestampMs = 4_000L, text = "[Outro]"),
+            ),
+        )
+
+        assertEquals(0, resolveVisiblePlayerLyricsHighlightedIndex(visibleLines, highlightedRawIndex = 0))
+        assertEquals(1, resolveVisiblePlayerLyricsHighlightedIndex(visibleLines, highlightedRawIndex = 2))
+        assertEquals(1, resolveVisiblePlayerLyricsHighlightedIndex(visibleLines, highlightedRawIndex = 3))
+        assertEquals(-1, resolveVisiblePlayerLyricsHighlightedIndex(visibleLines, highlightedRawIndex = -1))
+    }
+
+    @Test
+    fun `visible lyrics scroll target respects synced and plain lyrics behavior after filtering`() {
+        val syncedLyrics = syncedLyricsDocument(
+            LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
+            LyricsLine(timestampMs = 2_000L, text = "第一句"),
+        )
+        val syncedVisibleLines = buildVisiblePlayerLyricsLines(syncedLyrics)
+        assertEquals(
+            0,
+            resolveVisiblePlayerLyricsScrollTarget(
+                lyrics = syncedLyrics,
+                visibleLines = syncedVisibleLines,
+                highlightedRawIndex = -1,
+            ),
+        )
+
+        val plainLyrics = plainLyricsDocument(
+            LyricsLine(timestampMs = null, text = "[Verse]"),
+            LyricsLine(timestampMs = null, text = "第一句"),
+        )
+        val plainVisibleLines = buildVisiblePlayerLyricsLines(plainLyrics)
+        assertNull(
+            resolveVisiblePlayerLyricsScrollTarget(
+                lyrics = plainLyrics,
+                visibleLines = plainVisibleLines,
+                highlightedRawIndex = -1,
+            ),
+        )
+    }
+
+    private fun syncedLyricsDocument(vararg lines: LyricsLine): LyricsDocument {
+        return LyricsDocument(
+            lines = lines.toList(),
+            sourceId = "test-source",
+            rawPayload = "synced",
+        )
+    }
+
+    private fun plainLyricsDocument(vararg lines: LyricsLine): LyricsDocument {
+        return LyricsDocument(
+            lines = lines.toList(),
+            sourceId = "test-source",
+            rawPayload = "plain",
+        )
+    }
+}

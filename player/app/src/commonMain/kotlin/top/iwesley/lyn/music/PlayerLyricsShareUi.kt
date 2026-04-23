@@ -132,11 +132,29 @@ internal fun PlayerLyricsPane(
     val lyricsPrimaryTextColor = Color.White
     val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
     var showTrackInfoDialog by rememberSaveable(track.id, mobilePlayback) { mutableStateOf(false) }
-    LaunchedEffect(track.id, state.lyrics, state.highlightedLineIndex) {
-        val lyrics = state.lyrics ?: return@LaunchedEffect
-        val targetIndex =
-            resolveLyricsScrollTarget(lyrics, state.highlightedLineIndex) ?: return@LaunchedEffect
-        if (targetIndex !in lyrics.lines.indices) return@LaunchedEffect
+    val lyrics = state.lyrics
+    val enhancedLyricsPresentation = remember(lyrics) {
+        lyrics?.let { document ->
+            parseEnhancedLyricsPresentation(
+                rawPayload = document.rawPayload,
+                fallbackDocument = document,
+            )
+        }
+    }
+    val visibleLyricsLines = remember(lyrics, enhancedLyricsPresentation) {
+        lyrics?.let { buildVisiblePlayerLyricsLines(it, enhancedLyricsPresentation) }.orEmpty()
+    }
+    val highlightedVisibleIndex = remember(visibleLyricsLines, state.highlightedLineIndex) {
+        resolveVisiblePlayerLyricsHighlightedIndex(visibleLyricsLines, state.highlightedLineIndex)
+    }
+    LaunchedEffect(track.id, lyrics, state.highlightedLineIndex, visibleLyricsLines) {
+        val targetLyrics = lyrics ?: return@LaunchedEffect
+        val targetIndex = resolveVisiblePlayerLyricsScrollTarget(
+            lyrics = targetLyrics,
+            visibleLines = visibleLyricsLines,
+            highlightedRawIndex = state.highlightedLineIndex,
+        ) ?: return@LaunchedEffect
+        if (targetIndex !in visibleLyricsLines.indices) return@LaunchedEffect
         if (listState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
             listState.scrollToItem(targetIndex)
             withFrameNanos { }
@@ -252,16 +270,7 @@ internal fun PlayerLyricsPane(
                     }
                 }
             }
-            val lyrics = state.lyrics
-            val enhancedLyricsPresentation = remember(lyrics) {
-                lyrics?.let { document ->
-                    parseEnhancedLyricsPresentation(
-                        rawPayload = document.rawPayload,
-                        fallbackDocument = document,
-                    )
-                }
-            }
-            if (lyrics == null) {
+            if (lyrics == null || visibleLyricsLines.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     EmptyStateCard(
                         title = "暂时没有歌词",
@@ -280,26 +289,27 @@ internal fun PlayerLyricsPane(
                         contentPadding = PaddingValues(vertical = centerPadding),
                         verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
                     ) {
-                        itemsIndexed(lyrics.lines) { index, line ->
-                            val enhancedLine = enhancedLyricsPresentation?.lines?.getOrNull(index)
+                        itemsIndexed(visibleLyricsLines) { index, visibleLine ->
+                            val line = visibleLine.line
+                            val enhancedLine = visibleLine.enhancedLine
                             val translationText = enhancedLine?.translationText
                                 ?.trim()
                                 ?.takeIf { it.isNotEmpty() }
                             val currentLyricsPositionMs = state.snapshot.positionMs + lyrics.offsetMs
-                            val distance = if (state.highlightedLineIndex >= 0) {
-                                abs(index - state.highlightedLineIndex)
+                            val distance = if (highlightedVisibleIndex >= 0) {
+                                abs(index - highlightedVisibleIndex)
                             } else {
                                 Int.MAX_VALUE
                             }
                             val targetAlpha = when {
-                                state.highlightedLineIndex < 0 -> 0.6f
+                                highlightedVisibleIndex < 0 -> 0.6f
                                 distance == 0 -> 1f
                                 distance == 1 -> 0.72f
                                 distance == 2 -> 0.5f
                                 else -> 0.34f
                             }
                             val targetScale = when {
-                                state.highlightedLineIndex < 0 -> 1f
+                                highlightedVisibleIndex < 0 -> 1f
                                 distance == 0 -> 1.08f
                                 distance == 1 -> 1.01f
                                 else -> 1f
@@ -307,7 +317,7 @@ internal fun PlayerLyricsPane(
                             val animatedAlpha by animateFloatAsState(targetValue = targetAlpha)
                             val animatedScale by animateFloatAsState(targetValue = targetScale)
                             val animatedColor by animateColorAsState(
-                                targetValue = if (index == state.highlightedLineIndex) {
+                                targetValue = if (index == highlightedVisibleIndex) {
                                     lyricsPrimaryTextColor
                                 } else {
                                     lyricsPrimaryTextColor
@@ -320,7 +330,7 @@ internal fun PlayerLyricsPane(
                                     scaleX = animatedScale,
                                     scaleY = animatedScale,
                                 )
-                            val isHighlighted = index == state.highlightedLineIndex
+                            val isHighlighted = index == highlightedVisibleIndex
                             val hasEnhancedSegments = enhancedLine?.segments?.isNotEmpty() == true
                             if (translationText != null) {
                                 Column(
@@ -1124,6 +1134,15 @@ internal fun LyricsShareOverlay(
         artworkBitmap = artworkBitmap,
         enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
     )?.toArtworkTintTheme()
+    val visibleShareLyricsLines = remember(lyrics) {
+        buildVisiblePlayerLyricsLines(lyrics)
+    }
+    val selectedVisibleShareIndices = remember(visibleShareLyricsLines, state.selectedLyricsLineIndices) {
+        resolveVisiblePlayerLyricsSelectedIndices(
+            visibleLines = visibleShareLyricsLines,
+            selectedRawIndices = state.selectedLyricsLineIndices,
+        )
+    }
     val primaryTextColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = shellColors.secondaryText
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
@@ -1260,14 +1279,12 @@ internal fun LyricsShareOverlay(
                             horizontalArrangement = Arrangement.spacedBy(18.dp),
                         ) {
                             LyricsShareSelectionPane(
-                                lyricsLines = lyrics.lines.map { it.text },
-                                selectedIndices = state.selectedLyricsLineIndices,
+                                lyricsLines = visibleShareLyricsLines.map { it.line.text },
+                                selectedIndices = selectedVisibleShareIndices,
                                 onToggle = {
-                                    onPlayerIntent(
-                                        PlayerIntent.ToggleLyricsLineSelection(
-                                            it
-                                        )
-                                    )
+                                    visibleShareLyricsLines.getOrNull(it)?.let { line ->
+                                        onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(line.rawIndex))
+                                    }
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -1303,14 +1320,12 @@ internal fun LyricsShareOverlay(
                                 isCompactLayout = true
                             )
                             LyricsShareSelectionPane(
-                                lyricsLines = lyrics.lines.map { it.text },
-                                selectedIndices = state.selectedLyricsLineIndices,
+                                lyricsLines = visibleShareLyricsLines.map { it.line.text },
+                                selectedIndices = selectedVisibleShareIndices,
                                 onToggle = {
-                                    onPlayerIntent(
-                                        PlayerIntent.ToggleLyricsLineSelection(
-                                            it
-                                        )
-                                    )
+                                    visibleShareLyricsLines.getOrNull(it)?.let { line ->
+                                        onPlayerIntent(PlayerIntent.ToggleLyricsLineSelection(line.rawIndex))
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()

@@ -80,6 +80,66 @@ class PlayerStoreLyricsShareTest {
     }
 
     @Test
+    fun `open lyrics share skips structure tag and preselects next visible line`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeLyricsSharePlatformService()
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(structuredTagLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(setOf(1), state.selectedLyricsLineIndices)
+        assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertEquals(1, shareService.buildPreviewCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `toggling structure tag line is ignored for lyrics share selection`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeLyricsSharePlatformService()
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(structuredTagLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.ToggleLyricsLineSelection(0))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(setOf(1), state.selectedLyricsLineIndices)
+        assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertEquals(1, shareService.buildPreviewCalls)
+        scope.cancel()
+    }
+
+    @Test
     fun `toggling lyrics selection rebuilds preview`() = runTest {
         val track = sampleTrack("track-1", "第一首")
         val lyrics = syncedLyrics()
@@ -1010,6 +1070,19 @@ class PlayerStoreLyricsShareTest {
             ),
             sourceId = "lyrics-2",
             rawPayload = "纯文本第一句\n\n纯文本第二句",
+        )
+    }
+
+    private fun structuredTagLyrics(): LyricsDocument {
+        return LyricsDocument(
+            lines = listOf(
+                LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
+                LyricsLine(timestampMs = 2_000L, text = "第一句"),
+                LyricsLine(timestampMs = 3_000L, text = "[Chorus]"),
+                LyricsLine(timestampMs = 4_000L, text = "第二句"),
+            ),
+            sourceId = "lyrics-3",
+            rawPayload = "[00:01.00][Verse]\n[00:02.00]第一句\n[00:03.00][Chorus]\n[00:04.00]第二句",
         )
     }
 }

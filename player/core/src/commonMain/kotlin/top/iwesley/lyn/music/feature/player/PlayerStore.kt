@@ -348,10 +348,10 @@ class PlayerStore(
                     ?.displayName
             }
         }
-        val defaultSelection = currentState.highlightedLineIndex
-            .takeIf { index ->
-                index in lyrics.lines.indices && lyrics.lines[index].text.trim().isNotEmpty()
-            }?.let { setOf(it) }.orEmpty()
+        val defaultSelection = resolveDefaultLyricsShareSelection(
+            lyrics = lyrics,
+            highlightedLineIndex = currentState.highlightedLineIndex,
+        )?.let(::setOf).orEmpty()
         invalidateLyricsSharePreviewRequests()
         updateState {
             it.copy(
@@ -455,7 +455,7 @@ class PlayerStore(
     private suspend fun toggleLyricsLineSelection(index: Int) {
         val lyrics = state.value.lyrics ?: return
         val line = lyrics.lines.getOrNull(index)?.text?.trim().orEmpty()
-        if (line.isEmpty()) return
+        if (!isSelectableLyricsShareLine(line)) return
         val updatedSelection = state.value.selectedLyricsLineIndices.toMutableSet().also { selected ->
             if (!selected.add(index)) {
                 selected.remove(index)
@@ -761,7 +761,7 @@ class PlayerStore(
         val selectedLines = lyrics?.lines.orEmpty()
             .mapIndexedNotNull { index, line ->
                 if (index !in selectedLineIndices) return@mapIndexedNotNull null
-                line.text.trim().takeIf { it.isNotEmpty() }
+                line.text.trim().takeIf(::isSelectableLyricsShareLine)
             }
         if (selectedLines.isEmpty()) return null
         return LyricsShareCardModel(
@@ -989,6 +989,32 @@ class PlayerStore(
         return syncedLines.indexOfLast { line ->
             line.timestampMs?.let { it <= target } ?: false
         }
+    }
+
+    private fun resolveDefaultLyricsShareSelection(
+        lyrics: LyricsDocument,
+        highlightedLineIndex: Int,
+    ): Int? {
+        if (highlightedLineIndex !in lyrics.lines.indices) return null
+        if (isSelectableLyricsShareLine(lyrics.lines[highlightedLineIndex].text)) {
+            return highlightedLineIndex
+        }
+        for (index in highlightedLineIndex + 1 until lyrics.lines.size) {
+            if (isSelectableLyricsShareLine(lyrics.lines[index].text)) {
+                return index
+            }
+        }
+        for (index in highlightedLineIndex - 1 downTo 0) {
+            if (isSelectableLyricsShareLine(lyrics.lines[index].text)) {
+                return index
+            }
+        }
+        return null
+    }
+
+    private fun isSelectableLyricsShareLine(text: String): Boolean {
+        val normalized = text.trim()
+        return normalized.isNotEmpty() && !isPlayerLyricsStructureTagLine(normalized)
     }
 
     private fun shouldLoadLyrics(track: Track, requestKey: String?): Boolean {
