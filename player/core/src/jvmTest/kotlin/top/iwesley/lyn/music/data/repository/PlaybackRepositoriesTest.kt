@@ -38,6 +38,139 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 class PlaybackRepositoriesTest {
 
     @Test
+    fun `natural completion wraps to first track in order mode`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 2)
+            advanceUntilIdle()
+            val loadCountBeforeCompletion = gateway.loadCalls.size
+
+            gateway.emitCompletion()
+            advanceUntilIdle()
+
+            assertEquals(0, repository.snapshot.value.currentIndex)
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(true, repository.snapshot.value.isPlaying)
+            assertEquals(loadCountBeforeCompletion + 1, gateway.loadCalls.size)
+            assertEquals("track-1", gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `manual previous wraps to last track at queue start in order mode`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            repository.skipPrevious()
+            advanceUntilIdle()
+
+            assertEquals(2, repository.snapshot.value.currentIndex)
+            assertEquals("track-3", repository.snapshot.value.currentTrack?.id)
+            assertEquals(emptyList(), gateway.seekCalls)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `manual previous seeks to current track start after five seconds in order mode`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+            val loadCountBeforeSkip = gateway.loadCalls.size
+            gateway.updateState { it.copy(positionMs = 6_000L, isPlaying = true) }
+            advanceUntilIdle()
+
+            repository.skipPrevious()
+            advanceUntilIdle()
+
+            assertEquals(0, repository.snapshot.value.currentIndex)
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(0L, repository.snapshot.value.positionMs)
+            assertEquals(listOf(0L), gateway.seekCalls)
+            assertEquals(loadCountBeforeSkip, gateway.loadCalls.size)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `natural completion still advances in shuffle mode`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks().take(2), startIndex = 0)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+
+            gateway.emitCompletion()
+            advanceUntilIdle()
+
+            assertEquals(1, repository.snapshot.value.currentIndex)
+            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `manual next advances to next track in repeat one`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()

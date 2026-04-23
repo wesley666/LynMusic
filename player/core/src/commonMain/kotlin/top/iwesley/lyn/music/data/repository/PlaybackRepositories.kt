@@ -253,6 +253,7 @@ class DefaultPlaybackRepository(
             val previousIndex = when {
                 snapshot.mode == PlaybackMode.SHUFFLE && snapshot.queue.size > 1 -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
                 snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
+                snapshot.mode == PlaybackMode.ORDER -> snapshot.queue.lastIndex
                 else -> 0
             }
             loadRequest = loadIndexLocked(previousIndex, playWhenReady = true)
@@ -339,24 +340,18 @@ class DefaultPlaybackRepository(
                 if (autoTriggered) {
                     snapshot.currentIndex
                 } else {
-                    nextSequentialIndex(snapshot, autoTriggered = false) ?: return null
+                    nextSequentialIndex(snapshot)
                 }
             }
             PlaybackMode.SHUFFLE -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
-            PlaybackMode.ORDER -> nextSequentialIndex(snapshot, autoTriggered) ?: return null
+            PlaybackMode.ORDER -> nextSequentialIndex(snapshot)
         }
         return loadIndexLocked(nextIndex, playWhenReady = true)
     }
 
-    private suspend fun nextSequentialIndex(snapshot: PlaybackSnapshot, autoTriggered: Boolean): Int? {
+    private fun nextSequentialIndex(snapshot: PlaybackSnapshot): Int {
         if (snapshot.currentIndex + 1 <= snapshot.queue.lastIndex) {
             return snapshot.currentIndex + 1
-        }
-        if (autoTriggered) {
-            gateway.pause()
-            mutableSnapshot.update { it.copy(isPlaying = false, positionMs = 0L) }
-            persistSnapshot()
-            return null
         }
         return 0
     }
