@@ -95,6 +95,7 @@ import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
+import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
@@ -132,7 +133,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     val secureStore = AndroidCredentialStore(
         context = activity.applicationContext,
         logger = logger,
-    )
+    ).withSecureInMemoryCache()
     val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
     val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val navidromeHttpClient = AndroidLyricsHttpClient()

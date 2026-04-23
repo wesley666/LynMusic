@@ -94,6 +94,7 @@ import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
+import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
@@ -137,7 +138,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     logger.info("Desktop") {
         "你好 process pid=${ProcessHandle.current().pid()}"
     }
-    val secureStore = createJvmSecureCredentialStore(logger)
+    val secureStore = createJvmSecureCredentialStore(logger).withSecureInMemoryCache()
     val appPreferencesStore = JvmAppPreferencesStore()
     val lyricsShareFontLibraryPlatformService = JvmLyricsShareFontLibraryPlatformService()
     val playbackGateway = JvmPlaybackGateway(

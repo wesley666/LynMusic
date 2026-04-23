@@ -52,6 +52,7 @@ import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
@@ -106,7 +107,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             name = documentDirectory() + "/lynmusic.db",
         ),
     )
-    val secureStore = IosKeychainCredentialStore()
+    val secureStore = IosKeychainCredentialStore().withSecureInMemoryCache()
     val appPreferencesStore = IosAppPreferencesStore()
     val navidromeHttpClient = IosLyricsHttpClient()
     val platform = PlatformDescriptor(
