@@ -407,8 +407,8 @@ private fun LibraryBrowserTab(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth()
+                        .padding(bottom = 10.dp),
                         //.height(56.dp)
-                    ,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
