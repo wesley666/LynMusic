@@ -275,7 +275,7 @@ class PlayerStore(
             updateState { it.copy(isQueueVisible = false) }
             return
         }
-        playbackRepository.playTracks(snapshot.queue, index)
+        playbackRepository.playQueueIndex(index)
         updateState { it.copy(isQueueVisible = false) }
     }
 

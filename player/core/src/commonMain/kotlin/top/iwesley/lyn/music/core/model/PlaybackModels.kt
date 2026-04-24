@@ -10,6 +10,7 @@ enum class PlaybackMode {
 
 data class PlaybackSnapshot(
     val queue: List<Track> = emptyList(),
+    val orderedQueue: List<Track> = queue,
     val currentIndex: Int = -1,
     val mode: PlaybackMode = PlaybackMode.ORDER,
     val isHydratingPlayback: Boolean = false,

@@ -10,6 +10,7 @@ import kotlin.test.assertTrue
 import top.iwesley.lyn.music.data.db.MIGRATION_1_2
 import top.iwesley.lyn.music.data.db.MIGRATION_2_3
 import top.iwesley.lyn.music.data.db.MIGRATION_4_5
+import top.iwesley.lyn.music.data.db.MIGRATION_8_9
 
 class DatabaseMigrationTest {
 
@@ -121,6 +122,41 @@ class DatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 8 to 9 adds ordered queue track ids with default`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE playback_queue_snapshot (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    queueTrackIds TEXT NOT NULL,
+                    currentIndex INTEGER NOT NULL,
+                    positionMs INTEGER NOT NULL,
+                    mode TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            connection.execSql(
+                """
+                INSERT INTO playback_queue_snapshot (
+                    id, queueTrackIds, currentIndex, positionMs, mode, updatedAt
+                ) VALUES (
+                    0, 'track-1,track-2', 1, 12000, 'SHUFFLE', 1
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_8_9.migrate(connection)
+
+            assertTrue(connection.hasColumn("playback_queue_snapshot", "orderedQueueTrackIds"))
+            assertEquals("", connection.singleText("SELECT orderedQueueTrackIds FROM playback_queue_snapshot WHERE id = 0"))
+        }
+    }
+
     private fun SQLiteConnection.execSql(sql: String) {
         prepare(sql).use { statement ->
             statement.step()
@@ -142,6 +178,13 @@ class DatabaseMigrationTest {
         prepare(sql).use { statement ->
             check(statement.step()) { "Expected a row for query: $sql" }
             return statement.getLong(0)
+        }
+    }
+
+    private fun SQLiteConnection.singleText(sql: String): String {
+        prepare(sql).use { statement ->
+            check(statement.step()) { "Expected a row for query: $sql" }
+            return statement.getText(0)
         }
     }
 

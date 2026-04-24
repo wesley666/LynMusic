@@ -80,6 +80,7 @@ data class TrackEntity(
 data class PlaybackQueueSnapshotEntity(
     @PrimaryKey val id: Int = 0,
     val queueTrackIds: String,
+    val orderedQueueTrackIds: String = "",
     val currentIndex: Int,
     val positionMs: Long,
     val mode: String,
@@ -500,7 +501,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 8,
+    version = 9,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -535,6 +536,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_5_6)
         .addMigrations(MIGRATION_6_7)
         .addMigrations(MIGRATION_7_8)
+        .addMigrations(MIGRATION_8_9)
         .fallbackToDestructiveMigration(true)
         .build()
 }
@@ -675,6 +677,17 @@ val MIGRATION_7_8: Migration = object : Migration(7, 8) {
             """
             ALTER TABLE import_source
             ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            ALTER TABLE playback_queue_snapshot
+            ADD COLUMN orderedQueueTrackIds TEXT NOT NULL DEFAULT ''
             """.trimIndent(),
         )
     }

@@ -42,6 +42,7 @@ interface PlaybackRepository {
 
     suspend fun hydratePersistedQueueIfNeeded()
     suspend fun playTracks(tracks: List<Track>, startIndex: Int)
+    suspend fun playQueueIndex(index: Int)
     suspend fun togglePlayPause()
     suspend fun skipNext()
     suspend fun skipPrevious()
@@ -59,6 +60,7 @@ class DefaultPlaybackRepository(
     private val scope: CoroutineScope,
     private val systemPlaybackControlsPlatformService: SystemPlaybackControlsPlatformService = UnsupportedSystemPlaybackControlsPlatformService,
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
+    private val shuffleRandom: Random = Random.Default,
     hydrateImmediately: Boolean = true,
 ) : PlaybackRepository {
     private val initialPlaybackVolume = normalizePlaybackVolume(playbackPreferencesStore.playbackVolume.value)
@@ -112,19 +114,31 @@ class DefaultPlaybackRepository(
                 var currentTrackChanged = false
                 mutableSnapshot.update { snapshot ->
                     if (snapshot.queue.isEmpty()) return@update snapshot
+                    var queueChanged = false
                     val updatedQueue = snapshot.queue.mapIndexed { index, track ->
                         val updated = tracksById[track.id] ?: track
                         if (updated != track) {
-                            snapshotChanged = true
+                            queueChanged = true
                             if (index == snapshot.currentIndex) {
                                 currentTrackChanged = true
                             }
                         }
                         updated
                     }
+                    val orderedQueue = snapshot.orderedQueue.ifEmpty { snapshot.queue }
+                    var orderedQueueChanged = false
+                    val updatedOrderedQueue = orderedQueue.map { track ->
+                        val updated = tracksById[track.id] ?: track
+                        if (updated != track) {
+                            orderedQueueChanged = true
+                        }
+                        updated
+                    }
+                    snapshotChanged = queueChanged || orderedQueueChanged
                     if (!snapshotChanged) return@update snapshot
                     snapshot.copy(
                         queue = updatedQueue,
+                        orderedQueue = updatedOrderedQueue,
                         metadataTitle = if (currentTrackChanged) null else snapshot.metadataTitle,
                         metadataArtistName = if (currentTrackChanged) null else snapshot.metadataArtistName,
                         metadataAlbumTitle = if (currentTrackChanged) null else snapshot.metadataAlbumTitle,
@@ -191,26 +205,44 @@ class DefaultPlaybackRepository(
         var loadRequest: PlaybackLoadRequest? = null
         playbackCommandMutex.withLock {
             if (tracks.isEmpty()) return@withLock
+            val currentSnapshot = mutableSnapshot.value
             val index = startIndex.coerceIn(0, tracks.lastIndex)
+            val (queue, currentIndex) = if (currentSnapshot.mode == PlaybackMode.SHUFFLE) {
+                shuffledQueueForCurrent(tracks, index)
+            } else {
+                tracks to index
+            }
+            val target = queue[currentIndex]
             mutableSnapshot.value = PlaybackSnapshot(
-                queue = tracks,
-                currentIndex = index,
-                mode = mutableSnapshot.value.mode,
+                queue = queue,
+                orderedQueue = tracks,
+                currentIndex = currentIndex,
+                mode = currentSnapshot.mode,
                 isHydratingPlayback = false,
                 isPlaying = true,
                 positionMs = 0L,
-                durationMs = tracks[index].durationMs,
-                volume = mutableSnapshot.value.volume,
+                durationMs = target.durationMs,
+                volume = currentSnapshot.volume,
                 metadataTitle = null,
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
                 metadataArtworkLocator = null,
             )
             loadRequest = createLoadRequest(
-                track = tracks[index],
+                track = target,
                 playWhenReady = true,
                 startPositionMs = 0L,
             )
+        }
+        loadRequest?.let {
+            loadGatewaySafely(it)
+            persistSnapshot()
+        }
+    }
+
+    override suspend fun playQueueIndex(index: Int) {
+        val loadRequest = playbackCommandMutex.withLock {
+            loadIndexLocked(index, playWhenReady = true)
         }
         loadRequest?.let {
             loadGatewaySafely(it)
@@ -251,7 +283,7 @@ class DefaultPlaybackRepository(
                 return@withLock
             }
             val previousIndex = when {
-                snapshot.mode == PlaybackMode.SHUFFLE && snapshot.queue.size > 1 -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
+                snapshot.mode == PlaybackMode.SHUFFLE -> previousSequentialIndex(snapshot)
                 snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
                 snapshot.mode == PlaybackMode.ORDER -> snapshot.queue.lastIndex
                 else -> 0
@@ -283,12 +315,13 @@ class DefaultPlaybackRepository(
 
     override suspend fun cycleMode() {
         playbackCommandMutex.withLock {
-            val nextMode = when (mutableSnapshot.value.mode) {
-                PlaybackMode.ORDER -> PlaybackMode.SHUFFLE
-                PlaybackMode.SHUFFLE -> PlaybackMode.REPEAT_ONE
-                PlaybackMode.REPEAT_ONE -> PlaybackMode.ORDER
+            val snapshot = mutableSnapshot.value
+            val nextSnapshot = when (snapshot.mode) {
+                PlaybackMode.ORDER -> snapshot.toShuffleSnapshot()
+                PlaybackMode.SHUFFLE -> snapshot.copy(mode = PlaybackMode.REPEAT_ONE)
+                PlaybackMode.REPEAT_ONE -> snapshot.toOrderSnapshot()
             }
-            mutableSnapshot.update { it.copy(mode = nextMode) }
+            mutableSnapshot.value = nextSnapshot
             persistSnapshot()
         }
     }
@@ -299,14 +332,23 @@ class DefaultPlaybackRepository(
             val currentTrack = snapshot.currentTrack ?: return
             val currentIndex = snapshot.currentIndex
             if (currentIndex !in snapshot.queue.indices) return
+            val updatedCurrentTrack = currentTrack.copy(
+                artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
+            )
             val updatedQueue = snapshot.queue.toMutableList().also { queue ->
-                queue[currentIndex] = currentTrack.copy(
-                    artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
-                )
+                queue[currentIndex] = updatedCurrentTrack
+            }
+            val updatedOrderedQueue = snapshot.orderedQueue.map { track ->
+                if (track.id == currentTrack.id) {
+                    track.copy(artworkLocator = artworkLocator ?: track.artworkLocator)
+                } else {
+                    track
+                }
             }
             mutableSnapshot.update {
                 it.copy(
                     queue = updatedQueue,
+                    orderedQueue = updatedOrderedQueue.ifEmpty { updatedQueue },
                     metadataArtworkLocator = artworkLocator ?: it.metadataArtworkLocator,
                 )
             }
@@ -343,7 +385,7 @@ class DefaultPlaybackRepository(
                     nextSequentialIndex(snapshot)
                 }
             }
-            PlaybackMode.SHUFFLE -> randomIndex(snapshot.queue.lastIndex, snapshot.currentIndex)
+            PlaybackMode.SHUFFLE -> nextSequentialIndex(snapshot)
             PlaybackMode.ORDER -> nextSequentialIndex(snapshot)
         }
         return loadIndexLocked(nextIndex, playWhenReady = true)
@@ -354,6 +396,13 @@ class DefaultPlaybackRepository(
             return snapshot.currentIndex + 1
         }
         return 0
+    }
+
+    private fun previousSequentialIndex(snapshot: PlaybackSnapshot): Int {
+        if (snapshot.currentIndex - 1 >= 0) {
+            return snapshot.currentIndex - 1
+        }
+        return snapshot.queue.lastIndex
     }
 
     private suspend fun loadIndexLocked(index: Int, playWhenReady: Boolean): PlaybackLoadRequest? {
@@ -401,19 +450,26 @@ class DefaultPlaybackRepository(
             mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
             return
         }
-        val ids = persisted.queueTrackIds.split(',').filter { it.isNotBlank() }
-        if (ids.isEmpty()) {
+        val queueIds = persisted.queueTrackIds.split(',').filter { it.isNotBlank() }
+        if (queueIds.isEmpty()) {
             mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
             return
         }
+        val orderedQueueIds = persisted.orderedQueueTrackIds
+            .split(',')
+            .filter { it.isNotBlank() }
+            .ifEmpty { queueIds }
+        val allIds = (queueIds + orderedQueueIds).distinct()
         val artworkOverrides = manualArtworkOverridesByTrackId(
-            ids.mapNotNull { trackId ->
+            allIds.mapNotNull { trackId ->
                 database.lyricsCacheDao().getByTrackIdAndSourceId(trackId, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
             },
         )
-        val tracks = database.trackDao().getByIds(ids)
+        val tracksById = database.trackDao().getByIds(allIds)
             .associateBy { it.id }
-            .let { indexed -> ids.mapNotNull { trackId -> indexed[trackId]?.toDomain(artworkOverrides[trackId]) } }
+            .mapValues { (trackId, entity) -> entity.toDomain(artworkOverrides[trackId]) }
+        val tracks = queueIds.mapNotNull { trackId -> tracksById[trackId] }
+        val orderedTracks = orderedQueueIds.mapNotNull { trackId -> tracksById[trackId] }.ifEmpty { tracks }
         if (tracks.isEmpty()) {
             mutableSnapshot.update { it.copy(isHydratingPlayback = false) }
             return
@@ -429,6 +485,7 @@ class DefaultPlaybackRepository(
                 shouldApplyRestore = true
                 mutableSnapshot.value = PlaybackSnapshot(
                     queue = tracks,
+                    orderedQueue = orderedTracks,
                     currentIndex = index,
                     mode = mode,
                     isHydratingPlayback = false,
@@ -520,6 +577,7 @@ class DefaultPlaybackRepository(
         database.playbackQueueSnapshotDao().upsert(
             PlaybackQueueSnapshotEntity(
                 queueTrackIds = snapshot.queue.joinToString(",") { it.id },
+                orderedQueueTrackIds = snapshot.orderedQueue.ifEmpty { snapshot.queue }.joinToString(",") { it.id },
                 currentIndex = snapshot.currentIndex,
                 positionMs = snapshot.positionMs,
                 mode = snapshot.mode.name,
@@ -528,13 +586,54 @@ class DefaultPlaybackRepository(
         )
     }
 
-    private fun randomIndex(lastIndex: Int, currentIndex: Int): Int {
-        if (lastIndex <= 0) return currentIndex.coerceAtLeast(0)
-        var next = currentIndex
-        while (next == currentIndex) {
-            next = Random.nextInt(0, lastIndex + 1)
+    private fun PlaybackSnapshot.toShuffleSnapshot(): PlaybackSnapshot {
+        val orderedQueue = this.orderedQueue.ifEmpty { queue }
+        if (orderedQueue.isEmpty()) {
+            return copy(mode = PlaybackMode.SHUFFLE, orderedQueue = orderedQueue)
         }
-        return next
+        val currentTrack = this.currentTrack
+        val naturalIndex = currentTrack
+            ?.let { track -> orderedQueue.indexOfFirst { it.id == track.id } }
+            ?.takeIf { it >= 0 }
+            ?: currentIndex.coerceIn(0, orderedQueue.lastIndex)
+        val (shuffledQueue, shuffledIndex) = shuffledQueueForCurrent(orderedQueue, naturalIndex)
+        return copy(
+            queue = shuffledQueue,
+            orderedQueue = orderedQueue,
+            currentIndex = shuffledIndex,
+            mode = PlaybackMode.SHUFFLE,
+            durationMs = shuffledQueue[shuffledIndex].durationMs,
+        )
+    }
+
+    private fun PlaybackSnapshot.toOrderSnapshot(): PlaybackSnapshot {
+        val orderedQueue = this.orderedQueue.ifEmpty { queue }
+        if (orderedQueue.isEmpty()) {
+            return copy(mode = PlaybackMode.ORDER, orderedQueue = orderedQueue)
+        }
+        val currentTrack = this.currentTrack
+        val orderedIndex = currentTrack
+            ?.let { track -> orderedQueue.indexOfFirst { it.id == track.id } }
+            ?.takeIf { it >= 0 }
+            ?: currentIndex.coerceIn(0, orderedQueue.lastIndex)
+        return copy(
+            queue = orderedQueue,
+            orderedQueue = orderedQueue,
+            currentIndex = orderedIndex,
+            mode = PlaybackMode.ORDER,
+            durationMs = orderedQueue[orderedIndex].durationMs,
+        )
+    }
+
+    private fun shuffledQueueForCurrent(
+        orderedQueue: List<Track>,
+        startIndex: Int,
+    ): Pair<List<Track>, Int> {
+        if (orderedQueue.isEmpty()) return emptyList<Track>() to -1
+        val currentIndex = startIndex.coerceIn(0, orderedQueue.lastIndex)
+        val currentTrack = orderedQueue[currentIndex]
+        val remainingTracks = orderedQueue.filterIndexed { index, _ -> index != currentIndex }
+        return (listOf(currentTrack) + remainingTracks.shuffled(shuffleRandom)) to 0
     }
 
     private fun logDisplayArtwork(snapshot: PlaybackSnapshot) {

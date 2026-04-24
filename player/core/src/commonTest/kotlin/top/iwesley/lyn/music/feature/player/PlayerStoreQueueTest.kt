@@ -56,8 +56,8 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayQueueIndex(1))
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1", "track-2", "track-3"), playbackRepository.lastPlayTracks?.map { it.id })
-        assertEquals(1, playbackRepository.lastPlayStartIndex)
+        assertEquals(1, playbackRepository.lastPlayQueueIndex)
+        assertEquals(null, playbackRepository.lastPlayTracks)
         assertEquals("track-2", store.state.value.snapshot.currentTrack?.id)
         assertFalse(store.state.value.isQueueVisible)
         scope.cancel()
@@ -132,6 +132,7 @@ class PlayerStoreQueueTest {
         advanceUntilIdle()
 
         assertEquals(null, playbackRepository.lastPlayTracks)
+        assertEquals(null, playbackRepository.lastPlayQueueIndex)
         assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         assertEquals(true, store.state.value.isQueueVisible)
         scope.cancel()
@@ -258,6 +259,8 @@ private class FakeQueuePlaybackRepository(
         private set
     var lastPlayStartIndex: Int? = null
         private set
+    var lastPlayQueueIndex: Int? = null
+        private set
     var lastArtworkOverride: String? = null
         private set
 
@@ -277,6 +280,19 @@ private class FakeQueuePlaybackRepository(
             queue = tracks,
             currentIndex = targetIndex,
             durationMs = tracks[targetIndex].durationMs,
+            metadataTitle = null,
+            metadataArtistName = null,
+            metadataAlbumTitle = null,
+            metadataArtworkLocator = null,
+        )
+    }
+
+    override suspend fun playQueueIndex(index: Int) {
+        lastPlayQueueIndex = index
+        val target = mutableSnapshot.value.queue.getOrNull(index) ?: return
+        mutableSnapshot.value = mutableSnapshot.value.copy(
+            currentIndex = index,
+            durationMs = target.durationMs,
             metadataTitle = null,
             metadataArtistName = null,
             metadataAlbumTitle = null,

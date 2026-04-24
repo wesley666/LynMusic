@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.data.repository
 import androidx.room.Room
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.CompletableDeferred
@@ -171,6 +172,328 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `cycle to shuffle builds random queue with current track first without reloading`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val seed = 42
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(seed),
+        )
+        val tracks = sampleTracks(5)
+        val expectedQueue = listOf(tracks[2]) +
+            tracks.filterIndexed { index, _ -> index != 2 }.shuffled(Random(seed))
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(tracks, startIndex = 2)
+            advanceUntilIdle()
+            gateway.updateState { it.copy(positionMs = 37_000L, isPlaying = true) }
+            advanceUntilIdle()
+            val loadCountBeforeShuffle = gateway.loadCalls.size
+
+            repository.cycleMode()
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(PlaybackMode.SHUFFLE, snapshot.mode)
+            assertEquals(0, snapshot.currentIndex)
+            assertEquals("track-3", snapshot.currentTrack?.id)
+            assertEquals(trackIds(expectedQueue), trackIds(snapshot.queue))
+            assertEquals(trackIds(tracks), trackIds(snapshot.orderedQueue))
+            assertEquals(37_000L, snapshot.positionMs)
+            assertEquals(loadCountBeforeShuffle, gateway.loadCalls.size)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `shuffle next and natural completion follow generated queue order`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(7),
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(5), startIndex = 1)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            val shuffledQueueIds = trackIds(repository.snapshot.value.queue)
+
+            repository.skipNext()
+            advanceUntilIdle()
+
+            assertEquals(1, repository.snapshot.value.currentIndex)
+            assertEquals(shuffledQueueIds[1], repository.snapshot.value.currentTrack?.id)
+            assertEquals(shuffledQueueIds[1], gateway.loadCalls.last().track.id)
+
+            gateway.emitCompletion()
+            advanceUntilIdle()
+
+            assertEquals(2, repository.snapshot.value.currentIndex)
+            assertEquals(shuffledQueueIds[2], repository.snapshot.value.currentTrack?.id)
+            assertEquals(shuffledQueueIds[2], gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `shuffle previous follows generated queue order backwards`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(11),
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(5), startIndex = 0)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            val shuffledQueueIds = trackIds(repository.snapshot.value.queue)
+
+            repository.skipNext()
+            repository.skipNext()
+            advanceUntilIdle()
+            repository.skipPrevious()
+            advanceUntilIdle()
+
+            assertEquals(1, repository.snapshot.value.currentIndex)
+            assertEquals(shuffledQueueIds[1], repository.snapshot.value.currentTrack?.id)
+            assertEquals(shuffledQueueIds[1], gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `switching back to order restores ordered queue and keeps current track position`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val tracks = sampleTracks(5)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(13),
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(tracks, startIndex = 2)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            repository.skipNext()
+            advanceUntilIdle()
+            gateway.updateState { it.copy(positionMs = 64_000L, isPlaying = true) }
+            advanceUntilIdle()
+            val currentTrackId = repository.snapshot.value.currentTrack?.id
+            val loadCountBeforeModeChanges = gateway.loadCalls.size
+
+            repository.cycleMode()
+            repository.cycleMode()
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(PlaybackMode.ORDER, snapshot.mode)
+            assertEquals(trackIds(tracks), trackIds(snapshot.queue))
+            assertEquals(trackIds(tracks), trackIds(snapshot.orderedQueue))
+            assertEquals(currentTrackId, snapshot.currentTrack?.id)
+            assertEquals(tracks.indexOfFirst { it.id == currentTrackId }, snapshot.currentIndex)
+            assertEquals(64_000L, snapshot.positionMs)
+            assertEquals(loadCountBeforeModeChanges, gateway.loadCalls.size)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `play queue index keeps original ordered queue while jumping in shuffled queue`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val tracks = sampleTracks(5)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(17),
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(tracks, startIndex = 0)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            val shuffledQueueIds = trackIds(repository.snapshot.value.queue)
+
+            repository.playQueueIndex(1)
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(1, snapshot.currentIndex)
+            assertEquals(shuffledQueueIds[1], snapshot.currentTrack?.id)
+            assertEquals(shuffledQueueIds, trackIds(snapshot.queue))
+            assertEquals(trackIds(tracks), trackIds(snapshot.orderedQueue))
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `play tracks in shuffle mode builds new shuffled queue from provided order`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val seed = 19
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(seed),
+        )
+        val tracks = sampleTracks(5)
+        val expectedQueue = listOf(tracks[3]) +
+            tracks.filterIndexed { index, _ -> index != 3 }.shuffled(Random(seed))
+
+        try {
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            repository.playTracks(tracks, startIndex = 3)
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(PlaybackMode.SHUFFLE, snapshot.mode)
+            assertEquals(0, snapshot.currentIndex)
+            assertEquals("track-4", snapshot.currentTrack?.id)
+            assertEquals(trackIds(expectedQueue), trackIds(snapshot.queue))
+            assertEquals(trackIds(tracks), trackIds(snapshot.orderedQueue))
+            assertEquals("track-4", gateway.loadCalls.last().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `persisted queue snapshot stores shuffled queue and ordered queue`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val tracks = sampleTracks(5)
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            shuffleRandom = Random(23),
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(tracks, startIndex = 1)
+            advanceUntilIdle()
+            repository.cycleMode()
+            advanceUntilIdle()
+            val snapshot = repository.snapshot.value
+            val persisted = database.playbackQueueSnapshotDao().get()
+
+            assertEquals(trackIds(snapshot.queue).joinToString(","), persisted?.queueTrackIds)
+            assertEquals(trackIds(tracks).joinToString(","), persisted?.orderedQueueTrackIds)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `restore queue snapshot keeps persisted shuffled queue and ordered queue`() = runTest {
+        val database = createTestDatabase()
+        val tracks = sampleTracks(4)
+        database.trackDao().upsertAll(tracks.map { track -> sampleTrackEntity(track.id, track.title) })
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-3,track-1,track-4,track-2",
+                orderedQueueTrackIds = "track-1,track-2,track-3,track-4",
+                currentIndex = 2,
+                positionMs = 12_000L,
+                mode = PlaybackMode.SHUFFLE.name,
+                updatedAt = 1L,
+            ),
+        )
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(listOf("track-3", "track-1", "track-4", "track-2"), trackIds(snapshot.queue))
+            assertEquals(listOf("track-1", "track-2", "track-3", "track-4"), trackIds(snapshot.orderedQueue))
+            assertEquals(2, snapshot.currentIndex)
+            assertEquals("track-4", snapshot.currentTrack?.id)
+            assertEquals("track-4", gateway.loadCalls.single().track.id)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `manual next advances to next track in repeat one`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
@@ -190,13 +513,14 @@ class PlaybackRepositoriesTest {
             repository.cycleMode()
             repository.cycleMode()
             advanceUntilIdle()
+            val queuedTrackIds = trackIds(repository.snapshot.value.queue)
 
             repository.skipNext()
             advanceUntilIdle()
 
-            assertEquals(2, repository.snapshot.value.currentIndex)
-            assertEquals("track-3", repository.snapshot.value.currentTrack?.id)
-            assertEquals("track-3", gateway.loadCalls.last().track.id)
+            assertEquals(1, repository.snapshot.value.currentIndex)
+            assertEquals(queuedTrackIds[1], repository.snapshot.value.currentTrack?.id)
+            assertEquals(queuedTrackIds[1], gateway.loadCalls.last().track.id)
         } finally {
             repository.close()
             scope.cancel()
@@ -224,6 +548,9 @@ class PlaybackRepositoriesTest {
             repository.cycleMode()
             repository.cycleMode()
             advanceUntilIdle()
+            val queuedTrackIds = trackIds(repository.snapshot.value.queue)
+            repository.skipNext()
+            advanceUntilIdle()
             gateway.updateState { it.copy(positionMs = 6_000L) }
             advanceUntilIdle()
 
@@ -231,7 +558,7 @@ class PlaybackRepositoriesTest {
             advanceUntilIdle()
 
             assertEquals(0, repository.snapshot.value.currentIndex)
-            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(queuedTrackIds[0], repository.snapshot.value.currentTrack?.id)
             assertEquals(emptyList(), gateway.seekCalls)
         } finally {
             repository.close()
@@ -260,15 +587,17 @@ class PlaybackRepositoriesTest {
             repository.cycleMode()
             repository.cycleMode()
             advanceUntilIdle()
+            val currentTrackId = repository.snapshot.value.currentTrack?.id
+            val currentIndex = repository.snapshot.value.currentIndex
             val loadCountBeforeCompletion = gateway.loadCalls.size
 
             gateway.emitCompletion()
             advanceUntilIdle()
 
-            assertEquals(1, repository.snapshot.value.currentIndex)
-            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+            assertEquals(currentIndex, repository.snapshot.value.currentIndex)
+            assertEquals(currentTrackId, repository.snapshot.value.currentTrack?.id)
             assertEquals(loadCountBeforeCompletion + 1, gateway.loadCalls.size)
-            assertEquals("track-2", gateway.loadCalls.last().track.id)
+            assertEquals(currentTrackId, gateway.loadCalls.last().track.id)
         } finally {
             repository.close()
             scope.cancel()
@@ -811,6 +1140,16 @@ private fun sampleTracks(): List<Track> {
         sampleTrack("track-2", "Second Song"),
         sampleTrack("track-3", "Third Song"),
     )
+}
+
+private fun sampleTracks(count: Int): List<Track> {
+    return (1..count).map { index ->
+        sampleTrack("track-$index", "Song $index")
+    }
+}
+
+private fun trackIds(tracks: List<Track>): List<String> {
+    return tracks.map { it.id }
 }
 
 private fun sampleTrack(id: String, title: String): Track {

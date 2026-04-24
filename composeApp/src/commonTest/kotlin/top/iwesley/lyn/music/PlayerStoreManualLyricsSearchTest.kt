@@ -587,6 +587,7 @@ private class FakePlaybackRepository(
     override suspend fun hydratePersistedQueueIfNeeded() = Unit
 
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) = Unit
+    override suspend fun playQueueIndex(index: Int) = Unit
     override suspend fun togglePlayPause() = Unit
     override suspend fun skipNext() = Unit
     override suspend fun skipPrevious() = Unit
