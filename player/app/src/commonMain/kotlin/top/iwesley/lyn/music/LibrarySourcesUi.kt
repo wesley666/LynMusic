@@ -431,42 +431,46 @@ private fun LibraryBrowserTab(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(22.dp),
                         colors = searchFieldColors,
-                    )
-                    Box {
-                        IconButton(onClick = { sourceFilterMenuExpanded = true }) {
-                            Icon(
-                                imageVector = Icons.Rounded.MoreVert,
-                                contentDescription = "选择来源",
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = sourceFilterMenuExpanded,
-                            onDismissRequest = { sourceFilterMenuExpanded = false },
-                            containerColor = mainShellColors.navContainer,
-                        ) {
-                            state.availableSourceFilters.forEach { filter ->
-                                val isSelected = filter == state.selectedSourceFilter
-                                DropdownMenuItem(
-                                    text = { Text(librarySourceFilterMenuLabel(filter)) },
-                                    trailingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = null,
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box {
+                                    IconButton(onClick = { sourceFilterMenuExpanded = true }) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.MoreVert,
+                                            contentDescription = "选择来源",
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = sourceFilterMenuExpanded,
+                                        onDismissRequest = { sourceFilterMenuExpanded = false },
+                                        containerColor = mainShellColors.navContainer,
+                                    ) {
+                                        state.availableSourceFilters.forEach { filter ->
+                                            val isSelected = filter == state.selectedSourceFilter
+                                            DropdownMenuItem(
+                                                text = { Text(librarySourceFilterMenuLabel(filter)) },
+                                                trailingIcon = if (isSelected) {
+                                                    {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Check,
+                                                            contentDescription = null,
+                                                        )
+                                                    }
+                                                } else {
+                                                    null
+                                                },
+                                                onClick = {
+                                                    sourceFilterMenuExpanded = false
+                                                    onSourceFilterChanged(filter)
+                                                },
                                             )
                                         }
-                                    } else {
-                                        null
-                                    },
-                                    onClick = {
-                                        sourceFilterMenuExpanded = false
-                                        onSourceFilterChanged(filter)
-                                    },
-                                )
+                                    }
+                                }
+                                actionButton?.invoke()
                             }
-                        }
-                    }
-                    actionButton?.invoke()
+                        },
+                    )
                 }
             }
             item {
