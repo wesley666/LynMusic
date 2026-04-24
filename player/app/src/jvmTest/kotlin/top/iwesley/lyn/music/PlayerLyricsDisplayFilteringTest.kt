@@ -172,6 +172,75 @@ class PlayerLyricsDisplayFilteringTest {
         )
     }
 
+    @Test
+    fun `active highlight uses browse target while browsing when target can seek`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                LyricsLine(timestampMs = 2_000L, text = "第二句"),
+            ),
+        )
+
+        assertEquals(
+            1,
+            resolvePlayerLyricsActiveHighlightedIndex(
+                visibleLines = visibleLines,
+                playbackHighlightedIndex = 0,
+                browseTargetIndex = 1,
+                isBrowsing = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `active highlight falls back to playback highlight while browsing without seekable target`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                LyricsLine(timestampMs = null, text = "无时间轴"),
+            ),
+        )
+
+        assertEquals(
+            0,
+            resolvePlayerLyricsActiveHighlightedIndex(
+                visibleLines = visibleLines,
+                playbackHighlightedIndex = 0,
+                browseTargetIndex = 1,
+                isBrowsing = true,
+            ),
+        )
+        assertEquals(
+            0,
+            resolvePlayerLyricsActiveHighlightedIndex(
+                visibleLines = visibleLines,
+                playbackHighlightedIndex = 0,
+                browseTargetIndex = null,
+                isBrowsing = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `active highlight keeps playback highlight when not browsing`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                LyricsLine(timestampMs = 2_000L, text = "第二句"),
+            ),
+        )
+
+        assertEquals(
+            0,
+            resolvePlayerLyricsActiveHighlightedIndex(
+                visibleLines = visibleLines,
+                playbackHighlightedIndex = 0,
+                browseTargetIndex = 1,
+                isBrowsing = false,
+            ),
+        )
+    }
+
     private fun syncedLyricsDocument(vararg lines: LyricsLine): LyricsDocument {
         return LyricsDocument(
             lines = lines.toList(),

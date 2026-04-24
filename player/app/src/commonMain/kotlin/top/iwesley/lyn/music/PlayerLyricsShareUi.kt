@@ -330,6 +330,23 @@ internal fun PlayerLyricsPane(
                         lyricsOffsetMs = lyrics.offsetMs,
                         durationMs = state.snapshot.durationMs,
                     )
+                    val activeHighlightedVisibleIndex = resolvePlayerLyricsActiveHighlightedIndex(
+                        visibleLines = visibleLyricsLines,
+                        playbackHighlightedIndex = highlightedVisibleIndex,
+                        browseTargetIndex = browseTargetIndex,
+                        isBrowsing = isLyricsBrowsing,
+                    )
+                    val browseTargetTimestampMs =
+                        visibleLyricsLines.getOrNull(browseTargetIndex ?: -1)?.line?.timestampMs
+                    val activeLyricsPositionMs = if (
+                        isLyricsBrowsing &&
+                        browseTargetIndex == activeHighlightedVisibleIndex &&
+                        browseTargetTimestampMs != null
+                    ) {
+                        browseTargetTimestampMs
+                    } else {
+                        state.snapshot.positionMs + lyrics.offsetMs
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -344,14 +361,13 @@ internal fun PlayerLyricsPane(
                             val translationText = enhancedLine?.translationText
                                 ?.trim()
                                 ?.takeIf { it.isNotEmpty() }
-                            val currentLyricsPositionMs = state.snapshot.positionMs + lyrics.offsetMs
-                            val distance = if (highlightedVisibleIndex >= 0) {
-                                abs(index - highlightedVisibleIndex)
+                            val distance = if (activeHighlightedVisibleIndex >= 0) {
+                                abs(index - activeHighlightedVisibleIndex)
                             } else {
                                 Int.MAX_VALUE
                             }
                             val targetAlpha = when {
-                                highlightedVisibleIndex < 0 -> 0.6f
+                                activeHighlightedVisibleIndex < 0 -> 0.6f
                                 distance == 0 -> 1f
                                 distance == 1 -> 0.72f
                                 distance == 2 -> 0.5f
@@ -366,7 +382,7 @@ internal fun PlayerLyricsPane(
                             val animatedAlpha by animateFloatAsState(targetValue = targetAlpha)
                             val animatedScale by animateFloatAsState(targetValue = targetScale)
                             val animatedColor by animateColorAsState(
-                                targetValue = if (index == highlightedVisibleIndex) {
+                                targetValue = if (index == activeHighlightedVisibleIndex) {
                                     lyricsPrimaryTextColor
                                 } else {
                                     lyricsPrimaryTextColor
@@ -379,7 +395,7 @@ internal fun PlayerLyricsPane(
                                     scaleX = animatedScale,
                                     scaleY = animatedScale,
                                 )
-                            val isHighlighted = index == highlightedVisibleIndex
+                            val isHighlighted = index == activeHighlightedVisibleIndex
                             val hasEnhancedSegments = enhancedLine?.segments?.isNotEmpty() == true
                             if (translationText != null) {
                                 Column(
@@ -389,7 +405,7 @@ internal fun PlayerLyricsPane(
                                     if (isHighlighted && hasEnhancedSegments) {
                                         EnhancedLyricsLineText(
                                             line = enhancedLine,
-                                            currentPositionMs = currentLyricsPositionMs,
+                                            currentPositionMs = activeLyricsPositionMs,
                                             activeColor = animatedColor,
                                             inactiveColor = lyricsSecondaryTextColor.copy(alpha = 0.78f),
                                             style = MaterialTheme.typography.headlineSmall,
@@ -419,7 +435,7 @@ internal fun PlayerLyricsPane(
                             } else if (isHighlighted && hasEnhancedSegments) {
                                 EnhancedLyricsLineText(
                                     line = enhancedLine,
-                                    currentPositionMs = currentLyricsPositionMs,
+                                    currentPositionMs = activeLyricsPositionMs,
                                     activeColor = animatedColor,
                                     inactiveColor = lyricsSecondaryTextColor.copy(alpha = 0.78f),
                                     style = MaterialTheme.typography.headlineSmall,

@@ -86,6 +86,21 @@ internal fun resolvePlayerLyricsSeekPositionMs(
     return (timestampMs - lyricsOffsetMs).coerceIn(0L, durationMs.coerceAtLeast(0L))
 }
 
+internal fun resolvePlayerLyricsActiveHighlightedIndex(
+    visibleLines: List<VisiblePlayerLyricsLine>,
+    playbackHighlightedIndex: Int,
+    browseTargetIndex: Int?,
+    isBrowsing: Boolean,
+): Int {
+    if (!isBrowsing) return playbackHighlightedIndex
+    val targetIndex = browseTargetIndex ?: return playbackHighlightedIndex
+    return if (visibleLines.getOrNull(targetIndex)?.line?.timestampMs != null) {
+        targetIndex
+    } else {
+        playbackHighlightedIndex
+    }
+}
+
 internal fun resolveVisiblePlayerLyricsSelectedIndices(
     visibleLines: List<VisiblePlayerLyricsLine>,
     selectedRawIndices: Set<Int>,
