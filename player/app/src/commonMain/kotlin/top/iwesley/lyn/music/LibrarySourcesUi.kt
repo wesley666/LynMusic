@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -43,6 +44,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -68,6 +70,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -188,13 +191,14 @@ internal fun FavoritesTab(
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
         actionButton = if (state.canRefreshRemote) {
             {
-                OutlinedButton(
+                IconButton(
                     onClick = { onFavoritesIntent(FavoritesIntent.Refresh) },
                     enabled = !state.isRefreshing,
                 ) {
-                    Icon(Icons.Rounded.Sync, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (state.isRefreshing) "刷新中" else "刷新")
+                    Icon(
+                        imageVector = Icons.Rounded.Sync,
+                        contentDescription = if (state.isRefreshing) "刷新中" else "刷新",
+                    )
                 }
             }
         } else {
@@ -401,26 +405,33 @@ private fun LibraryBrowserTab(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
-                ImeAwareOutlinedTextField(
-                    value = state.query,
-                    onValueChange = onSearchChanged,
-                    label = { Text(strings.searchLabel) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = searchFieldColors,
-                )
-            }
-            item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        //.height(56.dp)
+                    ,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    ImeAwareOutlinedTextField(
+                        value = state.query,
+                        onValueChange = onSearchChanged,
+                        label = {
+                            Text(
+                                text = strings.searchLabel,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = searchFieldColors,
+                    )
                     Box {
-                        OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
-                            Icon(Icons.Rounded.Tune, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(librarySourceFilterButtonLabel(state.selectedSourceFilter))
+                        IconButton(onClick = { sourceFilterMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = "选择来源",
+                            )
                         }
                         DropdownMenu(
                             expanded = sourceFilterMenuExpanded,
@@ -428,8 +439,19 @@ private fun LibraryBrowserTab(
                             containerColor = mainShellColors.navContainer,
                         ) {
                             state.availableSourceFilters.forEach { filter ->
+                                val isSelected = filter == state.selectedSourceFilter
                                 DropdownMenuItem(
                                     text = { Text(librarySourceFilterMenuLabel(filter)) },
+                                    trailingIcon = if (isSelected) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Check,
+                                                contentDescription = null,
+                                            )
+                                        }
+                                    } else {
+                                        null
+                                    },
                                     onClick = {
                                         sourceFilterMenuExpanded = false
                                         onSourceFilterChanged(filter)
