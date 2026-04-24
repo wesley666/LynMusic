@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
@@ -391,11 +392,16 @@ private fun LibraryBrowserTab(
     }
 
     val shellColors = mainShellColors
+    val searchFieldContainerColor = shellColors.cardBorder
     val searchFieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = shellColors.cardBorder,
-        unfocusedBorderColor = shellColors.cardBorder,
-        disabledBorderColor = shellColors.cardBorder,
+        focusedContainerColor = searchFieldContainerColor,
+        unfocusedContainerColor = searchFieldContainerColor,
+        disabledContainerColor = searchFieldContainerColor,
+        focusedBorderColor = searchFieldContainerColor,
+        unfocusedBorderColor = searchFieldContainerColor,
+        disabledBorderColor = searchFieldContainerColor,
     )
+
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -415,7 +421,7 @@ private fun LibraryBrowserTab(
                     ImeAwareOutlinedTextField(
                         value = state.query,
                         onValueChange = onSearchChanged,
-                        label = {
+                        placeholder = {
                             Text(
                                 text = strings.searchLabel,
                                 maxLines = 1,
@@ -429,7 +435,7 @@ private fun LibraryBrowserTab(
                     Box {
                         IconButton(onClick = { sourceFilterMenuExpanded = true }) {
                             Icon(
-                                imageVector = Icons.Rounded.Tune,
+                                imageVector = Icons.Rounded.MoreVert,
                                 contentDescription = "选择来源",
                             )
                         }
