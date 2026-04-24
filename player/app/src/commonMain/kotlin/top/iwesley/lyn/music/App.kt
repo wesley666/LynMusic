@@ -336,6 +336,7 @@ fun App(
                                 favoriteTrackIds = favoritesState.favoriteTrackIds,
                                 trackId = track.id,
                             ),
+                            compact = compact,
                             onDismiss = { pendingPlaylistTrack = null },
                             onAddTarget = { target ->
                                 pendingPlaylistTrack = null
