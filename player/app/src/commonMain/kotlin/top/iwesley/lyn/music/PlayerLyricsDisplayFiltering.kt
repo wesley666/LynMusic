@@ -12,6 +12,12 @@ internal data class VisiblePlayerLyricsLine(
     val enhancedLine: EnhancedLyricsDisplayLine? = null,
 )
 
+internal data class PlayerLyricsVisibleItemInfo(
+    val index: Int,
+    val offset: Int,
+    val size: Int,
+)
+
 internal fun buildVisiblePlayerLyricsLines(
     lyrics: LyricsDocument,
     enhancedLyricsPresentation: EnhancedLyricsPresentation? = null,
@@ -52,6 +58,32 @@ internal fun resolveVisiblePlayerLyricsScrollTarget(
         in visibleLines.indices -> highlightedVisibleIndex
         else -> if (lyrics.isSynced) 0 else null
     }
+}
+
+internal fun resolvePlayerLyricsBrowseTargetIndex(
+    visibleLines: List<VisiblePlayerLyricsLine>,
+    visibleItems: List<PlayerLyricsVisibleItemInfo>,
+    viewportStartOffset: Int,
+    viewportEndOffset: Int,
+): Int? {
+    if (visibleLines.isEmpty() || visibleItems.isEmpty()) return null
+    val viewportCenter = (viewportStartOffset + viewportEndOffset) / 2
+    return visibleItems
+        .filter { item -> visibleLines.getOrNull(item.index)?.line?.timestampMs != null }
+        .minByOrNull { item ->
+            val itemCenter = item.offset + item.size / 2
+            kotlin.math.abs(itemCenter - viewportCenter)
+        }
+        ?.index
+}
+
+internal fun resolvePlayerLyricsSeekPositionMs(
+    line: VisiblePlayerLyricsLine?,
+    lyricsOffsetMs: Long,
+    durationMs: Long,
+): Long? {
+    val timestampMs = line?.line?.timestampMs ?: return null
+    return (timestampMs - lyricsOffsetMs).coerceIn(0L, durationMs.coerceAtLeast(0L))
 }
 
 internal fun resolveVisiblePlayerLyricsSelectedIndices(

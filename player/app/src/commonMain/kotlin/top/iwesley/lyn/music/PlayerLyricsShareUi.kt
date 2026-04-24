@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
@@ -147,7 +148,45 @@ internal fun PlayerLyricsPane(
     val highlightedVisibleIndex = remember(visibleLyricsLines, state.highlightedLineIndex) {
         resolveVisiblePlayerLyricsHighlightedIndex(visibleLyricsLines, state.highlightedLineIndex)
     }
-    LaunchedEffect(track.id, lyrics, state.highlightedLineIndex, visibleLyricsLines) {
+    var isLyricsBrowsing by remember(track.id, lyrics) { mutableStateOf(false) }
+    var isAutoScrollingLyrics by remember(track.id, lyrics) { mutableStateOf(false) }
+    val browseTargetIndex by remember(listState, visibleLyricsLines) {
+        derivedStateOf {
+            resolvePlayerLyricsBrowseTargetIndex(
+                visibleLines = visibleLyricsLines,
+                visibleItems = listState.layoutInfo.visibleItemsInfo.map { item ->
+                    PlayerLyricsVisibleItemInfo(
+                        index = item.index,
+                        offset = item.offset,
+                        size = item.size,
+                    )
+                },
+                viewportStartOffset = listState.layoutInfo.viewportStartOffset,
+                viewportEndOffset = listState.layoutInfo.viewportEndOffset,
+            )
+        }
+    }
+    LaunchedEffect(
+        track.id,
+        lyrics?.isSynced,
+        visibleLyricsLines,
+        listState.isScrollInProgress,
+        isAutoScrollingLyrics,
+    ) {
+        if (lyrics?.isSynced != true || visibleLyricsLines.none { it.line.timestampMs != null }) {
+            isLyricsBrowsing = false
+            return@LaunchedEffect
+        }
+        when {
+            listState.isScrollInProgress && !isAutoScrollingLyrics -> isLyricsBrowsing = true
+            !listState.isScrollInProgress && isLyricsBrowsing -> {
+                delay(2_400L)
+                isLyricsBrowsing = false
+            }
+        }
+    }
+    LaunchedEffect(track.id, lyrics, state.highlightedLineIndex, visibleLyricsLines, isLyricsBrowsing) {
+        if (isLyricsBrowsing) return@LaunchedEffect
         val targetLyrics = lyrics ?: return@LaunchedEffect
         val targetIndex = resolveVisiblePlayerLyricsScrollTarget(
             lyrics = targetLyrics,
@@ -155,18 +194,23 @@ internal fun PlayerLyricsPane(
             highlightedRawIndex = state.highlightedLineIndex,
         ) ?: return@LaunchedEffect
         if (targetIndex !in visibleLyricsLines.indices) return@LaunchedEffect
-        if (listState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
-            listState.scrollToItem(targetIndex)
-            withFrameNanos { }
-        }
-        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
-            ?: return@LaunchedEffect
-        val viewportCenter =
-            (listState.layoutInfo.viewportStartOffset + listState.layoutInfo.viewportEndOffset) / 2
-        val itemCenter = itemInfo.offset + itemInfo.size / 2
-        val delta = (itemCenter - viewportCenter).toFloat()
-        if (abs(delta) > 1f) {
-            listState.scrollBy(delta)
+        isAutoScrollingLyrics = true
+        try {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == targetIndex }) {
+                listState.scrollToItem(targetIndex)
+                withFrameNanos { }
+            }
+            val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+                ?: return@LaunchedEffect
+            val viewportCenter =
+                (listState.layoutInfo.viewportStartOffset + listState.layoutInfo.viewportEndOffset) / 2
+            val itemCenter = itemInfo.offset + itemInfo.size / 2
+            val delta = (itemCenter - viewportCenter).toFloat()
+            if (abs(delta) > 1f) {
+                listState.scrollBy(delta)
+            }
+        } finally {
+            isAutoScrollingLyrics = false
         }
     }
     Box(modifier = modifier.fillMaxSize()) {
@@ -281,6 +325,11 @@ internal fun PlayerLyricsPane(
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val centerPadding =
                         (maxHeight / 2 - 36.dp).coerceAtLeast(if (compact) 56.dp else 86.dp)
+                    val browseSeekPositionMs = resolvePlayerLyricsSeekPositionMs(
+                        line = visibleLyricsLines.getOrNull(browseTargetIndex ?: -1),
+                        lyricsOffsetMs = lyrics.offsetMs,
+                        durationMs = state.snapshot.durationMs,
+                    )
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -390,6 +439,19 @@ internal fun PlayerLyricsPane(
                             }
                         }
                     }
+                    if (isLyricsBrowsing && browseSeekPositionMs != null) {
+                        PlayerLyricsSeekTimeButton(
+                            timeText = formatDuration(browseSeekPositionMs),
+                            compact = compact,
+                            onClick = {
+                                isLyricsBrowsing = false
+                                onPlayerIntent(PlayerIntent.SeekTo(browseSeekPositionMs))
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = if (compact) 4.dp else 18.dp),
+                        )
+                    }
                 }
             }
         }
@@ -398,6 +460,47 @@ internal fun PlayerLyricsPane(
         PlayerTrackInfoDialog(
             track = track,
             onDismiss = { showTrackInfoDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun PlayerLyricsSeekTimeButton(
+    timeText: String,
+    compact: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "跳转到 $timeText 播放" }
+            .padding(
+                horizontal = if (compact) 9.dp else 11.dp,
+                vertical = if (compact) 5.dp else 6.dp,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PlayArrow,
+            contentDescription = null,
+            modifier = Modifier.size(if (compact) 15.dp else 16.dp),
+            tint = Color.White.copy(alpha = 0.72f),
+        )
+        Text(
+            text = timeText,
+            color = Color.White.copy(alpha = 0.72f),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
         )
     }
 }

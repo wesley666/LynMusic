@@ -80,6 +80,98 @@ class PlayerLyricsDisplayFilteringTest {
         )
     }
 
+    @Test
+    fun `browse target chooses timestamped visible line closest to viewport center`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                LyricsLine(timestampMs = 2_000L, text = "第二句"),
+                LyricsLine(timestampMs = 3_000L, text = "第三句"),
+            ),
+        )
+
+        val target = resolvePlayerLyricsBrowseTargetIndex(
+            visibleLines = visibleLines,
+            visibleItems = listOf(
+                PlayerLyricsVisibleItemInfo(index = 0, offset = 0, size = 40),
+                PlayerLyricsVisibleItemInfo(index = 1, offset = 80, size = 40),
+                PlayerLyricsVisibleItemInfo(index = 2, offset = 160, size = 40),
+            ),
+            viewportStartOffset = 0,
+            viewportEndOffset = 220,
+        )
+
+        assertEquals(1, target)
+    }
+
+    @Test
+    fun `browse target ignores visible lines without timestamp`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = null, text = "无时间轴"),
+                LyricsLine(timestampMs = 2_000L, text = "第一句"),
+                LyricsLine(timestampMs = 4_000L, text = "第二句"),
+            ),
+        )
+
+        val target = resolvePlayerLyricsBrowseTargetIndex(
+            visibleLines = visibleLines,
+            visibleItems = listOf(
+                PlayerLyricsVisibleItemInfo(index = 0, offset = 90, size = 40),
+                PlayerLyricsVisibleItemInfo(index = 1, offset = 150, size = 40),
+            ),
+            viewportStartOffset = 0,
+            viewportEndOffset = 220,
+        )
+
+        assertEquals(1, target)
+    }
+
+    @Test
+    fun `lyrics seek position applies offset and clamps to duration`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            syncedLyricsDocument(
+                LyricsLine(timestampMs = 1_000L, text = "第一句"),
+                LyricsLine(timestampMs = 65_000L, text = "第二句"),
+            ),
+        )
+
+        assertEquals(
+            0L,
+            resolvePlayerLyricsSeekPositionMs(
+                line = visibleLines[0],
+                lyricsOffsetMs = 2_000L,
+                durationMs = 60_000L,
+            ),
+        )
+        assertEquals(
+            60_000L,
+            resolvePlayerLyricsSeekPositionMs(
+                line = visibleLines[1],
+                lyricsOffsetMs = 2_000L,
+                durationMs = 60_000L,
+            ),
+        )
+        assertEquals("01:00", formatDuration(60_000L))
+    }
+
+    @Test
+    fun `lyrics seek position is null for lines without timestamp`() {
+        val visibleLines = buildVisiblePlayerLyricsLines(
+            plainLyricsDocument(
+                LyricsLine(timestampMs = null, text = "第一句"),
+            ),
+        )
+
+        assertNull(
+            resolvePlayerLyricsSeekPositionMs(
+                line = visibleLines.single(),
+                lyricsOffsetMs = 0L,
+                durationMs = 60_000L,
+            ),
+        )
+    }
+
     private fun syncedLyricsDocument(vararg lines: LyricsLine): LyricsDocument {
         return LyricsDocument(
             lines = lines.toList(),
