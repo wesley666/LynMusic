@@ -9,7 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -139,6 +141,73 @@ class PlayerStoreQueueTest {
     }
 
     @Test
+    fun `sleep timer counts down and pauses playback when finished`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        runCurrent()
+        store.dispatch(PlayerIntent.StartSleepTimer(1))
+        runCurrent()
+
+        assertEquals(1, store.state.value.sleepTimer.durationMinutes)
+        assertEquals(60_000L, store.state.value.sleepTimer.remainingMs)
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(59_000L, store.state.value.sleepTimer.remainingMs)
+
+        advanceTimeBy(59_000L)
+        runCurrent()
+
+        assertEquals(1, playbackRepository.pauseCallCount)
+        assertFalse(store.state.value.sleepTimer.isActive)
+        scope.cancel()
+    }
+
+    @Test
+    fun `starting a new sleep timer replaces the previous one`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        runCurrent()
+        store.dispatch(PlayerIntent.StartSleepTimer(1))
+        runCurrent()
+        advanceTimeBy(30_000L)
+        runCurrent()
+        store.dispatch(PlayerIntent.StartSleepTimer(2))
+        runCurrent()
+        advanceTimeBy(30_000L)
+        runCurrent()
+
+        assertEquals(2, store.state.value.sleepTimer.durationMinutes)
+        assertEquals(90_000L, store.state.value.sleepTimer.remainingMs)
+        assertEquals(0, playbackRepository.pauseCallCount)
+        scope.cancel()
+    }
+
+    @Test
+    fun `cancel sleep timer prevents automatic pause`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        runCurrent()
+        store.dispatch(PlayerIntent.StartSleepTimer(1))
+        runCurrent()
+        store.dispatch(PlayerIntent.CancelSleepTimer)
+        runCurrent()
+        advanceTimeBy(60_000L)
+        runCurrent()
+
+        assertFalse(store.state.value.sleepTimer.isActive)
+        assertEquals(0, playbackRepository.pauseCallCount)
+        scope.cancel()
+    }
+
+    @Test
     fun `manual apply uses repository returned artwork locator`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
@@ -263,6 +332,8 @@ private class FakeQueuePlaybackRepository(
         private set
     var lastArtworkOverride: String? = null
         private set
+    var pauseCallCount: Int = 0
+        private set
 
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
@@ -301,6 +372,11 @@ private class FakeQueuePlaybackRepository(
     }
 
     override suspend fun togglePlayPause() = Unit
+
+    override suspend fun pause() {
+        pauseCallCount += 1
+        mutableSnapshot.value = mutableSnapshot.value.copy(isPlaying = false)
+    }
 
     override suspend fun skipNext() = Unit
 

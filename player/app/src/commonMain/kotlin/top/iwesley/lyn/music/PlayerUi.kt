@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -54,7 +55,10 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +69,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -118,6 +123,9 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
+import top.iwesley.lyn.music.feature.player.SLEEP_TIMER_PRESET_MINUTES
+import top.iwesley.lyn.music.feature.player.SleepTimerState
+import top.iwesley.lyn.music.feature.player.normalizeSleepTimerMinutes
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -1022,6 +1030,7 @@ private fun PlayerOverlay(
                 }
                 PlayerBottomControls(
                     snapshot = state.snapshot,
+                    sleepTimer = state.sleepTimer,
                     track = track,
                     mobilePlayback = mobilePlayback,
                     wide = wide,
@@ -1171,6 +1180,7 @@ private fun PlayerInfoPane(
 @Composable
 private fun PlayerBottomControls(
     snapshot: PlaybackSnapshot,
+    sleepTimer: SleepTimerState,
     track: Track,
     mobilePlayback: Boolean,
     wide: Boolean,
@@ -1204,6 +1214,7 @@ private fun PlayerBottomControls(
         }
         val artistNavigationTarget = navigationTargets.artistTarget
         var isMoreSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
+        var isSleepTimerSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
         val mobileTopActionButtonSize = 58.dp
         val mobileTopActionIconSize = 30.dp
         val mobileBottomActionButtonSize = 62.dp
@@ -1364,10 +1375,30 @@ private fun PlayerBottomControls(
                     isMoreSheetVisible = false
                     onOpenLibraryNavigationTarget(target)
                 },
+                sleepTimer = sleepTimer,
+                onOpenSleepTimer = {
+                    isMoreSheetVisible = false
+                    isSleepTimerSheetVisible = true
+                },
+            )
+        }
+        if (mobilePlayback && isSleepTimerSheetVisible) {
+            SleepTimerBottomSheet(
+                sleepTimer = sleepTimer,
+                onDismiss = { isSleepTimerSheetVisible = false },
+                onStartTimer = { minutes ->
+                    onPlayerIntent(PlayerIntent.StartSleepTimer(minutes))
+                    isSleepTimerSheetVisible = false
+                },
+                onCancelTimer = {
+                    onPlayerIntent(PlayerIntent.CancelSleepTimer)
+                    isSleepTimerSheetVisible = false
+                },
             )
         }
         return
     }
+    var isSleepTimerDialogVisible by rememberSaveable(track.id) { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
@@ -1457,6 +1488,11 @@ private fun PlayerBottomControls(
                             onClick = onOpenAddToPlaylist,
                             tint = Color.White.copy(alpha = 0.96f),
                         )
+                        SleepTimerButton(
+                            sleepTimer = sleepTimer,
+                            onClick = { isSleepTimerDialogVisible = true },
+                            tint = Color.White.copy(alpha = 0.96f),
+                        )
                         FavoriteToggleButton(
                             isFavorite = isFavorite,
                             onClick = onToggleFavorite,
@@ -1479,6 +1515,20 @@ private fun PlayerBottomControls(
                 .padding(horizontal = 16.dp),
             showTimeLabels = false,
             floating = true,
+        )
+    }
+    if (isSleepTimerDialogVisible) {
+        SleepTimerDialog(
+            sleepTimer = sleepTimer,
+            onDismiss = { isSleepTimerDialogVisible = false },
+            onStartTimer = { minutes ->
+                onPlayerIntent(PlayerIntent.StartSleepTimer(minutes))
+                isSleepTimerDialogVisible = false
+            },
+            onCancelTimer = {
+                onPlayerIntent(PlayerIntent.CancelSleepTimer)
+                isSleepTimerDialogVisible = false
+            },
         )
     }
 }
@@ -1518,6 +1568,24 @@ private fun AddToPlaylistButton(
 }
 
 @Composable
+private fun SleepTimerButton(
+    sleepTimer: SleepTimerState,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    buttonSize: Dp = 48.dp,
+    iconSize: Dp = 24.dp,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
+        Icon(
+            imageVector = Icons.Rounded.Timer,
+            contentDescription = "定时关闭",
+            tint = if (sleepTimer.isActive) Color(0xFFE5484D) else tint,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+@Composable
 private fun CompactPlayerMoreButton(
     onClick: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
@@ -1540,8 +1608,10 @@ private fun CompactPlayerMoreSheet(
     snapshot: PlaybackSnapshot,
     track: Track,
     navigationTargets: PlaybackLibraryNavigationTargets,
+    sleepTimer: SleepTimerState,
     onDismiss: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -1613,8 +1683,254 @@ private fun CompactPlayerMoreSheet(
                     enabled = true,
                     onClick = onOpenAddToPlaylist,
                 )
+                CompactPlayerMoreSheetRow(
+                    icon = Icons.Rounded.Timer,
+                    title = "定时关闭",
+                    value = sleepTimerStatusText(sleepTimer),
+                    enabled = true,
+                    onClick = onOpenSleepTimer,
+                )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepTimerBottomSheet(
+    sleepTimer: SleepTimerState,
+    onDismiss: () -> Unit,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = shellColors.navContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+        dragHandle = {
+            CompositionLocalProvider(LocalDensity provides appDensity) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .size(width = 50.dp, height = 5.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(shellColors.cardBorder.copy(alpha = 0.75f)),
+                )
+            }
+        },
+    ) {
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            SleepTimerPickerContent(
+                sleepTimer = sleepTimer,
+                onStartTimer = onStartTimer,
+                onCancelTimer = onCancelTimer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 22.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SleepTimerDialog(
+    sleepTimer: SleepTimerState,
+    onDismiss: () -> Unit,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = shellColors.navContainer,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        title = { Text("定时关闭", fontWeight = FontWeight.Bold) },
+        text = {
+            SleepTimerPickerContent(
+                sleepTimer = sleepTimer,
+                onStartTimer = onStartTimer,
+                onCancelTimer = onCancelTimer,
+                showTitle = false,
+                useCardContainer = false,
+                modifier = Modifier.widthIn(min = 360.dp, max = 480.dp),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("完成")
+            }
+        },
+    )
+}
+
+@Composable
+private fun SleepTimerPickerContent(
+    sleepTimer: SleepTimerState,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
+    modifier: Modifier = Modifier,
+    showTitle: Boolean = true,
+    useCardContainer: Boolean = true,
+) {
+    var customMinutesText by rememberSaveable { mutableStateOf("") }
+    val customMinutes = parseSleepTimerCustomMinutes(customMinutesText)
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showTitle) {
+            Text(
+                text = "定时关闭",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            )
+        }
+        if (useCardContainer) {
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer.copy(alpha = 0.96f)),
+                border = BorderStroke(1.dp, shellColors.cardBorder.copy(alpha = 0.45f)),
+            ) {
+                SleepTimerPickerControls(
+                    sleepTimer = sleepTimer,
+                    customMinutesText = customMinutesText,
+                    customMinutes = customMinutes,
+                    onCustomMinutesTextChanged = { customMinutesText = it },
+                    onStartTimer = onStartTimer,
+                    onCancelTimer = onCancelTimer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
+                )
+            }
+        } else {
+            SleepTimerPickerControls(
+                sleepTimer = sleepTimer,
+                customMinutesText = customMinutesText,
+                customMinutes = customMinutes,
+                onCustomMinutesTextChanged = { customMinutesText = it },
+                onStartTimer = onStartTimer,
+                onCancelTimer = onCancelTimer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SleepTimerPickerControls(
+    sleepTimer: SleepTimerState,
+    customMinutesText: String,
+    customMinutes: Int?,
+    onCustomMinutesTextChanged: (String) -> Unit,
+    onStartTimer: (Int) -> Unit,
+    onCancelTimer: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (sleepTimer.isActive) {
+                        "已定时 ${formatSleepTimerRemaining(sleepTimer.remainingMs)}"
+                    } else {
+                        "选择关闭时间"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            if (sleepTimer.isActive) {
+                TextButton(onClick = onCancelTimer) {
+                    Text("关闭定时")
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SLEEP_TIMER_PRESET_MINUTES.forEach { minutes ->
+                SleepTimerPresetButton(
+                    minutes = minutes,
+                    selected = sleepTimer.durationMinutes == minutes && sleepTimer.isActive,
+                    onClick = { onStartTimer(minutes) },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = customMinutesText,
+                onValueChange = { onCustomMinutesTextChanged(it.filter { char -> char.isDigit() }.take(3)) },
+                modifier = Modifier.weight(1f),
+                label = { Text("自定义分钟") },
+                singleLine = true,
+            )
+            Button(
+                onClick = { customMinutes?.let(onStartTimer) },
+                enabled = customMinutes != null,
+            ) {
+                Text("开始")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepTimerPresetButton(
+    minutes: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.size(36.dp),
+        shape = RoundedCornerShape(999.dp),
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) Color(0xFFE5484D).copy(alpha = 0.12f) else Color.Transparent,
+            contentColor = if (selected) Color(0xFFE5484D) else MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) Color(0xFFE5484D) else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f),
+        ),
+    ) {
+        Text(
+            text = minutes.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -1703,6 +2019,32 @@ private fun compactPlayerMoreTrackSummary(
         trackDisplayFormat(track),
         formatTrackSize(track.sizeBytes),
     ).joinToString(" · ")
+}
+
+internal fun parseSleepTimerCustomMinutes(input: String): Int? {
+    return input.trim().toIntOrNull()?.let(::normalizeSleepTimerMinutes)
+}
+
+internal fun formatSleepTimerRemaining(remainingMs: Long): String {
+    val totalSeconds = (remainingMs / 1_000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    val minuteText = minutes.toString().padStart(2, '0')
+    val secondText = seconds.toString().padStart(2, '0')
+    return if (hours > 0L) {
+        "$hours:$minuteText:$secondText"
+    } else {
+        "$minuteText:$secondText"
+    }
+}
+
+internal fun sleepTimerStatusText(sleepTimer: SleepTimerState): String {
+    return if (sleepTimer.isActive) {
+        "剩余 ${formatSleepTimerRemaining(sleepTimer.remainingMs)}"
+    } else {
+        "未开启"
+    }
 }
 
 @Composable

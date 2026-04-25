@@ -44,6 +44,7 @@ interface PlaybackRepository {
     suspend fun playTracks(tracks: List<Track>, startIndex: Int)
     suspend fun playQueueIndex(index: Int)
     suspend fun togglePlayPause()
+    suspend fun pause()
     suspend fun skipNext()
     suspend fun skipPrevious()
     suspend fun seekTo(positionMs: Long)
@@ -259,6 +260,10 @@ class DefaultPlaybackRepository(
                 gateway.play()
             }
         }
+    }
+
+    override suspend fun pause() {
+        pauseCurrentTrack()
     }
 
     override suspend fun skipNext() {

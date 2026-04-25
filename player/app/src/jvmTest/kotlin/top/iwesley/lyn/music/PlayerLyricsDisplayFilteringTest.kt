@@ -7,6 +7,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsPresentation
+import top.iwesley.lyn.music.feature.player.SleepTimerState
 
 class PlayerLyricsDisplayFilteringTest {
     @Test
@@ -170,6 +171,28 @@ class PlayerLyricsDisplayFilteringTest {
                 durationMs = 60_000L,
             ),
         )
+    }
+
+    @Test
+    fun `sleep timer custom minutes parser accepts only supported minute range`() {
+        assertNull(parseSleepTimerCustomMinutes(""))
+        assertNull(parseSleepTimerCustomMinutes("abc"))
+        assertNull(parseSleepTimerCustomMinutes("0"))
+        assertEquals(1, parseSleepTimerCustomMinutes("1"))
+        assertEquals(999, parseSleepTimerCustomMinutes("999"))
+        assertNull(parseSleepTimerCustomMinutes("1000"))
+    }
+
+    @Test
+    fun `sleep timer remaining text uses minute and hour formats`() {
+        assertEquals("00:59", formatSleepTimerRemaining(59_000L))
+        assertEquals("15:00", formatSleepTimerRemaining(15 * 60_000L))
+        assertEquals("1:00:00", formatSleepTimerRemaining(60 * 60_000L))
+        assertEquals(
+            "剩余 15:00",
+            sleepTimerStatusText(SleepTimerState(durationMinutes = 15, remainingMs = 15 * 60_000L)),
+        )
+        assertEquals("未开启", sleepTimerStatusText(SleepTimerState()))
     }
 
     @Test

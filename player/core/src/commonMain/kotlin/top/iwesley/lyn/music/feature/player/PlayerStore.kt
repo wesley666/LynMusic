@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.feature.player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -30,6 +31,24 @@ import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
+
+const val MIN_SLEEP_TIMER_MINUTES = 1
+const val MAX_SLEEP_TIMER_MINUTES = 999
+const val SLEEP_TIMER_TICK_MS = 1_000L
+
+val SLEEP_TIMER_PRESET_MINUTES = listOf(10, 15, 20, 30, 45, 60)
+
+data class SleepTimerState(
+    val durationMinutes: Int? = null,
+    val remainingMs: Long = 0L,
+) {
+    val isActive: Boolean
+        get() = durationMinutes != null && remainingMs > 0L
+}
+
+fun normalizeSleepTimerMinutes(minutes: Int): Int? {
+    return minutes.takeIf { it in MIN_SLEEP_TIMER_MINUTES..MAX_SLEEP_TIMER_MINUTES }
+}
 
 data class PlayerState(
     val snapshot: PlaybackSnapshot = PlaybackSnapshot(),
@@ -65,6 +84,7 @@ data class PlayerState(
     val isShareRendering: Boolean = false,
     val isShareSaving: Boolean = false,
     val isShareCopying: Boolean = false,
+    val sleepTimer: SleepTimerState = SleepTimerState(),
     val shareMessage: String? = null,
     val message: String? = null,
 ) {
@@ -84,6 +104,8 @@ sealed interface PlayerIntent {
     data class SeekTo(val positionMs: Long) : PlayerIntent
     data class SetVolume(val value: Float) : PlayerIntent
     data object CycleMode : PlayerIntent
+    data class StartSleepTimer(val minutes: Int) : PlayerIntent
+    data object CancelSleepTimer : PlayerIntent
     data class ExpandedChanged(val value: Boolean) : PlayerIntent
     data class QueueVisibilityChanged(val value: Boolean) : PlayerIntent
     data object OpenManualLyricsSearch : PlayerIntent
@@ -140,6 +162,7 @@ class PlayerStore(
     private var currentSharePreviewRequestId: Long = 0L
     private var lyricsShareFontsLoadGeneration: Long = 0L
     private var lastPlaybackErrorKey: PlaybackErrorKey? = null
+    private var sleepTimerJob: Job? = null
 
     init {
         storeScope.launch {
@@ -219,6 +242,8 @@ class PlayerStore(
             is PlayerIntent.SeekTo -> playbackRepository.seekTo(intent.positionMs)
             is PlayerIntent.SetVolume -> playbackRepository.setVolume(intent.value)
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
+            is PlayerIntent.StartSleepTimer -> startSleepTimer(intent.minutes)
+            PlayerIntent.CancelSleepTimer -> cancelSleepTimer()
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
             is PlayerIntent.QueueVisibilityChanged -> updateState {
                 it.copy(isQueueVisible = intent.value && it.snapshot.currentTrack != null)
@@ -277,6 +302,46 @@ class PlayerStore(
         }
         playbackRepository.playQueueIndex(index)
         updateState { it.copy(isQueueVisible = false) }
+    }
+
+    private suspend fun startSleepTimer(minutes: Int) {
+        val normalizedMinutes = normalizeSleepTimerMinutes(minutes) ?: return
+        sleepTimerJob?.cancelAndJoin()
+        val durationMs = normalizedMinutes * 60_000L
+        updateState {
+            it.copy(
+                sleepTimer = SleepTimerState(
+                    durationMinutes = normalizedMinutes,
+                    remainingMs = durationMs,
+                ),
+            )
+        }
+        sleepTimerJob = storeScope.launch {
+            var remainingMs = durationMs
+            while (remainingMs > 0L && isActive) {
+                delay(SLEEP_TIMER_TICK_MS)
+                remainingMs = (remainingMs - SLEEP_TIMER_TICK_MS).coerceAtLeast(0L)
+                if (remainingMs > 0L) {
+                    updateState { current ->
+                        if (current.sleepTimer.isActive) {
+                            current.copy(sleepTimer = current.sleepTimer.copy(remainingMs = remainingMs))
+                        } else {
+                            current
+                        }
+                    }
+                }
+            }
+            if (isActive) {
+                playbackRepository.pause()
+                updateState { it.copy(sleepTimer = SleepTimerState()) }
+            }
+        }
+    }
+
+    private suspend fun cancelSleepTimer() {
+        sleepTimerJob?.cancelAndJoin()
+        sleepTimerJob = null
+        updateState { it.copy(sleepTimer = SleepTimerState()) }
     }
 
     private fun dismissManualLyricsSearch() {

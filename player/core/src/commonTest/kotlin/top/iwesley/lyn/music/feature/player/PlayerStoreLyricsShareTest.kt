@@ -1106,6 +1106,8 @@ private class FakeLyricsSharePlaybackRepository(
 
     override suspend fun togglePlayPause() = Unit
 
+    override suspend fun pause() = Unit
+
     override suspend fun skipNext() = Unit
 
     override suspend fun skipPrevious() = Unit
