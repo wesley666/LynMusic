@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -337,6 +338,7 @@ private fun PlaylistAddBottomSheet(
 ) {
     val shellColors = mainShellColors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
     var createPlaylistDialogVisible by rememberSaveable(track.id) { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -347,73 +349,77 @@ private fun PlaylistAddBottomSheet(
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
         dragHandle = {
-            Box(
-                modifier = Modifier
-                    .padding(top = 12.dp, bottom = 8.dp)
-                    .size(width = 50.dp, height = 5.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(shellColors.cardBorder.copy(alpha = 0.75f)),
-            )
+            CompositionLocalProvider(LocalDensity provides appDensity) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .size(width = 50.dp, height = 5.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(shellColors.cardBorder.copy(alpha = 0.75f)),
+                )
+            }
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 22.dp)
-                .padding(bottom = 18.dp),
-        ) {
-            Text(
-                text = "收藏到歌单",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 20.sp,
-                    lineHeight = 26.sp,
-                ),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = playlistAddTrackLabel(track),
-                modifier = Modifier.padding(top = 6.dp, bottom = 14.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Box(
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(1.dp)
-                    .background(shellColors.cardBorder.copy(alpha = 0.72f)),
-            )
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 460.dp),
-                contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 18.dp),
             ) {
-                item(key = "create-playlist") {
-                    PlaylistAddCreatePlaylistRow(
-                        onClick = { createPlaylistDialogVisible = true },
-                    )
-                }
-                if (isLoadingTargets) {
-                    item(key = "loading") {
-                        PlaylistAddLoadingRow()
-                    }
-                } else if (targets.isEmpty()) {
-                    item(key = "empty") {
-                        PlaylistAddEmptyRow()
-                    }
-                } else {
-                    items(targets, key = { it.id }) { target ->
-                        PlaylistAddCompactTargetRow(
-                            target = target,
-                            onClick = { onAddTarget(target) },
+                Text(
+                    text = "收藏到歌单",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 20.sp,
+                        lineHeight = 26.sp,
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = playlistAddTrackLabel(track),
+                    modifier = Modifier.padding(top = 6.dp, bottom = 14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(shellColors.cardBorder.copy(alpha = 0.72f)),
+                )
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    item(key = "create-playlist") {
+                        PlaylistAddCreatePlaylistRow(
+                            onClick = { createPlaylistDialogVisible = true },
                         )
+                    }
+                    if (isLoadingTargets) {
+                        item(key = "loading") {
+                            PlaylistAddLoadingRow()
+                        }
+                    } else if (targets.isEmpty()) {
+                        item(key = "empty") {
+                            PlaylistAddEmptyRow()
+                        }
+                    } else {
+                        items(targets, key = { it.id }) { target ->
+                            PlaylistAddCompactTargetRow(
+                                target = target,
+                                onClick = { onAddTarget(target) },
+                            )
+                        }
                     }
                 }
             }
