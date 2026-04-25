@@ -90,9 +90,14 @@ fun parseLyricsShareImportedFontHash(fontKey: String): String? {
 
 object LyricsShareCardSpec {
     const val BRAND_TEXT: String = "Via LynMusic"
-    const val IMAGE_WIDTH_PX: Int = 1080
-    const val IMAGE_MIN_HEIGHT_PX: Int = 1280
-    const val IMAGE_MAX_HEIGHT_PX: Int = 1960
+    // Layout keeps the existing design grid; IMAGE_* exposes the exported PNG dimensions.
+    const val OUTPUT_SCALE: Int = 2
+    const val LAYOUT_WIDTH_PX: Int = 1080
+    const val LAYOUT_MIN_HEIGHT_PX: Int = 1280
+    const val LAYOUT_MAX_HEIGHT_PX: Int = 1960
+    const val IMAGE_WIDTH_PX: Int = LAYOUT_WIDTH_PX * OUTPUT_SCALE
+    const val IMAGE_MIN_HEIGHT_PX: Int = LAYOUT_MIN_HEIGHT_PX * OUTPUT_SCALE
+    const val IMAGE_MAX_HEIGHT_PX: Int = LAYOUT_MAX_HEIGHT_PX * OUTPUT_SCALE
     const val OUTER_PADDING_PX: Int = 56
     const val PAPER_RADIUS_PX: Int = 54
     const val SHADOW_OFFSET_PX: Int = 14
@@ -143,7 +148,7 @@ object LyricsShareCardSpec {
                 BRAND_TOP_GAP_PX +
                 BRAND_HEIGHT_PX +
                 PAPER_PADDING_BOTTOM_PX
-        return contentHeight.coerceIn(IMAGE_MIN_HEIGHT_PX, IMAGE_MAX_HEIGHT_PX)
+        return contentHeight.coerceIn(LAYOUT_MIN_HEIGHT_PX, LAYOUT_MAX_HEIGHT_PX) * OUTPUT_SCALE
     }
 
     private const val CHARS_PER_ROW_ESTIMATE: Int = 12
@@ -153,9 +158,14 @@ object LyricsShareCardSpec {
 }
 
 object LyricsShareArtworkTintSpec {
-    const val IMAGE_WIDTH_PX: Int = 1080
-    const val IMAGE_MIN_HEIGHT_PX: Int = 1280
-    const val IMAGE_MAX_HEIGHT_PX: Int = 1960
+    // Layout keeps the existing design grid; IMAGE_* exposes the exported PNG dimensions.
+    const val OUTPUT_SCALE: Int = 2
+    const val LAYOUT_WIDTH_PX: Int = 1080
+    const val LAYOUT_MIN_HEIGHT_PX: Int = 1280
+    const val LAYOUT_MAX_HEIGHT_PX: Int = 1960
+    const val IMAGE_WIDTH_PX: Int = LAYOUT_WIDTH_PX * OUTPUT_SCALE
+    const val IMAGE_MIN_HEIGHT_PX: Int = LAYOUT_MIN_HEIGHT_PX * OUTPUT_SCALE
+    const val IMAGE_MAX_HEIGHT_PX: Int = LAYOUT_MAX_HEIGHT_PX * OUTPUT_SCALE
     const val OUTER_PADDING_PX: Int = 86
     const val ARTWORK_SIZE_PX: Int = 196
     const val ARTWORK_RADIUS_PX: Int = 42
@@ -199,7 +209,7 @@ object LyricsShareArtworkTintSpec {
                 BRAND_TOP_GAP_PX +
                 BRAND_HEIGHT_PX +
                 OUTER_PADDING_PX
-        return contentHeight.coerceIn(IMAGE_MIN_HEIGHT_PX, IMAGE_MAX_HEIGHT_PX)
+        return contentHeight.coerceIn(LAYOUT_MIN_HEIGHT_PX, LAYOUT_MAX_HEIGHT_PX) * OUTPUT_SCALE
     }
 
     private const val CHARS_PER_ROW_ESTIMATE: Int = 12

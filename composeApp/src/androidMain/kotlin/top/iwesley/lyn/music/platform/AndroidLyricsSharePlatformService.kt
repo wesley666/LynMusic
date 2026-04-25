@@ -270,7 +270,7 @@ class AndroidLyricsSharePlatformService(
         artworkBitmap: Bitmap?,
         importedTypeface: Typeface?,
     ): ByteArray {
-        val width = LyricsShareCardSpec.IMAGE_WIDTH_PX
+        val width = LyricsShareCardSpec.LAYOUT_WIDTH_PX
         val canvasPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareCardSpec.CANVAS_BACKGROUND_ARGB
         }
@@ -324,7 +324,7 @@ class AndroidLyricsSharePlatformService(
             textColor = LyricsShareCardSpec.TEXT_PRIMARY_ARGB,
             baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
             baseLineSpacingExtraPx = LyricsShareCardSpec.LYRICS_ANDROID_LINE_GAP_PX,
-            maxTotalHeight = LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX,
+            maxTotalHeight = LyricsShareCardSpec.LAYOUT_MAX_HEIGHT_PX,
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
@@ -342,10 +342,16 @@ class AndroidLyricsSharePlatformService(
                 brandPaint.textSize.toInt() +
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
         val height = (contentHeight + LyricsShareCardSpec.OUTER_PADDING_PX * 2 + LyricsShareCardSpec.SHADOW_OFFSET_PX)
-            .coerceIn(LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX)
+            .coerceIn(LyricsShareCardSpec.LAYOUT_MIN_HEIGHT_PX, LyricsShareCardSpec.LAYOUT_MAX_HEIGHT_PX)
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        val bitmap = Bitmap.createBitmap(
+            LyricsShareCardSpec.IMAGE_WIDTH_PX,
+            height * LyricsShareCardSpec.OUTPUT_SCALE,
+            Bitmap.Config.ARGB_8888,
+        )
+        val canvas = Canvas(bitmap).apply {
+            scale(LyricsShareCardSpec.OUTPUT_SCALE.toFloat(), LyricsShareCardSpec.OUTPUT_SCALE.toFloat())
+        }
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), canvasPaint)
 
         val paperLeft = LyricsShareCardSpec.OUTER_PADDING_PX.toFloat()
@@ -438,7 +444,7 @@ class AndroidLyricsSharePlatformService(
         artworkBitmap: Bitmap?,
         importedTypeface: Typeface?,
     ): ByteArray {
-        val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
+        val width = LyricsShareArtworkTintSpec.LAYOUT_WIDTH_PX
         val palette = model.artworkBackgroundPalette ?: sampleArtworkBackgroundPalette(artworkBitmap)
         val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = palette?.baseColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
@@ -483,7 +489,7 @@ class AndroidLyricsSharePlatformService(
             textColor = LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB,
             baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
             baseLineSpacingExtraPx = LyricsShareArtworkTintSpec.LYRICS_ANDROID_LINE_GAP_PX,
-            maxTotalHeight = LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX,
+            maxTotalHeight = LyricsShareArtworkTintSpec.LAYOUT_MAX_HEIGHT_PX,
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
@@ -501,10 +507,16 @@ class AndroidLyricsSharePlatformService(
                 brandPaint.textSize.toInt() +
                 LyricsShareArtworkTintSpec.OUTER_PADDING_PX
         val height = contentHeight
-            .coerceIn(LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+            .coerceIn(LyricsShareArtworkTintSpec.LAYOUT_MIN_HEIGHT_PX, LyricsShareArtworkTintSpec.LAYOUT_MAX_HEIGHT_PX)
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        val bitmap = Bitmap.createBitmap(
+            LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX,
+            height * LyricsShareArtworkTintSpec.OUTPUT_SCALE,
+            Bitmap.Config.ARGB_8888,
+        )
+        val canvas = Canvas(bitmap).apply {
+            scale(LyricsShareArtworkTintSpec.OUTPUT_SCALE.toFloat(), LyricsShareArtworkTintSpec.OUTPUT_SCALE.toFloat())
+        }
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         drawAndroidPlaybackPaletteBackground(
             canvas = canvas,

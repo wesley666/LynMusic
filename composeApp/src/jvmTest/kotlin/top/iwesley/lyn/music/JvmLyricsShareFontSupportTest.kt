@@ -208,7 +208,7 @@ class JvmLyricsShareFontSupportTest {
     }
 
     @Test
-    fun `buildPreview renders note and artwork tint templates with expected width bounds`() {
+    fun `buildPreview renders note and artwork tint templates with expected output bounds`() {
         val note = renderPreview(
             fontKey = null,
             template = LyricsShareTemplate.NOTE,
@@ -222,7 +222,9 @@ class JvmLyricsShareFontSupportTest {
         val artworkTintImage = ImageIO.read(ByteArrayInputStream(artworkTint))
 
         assertEquals(LyricsShareCardSpec.IMAGE_WIDTH_PX, noteImage.width)
-        assertTrue(noteImage.height in LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX)
+        assertTrue(
+            noteImage.height in LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX,
+        )
         assertEquals(LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX, artworkTintImage.width)
         assertTrue(
             artworkTintImage.height in
@@ -258,8 +260,14 @@ class JvmLyricsShareFontSupportTest {
 
         assertEquals(LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX, warmImage.width)
         assertEquals(LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX, coolImage.width)
-        assertTrue(warmImage.height in LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
-        assertTrue(coolImage.height in LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+        assertTrue(
+            warmImage.height in
+                LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX,
+        )
+        assertTrue(
+            coolImage.height in
+                LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX,
+        )
         assertNotEquals(
             warmImage.getRGB(warmImage.width - 90, 230),
             coolImage.getRGB(coolImage.width - 90, 230),

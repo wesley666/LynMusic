@@ -41,7 +41,7 @@ internal object SkiaLyricsShareRenderer {
         artworkImage: Image?,
         importedFontPath: String?,
     ): ByteArray {
-        val width = LyricsShareCardSpec.IMAGE_WIDTH_PX.toFloat()
+        val width = LyricsShareCardSpec.LAYOUT_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2f - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2f
         val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
 
@@ -87,7 +87,7 @@ internal object SkiaLyricsShareRenderer {
             baseFontSizePx = LyricsShareCardSpec.LYRICS_FONT_SIZE_PX,
             baseLineGapPx = LyricsShareCardSpec.LYRICS_IOS_LINE_GAP_PX,
             maxWidth = contentWidth,
-            maxBlockHeight = LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX - fixedHeight,
+            maxBlockHeight = LyricsShareCardSpec.LAYOUT_MAX_HEIGHT_PX - fixedHeight,
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareCardSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareCardSpec.LYRICS_FONT_SHRINK_STEP,
@@ -105,10 +105,16 @@ internal object SkiaLyricsShareRenderer {
                 LyricsShareCardSpec.PAPER_PADDING_BOTTOM_PX
         val height = (contentHeight + LyricsShareCardSpec.OUTER_PADDING_PX * 2 + LyricsShareCardSpec.SHADOW_OFFSET_PX)
             .toInt()
-            .coerceIn(LyricsShareCardSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareCardSpec.IMAGE_MAX_HEIGHT_PX)
+            .coerceIn(LyricsShareCardSpec.LAYOUT_MIN_HEIGHT_PX, LyricsShareCardSpec.LAYOUT_MAX_HEIGHT_PX)
 
-        val surface = Surface.makeRasterN32Premul(width.toInt(), height)
-        val canvas = surface.canvas
+        val surface = makeScaledSkiaLyricsShareSurface(
+            width = width.toInt(),
+            height = height,
+            scale = LyricsShareCardSpec.OUTPUT_SCALE,
+        )
+        val canvas = surface.canvas.apply {
+            scale(LyricsShareCardSpec.OUTPUT_SCALE.toFloat(), LyricsShareCardSpec.OUTPUT_SCALE.toFloat())
+        }
         val backgroundPaint = Paint().apply {
             isAntiAlias = true
             color = LyricsShareCardSpec.CANVAS_BACKGROUND_ARGB
@@ -232,7 +238,7 @@ internal object SkiaLyricsShareRenderer {
         artworkImage: Image?,
         importedFontPath: String?,
     ): ByteArray {
-        val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
+        val width = LyricsShareArtworkTintSpec.LAYOUT_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2f
         val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
         val palette = model.artworkBackgroundPalette ?: sampleSkiaLyricsShareArtworkBackgroundPalette(artworkImage)
@@ -278,7 +284,7 @@ internal object SkiaLyricsShareRenderer {
             baseFontSizePx = LyricsShareArtworkTintSpec.LYRICS_FONT_SIZE_PX,
             baseLineGapPx = LyricsShareArtworkTintSpec.LYRICS_IOS_LINE_GAP_PX,
             maxWidth = contentWidth,
-            maxBlockHeight = LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX - fixedHeight,
+            maxBlockHeight = LyricsShareArtworkTintSpec.LAYOUT_MAX_HEIGHT_PX - fixedHeight,
             fixedHeight = fixedHeight,
             minFontScale = LyricsShareArtworkTintSpec.LYRICS_MIN_FONT_SCALE,
             shrinkStep = LyricsShareArtworkTintSpec.LYRICS_FONT_SHRINK_STEP,
@@ -297,10 +303,16 @@ internal object SkiaLyricsShareRenderer {
                 LyricsShareArtworkTintSpec.OUTER_PADDING_PX
         val height = contentHeight
             .toInt()
-            .coerceIn(LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX, LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+            .coerceIn(LyricsShareArtworkTintSpec.LAYOUT_MIN_HEIGHT_PX, LyricsShareArtworkTintSpec.LAYOUT_MAX_HEIGHT_PX)
 
-        val surface = Surface.makeRasterN32Premul(width.toInt(), height)
-        val canvas = surface.canvas
+        val surface = makeScaledSkiaLyricsShareSurface(
+            width = width.toInt(),
+            height = height,
+            scale = LyricsShareArtworkTintSpec.OUTPUT_SCALE,
+        )
+        val canvas = surface.canvas.apply {
+            scale(LyricsShareArtworkTintSpec.OUTPUT_SCALE.toFloat(), LyricsShareArtworkTintSpec.OUTPUT_SCALE.toFloat())
+        }
         val backgroundPaint = Paint().apply {
             isAntiAlias = true
             color = palette?.baseColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
@@ -841,4 +853,12 @@ private fun encodeSkiaSurface(surface: Surface): ByteArray {
     val encoded = surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG, 100)
         ?: error("无法导出 PNG 数据。")
     return encoded.bytes
+}
+
+private fun makeScaledSkiaLyricsShareSurface(
+    width: Int,
+    height: Int,
+    scale: Int,
+): Surface {
+    return Surface.makeRasterN32Premul(width * scale, height * scale)
 }
