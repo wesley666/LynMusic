@@ -1585,7 +1585,7 @@ private fun CompactPlayerMoreSheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = snapshot.currentDisplayTitle,
+                    text = compactPlayerMoreTrackSummary(snapshot, track),
                     modifier = Modifier.padding(bottom = 8.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -1692,6 +1692,17 @@ private fun compactPlayerMoreAlbumLabel(
     return snapshot.currentDisplayAlbumTitle?.trim()?.takeIf { it.isNotBlank() }
         ?: track.albumTitle?.trim()?.takeIf { it.isNotBlank() }
         ?: "本地曲目"
+}
+
+private fun compactPlayerMoreTrackSummary(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+): String {
+    return listOf(
+        snapshot.currentDisplayTitle,
+        trackDisplayFormat(track),
+        formatTrackSize(track.sizeBytes),
+    ).joinToString(" · ")
 }
 
 @Composable
