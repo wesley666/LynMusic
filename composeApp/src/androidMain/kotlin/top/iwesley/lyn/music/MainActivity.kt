@@ -20,8 +20,6 @@ import top.iwesley.lyn.music.platform.createAndroidAppComponent
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
-    private lateinit var appComponent: LynMusicAppComponent
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -31,12 +29,20 @@ class MainActivity : ComponentActivity() {
         } else {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
-        appComponent = createAndroidAppComponent(this)
+        val appComponentResult = runCatching { createAndroidAppComponent(this) }
 
         setContent {
-            val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
-            ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                App(appComponent)
+            val appComponent = appComponentResult.getOrNull()
+            if (appComponent != null) {
+                val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
+                ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                    App(appComponent)
+                }
+            } else {
+                StartupDatabaseErrorScreen(
+                    error = appComponentResult.exceptionOrNull(),
+                    showDetails = false,
+                )
             }
         }
     }

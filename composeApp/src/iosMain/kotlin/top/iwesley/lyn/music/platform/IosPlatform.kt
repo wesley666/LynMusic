@@ -54,7 +54,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
-import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import top.iwesley.lyn.music.domain.testNavidromeConnection
@@ -102,11 +102,11 @@ private val IOS_SUPPORTED_IMPORT_AUDIO_EXTENSIONS = setOf(
 )
 
 fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
-    val database = buildLynMusicDatabase(
+    val database = openLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
             name = documentDirectory() + "/lynmusic.db",
         ),
-    )
+    ).getOrThrow()
     val secureStore = IosKeychainCredentialStore().withSecureInMemoryCache()
     val appPreferencesStore = IosAppPreferencesStore()
     val navidromeHttpClient = IosLyricsHttpClient()

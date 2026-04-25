@@ -96,7 +96,7 @@ import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
-import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -127,13 +127,13 @@ import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 
 fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
-    val database = buildLynMusicDatabase(
+    val database = openLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
             name = File(File(System.getProperty("user.home")), ".lynmusic/lynmusic.db").apply {
                 parentFile?.mkdirs()
             }.absolutePath,
         ),
-    )
+    ).getOrThrow()
     val logger = ConsoleDiagnosticLogger(enabled = true, label = "Desktop")
     logger.info("Desktop") {
         "你好 process pid=${ProcessHandle.current().pid()}"

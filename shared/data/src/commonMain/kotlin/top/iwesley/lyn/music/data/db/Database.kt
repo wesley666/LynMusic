@@ -12,10 +12,12 @@ import androidx.room.RoomDatabaseConstructor
 import androidx.room.RoomDatabase.Builder
 import androidx.room.Upsert
 import androidx.room.migration.Migration
+import androidx.room.useReaderConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.SQLiteConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.runBlocking
 
 @Entity(tableName = "artist")
 data class ArtistEntity(
@@ -537,8 +539,23 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_6_7)
         .addMigrations(MIGRATION_7_8)
         .addMigrations(MIGRATION_8_9)
-        .fallbackToDestructiveMigration(true)
         .build()
+}
+
+fun openLynMusicDatabase(builder: Builder<LynMusicDatabase>): Result<LynMusicDatabase> {
+    val database = buildLynMusicDatabase(builder)
+    return runCatching {
+        runBlocking {
+            database.useReaderConnection { connection ->
+                connection.usePrepared("PRAGMA user_version") { statement ->
+                    statement.step()
+                }
+            }
+        }
+        database
+    }.onFailure {
+        runCatching { database.close() }
+    }
 }
 
 val MIGRATION_1_2: Migration = object : Migration(1, 2) {

@@ -97,7 +97,7 @@ import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
-import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
+import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -122,12 +122,12 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.music.LynMusicAppComponent {
-    val database = buildLynMusicDatabase(
+    val database = openLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
             context = activity.applicationContext,
             name = activity.applicationContext.getDatabasePath("lynmusic.db").absolutePath,
         ),
-    )
+    ).getOrThrow()
     val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
     GlobalDiagnosticLogger.installStrategy(logger)
     val secureStore = AndroidCredentialStore(

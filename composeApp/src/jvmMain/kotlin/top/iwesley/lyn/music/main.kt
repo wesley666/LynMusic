@@ -15,7 +15,7 @@ import top.iwesley.lyn.music.platform.createJvmAppComponent
 fun main() {
     installJvmUncaughtExceptionHandler()
     application {
-        val appComponent = remember { createJvmAppComponent() }
+        val appComponentResult = remember { runCatching { createJvmAppComponent() } }
         val desktopWindowChrome = remember {
             defaultDesktopWindowChrome(System.getProperty("os.name").orEmpty())
         }
@@ -32,10 +32,18 @@ fun main() {
                 applyDesktopWindowChrome(composeWindow, desktopWindowChrome)
             },
         ) {
-            App(
-                component = appComponent,
-                desktopWindowChrome = desktopWindowChrome,
-            )
+            val appComponent = appComponentResult.getOrNull()
+            if (appComponent != null) {
+                App(
+                    component = appComponent,
+                    desktopWindowChrome = desktopWindowChrome,
+                )
+            } else {
+                StartupDatabaseErrorScreen(
+                    error = appComponentResult.exceptionOrNull(),
+                    showDetails = true,
+                )
+            }
         }
     }
 }
