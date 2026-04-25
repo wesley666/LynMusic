@@ -83,6 +83,7 @@ import top.iwesley.lyn.music.core.model.LyricsSourceConfig
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.feature.importing.formatImportScanSummary
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
@@ -1012,11 +1013,44 @@ internal data class VinylArtworkPalette(
     val innerGlowColor: Color,
 )
 
+internal data class PlaybackArtworkBackgroundColors(
+    val baseColor: Color,
+    val primaryColor: Color,
+    val secondaryColor: Color,
+    val tertiaryColor: Color,
+)
+
 internal fun VinylArtworkPalette.toArtworkTintTheme(): ArtworkTintTheme {
     return ArtworkTintTheme(
         rimColorArgb = rimColor.toArgbInt(),
         glowColorArgb = glowColor.toArgbInt(),
         innerGlowColorArgb = innerGlowColor.toArgbInt(),
+    )
+}
+
+@Composable
+internal fun rememberPlaybackArtworkBackgroundPalette(
+    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    enabled: Boolean,
+): PlaybackArtworkBackgroundColors? {
+    return remember(artworkBitmap, enabled) {
+        if (!enabled || artworkBitmap == null) {
+            null
+        } else {
+            derivePlaybackArtworkBackgroundColors(artworkBitmap)
+        }
+    }
+}
+
+private fun derivePlaybackArtworkBackgroundColors(
+    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap,
+): PlaybackArtworkBackgroundColors? {
+    val palette = derivePlaybackArtworkBackgroundPalette(sampleImageBitmapPixels(artworkBitmap)) ?: return null
+    return PlaybackArtworkBackgroundColors(
+        baseColor = composeColorFromArgb(palette.baseColorArgb),
+        primaryColor = composeColorFromArgb(palette.primaryColorArgb),
+        secondaryColor = composeColorFromArgb(palette.secondaryColorArgb),
+        tertiaryColor = composeColorFromArgb(palette.tertiaryColorArgb),
     )
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -88,6 +89,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -100,6 +103,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -827,53 +831,102 @@ private fun PlayerOverlay(
     val defaultBackgroundColor = Color(0xFF232325)
     val playbackStatusColor = Color.White.copy(alpha = 0.6f)
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
-    val artworkPalette = rememberVinylArtworkPalette(
+    val backgroundPalette = rememberPlaybackArtworkBackgroundPalette(
         artworkBitmap = artworkBitmap,
         enabled = true,
     )
-    val backgroundTopTint by animateColorAsState(
-        targetValue = artworkPalette?.innerGlowColor?.copy(alpha = 0.22f) ?: Color.Transparent,
-        label = "player-background-top-tint",
+    val backgroundBaseColor by animateColorAsState(
+        targetValue = backgroundPalette?.baseColor ?: defaultBackgroundColor,
+        label = "player-background-base",
     )
-    val backgroundMidTint by animateColorAsState(
-        targetValue = artworkPalette?.glowColor?.copy(alpha = 0.18f) ?: Color.Transparent,
-        label = "player-background-mid-tint",
+    val backgroundPrimaryColor by animateColorAsState(
+        targetValue = backgroundPalette?.primaryColor ?: Color.Transparent,
+        label = "player-background-primary",
     )
-    val backgroundAccentTint by animateColorAsState(
-        targetValue = artworkPalette?.rimColor?.copy(alpha = 0.12f) ?: Color.Transparent,
-        label = "player-background-accent-tint",
+    val backgroundSecondaryColor by animateColorAsState(
+        targetValue = backgroundPalette?.secondaryColor ?: Color.Transparent,
+        label = "player-background-secondary",
+    )
+    val backgroundTertiaryColor by animateColorAsState(
+        targetValue = backgroundPalette?.tertiaryColor ?: Color.Transparent,
+        label = "player-background-tertiary",
     )
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = defaultBackgroundColor,
+        color = backgroundBaseColor,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            Box(
+            if (artworkBitmap != null) {
+                Image(
+                    bitmap = artworkBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .graphicsLayer(scaleX = 1.16f, scaleY = 1.16f)
+                        .blur(86.dp)
+                        .alpha(0.30f),
+                )
+            }
+            Canvas(
                 modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                backgroundTopTint,
-                                backgroundMidTint,
-                                Color.Transparent,
-                            ),
+                    .matchParentSize(),
+            ) {
+                val radius = maxOf(size.width, size.height)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            backgroundPrimaryColor.copy(alpha = 0.58f),
+                            Color.Transparent,
                         ),
+                        center = Offset(size.width * 0.06f, size.height * 0.72f),
+                        radius = radius * 0.82f,
                     ),
-            )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                backgroundAccentTint,
-                                Color.Transparent,
-                            ),
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            backgroundSecondaryColor.copy(alpha = 0.48f),
+                            Color.Transparent,
                         ),
+                        center = Offset(size.width * 0.98f, size.height * 0.16f),
+                        radius = radius * 0.76f,
                     ),
-            )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            backgroundTertiaryColor.copy(alpha = 0.36f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.52f, size.height * 0.48f),
+                        radius = radius * 0.64f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            backgroundSecondaryColor.copy(alpha = 0.24f),
+                            Color.Transparent,
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(size.width, size.height),
+                    ),
+                )
+                drawRect(color = Color.Black.copy(alpha = 0.32f))
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.16f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.44f),
+                        ),
+                        startY = 0f,
+                        endY = size.height,
+                    ),
+                )
+            }
             val layoutProfile = buildLayoutProfile(
                 maxWidth = maxWidth,
                 maxHeight = maxHeight,
