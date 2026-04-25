@@ -51,13 +51,13 @@ class RoomFavoritesRepository(
         favoriteRows,
         database.trackDao().observeAll(),
         database.importSourceDao().observeAll(),
-        database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { favorites, tracks, sources, overrides ->
+        database.lyricsCacheDao().observeArtworkLocators(),
+    ) { favorites, tracks, sources, artworkRows ->
         val enabledSourceIds = sources.asSequence()
             .filter { it.enabled }
             .map { it.id }
             .toSet()
-        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+        val artworkOverrides = effectiveArtworkOverridesByTrackId(artworkRows)
         val trackById = tracks
             .filter { it.sourceId in enabledSourceIds }
             .associate { track ->

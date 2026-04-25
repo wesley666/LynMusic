@@ -474,6 +474,12 @@ interface LyricsCacheDao {
     @Query("SELECT * FROM lyrics_cache WHERE sourceId = :sourceId ORDER BY updatedAt DESC, trackId ASC")
     fun observeBySourceId(sourceId: String): Flow<List<LyricsCacheEntity>>
 
+    @Query("SELECT * FROM lyrics_cache WHERE artworkLocator IS NOT NULL AND TRIM(artworkLocator) != '' ORDER BY updatedAt DESC, trackId ASC, sourceId ASC")
+    fun observeArtworkLocators(): Flow<List<LyricsCacheEntity>>
+
+    @Query("SELECT * FROM lyrics_cache WHERE trackId IN (:trackIds) AND artworkLocator IS NOT NULL AND TRIM(artworkLocator) != '' ORDER BY updatedAt DESC, trackId ASC, sourceId ASC")
+    suspend fun getArtworkLocatorsByTrackIds(trackIds: List<String>): List<LyricsCacheEntity>
+
     @Query("DELETE FROM lyrics_cache WHERE trackId = :trackId AND sourceId = :sourceId")
     suspend fun deleteByTrackIdAndSourceId(trackId: String, sourceId: String)
 

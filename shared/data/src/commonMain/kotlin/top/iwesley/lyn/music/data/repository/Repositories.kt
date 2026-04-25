@@ -229,13 +229,13 @@ class RoomLibraryRepository(
     override val tracks: Flow<List<Track>> = combine(
         database.trackDao().observeAll(),
         database.importSourceDao().observeAll(),
-        database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { entities, sources, overrides ->
+        database.lyricsCacheDao().observeArtworkLocators(),
+    ) { entities, sources, artworkRows ->
         val enabledSourceIds = sources.asSequence()
             .filter { it.enabled }
             .map { it.id }
             .toSet()
-        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+        val artworkOverrides = effectiveArtworkOverridesByTrackId(artworkRows)
         entities
             .filter { it.sourceId in enabledSourceIds }
             .map { entity -> entity.toDomain(artworkOverrides[entity.id]) }
@@ -252,9 +252,7 @@ class RoomLibraryRepository(
     override suspend fun getTracksByIds(trackIds: List<String>): List<Track> {
         if (trackIds.isEmpty()) return emptyList()
         val items = database.trackDao().getByIds(trackIds)
-        val artworkOverrides = manualArtworkOverridesByTrackId(
-            database.lyricsCacheDao().getByTrackIdsAndSourceId(trackIds, MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-        )
+        val artworkOverrides = effectiveArtworkOverridesByTrackId(database.lyricsCacheDao().getArtworkLocatorsByTrackIds(trackIds))
         val byId = items.associateBy { it.id }
         return trackIds.mapNotNull { trackId -> byId[trackId]?.toDomain(artworkOverrides[trackId]) }
     }
@@ -2299,12 +2297,28 @@ private fun Double?.logScore(): String {
     return rounded.toString()
 }
 
+fun effectiveArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<String, String> {
+    val manualOverrides = linkedMapOf<String, String>()
+    val automaticOverrides = linkedMapOf<String, String>()
+    rows.sortedWith(
+        compareByDescending<LyricsCacheEntity> { it.updatedAt }
+            .thenBy { it.trackId }
+            .thenBy { it.sourceId },
+    ).forEach { row ->
+        val artworkLocator = normalizeArtworkLocator(row.artworkLocator)?.takeIf { it.isNotBlank() } ?: return@forEach
+        if (row.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID) {
+            manualOverrides[row.trackId] = artworkLocator
+        } else {
+            automaticOverrides.putIfAbsent(row.trackId, artworkLocator)
+        }
+    }
+    return automaticOverrides.toMutableMap().apply {
+        putAll(manualOverrides)
+    }
+}
+
 fun manualArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<String, String> {
-    return rows.mapNotNull { row ->
-        normalizeArtworkLocator(row.artworkLocator)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { row.trackId to it }
-    }.toMap()
+    return effectiveArtworkOverridesByTrackId(rows.filter { it.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID })
 }
 
 fun TrackEntity.toDomain(artworkOverrideLocator: String? = null): Track {

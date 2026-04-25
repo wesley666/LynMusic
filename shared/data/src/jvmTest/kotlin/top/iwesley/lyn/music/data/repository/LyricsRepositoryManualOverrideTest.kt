@@ -41,6 +41,8 @@ import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
+import top.iwesley.lyn.music.data.db.PlaylistEntity
+import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -1439,6 +1441,121 @@ class LyricsRepositoryManualOverrideTest {
             artworkCacheStore.requests,
         )
     }
+
+    @Test
+    fun `library favorites and playlist detail prefer manual then automatic artwork over track artwork`() = runTest {
+        val database = createTestDatabase()
+        seedNavidromeSource(database)
+        val originalArtwork = buildNavidromeCoverLocator("nav-source", "cover-original")
+        val track = navidromeTrack(artworkLocator = originalArtwork)
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.favoriteTrackDao().upsert(
+            FavoriteTrackEntity(
+                trackId = track.id,
+                sourceId = track.sourceId,
+                remoteSongId = "song-1",
+                favoritedAt = 1L,
+            ),
+        )
+        database.playlistDao().upsert(
+            PlaylistEntity(
+                id = "playlist-1",
+                name = "Daily",
+                normalizedName = "daily",
+                createdLocally = true,
+                createdAt = 1L,
+                updatedAt = 1L,
+            ),
+        )
+        database.playlistTrackDao().upsert(
+            PlaylistTrackEntity(
+                playlistId = "playlist-1",
+                trackId = track.id,
+                sourceId = track.sourceId,
+                addedAt = 1L,
+                localOrdinal = 0,
+                remoteOrdinal = null,
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "manual lyrics only",
+                updatedAt = 30L,
+                artworkLocator = null,
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "direct-old",
+                rawPayload = "old lyrics",
+                updatedAt = 10L,
+                artworkLocator = "https://img.example.com/old.jpg",
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "direct-new",
+                rawPayload = "new lyrics",
+                updatedAt = 20L,
+                artworkLocator = "https://img.example.com/new.jpg",
+            ),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "direct-empty",
+                rawPayload = "empty artwork",
+                updatedAt = 40L,
+                artworkLocator = "",
+            ),
+        )
+
+        assertListArtwork(database, track.id, "https://img.example.com/new.jpg")
+
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "manual lyrics only",
+                updatedAt = 50L,
+                artworkLocator = "https://img.example.com/manual.jpg",
+            ),
+        )
+
+        assertListArtwork(database, track.id, "https://img.example.com/manual.jpg")
+    }
+}
+
+private suspend fun assertListArtwork(
+    database: LynMusicDatabase,
+    trackId: String,
+    expectedArtworkLocator: String,
+) {
+    val libraryRepository = RoomLibraryRepository(database)
+    val favoriteRepository = RoomFavoritesRepository(
+        database = database,
+        secureCredentialStore = MapCredentialStore(),
+        httpClient = RecordingLyricsHttpClient(),
+        logger = NoopDiagnosticLogger,
+    )
+    val playlistRepository = RoomPlaylistRepository(
+        database = database,
+        secureCredentialStore = MapCredentialStore(),
+        httpClient = RecordingLyricsHttpClient(),
+        logger = NoopDiagnosticLogger,
+    )
+
+    assertEquals(expectedArtworkLocator, libraryRepository.getTracksByIds(listOf(trackId)).single().artworkLocator)
+    assertEquals(expectedArtworkLocator, libraryRepository.tracks.first().single().artworkLocator)
+    assertEquals(expectedArtworkLocator, favoriteRepository.favoriteTracks.first().single().artworkLocator)
+    assertEquals(
+        expectedArtworkLocator,
+        playlistRepository.observePlaylistDetail("playlist-1").first()?.tracks?.single()?.track?.artworkLocator,
+    )
 }
 
 private fun createTestDatabase(): LynMusicDatabase {

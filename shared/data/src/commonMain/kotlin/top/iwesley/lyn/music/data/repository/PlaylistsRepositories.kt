@@ -41,13 +41,13 @@ class RoomPlaylistRepository(
         database.playlistTrackDao().observeAll(),
         database.trackDao().observeAll(),
         database.importSourceDao().observeAll(),
-        database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-    ) { playlists, playlistTracks, trackEntities, sources, overrides ->
+        database.lyricsCacheDao().observeArtworkLocators(),
+    ) { playlists, playlistTracks, trackEntities, sources, artworkRows ->
         val enabledSourceIds = sources.asSequence()
             .filter { it.enabled }
             .map { it.id }
             .toSet()
-        val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+        val artworkOverrides = effectiveArtworkOverridesByTrackId(artworkRows)
         val trackById = trackEntities.associate { entity ->
             entity.id to entity.toDomain(artworkOverrides[entity.id])
         }
@@ -70,10 +70,10 @@ class RoomPlaylistRepository(
             database.playlistTrackDao().observeAll(),
             database.trackDao().observeAll(),
             database.importSourceDao().observeAll(),
-            database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-        ) { playlists, playlistTracks, trackEntities, sources, overrides ->
+            database.lyricsCacheDao().observeArtworkLocators(),
+        ) { playlists, playlistTracks, trackEntities, sources, artworkRows ->
             val playlist = playlists.firstOrNull { it.id == playlistId } ?: return@combine null
-            val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+            val artworkOverrides = effectiveArtworkOverridesByTrackId(artworkRows)
             val enabledSourceIds = sources.asSequence()
                 .filter { it.enabled }
                 .map { it.id }
