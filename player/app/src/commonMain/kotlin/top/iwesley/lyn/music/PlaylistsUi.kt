@@ -543,7 +543,6 @@ private fun PlaylistAddCompactTargetRow(
                 .background(
                     when {
                         disabled -> shellColors.cardContainer.copy(alpha = 0.45f)
-                        target.kind == PlaylistKind.SYSTEM_LIKED -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                         else -> shellColors.cardContainer.copy(alpha = 0.82f)
                     },
                 ),
