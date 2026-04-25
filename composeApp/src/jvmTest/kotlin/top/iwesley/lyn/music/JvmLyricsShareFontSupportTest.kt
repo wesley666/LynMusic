@@ -5,6 +5,7 @@ import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
@@ -12,6 +13,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.platform.JvmLyricsSharePlatformService
 import top.iwesley.lyn.music.platform.SkiaLyricsShareTokenKind
 import top.iwesley.lyn.music.platform.fitSkiaSingleLineWithEllipsis
@@ -228,9 +230,46 @@ class JvmLyricsShareFontSupportTest {
         )
     }
 
+    @Test
+    fun `buildPreview uses playback background palette for artwork tint template`() {
+        val warm = renderPreview(
+            fontKey = null,
+            template = LyricsShareTemplate.ARTWORK_TINT,
+            artworkBackgroundPalette = PlaybackArtworkBackgroundPalette(
+                baseColorArgb = 0xFF241315.toInt(),
+                primaryColorArgb = 0xFFB84D55.toInt(),
+                secondaryColorArgb = 0xFF96612F.toInt(),
+                tertiaryColorArgb = 0xFF5E314E.toInt(),
+            ),
+        )
+        val cool = renderPreview(
+            fontKey = null,
+            template = LyricsShareTemplate.ARTWORK_TINT,
+            artworkBackgroundPalette = PlaybackArtworkBackgroundPalette(
+                baseColorArgb = 0xFF101D2A.toInt(),
+                primaryColorArgb = 0xFF2E7DB3.toInt(),
+                secondaryColorArgb = 0xFF356F66.toInt(),
+                tertiaryColorArgb = 0xFF473C84.toInt(),
+            ),
+        )
+
+        val warmImage = ImageIO.read(ByteArrayInputStream(warm))
+        val coolImage = ImageIO.read(ByteArrayInputStream(cool))
+
+        assertEquals(LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX, warmImage.width)
+        assertEquals(LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX, coolImage.width)
+        assertTrue(warmImage.height in LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+        assertTrue(coolImage.height in LyricsShareArtworkTintSpec.IMAGE_MIN_HEIGHT_PX..LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX)
+        assertNotEquals(
+            warmImage.getRGB(warmImage.width - 90, 230),
+            coolImage.getRGB(coolImage.width - 90, 230),
+        )
+    }
+
     private fun renderPreview(
         fontKey: String?,
         template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
+        artworkBackgroundPalette: PlaybackArtworkBackgroundPalette? = null,
     ): ByteArray {
         return runBlocking {
             service.buildPreview(
@@ -239,6 +278,7 @@ class JvmLyricsShareFontSupportTest {
                     artistName = "LynMusic",
                     artworkLocator = null,
                     template = template,
+                    artworkBackgroundPalette = artworkBackgroundPalette,
                     lyricsLines = listOf("第一句", "第二句"),
                     fontKey = fontKey,
                 ),

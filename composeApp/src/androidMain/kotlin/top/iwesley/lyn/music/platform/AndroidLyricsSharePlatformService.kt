@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -42,10 +43,11 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
-import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import kotlin.coroutines.resume
 
 class AndroidLyricsSharePlatformService(
@@ -437,48 +439,9 @@ class AndroidLyricsSharePlatformService(
         importedTypeface: Typeface?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX
-        val theme = model.artworkTintTheme ?: sampleArtworkTintTheme(artworkBitmap)
+        val palette = model.artworkBackgroundPalette ?: sampleArtworkBackgroundPalette(artworkBitmap)
         val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
-        }
-        val topGradientPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                0f,
-                0f,
-                0f,
-                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX.toFloat(),
-                intArrayOf(
-                    argbWithAlpha(
-                        theme?.innerGlowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.22f else 0f,
-                    ),
-                    argbWithAlpha(
-                        theme?.glowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.18f else 0f,
-                    ),
-                    0x00000000,
-                ),
-                floatArrayOf(0f, 0.46f, 1f),
-                Shader.TileMode.CLAMP,
-            )
-        }
-        val accentGradientPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                0f,
-                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX * 0.22f,
-                width.toFloat(),
-                LyricsShareArtworkTintSpec.IMAGE_MAX_HEIGHT_PX.toFloat(),
-                intArrayOf(
-                    0x00000000,
-                    argbWithAlpha(
-                        theme?.rimColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.12f else 0f,
-                    ),
-                    0x00000000,
-                ),
-                floatArrayOf(0f, 0.58f, 1f),
-                Shader.TileMode.CLAMP,
-            )
+            color = palette?.baseColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
         }
         val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = LyricsShareArtworkTintSpec.PLACEHOLDER_ARGB
@@ -543,8 +506,12 @@ class AndroidLyricsSharePlatformService(
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), topGradientPaint)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), accentGradientPaint)
+        drawAndroidPlaybackPaletteBackground(
+            canvas = canvas,
+            width = width.toFloat(),
+            height = height.toFloat(),
+            palette = palette,
+        )
 
         val artworkLeft = LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
         val artworkTop = (LyricsShareArtworkTintSpec.OUTER_PADDING_PX + LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX).toFloat()
@@ -600,11 +567,107 @@ class AndroidLyricsSharePlatformService(
     }
 }
 
-private fun sampleArtworkTintTheme(artworkBitmap: Bitmap?): top.iwesley.lyn.music.core.model.ArtworkTintTheme? {
+private fun drawAndroidPlaybackPaletteBackground(
+    canvas: Canvas,
+    width: Float,
+    height: Float,
+    palette: PlaybackArtworkBackgroundPalette?,
+) {
+    val radius = max(width, height)
+    canvas.drawRect(
+        0f,
+        0f,
+        width,
+        height,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                width * 0.06f,
+                height * 0.72f,
+                radius * 0.82f,
+                intArrayOf(
+                    palette?.primaryColorArgb?.let { argbWithAlpha(it, 0.58f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+        },
+    )
+    canvas.drawRect(
+        0f,
+        0f,
+        width,
+        height,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                width * 0.98f,
+                height * 0.16f,
+                radius * 0.76f,
+                intArrayOf(
+                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.48f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+        },
+    )
+    canvas.drawRect(
+        0f,
+        0f,
+        width,
+        height,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                width * 0.52f,
+                height * 0.48f,
+                radius * 0.64f,
+                intArrayOf(
+                    palette?.tertiaryColorArgb?.let { argbWithAlpha(it, 0.36f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+        },
+    )
+    canvas.drawRect(
+        0f,
+        0f,
+        width,
+        height,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = LinearGradient(
+                0f,
+                0f,
+                width,
+                height,
+                intArrayOf(
+                    0x00000000,
+                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.24f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        },
+    )
+    canvas.drawRect(
+        0f,
+        0f,
+        width,
+        height,
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = argbWithAlpha(0xFF000000.toInt(), 0.32f)
+        },
+    )
+}
+
+private fun sampleArtworkBackgroundPalette(artworkBitmap: Bitmap?): PlaybackArtworkBackgroundPalette? {
     if (artworkBitmap == null) return null
     val stepX = max(1, artworkBitmap.width / 24)
     val stepY = max(1, artworkBitmap.height / 24)
-    return deriveArtworkTintTheme(
+    return derivePlaybackArtworkBackgroundPalette(
         buildList {
             for (y in 0 until artworkBitmap.height step stepY) {
                 for (x in 0 until artworkBitmap.width step stepX) {

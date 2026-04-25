@@ -2,6 +2,7 @@ package top.iwesley.lyn.music.platform
 
 import kotlin.math.max
 import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Font
 import org.jetbrains.skia.FontMgr
@@ -14,14 +15,14 @@ import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Shader
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.Typeface
-import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
-import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
+import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 
 internal object SkiaLyricsShareRenderer {
     fun render(
@@ -234,7 +235,7 @@ internal object SkiaLyricsShareRenderer {
         val width = LyricsShareArtworkTintSpec.IMAGE_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2f
         val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
-        val theme = model.artworkTintTheme ?: sampleSkiaLyricsShareArtworkTintTheme(artworkImage)
+        val palette = model.artworkBackgroundPalette ?: sampleSkiaLyricsShareArtworkBackgroundPalette(artworkImage)
 
         val lyricsTypeface = resolveSkiaLyricsShareTypeface(
             text = model.lyricsLines.joinToString(separator = "\n"),
@@ -302,42 +303,7 @@ internal object SkiaLyricsShareRenderer {
         val canvas = surface.canvas
         val backgroundPaint = Paint().apply {
             isAntiAlias = true
-            color = LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
-        }
-        val topGradientPaint = Paint().apply {
-            isAntiAlias = true
-            shader = Shader.makeLinearGradient(
-                Point(0f, 0f),
-                Point(0f, height.toFloat()),
-                intArrayOf(
-                    argbWithAlpha(
-                        theme?.innerGlowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.22f else 0f,
-                    ),
-                    argbWithAlpha(
-                        theme?.glowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.18f else 0f,
-                    ),
-                    0x00000000,
-                ),
-                floatArrayOf(0f, 0.46f, 1f),
-            )
-        }
-        val accentGradientPaint = Paint().apply {
-            isAntiAlias = true
-            shader = Shader.makeLinearGradient(
-                Point(0f, height * 0.22f),
-                Point(width, height.toFloat()),
-                intArrayOf(
-                    0x00000000,
-                    argbWithAlpha(
-                        theme?.rimColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-                        if (theme != null) 0.12f else 0f,
-                    ),
-                    0x00000000,
-                ),
-                floatArrayOf(0f, 0.58f, 1f),
-            )
+            color = palette?.baseColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB
         }
         val placeholderPaint = Paint().apply {
             isAntiAlias = true
@@ -357,8 +323,12 @@ internal object SkiaLyricsShareRenderer {
         }
 
         canvas.drawRect(Rect.makeWH(width, height.toFloat()), backgroundPaint)
-        canvas.drawRect(Rect.makeWH(width, height.toFloat()), topGradientPaint)
-        canvas.drawRect(Rect.makeWH(width, height.toFloat()), accentGradientPaint)
+        drawSkiaPlaybackPaletteBackground(
+            canvas = canvas,
+            width = width,
+            height = height.toFloat(),
+            palette = palette,
+        )
 
         val artworkX = LyricsShareArtworkTintSpec.OUTER_PADDING_PX.toFloat()
         val artworkY = LyricsShareArtworkTintSpec.OUTER_PADDING_PX + LyricsShareArtworkTintSpec.ARTWORK_TOP_GAP_PX.toFloat()
@@ -770,15 +740,90 @@ private fun preferredSkiaLyricsShareCodePoint(text: String): Int? {
     return nonAscii?.code ?: trimmed.firstOrNull { !it.isWhitespace() }?.code
 }
 
-private fun sampleSkiaLyricsShareArtworkTintTheme(
+private fun drawSkiaPlaybackPaletteBackground(
+    canvas: Canvas,
+    width: Float,
+    height: Float,
+    palette: PlaybackArtworkBackgroundPalette?,
+) {
+    val rect = Rect.makeWH(width, height)
+    val radius = max(width, height)
+    canvas.drawRect(
+        rect,
+        Paint().apply {
+            isAntiAlias = true
+            shader = Shader.makeRadialGradient(
+                Point(width * 0.06f, height * 0.72f),
+                radius * 0.82f,
+                intArrayOf(
+                    palette?.primaryColorArgb?.let { argbWithAlpha(it, 0.58f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+            )
+        },
+    )
+    canvas.drawRect(
+        rect,
+        Paint().apply {
+            isAntiAlias = true
+            shader = Shader.makeRadialGradient(
+                Point(width * 0.98f, height * 0.16f),
+                radius * 0.76f,
+                intArrayOf(
+                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.48f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+            )
+        },
+    )
+    canvas.drawRect(
+        rect,
+        Paint().apply {
+            isAntiAlias = true
+            shader = Shader.makeRadialGradient(
+                Point(width * 0.52f, height * 0.48f),
+                radius * 0.64f,
+                intArrayOf(
+                    palette?.tertiaryColorArgb?.let { argbWithAlpha(it, 0.36f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+            )
+        },
+    )
+    canvas.drawRect(
+        rect,
+        Paint().apply {
+            isAntiAlias = true
+            shader = Shader.makeLinearGradient(
+                Point(0f, 0f),
+                Point(width, height),
+                intArrayOf(
+                    0x00000000,
+                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.24f) } ?: 0x00000000,
+                    0x00000000,
+                ),
+                floatArrayOf(0f, 0.5f, 1f),
+            )
+        },
+    )
+    canvas.drawRect(
+        rect,
+        Paint().apply {
+            isAntiAlias = true
+            color = argbWithAlpha(0xFF000000.toInt(), 0.32f)
+        },
+    )
+}
+
+private fun sampleSkiaLyricsShareArtworkBackgroundPalette(
     artworkImage: Image?,
-): ArtworkTintTheme? {
+): PlaybackArtworkBackgroundPalette? {
     val image = artworkImage ?: return null
     val bitmap = runCatching { Bitmap.makeFromImage(image) }.getOrNull() ?: return null
     return try {
         val stepX = max(1, bitmap.imageInfo.width / 24)
         val stepY = max(1, bitmap.imageInfo.height / 24)
-        deriveArtworkTintTheme(
+        derivePlaybackArtworkBackgroundPalette(
             buildList {
                 for (y in 0 until bitmap.imageInfo.height step stepY) {
                     for (x in 0 until bitmap.imageInfo.width step stepX) {

@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +79,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -92,7 +94,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import top.iwesley.lyn.music.core.model.ArtworkTintTheme
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
@@ -101,9 +102,9 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
+import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -1249,10 +1250,10 @@ internal fun LyricsShareOverlay(
     val shellColors = mainShellColors
     val previewBitmap = rememberPlatformImageBitmap(state.sharePreviewBytes)
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
-    val artworkTintTheme = rememberVinylArtworkPalette(
+    val artworkBackgroundPalette = rememberPlaybackArtworkBackgroundPalette(
         artworkBitmap = artworkBitmap,
         enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
-    )?.toArtworkTintTheme()
+    )
     val visibleShareLyricsLines = remember(lyrics) {
         buildVisiblePlayerLyricsLines(lyrics)
     }
@@ -1412,7 +1413,7 @@ internal fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
-                                artworkTintTheme = artworkTintTheme,
+                                artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
                                 modifier = Modifier
@@ -1430,7 +1431,7 @@ internal fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBitmap = previewBitmap,
-                                artworkTintTheme = artworkTintTheme,
+                                artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
                                 modifier = Modifier
@@ -1608,7 +1609,7 @@ internal fun LyricsShareOverlay(
             LyricsShareFullscreenPreviewOverlay(
                 state = state,
                 previewBitmap = previewBitmap,
-                artworkTintTheme = artworkTintTheme,
+                artworkBackgroundPalette = artworkBackgroundPalette,
                 onDismiss = { isFullscreenPreviewVisible = false },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -2242,7 +2243,7 @@ private fun LyricsShareSelectableLine(
 private fun LyricsSharePreviewPane(
     state: PlayerState,
     previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
-    artworkTintTheme: ArtworkTintTheme?,
+    artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     fullscreenEnabled: Boolean,
     onOpenFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
@@ -2288,7 +2289,7 @@ private fun LyricsSharePreviewPane(
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
                     previewBitmap = previewBitmap,
-                    artworkTintTheme = artworkTintTheme,
+                    artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = previewModifier,
                 )
                 if (state.isShareRendering && shareCardModel != null) {
@@ -2307,7 +2308,7 @@ private fun LyricsSharePreviewPane(
 private fun LyricsSharePreviewContent(
     shareCardModel: LyricsShareCardModel?,
     previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
-    artworkTintTheme: ArtworkTintTheme?,
+    artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -2342,7 +2343,8 @@ private fun LyricsSharePreviewContent(
 
                     LyricsShareTemplate.ARTWORK_TINT -> LyricsShareArtworkTintCard(
                         model = shareCardModel,
-                        artworkTintTheme = artworkTintTheme ?: shareCardModel.artworkTintTheme,
+                        artworkBackgroundPalette = artworkBackgroundPalette
+                            ?: shareCardModel.artworkBackgroundPalette?.toPlaybackArtworkBackgroundColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -2355,7 +2357,7 @@ private fun LyricsSharePreviewContent(
 private fun LyricsShareFullscreenPreviewOverlay(
     state: PlayerState,
     previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
-    artworkTintTheme: ArtworkTintTheme?,
+    artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2384,7 +2386,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
                     previewBitmap = previewBitmap,
-                    artworkTintTheme = artworkTintTheme,
+                    artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = 28.dp, bottom = 12.dp),
@@ -2401,7 +2403,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
                     LyricsSharePreviewContent(
                         shareCardModel = shareCardModel,
                         previewBitmap = null,
-                        artworkTintTheme = artworkTintTheme,
+                        artworkBackgroundPalette = artworkBackgroundPalette,
                         modifier = Modifier
                             .fillMaxWidth()
                             .widthIn(max = 560.dp),
@@ -2526,7 +2528,7 @@ private fun LyricsShareNoteCard(
 @Composable
 private fun LyricsShareArtworkTintCard(
     model: LyricsShareCardModel,
-    artworkTintTheme: ArtworkTintTheme?,
+    artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
@@ -2534,26 +2536,11 @@ private fun LyricsShareArtworkTintCard(
         fontKey = model.fontKey,
         displayName = model.fontKey,
     )
-    val backgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
-    val topTint = composeColorFromArgb(
-        argbWithAlpha(
-            artworkTintTheme?.innerGlowColorArgb
-                ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-            if (artworkTintTheme != null) 0.22f else 0f,
-        ),
-    )
-    val midTint = composeColorFromArgb(
-        argbWithAlpha(
-            artworkTintTheme?.glowColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-            if (artworkTintTheme != null) 0.18f else 0f,
-        ),
-    )
-    val accentTint = composeColorFromArgb(
-        argbWithAlpha(
-            artworkTintTheme?.rimColorArgb ?: LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB,
-            if (artworkTintTheme != null) 0.12f else 0f,
-        ),
-    )
+    val defaultBackgroundColor = composeColorFromArgb(LyricsShareArtworkTintSpec.DEFAULT_BACKGROUND_ARGB)
+    val backgroundColor = artworkBackgroundPalette?.baseColor ?: defaultBackgroundColor
+    val primaryBackgroundColor = artworkBackgroundPalette?.primaryColor ?: Color.Transparent
+    val secondaryBackgroundColor = artworkBackgroundPalette?.secondaryColor ?: Color.Transparent
+    val tertiaryBackgroundColor = artworkBackgroundPalette?.tertiaryColor ?: Color.Transparent
     val primaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_PRIMARY_ARGB)
     val footerTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_FOOTER_ARGB)
     val secondaryTextColor = composeColorFromArgb(LyricsShareArtworkTintSpec.TEXT_SECONDARY_ARGB)
@@ -2569,34 +2556,55 @@ private fun LyricsShareArtworkTintCard(
                 .background(backgroundColor)
                 .padding(horizontal = 28.dp, vertical = 30.dp),
         ) {
-            Box(
+            Canvas(
                 modifier = Modifier
                     .matchParentSize()
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                topTint,
-                                midTint,
-                                Color.Transparent,
-                            ),
+                    .clip(RoundedCornerShape(26.dp)),
+            ) {
+                val radius = maxOf(size.width, size.height)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            primaryBackgroundColor.copy(alpha = 0.58f),
+                            Color.Transparent,
                         ),
+                        center = Offset(size.width * 0.06f, size.height * 0.72f),
+                        radius = radius * 0.82f,
                     ),
-            )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                accentTint,
-                                Color.Transparent,
-                            ),
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            secondaryBackgroundColor.copy(alpha = 0.48f),
+                            Color.Transparent,
                         ),
+                        center = Offset(size.width * 0.98f, size.height * 0.16f),
+                        radius = radius * 0.76f,
                     ),
-            )
+                )
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            tertiaryBackgroundColor.copy(alpha = 0.36f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.52f, size.height * 0.48f),
+                        radius = radius * 0.64f,
+                    ),
+                )
+                drawRect(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            secondaryBackgroundColor.copy(alpha = 0.24f),
+                            Color.Transparent,
+                        ),
+                        start = Offset.Zero,
+                        end = Offset(size.width, size.height),
+                    ),
+                )
+                drawRect(color = Color.Black.copy(alpha = 0.32f))
+            }
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.Start,
@@ -2663,6 +2671,15 @@ private fun LyricsShareArtworkTintCard(
             }
         }
     }
+}
+
+private fun PlaybackArtworkBackgroundPalette.toPlaybackArtworkBackgroundColors(): PlaybackArtworkBackgroundColors {
+    return PlaybackArtworkBackgroundColors(
+        baseColor = composeColorFromArgb(baseColorArgb),
+        primaryColor = composeColorFromArgb(primaryColorArgb),
+        secondaryColor = composeColorFromArgb(secondaryColorArgb),
+        tertiaryColor = composeColorFromArgb(tertiaryColorArgb),
+    )
 }
 
 @Composable
