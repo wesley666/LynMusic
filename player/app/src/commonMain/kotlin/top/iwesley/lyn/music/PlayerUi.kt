@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,9 +43,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
@@ -54,16 +58,21 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -84,9 +93,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1180,17 +1189,21 @@ private fun PlayerBottomControls(
     val playButtonSize = 60.dp
     val playIconSize = 42.dp
     if (!wide) {
-        val artistNavigationTarget = remember(
+        val navigationTargets = remember(
             mobilePlayback,
             snapshot.currentDisplayArtistName,
+            snapshot.currentDisplayAlbumTitle,
             track.artistName,
+            track.albumTitle,
         ) {
             if (!mobilePlayback) {
-                null
+                PlaybackLibraryNavigationTargets(albumTarget = null, artistTarget = null)
             } else {
-                derivePlaybackLibraryNavigationTargets(snapshot, track).artistTarget
+                derivePlaybackLibraryNavigationTargets(snapshot, track)
             }
         }
+        val artistNavigationTarget = navigationTargets.artistTarget
+        var isMoreSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
         val mobileTopActionButtonSize = 58.dp
         val mobileTopActionIconSize = 30.dp
         val mobileBottomActionButtonSize = 62.dp
@@ -1243,12 +1256,21 @@ private fun PlayerBottomControls(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AddToPlaylistButton(
-                        onClick = onOpenAddToPlaylist,
-                        tint = Color.White.copy(alpha = 0.96f),
-                        buttonSize = mobileTopActionButtonSize,
-                        iconSize = mobileTopActionIconSize,
-                    )
+                    if (mobilePlayback) {
+                        CompactPlayerMoreButton(
+                            onClick = { isMoreSheetVisible = true },
+                            tint = Color.White.copy(alpha = 0.96f),
+                            buttonSize = mobileTopActionButtonSize,
+                            iconSize = mobileTopActionIconSize,
+                        )
+                    } else {
+                        AddToPlaylistButton(
+                            onClick = onOpenAddToPlaylist,
+                            tint = Color.White.copy(alpha = 0.96f),
+                            buttonSize = mobileTopActionButtonSize,
+                            iconSize = mobileTopActionIconSize,
+                        )
+                    }
                     FavoriteToggleButton(
                         isFavorite = isFavorite,
                         onClick = onToggleFavorite,
@@ -1327,6 +1349,22 @@ private fun PlayerBottomControls(
                     iconSize = mobileBottomActionIconSize,
                 )
             }
+        }
+        if (mobilePlayback && isMoreSheetVisible) {
+            CompactPlayerMoreSheet(
+                snapshot = snapshot,
+                track = track,
+                navigationTargets = navigationTargets,
+                onDismiss = { isMoreSheetVisible = false },
+                onOpenAddToPlaylist = {
+                    isMoreSheetVisible = false
+                    onOpenAddToPlaylist()
+                },
+                onOpenLibraryNavigationTarget = { target ->
+                    isMoreSheetVisible = false
+                    onOpenLibraryNavigationTarget(target)
+                },
+            )
         }
         return
     }
@@ -1477,6 +1515,183 @@ private fun AddToPlaylistButton(
             modifier = Modifier.size(iconSize),
         )
     }
+}
+
+@Composable
+private fun CompactPlayerMoreButton(
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    buttonSize: androidx.compose.ui.unit.Dp = 48.dp,
+    iconSize: androidx.compose.ui.unit.Dp = 24.dp,
+) {
+    IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
+        Icon(
+            imageVector = Icons.Rounded.MoreVert,
+            contentDescription = "更多操作",
+            tint = tint,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactPlayerMoreSheet(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+    navigationTargets: PlaybackLibraryNavigationTargets,
+    onDismiss: () -> Unit,
+    onOpenAddToPlaylist: () -> Unit,
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+) {
+    val shellColors = mainShellColors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
+    val artistTarget = navigationTargets.artistTarget
+    val albumTarget = navigationTargets.albumTarget
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = shellColors.navContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+        dragHandle = {
+            CompositionLocalProvider(LocalDensity provides appDensity) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .size(width = 50.dp, height = 5.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(shellColors.cardBorder.copy(alpha = 0.75f)),
+                )
+            }
+        },
+    ) {
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "更多操作",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = snapshot.currentDisplayTitle,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                CompactPlayerMoreSheetRow(
+                    icon = Icons.Rounded.Person,
+                    title = "歌手",
+                    value = compactPlayerMoreArtistLabel(snapshot, track),
+                    enabled = artistTarget != null,
+                    onClick = { artistTarget?.let(onOpenLibraryNavigationTarget) },
+                )
+                CompactPlayerMoreSheetRow(
+                    icon = Icons.Rounded.Album,
+                    title = "专辑",
+                    value = compactPlayerMoreAlbumLabel(snapshot, track),
+                    enabled = albumTarget != null,
+                    onClick = { albumTarget?.let(onOpenLibraryNavigationTarget) },
+                )
+                CompactPlayerMoreSheetRow(
+                    icon = Icons.Rounded.Add,
+                    title = "加入歌单",
+                    value = "收藏到歌单",
+                    enabled = true,
+                    onClick = onOpenAddToPlaylist,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactPlayerMoreSheetRow(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.46f)
+    }
+    val rowModifier = if (enabled) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(shellColors.cardContainer.copy(alpha = if (enabled) 0.82f else 0.38f))
+            .then(rowModifier)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            tint = if (enabled) MaterialTheme.colorScheme.primary else contentColor,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                color = contentColor,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = value,
+                color = contentColor.copy(alpha = if (enabled) 0.70f else 0.86f),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun compactPlayerMoreArtistLabel(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+): String {
+    return snapshot.currentDisplayArtistName?.trim()?.takeIf { it.isNotBlank() }
+        ?: track.artistName?.trim()?.takeIf { it.isNotBlank() }
+        ?: "未知艺人"
+}
+
+private fun compactPlayerMoreAlbumLabel(
+    snapshot: PlaybackSnapshot,
+    track: Track,
+): String {
+    return snapshot.currentDisplayAlbumTitle?.trim()?.takeIf { it.isNotBlank() }
+        ?: track.albumTitle?.trim()?.takeIf { it.isNotBlank() }
+        ?: "本地曲目"
 }
 
 @Composable
