@@ -555,7 +555,7 @@ private fun GeneralSettingsPane(
         currentPlatformDescriptor.capabilities.supportsAppDisplayScaleAdjustment
     val showCompactPlayerLyricsSetting = isMobilePlatform
     val showNavidromeAudioQualitySetting = isMobilePlatform
-    val showDesktopVlcSettings = !isMobilePlatform
+    val showDesktopVlcSettings = currentPlatformDescriptor.isPCPlatform()
     val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
     val autoDetectedPath = state.desktopVlcAutoDetectedPath?.takeIf { it.isNotBlank() }
     val effectivePath = state.desktopVlcEffectivePath?.takeIf { it.isNotBlank() }

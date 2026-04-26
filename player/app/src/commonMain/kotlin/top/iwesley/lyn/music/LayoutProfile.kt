@@ -94,6 +94,11 @@ internal fun buildLayoutProfile(
     density = density,
 )
 
+
+internal fun PlatformDescriptor.isPCPlatform(): Boolean {
+    return name == "Desktop"
+}
+
 internal fun PlatformDescriptor.isMobilePlatform(): Boolean {
     return name == ANDROID_PLATFORM_NAME || name == IOS_PLATFORM_NAME
 }
