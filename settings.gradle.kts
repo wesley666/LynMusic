@@ -34,6 +34,9 @@ plugins {
 }
 
 include(":composeApp")
+include(":android:runtime")
+include(":tvApp")
+include(":automotiveApp")
 include(":shared:core")
 include(":shared:data")
 include(":shared:features")

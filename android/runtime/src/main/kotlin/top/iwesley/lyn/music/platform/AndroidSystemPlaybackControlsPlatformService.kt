@@ -25,12 +25,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.iwesley.lyn.music.MainActivity
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 
-internal fun createAndroidSystemPlaybackControlsPlatformService(
+fun createAndroidSystemPlaybackControlsPlatformService(
     context: Context,
 ): SystemPlaybackControlsPlatformService {
     return AndroidSystemPlaybackControlsPlatformService(context.applicationContext)
@@ -341,7 +340,11 @@ private class AndroidSystemPlaybackControlsPlatformService(
     }
 
     private fun buildContentIntent(): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
+        val intent = (
+            context.packageManager.getLaunchIntentForPackage(context.packageName)
+                ?: context.packageManager.getLeanbackLaunchIntentForPackage(context.packageName)
+                ?: Intent().setPackage(context.packageName)
+            ).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         return PendingIntent.getActivity(

@@ -249,9 +249,7 @@ class AndroidLyricsSharePlatformService(
                 else -> BitmapFactory.decodeFile(target)
             }
         }.getOrNull()
-        return artworkBitmap ?: loadBundledDefaultCoverBytes()?.let { bytes ->
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        }
+        return artworkBitmap ?: BitmapFactory.decodeResource(context.resources, android.R.drawable.ic_menu_gallery)
     }
 
     private fun renderLyricsShareBitmap(

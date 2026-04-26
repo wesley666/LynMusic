@@ -34,8 +34,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import top.iwesley.lyn.music.SharedGraph
 import top.iwesley.lyn.music.SharedRuntimeServices
-import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
 import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
@@ -129,14 +129,38 @@ import javax.crypto.spec.GCMParameterSpec
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.music.LynMusicAppComponent {
-    val database = openLynMusicDatabase(
+data class AndroidRuntimeGraph(
+    val sharedGraph: SharedGraph,
+    val playerRuntimeServices: PlayerRuntimeServices,
+)
+
+fun openAndroidRuntimeDatabase(context: Context): LynMusicDatabase {
+    return openLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
-            context = activity.applicationContext,
-            name = activity.applicationContext.getDatabasePath("lynmusic.db").absolutePath,
+            context = context.applicationContext,
+            name = context.applicationContext.getDatabasePath("lynmusic.db").absolutePath,
         ),
     ).getOrThrow()
-    val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = "Android")
+}
+
+fun createAndroidRuntimeGraph(
+    activity: ComponentActivity,
+    platformName: String = "Android",
+): AndroidRuntimeGraph {
+    val database = openAndroidRuntimeDatabase(activity.applicationContext)
+    return createAndroidRuntimeGraph(
+        activity = activity,
+        database = database,
+        platformName = platformName,
+    )
+}
+
+fun createAndroidRuntimeGraph(
+    activity: ComponentActivity,
+    database: LynMusicDatabase,
+    platformName: String = "Android",
+): AndroidRuntimeGraph {
+    val logger = AndroidDiagnosticLogger(enabled = activity.applicationContext.isDebuggableApp(), label = platformName)
     GlobalDiagnosticLogger.installStrategy(logger)
     val secureStore = AndroidCredentialStore(
         context = activity.applicationContext,
@@ -147,7 +171,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val navidromeHttpClient = AndroidLyricsHttpClient()
     val platform = PlatformDescriptor(
-        name = "Android",
+        name = platformName,
         capabilities = PlatformCapabilities(
             supportsLocalFolderImport = true,
             supportsSambaImport = true,
@@ -192,7 +216,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             logger = logger,
         ),
     )
-    return buildPlayerAppComponent(
+    return AndroidRuntimeGraph(
         sharedGraph = sharedGraph,
         playerRuntimeServices = PlayerRuntimeServices(
             playbackGateway = AndroidPlaybackGateway(
@@ -213,7 +237,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     )
 }
 
-private class AndroidLyricsHttpClient : LyricsHttpClient {
+internal class AndroidLyricsHttpClient : LyricsHttpClient {
     private val client = HttpClient(OkHttp)
 
     override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
@@ -235,7 +259,7 @@ private class AndroidLyricsHttpClient : LyricsHttpClient {
     }
 }
 
-private class AndroidCredentialStore(
+internal class AndroidCredentialStore(
     context: Context,
     private val logger: DiagnosticLogger,
 ) : SecureCredentialStore {
@@ -316,7 +340,7 @@ private class AndroidCredentialStore(
     }
 }
 
-private class AndroidAppPreferencesStore(
+internal class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
     CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
@@ -494,7 +518,7 @@ private class AndroidAppPreferencesStore(
     }
 }
 
-private class AndroidNetworkConnectionTypeProvider(
+internal class AndroidNetworkConnectionTypeProvider(
     context: Context,
 ) : NetworkConnectionTypeProvider {
     private val connectivityManager =
@@ -669,7 +693,7 @@ private class AndroidSameNameLyricsFileGateway(
     }
 }
 
-private fun Context.isDebuggableApp(): Boolean {
+internal fun Context.isDebuggableApp(): Boolean {
     return applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 }
 
@@ -1389,7 +1413,7 @@ private fun resolveAndroidLocalTrackUri(locator: String): Uri? {
     }
 }
 
-private class AndroidPlaybackGateway(
+internal class AndroidPlaybackGateway(
     private val context: Context,
     private val database: LynMusicDatabase,
     private val secureCredentialStore: SecureCredentialStore,

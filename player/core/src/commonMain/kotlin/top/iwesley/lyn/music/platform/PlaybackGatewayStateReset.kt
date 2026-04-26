@@ -2,7 +2,7 @@ package top.iwesley.lyn.music.platform
 
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 
-internal fun PlaybackGatewayState.resetForTrackSwitch(
+fun PlaybackGatewayState.resetForTrackSwitch(
     volumeOverride: Float = volume,
 ): PlaybackGatewayState {
     return copy(

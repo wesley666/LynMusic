@@ -113,13 +113,8 @@ kotlin {
             }
         }
         androidMain.dependencies {
+            implementation(project(":android:runtime"))
             implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.documentfile)
-            implementation(libs.androidx.media3.exoplayer)
-            implementation(libs.androidx.media3.session)
-            implementation(libs.ktor.client.okhttp)
-            implementation(libs.sardineAndroid)
-            implementation(libs.smbj)
         }
         commonMain.dependencies {
             implementation(project(":shared:core"))

@@ -1,8 +1,8 @@
-package top.iwesley.lyn.music
+package top.iwesley.lyn.music.tv
 
 import android.content.pm.ActivityInfo
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,10 +14,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import kotlin.math.min
+import top.iwesley.lyn.music.App
+import top.iwesley.lyn.music.StartupDatabaseErrorScreen
+import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.platform.createAndroidRuntimeGraph
-import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,7 +33,7 @@ class MainActivity : ComponentActivity() {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
         val appComponentResult = runCatching {
-            val runtimeGraph = createAndroidRuntimeGraph(this)
+            val runtimeGraph = createAndroidRuntimeGraph(this, platformName = "Android TV")
             buildPlayerAppComponent(
                 sharedGraph = runtimeGraph.sharedGraph,
                 playerRuntimeServices = runtimeGraph.playerRuntimeServices,

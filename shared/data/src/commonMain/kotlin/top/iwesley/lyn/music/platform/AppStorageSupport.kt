@@ -1,6 +1,6 @@
 package top.iwesley.lyn.music.platform
 
-internal fun isAndroidPlaybackCacheFileName(
+fun isAndroidPlaybackCacheFileName(
     fileName: String,
     sambaSourceIds: Collection<String>,
 ): Boolean {

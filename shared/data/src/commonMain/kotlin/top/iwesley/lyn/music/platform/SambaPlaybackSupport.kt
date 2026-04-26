@@ -8,7 +8,7 @@ import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 
-internal data class ResolvedSambaSourceSpec(
+data class ResolvedSambaSourceSpec(
     val sourceId: String,
     val endpoint: String,
     val server: String,
@@ -20,11 +20,11 @@ internal data class ResolvedSambaSourceSpec(
     val credentialKey: String?,
 )
 
-internal fun shouldUseAndroidSambaDirectPlayback(locator: String, useSambaCache: Boolean): Boolean {
+fun shouldUseAndroidSambaDirectPlayback(locator: String, useSambaCache: Boolean): Boolean {
     return !useSambaCache && parseSambaLocator(locator) != null
 }
 
-internal fun resolveSambaSourceSpec(
+fun resolveSambaSourceSpec(
     source: ImportSourceEntity,
     locatorRelativePath: String,
     fallbackRelativePath: String = locatorRelativePath,
@@ -51,7 +51,7 @@ internal fun resolveSambaSourceSpec(
     )
 }
 
-internal fun buildAndroidSambaSourceReference(
+fun buildAndroidSambaSourceReference(
     endpoint: String,
     shareName: String,
     remotePath: String,

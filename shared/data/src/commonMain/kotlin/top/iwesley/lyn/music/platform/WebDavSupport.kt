@@ -4,7 +4,7 @@ import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 
-internal data class WebDavListedResource(
+data class WebDavListedResource(
     val href: String,
     val isDirectory: Boolean,
     val name: String?,
@@ -12,7 +12,7 @@ internal data class WebDavListedResource(
     val modifiedAt: Long,
 )
 
-internal data class WebDavResolvedResource(
+data class WebDavResolvedResource(
     val relativePath: String,
     val isDirectory: Boolean,
     val fileName: String,
@@ -20,7 +20,7 @@ internal data class WebDavResolvedResource(
     val modifiedAt: Long,
 )
 
-internal fun resolveWebDavListedResource(
+fun resolveWebDavListedResource(
     rootUrl: String,
     currentDirectory: String,
     resource: WebDavListedResource,
@@ -37,7 +37,7 @@ internal fun resolveWebDavListedResource(
     )
 }
 
-internal fun buildWebDavImportedTrackCandidate(
+fun buildWebDavImportedTrackCandidate(
     sourceId: String,
     resource: WebDavResolvedResource,
 ): ImportedTrackCandidate {
@@ -51,7 +51,7 @@ internal fun buildWebDavImportedTrackCandidate(
     )
 }
 
-internal fun buildWebDavImportedTrackCandidate(
+fun buildWebDavImportedTrackCandidate(
     sourceId: String,
     resource: WebDavResolvedResource,
     metadata: RemoteAudioMetadata,
@@ -74,7 +74,7 @@ internal fun buildWebDavImportedTrackCandidate(
     )
 }
 
-internal fun buildWebDavRangeHeader(
+fun buildWebDavRangeHeader(
     position: Long,
     requestedLength: Long,
 ): String? {

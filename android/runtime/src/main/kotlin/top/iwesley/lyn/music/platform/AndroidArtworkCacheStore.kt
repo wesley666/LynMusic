@@ -5,6 +5,9 @@ import java.io.File
 import java.net.URI
 import java.net.URL
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
+import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 fun createAndroidArtworkCacheStore(context: Context): ArtworkCacheStore = AndroidArtworkCacheStore(context)
 
@@ -29,7 +32,7 @@ private class AndroidArtworkCacheStore(
                 ?.let { return@runCatching it.absolutePath }
             val payload = URL(target).openStream().use { it.readBytes() }
             if (payload.isEmpty()) return@runCatching null
-            val fileName = "$cachePrefix${artworkCacheExtension(target, payload)}"
+            val fileName = "$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
             val output = File(directory, fileName)
             if (output.exists() && output.length() > 0L) {
                 return@runCatching output.absolutePath
