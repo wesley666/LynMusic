@@ -2139,12 +2139,23 @@ private fun PlaybackProgress(
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
     val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val showFlowerParticles = !currentPlatformDescriptor.isAndroidTV() && !currentPlatformDescriptor.isAndroidAutomotivePlatform()
     val particles = remember { mutableStateListOf<ProgressFlowerParticle>() }
     var lastEmissionFraction by remember { mutableStateOf(progressFraction) }
     var lastEmissionNanos by remember { mutableStateOf(0L) }
     var animationFrameNanos by remember { mutableStateOf(0L) }
-    LaunchedEffect(snapshot.positionMs, snapshot.isPlaying, duration) {
+    LaunchedEffect(showFlowerParticles) {
+        if (!showFlowerParticles) {
+            particles.clear()
+        }
+    }
+    LaunchedEffect(snapshot.positionMs, snapshot.isPlaying, duration, showFlowerParticles) {
         val currentFraction = progressFraction
+        if (!showFlowerParticles) {
+            lastEmissionFraction = currentFraction
+            lastEmissionNanos = 0L
+            return@LaunchedEffect
+        }
         if (currentFraction < lastEmissionFraction) {
             lastEmissionFraction = currentFraction
             lastEmissionNanos = 0L
@@ -2190,17 +2201,19 @@ private fun PlaybackProgress(
         ) {
             val thumbInsetPx = with(LocalDensity.current) { if (floating) 6.dp.toPx() else 8.dp.toPx() }
             val sliderAlignment = if (floating) Alignment.Center else Alignment.BottomCenter
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = if (floating) 0.dp else 4.dp),
-            ) {
-                particles.forEach { particle ->
-                    drawProgressFlowerParticle(
-                        particle = particle,
-                        nowNanos = animationFrameNanos,
-                        thumbInsetPx = thumbInsetPx,
-                    )
+            if (showFlowerParticles) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = if (floating) 0.dp else 4.dp),
+                ) {
+                    particles.forEach { particle ->
+                        drawProgressFlowerParticle(
+                            particle = particle,
+                            nowNanos = animationFrameNanos,
+                            thumbInsetPx = thumbInsetPx,
+                        )
+                    }
                 }
             }
             RoundedSliderTrack(
