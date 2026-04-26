@@ -122,6 +122,36 @@ class PlayerStoreQueueTest {
     }
 
     @Test
+    fun `seek intent shows message and does not call repository when track cannot seek`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot().copy(canSeek = false))
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.SeekTo(12_345L))
+        advanceUntilIdle()
+
+        assertEquals("歌曲可能正在转码，不支持快进。", store.state.value.message)
+        assertEquals(emptyList(), playbackRepository.seekCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `seek intent calls repository when track can seek`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot().copy(canSeek = true))
+        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.SeekTo(12_345L))
+        advanceUntilIdle()
+
+        assertEquals(null, store.state.value.message)
+        assertEquals(listOf(12_345L), playbackRepository.seekCalls)
+        scope.cancel()
+    }
+
+    @Test
     fun `invalid queue index leaves playback state unchanged`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
@@ -334,6 +364,7 @@ private class FakeQueuePlaybackRepository(
         private set
     var pauseCallCount: Int = 0
         private set
+    val seekCalls = mutableListOf<Long>()
 
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
@@ -382,7 +413,10 @@ private class FakeQueuePlaybackRepository(
 
     override suspend fun skipPrevious() = Unit
 
-    override suspend fun seekTo(positionMs: Long) = Unit
+    override suspend fun seekTo(positionMs: Long) {
+        seekCalls += positionMs
+        mutableSnapshot.value = mutableSnapshot.value.copy(positionMs = positionMs)
+    }
 
     override suspend fun setVolume(volume: Float) = Unit
 

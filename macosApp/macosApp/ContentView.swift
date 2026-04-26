@@ -5,13 +5,16 @@ import ComposeApp
 
 @MainActor
 final class MacPlaybackViewModel: ObservableObject {
+    private static let unsupportedSeekMessage = "歌曲可能正在转码，不支持快进。"
     private let controller = MacosPlaybackHostKt.createMacPlaybackHostController()
     private var timer: Timer?
+    private var transientSeekMessage: String?
 
     @Published var title: String = "未选择文件"
     @Published var isPlaying: Bool = false
     @Published var positionMs: Double = 0
     @Published var durationMs: Double = 0
+    @Published var canSeek: Bool = false
     @Published var volume: Double = 1.0
     @Published var errorMessage: String?
 
@@ -48,6 +51,7 @@ final class MacPlaybackViewModel: ObservableObject {
         panel.allowedContentTypes = ["mp3", "m4a", "aac", "wav"]
             .compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK, let url = panel.url {
+            transientSeekMessage = nil
             controller.openLocalFile(path: url.path)
             refresh()
         }
@@ -63,6 +67,10 @@ final class MacPlaybackViewModel: ObservableObject {
     }
 
     func seek(to value: Double) {
+        if !canSeek {
+            showTransientSeekMessage()
+            return
+        }
         controller.seek(positionMs: Int64(value))
         refresh()
     }
@@ -78,8 +86,27 @@ final class MacPlaybackViewModel: ObservableObject {
         isPlaying = snapshot.isPlaying
         positionMs = Double(snapshot.positionMs)
         durationMs = Double(snapshot.durationMs)
+        canSeek = snapshot.canSeek
         volume = Double(snapshot.volume)
-        errorMessage = snapshot.errorMessage
+        if let playbackError = snapshot.errorMessage, !playbackError.isEmpty {
+            transientSeekMessage = nil
+            errorMessage = playbackError
+        } else {
+            errorMessage = transientSeekMessage
+        }
+    }
+
+    private func showTransientSeekMessage() {
+        transientSeekMessage = Self.unsupportedSeekMessage
+        errorMessage = Self.unsupportedSeekMessage
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            await MainActor.run {
+                guard self?.transientSeekMessage == Self.unsupportedSeekMessage else { return }
+                self?.transientSeekMessage = nil
+                self?.refresh()
+            }
+        }
     }
 
     private static func formatTime(_ value: Double) -> String {

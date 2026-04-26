@@ -12,6 +12,7 @@ internal expect class AppleNativePlayer(platformLabel: String) {
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)
+    fun canSeek(): Boolean
     fun setVolume(volume: Float)
     fun isPlaying(): Boolean
     fun positionMs(): Long

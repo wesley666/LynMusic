@@ -107,6 +107,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
                 }
 
                 override fun onSeekTo(pos: Long) {
+                    if (!latestSnapshot.canSeek) return
                     serviceScope.launch { callbacks.seekTo(pos) }
                 }
             },
@@ -254,14 +255,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
         )
         mediaSession.setPlaybackState(
             PlaybackState.Builder()
-                .setActions(
-                    PlaybackState.ACTION_PLAY or
-                        PlaybackState.ACTION_PAUSE or
-                        PlaybackState.ACTION_SKIP_TO_NEXT or
-                        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-                        PlaybackState.ACTION_SEEK_TO or
-                        PlaybackState.ACTION_PLAY_PAUSE,
-                )
+                .setActions(playbackActions(snapshot))
                 .setState(
                     if (snapshot.isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                     snapshot.positionMs.coerceAtLeast(0L),
@@ -269,6 +263,18 @@ private class AndroidSystemPlaybackControlsPlatformService(
                 )
                 .build(),
         )
+    }
+
+    private fun playbackActions(snapshot: PlaybackSnapshot): Long {
+        var actions = PlaybackState.ACTION_PLAY or
+            PlaybackState.ACTION_PAUSE or
+            PlaybackState.ACTION_SKIP_TO_NEXT or
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackState.ACTION_PLAY_PAUSE
+        if (snapshot.canSeek) {
+            actions = actions or PlaybackState.ACTION_SEEK_TO
+        }
+        return actions
     }
 
     private fun updateAudioFocus(snapshot: PlaybackSnapshot) {

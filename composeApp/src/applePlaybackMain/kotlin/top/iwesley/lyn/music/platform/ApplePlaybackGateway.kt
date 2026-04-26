@@ -37,6 +37,7 @@ internal class ApplePlaybackGateway(
                 it.copy(
                     isPlaying = false,
                     positionMs = 0L,
+                    canSeek = false,
                     completionCount = it.completionCount + 1,
                     errorMessage = null,
                 )
@@ -82,6 +83,7 @@ internal class ApplePlaybackGateway(
                 }
                 mutableState.update {
                     it.copy(
+                        canSeek = false,
                         errorMessage = resolved.message,
                     )
                 }
@@ -105,6 +107,7 @@ internal class ApplePlaybackGateway(
                         isPlaying = playWhenReady,
                         positionMs = 0L,
                         durationMs = 0L,
+                        canSeek = player.canSeek(),
                         currentNavidromeAudioQuality = navidromeAudioQuality,
                         errorMessage = null,
                     )
@@ -125,8 +128,18 @@ internal class ApplePlaybackGateway(
     }
 
     override suspend fun seekTo(positionMs: Long) {
+        if (!player.canSeek()) {
+            mutableState.update { it.copy(canSeek = false) }
+            return
+        }
         player.seekTo(positionMs)
-        mutableState.update { it.copy(positionMs = positionMs.coerceAtLeast(0L), errorMessage = null) }
+        mutableState.update {
+            it.copy(
+                positionMs = positionMs.coerceAtLeast(0L),
+                canSeek = player.canSeek(),
+                errorMessage = null,
+            )
+        }
         publishState()
     }
 
@@ -153,6 +166,7 @@ internal class ApplePlaybackGateway(
                 isPlaying = player.isPlaying(),
                 positionMs = player.positionMs().coerceAtLeast(0L),
                 durationMs = player.durationMs()?.takeIf { value -> value > 0L } ?: it.durationMs,
+                canSeek = player.canSeek(),
                 volume = player.volume().coerceIn(0f, 1f),
                 errorMessage = errorOverride ?: player.errorMessage(),
             )

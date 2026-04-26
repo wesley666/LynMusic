@@ -1206,6 +1206,7 @@ private class JvmPlaybackGateway(
                 mutableState.update {
                     it.copy(
                         durationMs = info.duration().coerceAtLeast(0L),
+                        canSeek = activePlayer.status().isSeekable(),
                         metadataTitle = resolveJvmVlcMetadataFallback(
                             primaryValue = track?.title,
                             vlcValue = sanitizeJvmVlcMetadataTitle(metaData.value(Meta.TITLE)),
@@ -1240,7 +1241,11 @@ private class JvmPlaybackGateway(
 
             override fun playing(mediaPlayer: MediaPlayer?) {
                 mutableState.update {
-                    it.copy(isPlaying = true, errorMessage = null)
+                    it.copy(
+                        isPlaying = true,
+                        canSeek = mediaPlayer?.status()?.isSeekable() ?: it.canSeek,
+                        errorMessage = null,
+                    )
                 }
             }
 
@@ -1255,6 +1260,7 @@ private class JvmPlaybackGateway(
                     it.copy(
                         isPlaying = false,
                         positionMs = 0L,
+                        canSeek = false,
                     )
                 }
             }
@@ -1270,11 +1276,18 @@ private class JvmPlaybackGateway(
                     "lengthChanged:${newLength}"
                 }
                 mutableState.update {
-                    it.copy(durationMs = newLength.coerceAtLeast(0L))
+                    it.copy(
+                        durationMs = newLength.coerceAtLeast(0L),
+                        canSeek = mediaPlayer?.status()?.isSeekable() ?: it.canSeek,
+                    )
                 }
             }
 
-
+            override fun seekableChanged(mediaPlayer: MediaPlayer?, newSeekable: Int) {
+                mutableState.update {
+                    it.copy(canSeek = newSeekable != 0)
+                }
+            }
 
             override fun mediaChanged(mediaPlayer: MediaPlayer?, media: MediaRef?) {
                 super.mediaChanged(mediaPlayer, media)
@@ -1285,6 +1298,7 @@ private class JvmPlaybackGateway(
                     it.copy(
                         isPlaying = false,
                         positionMs = 0L,
+                        canSeek = false,
                         completionCount = it.completionCount + 1,
                     )
                 }
@@ -1297,6 +1311,7 @@ private class JvmPlaybackGateway(
                 mutableState.update {
                     it.copy(
                         errorMessage = "桌面播放器无法播放当前媒体。",
+                        canSeek = false,
                         errorRevision = it.errorRevision + 1L,
                     )
                 }
@@ -1380,6 +1395,7 @@ private class JvmPlaybackGateway(
                     isPlaying = playWhenReady,
                     positionMs = 0L,
                     durationMs = 0L,
+                    canSeek = false,
                     metadataTitle = null,
                     metadataArtistName = null,
                     metadataAlbumTitle = null,
@@ -1427,6 +1443,7 @@ private class JvmPlaybackGateway(
                             metadataArtistName = metadata.artistName?.takeIf { value -> value.isNotBlank() } ?: it.metadataArtistName,
                             metadataAlbumTitle = metadata.albumTitle?.takeIf { value -> value.isNotBlank() } ?: it.metadataAlbumTitle,
                             durationMs = metadata.durationMs.takeIf { value -> value > 0L } ?: it.durationMs,
+                            canSeek = activeMediaPlayer.status().isSeekable(),
                         )
                     }
                 }
@@ -1445,6 +1462,7 @@ private class JvmPlaybackGateway(
                     isPlaying = false,
                     positionMs = startPositionMs.coerceAtLeast(0L),
                     durationMs = 0L,
+                    canSeek = false,
                     errorMessage = buildJvmPlaybackLoadFailureMessage(throwable),
                     errorRevision = it.errorRevision + 1L,
                 )
@@ -1477,6 +1495,10 @@ private class JvmPlaybackGateway(
                 action = "seek",
                 positionMs = positionMs,
             )
+            return
+        }
+        if (!activeMediaPlayer.status().isSeekable()) {
+            mutableState.update { it.copy(canSeek = false) }
             return
         }
         activeMediaPlayer.controls().setTime(positionMs)
@@ -1609,6 +1631,7 @@ private class JvmPlaybackGateway(
                 isPlaying = false,
                 positionMs = positionMs?.coerceAtLeast(0L) ?: state.positionMs,
                 durationMs = 0L,
+                canSeek = false,
                 metadataTitle = if (clearMetadata) null else state.metadataTitle,
                 metadataArtistName = if (clearMetadata) null else state.metadataArtistName,
                 metadataAlbumTitle = if (clearMetadata) null else state.metadataAlbumTitle,

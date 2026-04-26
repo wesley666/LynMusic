@@ -69,6 +69,37 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `playback snapshot records seek capability from gateway`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals(true, repository.snapshot.value.canSeek)
+
+            gateway.updateState { it.copy(canSeek = false) }
+            advanceUntilIdle()
+
+            assertEquals(false, repository.snapshot.value.canSeek)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `playback snapshot keeps track duration when gateway reports unknown duration`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
@@ -211,7 +242,7 @@ class PlaybackRepositoriesTest {
             repository.playTracks(sampleTracks(), startIndex = 0)
             advanceUntilIdle()
             val loadCountBeforeSkip = gateway.loadCalls.size
-            gateway.updateState { it.copy(positionMs = 6_000L, isPlaying = true) }
+            gateway.updateState { it.copy(positionMs = 6_000L, isPlaying = true, canSeek = true) }
             advanceUntilIdle()
 
             repository.skipPrevious()
@@ -222,6 +253,41 @@ class PlaybackRepositoriesTest {
             assertEquals(0L, repository.snapshot.value.positionMs)
             assertEquals(listOf(0L), gateway.seekCalls)
             assertEquals(loadCountBeforeSkip, gateway.loadCalls.size)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `manual previous advances to previous track after five seconds when current track cannot seek`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 1)
+            advanceUntilIdle()
+            val loadCountBeforeSkip = gateway.loadCalls.size
+            gateway.updateState { it.copy(positionMs = 6_000L, isPlaying = true, canSeek = false) }
+            advanceUntilIdle()
+
+            repository.skipPrevious()
+            advanceUntilIdle()
+
+            assertEquals(0, repository.snapshot.value.currentIndex)
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals(emptyList(), gateway.seekCalls)
+            assertEquals(loadCountBeforeSkip + 1, gateway.loadCalls.size)
         } finally {
             repository.close()
             scope.cancel()
@@ -996,6 +1062,68 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `seek is ignored when current track cannot seek`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+            gateway.updateState { it.copy(positionMs = 1_000L, canSeek = false) }
+            advanceUntilIdle()
+
+            repository.seekTo(12_345L)
+            advanceUntilIdle()
+
+            assertEquals(emptyList(), gateway.seekCalls)
+            assertEquals(1_000L, repository.snapshot.value.positionMs)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `seek is forwarded when current track can seek`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+
+            repository.seekTo(12_345L)
+            advanceUntilIdle()
+
+            assertEquals(listOf(12_345L), gateway.seekCalls)
+            assertEquals(12_345L, repository.snapshot.value.positionMs)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `system controls callbacks route to repository commands`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
@@ -1018,6 +1146,8 @@ class PlaybackRepositoriesTest {
             systemControls.callbacks.skipNext()
             advanceUntilIdle()
             assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+            gateway.updateState { it.copy(canSeek = true, errorRevision = it.errorRevision + 1L) }
+            advanceUntilIdle()
 
             systemControls.callbacks.seekTo(12_345L)
             advanceUntilIdle()
@@ -1323,11 +1453,13 @@ private class FakePlaybackGateway(
         startPositionMs: Long,
         loadToken: PlaybackLoadToken,
     ) {
+        mutableState.value = mutableState.value.copy(canSeek = false)
         loadFailure?.let { throwable ->
             mutableState.value = mutableState.value.copy(
                 isPlaying = false,
                 positionMs = startPositionMs,
                 durationMs = 0L,
+                canSeek = false,
                 errorMessage = "访问歌曲失败：${throwable.message ?: throwable::class.simpleName.orEmpty()}",
             )
             throw throwable
@@ -1341,6 +1473,7 @@ private class FakePlaybackGateway(
             isPlaying = playWhenReady,
             positionMs = startPositionMs,
             durationMs = track.durationMs,
+            canSeek = true,
             currentNavidromeAudioQuality = nextNavidromeAudioQuality,
             errorMessage = null,
         )
@@ -1393,6 +1526,7 @@ private class BlockingPlaybackGateway : PlaybackGateway {
         startPositionMs: Long,
         loadToken: PlaybackLoadToken,
     ) {
+        mutableState.value = mutableState.value.copy(canSeek = false)
         loadCalls += LoadCall(track, playWhenReady, startPositionMs)
         nextLoadGate?.also { gate ->
             nextLoadGate = null
@@ -1406,6 +1540,7 @@ private class BlockingPlaybackGateway : PlaybackGateway {
             isPlaying = playWhenReady,
             positionMs = startPositionMs,
             durationMs = track.durationMs,
+            canSeek = true,
             errorMessage = null,
         )
     }

@@ -9,6 +9,7 @@ internal fun PlaybackGatewayState.resetForTrackSwitch(
         isPlaying = false,
         positionMs = 0L,
         durationMs = 0L,
+        canSeek = false,
         volume = volumeOverride.coerceIn(0f, 1f),
         metadataTitle = null,
         metadataArtistName = null,

@@ -55,6 +55,11 @@ internal actual class AppleNativePlayer actual constructor(
         player.seekToTime(playbackTime(positionMs))
     }
 
+    actual fun canSeek(): Boolean {
+        val item = player.currentItem ?: return false
+        return item.duration.toMillis() > 0L || item.seekableTimeRanges.isNotEmpty()
+    }
+
     actual fun setVolume(volume: Float) {
         player.volume = volume.coerceIn(0f, 1f)
     }

@@ -1441,6 +1441,7 @@ private class AndroidPlaybackGateway(
                         it.copy(
                             isPlaying = false,
                             positionMs = 0L,
+                            canSeek = player.isCurrentMediaItemSeekable,
                             completionCount = it.completionCount + 1,
                         )
                     }
@@ -1458,7 +1459,7 @@ private class AndroidPlaybackGateway(
                         "play-failed locator=${currentRemoteLabel.orEmpty()}"
                     }
                 }
-                mutableState.update { it.copy(errorMessage = error.message ?: "播放器出错") }
+                mutableState.update { it.copy(canSeek = false, errorMessage = error.message ?: "播放器出错") }
             }
 
             override fun onPositionDiscontinuity(
@@ -1600,6 +1601,10 @@ private class AndroidPlaybackGateway(
 
     override suspend fun seekTo(positionMs: Long) {
         onPlayerThread {
+            if (!player.isCurrentMediaItemSeekable) {
+                publishPlayerState()
+                return@onPlayerThread
+            }
             player.seekTo(positionMs)
         }
     }
@@ -1719,6 +1724,7 @@ private class AndroidPlaybackGateway(
                 isPlaying = player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING),
                 positionMs = player.currentPosition.coerceAtLeast(0L),
                 durationMs = if (duration > 0) duration else it.durationMs,
+                canSeek = player.isCurrentMediaItemSeekable,
                 volume = player.volume,
             )
         }

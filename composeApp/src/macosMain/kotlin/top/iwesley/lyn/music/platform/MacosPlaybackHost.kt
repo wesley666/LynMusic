@@ -15,6 +15,7 @@ data class MacPlaybackHostState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
+    val canSeek: Boolean = false,
     val volume: Float = 1f,
     val errorMessage: String? = null,
 )
@@ -33,6 +34,7 @@ class MacPlaybackHostController {
                         isPlaying = gatewayState.isPlaying,
                         positionMs = gatewayState.positionMs,
                         durationMs = gatewayState.durationMs,
+                        canSeek = gatewayState.canSeek,
                         volume = gatewayState.volume,
                         errorMessage = gatewayState.errorMessage,
                     )
@@ -62,6 +64,7 @@ class MacPlaybackHostController {
                 title = title,
                 positionMs = 0L,
                 durationMs = 0L,
+                canSeek = false,
                 errorMessage = null,
             )
         }
@@ -79,6 +82,7 @@ class MacPlaybackHostController {
     }
 
     fun seek(positionMs: Long) {
+        if (!mutableState.value.canSeek) return
         scope.launch { gateway.seekTo(positionMs) }
     }
 

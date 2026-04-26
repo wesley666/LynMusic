@@ -35,6 +35,7 @@ import top.iwesley.lyn.music.data.repository.PlaybackRepository
 const val MIN_SLEEP_TIMER_MINUTES = 1
 const val MAX_SLEEP_TIMER_MINUTES = 999
 const val SLEEP_TIMER_TICK_MS = 1_000L
+private const val PLAYBACK_UNSEEKABLE_MESSAGE = "歌曲可能正在转码，不支持快进。"
 
 val SLEEP_TIMER_PRESET_MINUTES = listOf(10, 15, 20, 30, 45, 60)
 
@@ -239,7 +240,7 @@ class PlayerStore(
             PlayerIntent.TogglePlayPause -> playbackRepository.togglePlayPause()
             PlayerIntent.SkipNext -> playbackRepository.skipNext()
             PlayerIntent.SkipPrevious -> playbackRepository.skipPrevious()
-            is PlayerIntent.SeekTo -> playbackRepository.seekTo(intent.positionMs)
+            is PlayerIntent.SeekTo -> seekTo(intent.positionMs)
             is PlayerIntent.SetVolume -> playbackRepository.setVolume(intent.value)
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
             is PlayerIntent.StartSleepTimer -> startSleepTimer(intent.minutes)
@@ -302,6 +303,14 @@ class PlayerStore(
         }
         playbackRepository.playQueueIndex(index)
         updateState { it.copy(isQueueVisible = false) }
+    }
+
+    private suspend fun seekTo(positionMs: Long) {
+        if (!state.value.snapshot.canSeek) {
+            updateState { it.copy(message = PLAYBACK_UNSEEKABLE_MESSAGE) }
+            return
+        }
+        playbackRepository.seekTo(positionMs)
     }
 
     private suspend fun startSleepTimer(minutes: Int) {

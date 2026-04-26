@@ -108,6 +108,7 @@ private class IosSystemPlaybackControlsPlatformService : SystemPlaybackControlsP
             MPRemoteCommandHandlerStatusSuccess
         }
         register(remoteCommandCenter.changePlaybackPositionCommand) { event ->
+            if (!latestSnapshot.canSeek) return@register MPRemoteCommandHandlerStatusCommandFailed
             val positionEvent = event as? MPChangePlaybackPositionCommandEvent
                 ?: return@register MPRemoteCommandHandlerStatusCommandFailed
             serviceScope.launch {
@@ -200,7 +201,7 @@ private class IosSystemPlaybackControlsPlatformService : SystemPlaybackControlsP
         remoteCommandCenter.togglePlayPauseCommand.enabled = hasTrack
         remoteCommandCenter.nextTrackCommand.enabled = hasQueue
         remoteCommandCenter.previousTrackCommand.enabled = hasQueue
-        remoteCommandCenter.changePlaybackPositionCommand.enabled = hasTrack
+        remoteCommandCenter.changePlaybackPositionCommand.enabled = hasTrack && snapshot.canSeek
     }
 
     private fun register(

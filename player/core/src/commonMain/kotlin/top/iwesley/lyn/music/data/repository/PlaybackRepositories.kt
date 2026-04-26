@@ -165,6 +165,7 @@ class DefaultPlaybackRepository(
                             currentTrack = it.currentTrack,
                             currentSnapshotDurationMs = it.durationMs,
                         ),
+                        canSeek = gatewayState.canSeek,
                         volume = gatewayState.volume,
                         metadataTitle = gatewayState.metadataTitle,
                         metadataArtistName = gatewayState.metadataArtistName,
@@ -228,6 +229,7 @@ class DefaultPlaybackRepository(
                 isPlaying = true,
                 positionMs = 0L,
                 durationMs = target.durationMs,
+                canSeek = false,
                 volume = currentSnapshot.volume,
                 metadataTitle = null,
                 metadataArtistName = null,
@@ -286,7 +288,7 @@ class DefaultPlaybackRepository(
         playbackCommandMutex.withLock {
             val snapshot = mutableSnapshot.value
             if (snapshot.queue.isEmpty()) return@withLock
-            if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.positionMs > 5_000) {
+            if (snapshot.mode != PlaybackMode.REPEAT_ONE && snapshot.canSeek && snapshot.positionMs > 5_000) {
                 gateway.seekTo(0L)
                 mutableSnapshot.update { it.copy(positionMs = 0L) }
                 persistSnapshot()
@@ -308,6 +310,7 @@ class DefaultPlaybackRepository(
 
     override suspend fun seekTo(positionMs: Long) {
         playbackCommandMutex.withLock {
+            if (!mutableSnapshot.value.canSeek) return@withLock
             gateway.seekTo(positionMs)
             mutableSnapshot.update { it.copy(positionMs = positionMs.coerceAtLeast(0L)) }
             persistSnapshot()
@@ -425,6 +428,7 @@ class DefaultPlaybackRepository(
                 isPlaying = playWhenReady,
                 positionMs = 0L,
                 durationMs = target.durationMs,
+                canSeek = false,
                 metadataTitle = null,
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
@@ -502,6 +506,7 @@ class DefaultPlaybackRepository(
                     isPlaying = false,
                     positionMs = persisted.positionMs,
                     durationMs = tracks[index].durationMs,
+                    canSeek = false,
                     volume = mutableSnapshot.value.volume,
                     metadataTitle = null,
                     metadataArtistName = null,
@@ -557,6 +562,7 @@ class DefaultPlaybackRepository(
                 it.copy(
                     isPlaying = false,
                     positionMs = request.startPositionMs.coerceAtLeast(0L),
+                    canSeek = false,
                     errorMessage = buildPlaybackLoadFailureMessage(throwable),
                 )
             }
