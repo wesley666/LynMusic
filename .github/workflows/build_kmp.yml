@@ -113,7 +113,6 @@ jobs:
     needs:
       - build-android-debug
       - build-android-release-unsigned
-      - build-automotive-debug
       - build-automotive-release-unsigned
       - build-desktop
     runs-on: ubuntu-latest
@@ -155,7 +154,6 @@ jobs:
           Included artifacts:
           - Android Debug APK
           - Android Release APK (unsigned)
-          - Automotive Debug APK
           - Automotive Release APK (unsigned)
           - Desktop packages for matrix builds
 
