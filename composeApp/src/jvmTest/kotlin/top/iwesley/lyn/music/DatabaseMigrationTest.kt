@@ -6,11 +6,13 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.data.db.MIGRATION_1_2
 import top.iwesley.lyn.music.data.db.MIGRATION_2_3
 import top.iwesley.lyn.music.data.db.MIGRATION_4_5
 import top.iwesley.lyn.music.data.db.MIGRATION_8_9
+import top.iwesley.lyn.music.data.db.MIGRATION_9_10
 
 class DatabaseMigrationTest {
 
@@ -157,6 +159,60 @@ class DatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 9 to 10 adds track audio quality columns`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE track (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    sourceId TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artistId TEXT,
+                    artistName TEXT,
+                    albumId TEXT,
+                    albumTitle TEXT,
+                    durationMs INTEGER NOT NULL,
+                    trackNumber INTEGER,
+                    discNumber INTEGER,
+                    mediaLocator TEXT NOT NULL,
+                    relativePath TEXT NOT NULL,
+                    artworkLocator TEXT,
+                    sizeBytes INTEGER NOT NULL,
+                    modifiedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            connection.execSql(
+                """
+                INSERT INTO track (
+                    id, sourceId, title, artistId, artistName, albumId, albumTitle,
+                    durationMs, trackNumber, discNumber, mediaLocator, relativePath,
+                    artworkLocator, sizeBytes, modifiedAt
+                ) VALUES (
+                    'track-1', 'nav-1', 'Blue', NULL, 'Artist A', NULL, 'Album A',
+                    215000, 4, 1, 'lynmusic-navidrome://nav-1/song-1',
+                    'Artist A/Album A/Blue.flac', NULL, 12345, 0
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_9_10.migrate(connection)
+
+            assertTrue(connection.hasColumn("track", "bitDepth"))
+            assertTrue(connection.hasColumn("track", "samplingRate"))
+            assertTrue(connection.hasColumn("track", "bitRate"))
+            assertTrue(connection.hasColumn("track", "channelCount"))
+            assertNull(connection.singleNullableLong("SELECT bitDepth FROM track WHERE id = 'track-1'"))
+            assertNull(connection.singleNullableLong("SELECT samplingRate FROM track WHERE id = 'track-1'"))
+            assertNull(connection.singleNullableLong("SELECT bitRate FROM track WHERE id = 'track-1'"))
+            assertNull(connection.singleNullableLong("SELECT channelCount FROM track WHERE id = 'track-1'"))
+        }
+    }
+
     private fun SQLiteConnection.execSql(sql: String) {
         prepare(sql).use { statement ->
             statement.step()
@@ -185,6 +241,13 @@ class DatabaseMigrationTest {
         prepare(sql).use { statement ->
             check(statement.step()) { "Expected a row for query: $sql" }
             return statement.getText(0)
+        }
+    }
+
+    private fun SQLiteConnection.singleNullableLong(sql: String): Long? {
+        prepare(sql).use { statement ->
+            check(statement.step()) { "Expected a row for query: $sql" }
+            return if (statement.isNull(0)) null else statement.getLong(0)
         }
     }
 

@@ -6,6 +6,7 @@ import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.ImportScanFailure
@@ -162,6 +163,11 @@ class ImportSourceRepositoryTest {
         val indexState = assertNotNull(database.importIndexStateDao().getBySourceId(summary.sourceId))
         assertEquals(1, indexState.trackCount)
         assertEquals(1, database.trackDao().count())
+        val storedTrack = database.trackDao().getAll().single()
+        assertNull(storedTrack.bitDepth)
+        assertNull(storedTrack.samplingRate)
+        assertNull(storedTrack.bitRate)
+        assertNull(storedTrack.channelCount)
     }
 
     @Test
@@ -251,6 +257,10 @@ class ImportSourceRepositoryTest {
                     title = "Blue",
                     mediaLocator = "lynmusic-navidrome://navidrome-1/song-1",
                     relativePath = "Artist A/Album A/Blue.flac",
+                    bitDepth = 24,
+                    samplingRate = 96_000,
+                    bitRate = 2_810,
+                    channelCount = 2,
                 ),
             ),
             discoveredAudioFileCount = 2,
@@ -279,6 +289,16 @@ class ImportSourceRepositoryTest {
         assertEquals(1, gateway.navidromeScanCount)
         assertNotNull(database.importSourceDao().getById(summary.sourceId))
         assertEquals(1, database.trackDao().count())
+        val storedTrack = database.trackDao().getAll().single()
+        assertEquals(24, storedTrack.bitDepth)
+        assertEquals(96_000, storedTrack.samplingRate)
+        assertEquals(2_810, storedTrack.bitRate)
+        assertEquals(2, storedTrack.channelCount)
+        val domainTrack = storedTrack.toDomain()
+        assertEquals(24, domainTrack.bitDepth)
+        assertEquals(96_000, domainTrack.samplingRate)
+        assertEquals(2_810, domainTrack.bitRate)
+        assertEquals(2, domainTrack.channelCount)
     }
 
     @Test

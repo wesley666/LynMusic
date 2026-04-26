@@ -1672,6 +1672,7 @@ private fun CompactPlayerMoreSheet(
     val appDensity = LocalDensity.current
     val artistTarget = navigationTargets.artistTarget
     val albumTarget = navigationTargets.albumTarget
+    val technicalSummary = formatTrackTechnicalSummary(track)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1708,7 +1709,14 @@ private fun CompactPlayerMoreSheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = compactPlayerMoreTrackSummary(snapshot, track),
+                    text = compactPlayerMoreTrackTitle(snapshot, track),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = technicalSummary,
                     modifier = Modifier.padding(bottom = 8.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -2063,15 +2071,11 @@ private fun compactPlayerMoreAlbumLabel(
         ?: "本地曲目"
 }
 
-private fun compactPlayerMoreTrackSummary(
+private fun compactPlayerMoreTrackTitle(
     snapshot: PlaybackSnapshot,
     track: Track,
 ): String {
-    return listOf(
-        snapshot.currentDisplayTitle,
-        trackDisplayFormat(track),
-        formatTrackSize(track.sizeBytes),
-    ).joinToString(" · ")
+    return snapshot.currentDisplayTitle.ifBlank { track.title }
 }
 
 internal fun parseSleepTimerCustomMinutes(input: String): Int? {

@@ -76,6 +76,10 @@ data class TrackEntity(
     val artworkLocator: String?,
     val sizeBytes: Long,
     val modifiedAt: Long,
+    val bitDepth: Int? = null,
+    val samplingRate: Int? = null,
+    val bitRate: Int? = null,
+    val channelCount: Int? = null,
 )
 
 @Entity(tableName = "playback_queue_snapshot")
@@ -509,7 +513,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 9,
+    version = 10,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -545,6 +549,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_6_7)
         .addMigrations(MIGRATION_7_8)
         .addMigrations(MIGRATION_8_9)
+        .addMigrations(MIGRATION_9_10)
         .build()
 }
 
@@ -713,6 +718,15 @@ val MIGRATION_8_9: Migration = object : Migration(8, 9) {
             ADD COLUMN orderedQueueTrackIds TEXT NOT NULL DEFAULT ''
             """.trimIndent(),
         )
+    }
+}
+
+val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql("ALTER TABLE track ADD COLUMN bitDepth INTEGER")
+        connection.execSql("ALTER TABLE track ADD COLUMN samplingRate INTEGER")
+        connection.execSql("ALTER TABLE track ADD COLUMN bitRate INTEGER")
+        connection.execSql("ALTER TABLE track ADD COLUMN channelCount INTEGER")
     }
 }
 

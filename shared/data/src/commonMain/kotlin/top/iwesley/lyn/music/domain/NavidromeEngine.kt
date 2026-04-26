@@ -59,6 +59,10 @@ data class NavidromeSongCandidate(
     val sizeBytes: Long,
     val suffix: String?,
     val coverArtId: String?,
+    val bitDepth: Int?,
+    val samplingRate: Int?,
+    val bitRate: Int?,
+    val channelCount: Int?,
 )
 
 fun normalizeNavidromeBaseUrl(rawUrl: String?): String {
@@ -424,6 +428,10 @@ private suspend fun requestNavidromeAlbumSongs(
                 sizeBytes = song.long("size") ?: 0L,
                 suffix = suffix,
                 coverArtId = coverArtId,
+                bitDepth = song.int("bitDepth"),
+                samplingRate = song.int("samplingRate"),
+                bitRate = song.int("bitRate"),
+                channelCount = song.int("channelCount"),
             )
         }
 }
@@ -629,6 +637,10 @@ private fun NavidromeSongCandidate.toImportedTrackCandidate(sourceId: String): I
         embeddedLyrics = null,
         sizeBytes = sizeBytes,
         modifiedAt = 0L,
+        bitDepth = bitDepth,
+        samplingRate = samplingRate,
+        bitRate = bitRate,
+        channelCount = channelCount,
     )
 }
 

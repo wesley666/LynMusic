@@ -779,6 +779,10 @@ class RoomImportSourceRepository(
                 artworkLocator = candidate.artworkLocator,
                 sizeBytes = candidate.sizeBytes,
                 modifiedAt = candidate.modifiedAt,
+                bitDepth = candidate.bitDepth,
+                samplingRate = candidate.samplingRate,
+                bitRate = candidate.bitRate,
+                channelCount = candidate.channelCount,
             )
         }
 
@@ -2336,6 +2340,10 @@ fun TrackEntity.toDomain(artworkOverrideLocator: String? = null): Track {
         artworkLocator = artworkOverrideLocator?.takeIf { it.isNotBlank() } ?: artworkLocator,
         sizeBytes = sizeBytes,
         modifiedAt = modifiedAt,
+        bitDepth = bitDepth,
+        samplingRate = samplingRate,
+        bitRate = bitRate,
+        channelCount = channelCount,
     )
 }
 

@@ -8,6 +8,7 @@ import kotlin.test.assertTrue
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.Track
 
 class MiniPlayerBarLogicTest {
 
@@ -150,6 +151,68 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
+    fun `track audio quality formats all navidrome fields`() {
+        assertEquals(
+            "16bit / 44.1kHz · 880kbps · 2ch",
+            formatTrackAudioQuality(
+                sampleQualityTrack(
+                    bitDepth = 16,
+                    samplingRate = 44_100,
+                    bitRate = 880,
+                    channelCount = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `track audio quality omits missing fields`() {
+        assertEquals(
+            "44.1kHz · 2ch",
+            formatTrackAudioQuality(
+                sampleQualityTrack(
+                    samplingRate = 44_100,
+                    channelCount = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `track audio quality returns null without quality fields`() {
+        assertNull(formatTrackAudioQuality(sampleQualityTrack()))
+    }
+
+    @Test
+    fun `track technical summary includes format audio quality and size`() {
+        assertEquals(
+            "FLAC · 16bit / 44.1kHz · 880kbps · 2ch · 12.3 MB",
+            formatTrackTechnicalSummary(
+                sampleQualityTrack(
+                    sizeBytes = 12_897_485L,
+                    bitDepth = 16,
+                    samplingRate = 44_100,
+                    bitRate = 880,
+                    channelCount = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `track technical summary omits missing audio quality but keeps format and size`() {
+        assertEquals(
+            "MP3 · 1.0 MB",
+            formatTrackTechnicalSummary(
+                sampleQualityTrack(
+                    relativePath = "Artist A/Album A/Blue.mp3",
+                    sizeBytes = 1_048_576L,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `player info vinyl size grows with larger compact space`() {
         val small = resolvePlayerInfoVinylSize(
             maxWidth = 320.dp,
@@ -203,6 +266,28 @@ class MiniPlayerBarLogicTest {
             lines = lines.toList(),
             sourceId = "test-source",
             rawPayload = "lyrics",
+        )
+    }
+
+    private fun sampleQualityTrack(
+        relativePath: String = "Artist A/Album A/Blue.flac",
+        sizeBytes: Long = 0L,
+        bitDepth: Int? = null,
+        samplingRate: Int? = null,
+        bitRate: Int? = null,
+        channelCount: Int? = null,
+    ): Track {
+        return Track(
+            id = "track-1",
+            sourceId = "nav-source",
+            title = "Blue",
+            mediaLocator = "lynmusic-navidrome://nav-source/song-1",
+            relativePath = relativePath,
+            sizeBytes = sizeBytes,
+            bitDepth = bitDepth,
+            samplingRate = samplingRate,
+            bitRate = bitRate,
+            channelCount = channelCount,
         )
     }
 }

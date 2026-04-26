@@ -63,6 +63,10 @@ class NavidromeEngineTest {
         assertEquals(4, candidate.trackNumber)
         assertEquals(1, candidate.discNumber)
         assertEquals(12345L, candidate.sizeBytes)
+        assertEquals(16, candidate.bitDepth)
+        assertEquals(44100, candidate.samplingRate)
+        assertEquals(880, candidate.bitRate)
+        assertEquals(2, candidate.channelCount)
         assertEquals("Artist A/Album A/Blue.flac", candidate.relativePath)
         assertEquals("lynmusic-navidrome://nav-source/song-1", candidate.mediaLocator)
         assertEquals("lynmusic-navidrome-cover://nav-source/cover-1", candidate.artworkLocator)
@@ -312,6 +316,10 @@ private const val GET_ALBUM_JSON = """
           "track": 4,
           "discNumber": 1,
           "size": 12345,
+          "bitDepth": 16,
+          "samplingRate": 44100,
+          "bitRate": 880,
+          "channelCount": 2,
           "suffix": "flac",
           "coverArt": "cover-1"
         }

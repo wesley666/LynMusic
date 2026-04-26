@@ -1190,6 +1190,32 @@ internal fun trackDisplayFormat(track: Track): String {
         ?: "未知"
 }
 
+internal fun formatTrackAudioQuality(track: Track): String? {
+    val bitDepth = track.bitDepth?.takeIf { it > 0 }?.let { "${it}bit" }
+    val samplingRate = track.samplingRate?.takeIf { it > 0 }?.let(::formatSamplingRate)
+    val bitDepthAndSamplingRate = listOfNotNull(bitDepth, samplingRate)
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(" / ")
+    return listOfNotNull(
+        bitDepthAndSamplingRate,
+        track.bitRate?.takeIf { it > 0 }?.let { "${it}kbps" },
+        track.channelCount?.takeIf { it > 0 }?.let { "${it}ch" },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+internal fun formatTrackTechnicalSummary(track: Track): String {
+    return listOfNotNull(
+        trackDisplayFormat(track),
+        formatTrackAudioQuality(track),
+        formatTrackSize(track.sizeBytes),
+    ).joinToString(" · ")
+}
+
+private fun formatSamplingRate(samplingRateHz: Int): String {
+    val decimals = if (samplingRateHz % 1_000 == 0) 0 else 1
+    return "${roundTo(samplingRateHz / 1_000.0, decimals)}kHz"
+}
+
 internal fun formatTrackSize(sizeBytes: Long): String {
     if (sizeBytes <= 0L) return "未知"
     val kb = 1024.0
