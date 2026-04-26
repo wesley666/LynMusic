@@ -309,6 +309,7 @@ internal fun SettingsTab(
                         )
 
                         SettingsSection.AboutApp -> AboutAppSettingsPane(
+                            platformName = platform.name,
                             showHeading = true,
                             modifier = Modifier
                                 .weight(1f)
@@ -387,6 +388,7 @@ internal fun SettingsTab(
                                 )
 
                                 SettingsSection.AboutApp -> AboutAppSettingsPane(
+                                    platformName = platform.name,
                                     showHeading = false,
                                     modifier = detailModifier,
                                 )
@@ -1655,6 +1657,7 @@ private fun AboutDeviceSettingsPane(
 
 @Composable
 private fun AboutAppSettingsPane(
+    platformName: String,
     showHeading: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -1689,11 +1692,15 @@ private fun AboutAppSettingsPane(
 //                )
             }
         }
-        AboutDeviceInfoCard(title = "版本信息") {
+        AboutDeviceInfoCard(title = "基本信息") {
             AboutAppFieldRow(
                 label = "版本号",
                 value = BuildMetadata.versionDisplay,
                 monospace = true,
+            )
+            AboutAppFieldRow(
+                label = "平台名称",
+                value = platformName,
             )
             AboutAppFieldRow(
                 label = "编译时间",
