@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.AutoPlayOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
@@ -31,6 +32,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAppDisplayPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedAutoPlayOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
@@ -68,6 +70,8 @@ data class SharedRuntimeServices(
     val appDisplayPreferencesStore: AppDisplayPreferencesStore = UnsupportedAppDisplayPreferencesStore,
     val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
         UnsupportedCompactPlayerLyricsPreferencesStore,
+    val autoPlayOnStartupPreferencesStore: AutoPlayOnStartupPreferencesStore =
+        UnsupportedAutoPlayOnStartupPreferencesStore,
     val navidromeAudioQualityPreferencesStore: NavidromeAudioQualityPreferencesStore =
         UnsupportedNavidromeAudioQualityPreferencesStore,
     val networkConnectionTypeProvider: NetworkConnectionTypeProvider = MobileNetworkConnectionTypeProvider,
@@ -125,6 +129,7 @@ fun buildSharedGraph(
         desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
         appDisplayPreferencesStore = runtimeServices.appDisplayPreferencesStore,
         compactPlayerLyricsPreferencesStore = runtimeServices.compactPlayerLyricsPreferencesStore,
+        autoPlayOnStartupPreferencesStore = runtimeServices.autoPlayOnStartupPreferencesStore,
         navidromeAudioQualityPreferencesStore = runtimeServices.navidromeAudioQualityPreferencesStore,
     )
     NavidromeLocatorRuntime.install(

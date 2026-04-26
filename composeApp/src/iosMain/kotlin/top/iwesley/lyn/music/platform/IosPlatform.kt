@@ -142,6 +142,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            autoPlayOnStartupPreferencesStore = appPreferencesStore,
             navidromeAudioQualityPreferencesStore = appPreferencesStore,
             networkConnectionTypeProvider = networkConnectionTypeProvider,
             librarySourceFilterPreferencesStore = appPreferencesStore,
@@ -278,6 +279,13 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             defaults.boolForKey(KEY_SHOW_COMPACT_PLAYER_LYRICS)
         },
     )
+    private val mutableAutoPlayOnStartup = MutableStateFlow(
+        if (defaults.objectForKey(KEY_AUTO_PLAY_ON_STARTUP) == null) {
+            false
+        } else {
+            defaults.boolForKey(KEY_AUTO_PLAY_ON_STARTUP)
+        },
+    )
     private val mutableNavidromeWifiAudioQuality = MutableStateFlow(
         readNavidromeAudioQuality(KEY_NAVIDROME_WIFI_AUDIO_QUALITY, NavidromeAudioQuality.Original),
     )
@@ -294,6 +302,7 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup.asStateFlow()
     override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> =
         mutableNavidromeWifiAudioQuality.asStateFlow()
     override val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality> =
@@ -319,6 +328,11 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         defaults.setBool(enabled, KEY_SHOW_COMPACT_PLAYER_LYRICS)
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
+        defaults.setBool(enabled, KEY_AUTO_PLAY_ON_STARTUP)
+        mutableAutoPlayOnStartup.value = enabled
     }
 
     override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
@@ -544,6 +558,7 @@ private const val IOS_KEYCHAIN_SERVICE = "top.iwesley.lyn.music.credentials"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_AUTO_PLAY_ON_STARTUP = "auto_play_on_startup"
 private const val KEY_NAVIDROME_WIFI_AUDIO_QUALITY = "navidrome_wifi_audio_quality"
 private const val KEY_NAVIDROME_MOBILE_AUDIO_QUALITY = "navidrome_mobile_audio_quality"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"

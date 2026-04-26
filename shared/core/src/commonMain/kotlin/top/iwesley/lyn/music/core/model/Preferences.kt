@@ -64,6 +64,12 @@ interface CompactPlayerLyricsPreferencesStore {
     suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
 }
 
+interface AutoPlayOnStartupPreferencesStore {
+    val autoPlayOnStartup: StateFlow<Boolean>
+
+    suspend fun setAutoPlayOnStartup(enabled: Boolean)
+}
+
 interface AppDisplayPreferencesStore {
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>
 
@@ -91,6 +97,16 @@ object UnsupportedCompactPlayerLyricsPreferencesStore : CompactPlayerLyricsPrefe
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+}
+
+object UnsupportedAutoPlayOnStartupPreferencesStore : AutoPlayOnStartupPreferencesStore {
+    private val mutableAutoPlayOnStartup = MutableStateFlow(false)
+
+    override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup
+
+    override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
+        mutableAutoPlayOnStartup.value = enabled
     }
 }
 

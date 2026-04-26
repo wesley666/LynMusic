@@ -14,6 +14,7 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.core.model.AutoPlayOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
@@ -104,6 +105,44 @@ class SettingsRepositoryTest {
 
         assertEquals(true, preferences.showCompactPlayerLyrics.value)
         assertEquals(true, repository.showCompactPlayerLyrics.value)
+    }
+
+    @Test
+    fun `auto play on startup preference defaults to false`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            autoPlayOnStartupPreferencesStore = preferences,
+        )
+
+        assertEquals(false, repository.autoPlayOnStartup.value)
+    }
+
+    @Test
+    fun `setting auto play on startup preference writes through to preference store`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            autoPlayOnStartupPreferencesStore = preferences,
+        )
+
+        repository.setAutoPlayOnStartup(true)
+
+        assertEquals(true, preferences.autoPlayOnStartup.value)
+        assertEquals(true, repository.autoPlayOnStartup.value)
+
+        repository.setAutoPlayOnStartup(false)
+
+        assertEquals(false, preferences.autoPlayOnStartup.value)
+        assertEquals(false, repository.autoPlayOnStartup.value)
     }
 
     @Test
@@ -390,9 +429,11 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
 }
 
 private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore,
+    AutoPlayOnStartupPreferencesStore,
     CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
     override val showCompactPlayerLyrics = MutableStateFlow(false)
+    override val autoPlayOnStartup = MutableStateFlow(false)
     override val navidromeWifiAudioQuality = MutableStateFlow(NavidromeAudioQuality.Original)
     override val navidromeMobileAudioQuality = MutableStateFlow(NavidromeAudioQuality.Kbps192)
     override val selectedTheme = MutableStateFlow(AppThemeId.Ocean)
@@ -408,6 +449,10 @@ private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreference
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         showCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
+        autoPlayOnStartup.value = enabled
     }
 
     override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {

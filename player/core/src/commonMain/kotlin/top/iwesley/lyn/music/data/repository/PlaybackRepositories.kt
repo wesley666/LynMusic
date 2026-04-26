@@ -490,6 +490,7 @@ class DefaultPlaybackRepository(
         }
         val index = persisted.currentIndex.coerceIn(0, tracks.lastIndex)
         val mode = persisted.mode.toPlaybackMode()
+        val playWhenReady = playbackPreferencesStore.autoPlayOnStartup.value
         var loadRequest: PlaybackLoadRequest? = null
         var shouldApplyRestore = false
         playbackCommandMutex.withLock {
@@ -503,7 +504,7 @@ class DefaultPlaybackRepository(
                     currentIndex = index,
                     mode = mode,
                     isHydratingPlayback = false,
-                    isPlaying = false,
+                    isPlaying = playWhenReady,
                     positionMs = persisted.positionMs,
                     durationMs = tracks[index].durationMs,
                     canSeek = false,
@@ -515,7 +516,7 @@ class DefaultPlaybackRepository(
                 )
                 loadRequest = createLoadRequest(
                     track = tracks[index],
-                    playWhenReady = false,
+                    playWhenReady = playWhenReady,
                     startPositionMs = persisted.positionMs,
                 )
             }

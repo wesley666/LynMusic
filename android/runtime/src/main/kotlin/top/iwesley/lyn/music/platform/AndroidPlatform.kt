@@ -191,6 +191,7 @@ fun createAndroidRuntimeGraph(
             themePreferencesStore = appPreferencesStore,
             appDisplayPreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            autoPlayOnStartupPreferencesStore = appPreferencesStore,
             navidromeAudioQualityPreferencesStore = appPreferencesStore,
             networkConnectionTypeProvider = networkConnectionTypeProvider,
             librarySourceFilterPreferencesStore = appPreferencesStore,
@@ -354,6 +355,9 @@ internal class AndroidAppPreferencesStore(
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, false),
     )
+    private val mutableAutoPlayOnStartup = MutableStateFlow(
+        preferences.getBoolean(KEY_AUTO_PLAY_ON_STARTUP, false),
+    )
     private val mutableAppDisplayScalePreset = MutableStateFlow(
         readAppDisplayScalePreset(),
     )
@@ -379,6 +383,7 @@ internal class AndroidAppPreferencesStore(
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup.asStateFlow()
     override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset.asStateFlow()
     override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> =
         mutableNavidromeWifiAudioQuality.asStateFlow()
@@ -405,6 +410,11 @@ internal class AndroidAppPreferencesStore(
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_SHOW_COMPACT_PLAYER_LYRICS, enabled).apply()
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_AUTO_PLAY_ON_STARTUP, enabled).apply()
+        mutableAutoPlayOnStartup.value = enabled
     }
 
     override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
@@ -1916,6 +1926,7 @@ private const val CREDENTIAL_LOG_TAG = "CredentialStore"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_AUTO_PLAY_ON_STARTUP = "auto_play_on_startup"
 private const val KEY_APP_DISPLAY_SCALE_PRESET = "app_display_scale_preset"
 private const val KEY_NAVIDROME_WIFI_AUDIO_QUALITY = "navidrome_wifi_audio_quality"
 private const val KEY_NAVIDROME_MOBILE_AUDIO_QUALITY = "navidrome_mobile_audio_quality"

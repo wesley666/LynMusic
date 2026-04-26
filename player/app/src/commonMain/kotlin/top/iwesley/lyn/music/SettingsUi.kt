@@ -574,6 +574,38 @@ private fun GeneralSettingsPane(
                 subtitle = "管理播放页歌词显示和平台相关通用配置。",
             )
         }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "启动应用后自动播放",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "启动时恢复上次播放队列和进度，并自动开始播放。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = shellColors.secondaryText,
+                    )
+                }
+                Switch(
+                    checked = state.autoPlayOnStartup,
+                    onCheckedChange = { enabled ->
+                        onSettingsIntent(SettingsIntent.AutoPlayOnStartupChanged(enabled))
+                    },
+                    colors = SwitchDefaults.colors(),
+                )
+            }
+        }
         if (showDesktopVlcSettings) {
             MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(

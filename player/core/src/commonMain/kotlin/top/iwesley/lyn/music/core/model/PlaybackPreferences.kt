@@ -2,7 +2,7 @@ package top.iwesley.lyn.music.core.model
 
 import kotlinx.coroutines.flow.StateFlow
 
-interface PlaybackPreferencesStore {
+interface PlaybackPreferencesStore : AutoPlayOnStartupPreferencesStore {
     val useSambaCache: StateFlow<Boolean>
     val playbackVolume: StateFlow<Float>
 

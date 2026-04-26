@@ -641,7 +641,54 @@ class PlaybackRepositoriesTest {
             assertEquals(listOf("track-1", "track-2", "track-3", "track-4"), trackIds(snapshot.orderedQueue))
             assertEquals(2, snapshot.currentIndex)
             assertEquals("track-4", snapshot.currentTrack?.id)
+            assertEquals(false, snapshot.isPlaying)
             assertEquals("track-4", gateway.loadCalls.single().track.id)
+            assertEquals(false, gateway.loadCalls.single().playWhenReady)
+            assertEquals(12_000L, gateway.loadCalls.single().startPositionMs)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `restore queue snapshot auto plays when startup preference is enabled`() = runTest {
+        val database = createTestDatabase()
+        val tracks = sampleTracks(4)
+        database.trackDao().upsertAll(tracks.map { track -> sampleTrackEntity(track.id, track.title) })
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-3,track-1,track-4,track-2",
+                orderedQueueTrackIds = "track-1,track-2,track-3,track-4",
+                currentIndex = 2,
+                positionMs = 12_000L,
+                mode = PlaybackMode.SHUFFLE.name,
+                updatedAt = 1L,
+            ),
+        )
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore(autoPlayOnStartup = true)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+
+            val snapshot = repository.snapshot.value
+            assertEquals(listOf("track-3", "track-1", "track-4", "track-2"), trackIds(snapshot.queue))
+            assertEquals(listOf("track-1", "track-2", "track-3", "track-4"), trackIds(snapshot.orderedQueue))
+            assertEquals(2, snapshot.currentIndex)
+            assertEquals("track-4", snapshot.currentTrack?.id)
+            assertEquals(true, snapshot.isPlaying)
+            assertEquals("track-4", gateway.loadCalls.single().track.id)
+            assertEquals(true, gateway.loadCalls.single().playWhenReady)
+            assertEquals(12_000L, gateway.loadCalls.single().startPositionMs)
         } finally {
             repository.close()
             scope.cancel()
@@ -1414,14 +1461,17 @@ private fun sampleTrackEntity(id: String, title: String): TrackEntity {
 
 private class FakePlaybackPreferencesStore(
     initialPlaybackVolume: Float? = null,
+    autoPlayOnStartup: Boolean = false,
 ) : PlaybackPreferencesStore {
     private val mutableUseSambaCache = MutableStateFlow(false)
     private val mutablePlaybackVolume = MutableStateFlow(initialPlaybackVolume ?: DEFAULT_PLAYBACK_VOLUME)
+    private val mutableAutoPlayOnStartup = MutableStateFlow(autoPlayOnStartup)
 
     val persistedVolumes = mutableListOf<Float>()
 
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
+    override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         mutableUseSambaCache.value = enabled
@@ -1431,6 +1481,10 @@ private class FakePlaybackPreferencesStore(
         val normalizedVolume = normalizePlaybackVolume(volume)
         persistedVolumes += normalizedVolume
         mutablePlaybackVolume.value = normalizedVolume
+    }
+
+    override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
+        mutableAutoPlayOnStartup.value = enabled
     }
 }
 

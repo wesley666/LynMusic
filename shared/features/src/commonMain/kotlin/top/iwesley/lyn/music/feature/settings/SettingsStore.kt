@@ -57,6 +57,7 @@ data class SettingsState(
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
+    val autoPlayOnStartup: Boolean = false,
     val appDisplayScalePreset: AppDisplayScalePreset = AppDisplayScalePreset.Default,
     val navidromeWifiAudioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
     val navidromeMobileAudioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Kbps192,
@@ -101,6 +102,7 @@ data class SettingsState(
 sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ShowCompactPlayerLyricsChanged(val value: Boolean) : SettingsIntent
+    data class AutoPlayOnStartupChanged(val value: Boolean) : SettingsIntent
     data class AppDisplayScalePresetChanged(val value: AppDisplayScalePreset) : SettingsIntent
     data class NavidromeWifiAudioQualityChanged(val value: NavidromeAudioQuality) : SettingsIntent
     data class NavidromeMobileAudioQualityChanged(val value: NavidromeAudioQuality) : SettingsIntent
@@ -207,6 +209,11 @@ class SettingsStore(
             }
         }
         scope.launch {
+            repository.autoPlayOnStartup.collect { enabled ->
+                updateState { state -> state.copy(autoPlayOnStartup = enabled) }
+            }
+        }
+        scope.launch {
             repository.appDisplayScalePreset.collect { preset ->
                 updateState { state -> state.copy(appDisplayScalePreset = preset) }
             }
@@ -267,6 +274,11 @@ class SettingsStore(
             is SettingsIntent.ShowCompactPlayerLyricsChanged -> {
                 repository.setShowCompactPlayerLyrics(intent.value)
                 updateState { it.copy(showCompactPlayerLyrics = intent.value) }
+            }
+
+            is SettingsIntent.AutoPlayOnStartupChanged -> {
+                repository.setAutoPlayOnStartup(intent.value)
+                updateState { it.copy(autoPlayOnStartup = intent.value) }
             }
 
             is SettingsIntent.AppDisplayScalePresetChanged -> {
