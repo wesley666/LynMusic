@@ -24,7 +24,7 @@ import top.iwesley.lyn.music.platform.createAndroidRuntimeGraph
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        //enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val isTablet = isTabletIgnoringDisplaySize()
         requestedOrientation = if (isTablet) {
