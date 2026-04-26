@@ -47,6 +47,11 @@ internal data class LayoutProfile(
     val isMobilePlatform: Boolean
         get() = platform?.isMobilePlatform() == true
 
+    val isAndroidTV: Boolean = platform?.isAndroidTV() == true
+
+    val isAndroidAuto: Boolean = platform?.isAndroidAutomotivePlatform() == true
+
+
 //    val isCompactShell: Boolean
 //        get() = maxWidth < COMPACT_SHELL_MIN_WIDTH
 
@@ -56,7 +61,12 @@ internal data class LayoutProfile(
      * 平板走大屏布局
      */
     val isExpandedLayout: Boolean
-        get() = !isMobilePlatform || min(maxWidth, maxHeight) >= 600.dp && isLandscape
+        get() = when {
+            isAndroidTV -> isLandscape
+            isAndroidAuto -> isLandscape
+            isMobilePlatform -> min(maxWidth, maxHeight) >= 600.dp && isLandscape
+            else -> true
+        }
 
     val isCompactLayout: Boolean
         get() = !isExpandedLayout //手机横屏会返回true
@@ -88,10 +98,24 @@ internal fun PlatformDescriptor.isMobilePlatform(): Boolean {
     return name == ANDROID_PLATFORM_NAME || name == IOS_PLATFORM_NAME
 }
 
+internal fun PlatformDescriptor.isAndroidPlatform(): Boolean {
+    return name.contains("Android")
+}
+
+internal fun PlatformDescriptor.isAndroidTV(): Boolean {
+    return name == ANDROID_TV_PLATFORM_NAME
+}
+
+internal fun PlatformDescriptor.isAndroidAutomotivePlatform(): Boolean {
+    return name == ANDROID_AUTOMOTIVE_PLATFORM_NAME
+}
+
 private val COMPACT_SHELL_MIN_WIDTH = 900.dp
 private val WIDE_LAYOUT_MIN_WIDTH = 980.dp
 private val NARROW_ACTIONS_MAX_WIDTH = 760.dp
 private val STACKED_FIELDS_MAX_WIDTH = 560.dp
 
-private const val ANDROID_PLATFORM_NAME = "Android"
-private const val IOS_PLATFORM_NAME = "iPhone / iPad"
+const val ANDROID_PLATFORM_NAME = "Android"
+const val ANDROID_AUTOMOTIVE_PLATFORM_NAME = "Android Automotive"
+const val ANDROID_TV_PLATFORM_NAME = "Android TV"
+const val IOS_PLATFORM_NAME = "iPhone / iPad"

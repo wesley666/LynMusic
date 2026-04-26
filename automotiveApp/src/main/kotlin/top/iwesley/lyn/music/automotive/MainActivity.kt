@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import top.iwesley.lyn.music.ANDROID_AUTOMOTIVE_PLATFORM_NAME
 import kotlin.math.min
 import top.iwesley.lyn.music.App
 import top.iwesley.lyn.music.StartupDatabaseErrorScreen
@@ -26,14 +27,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         //enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val isTablet = isTabletIgnoringDisplaySize()
-        requestedOrientation = if (isTablet) {
-            ActivityInfo.SCREEN_ORIENTATION_FULL_USER
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         val appComponentResult = runCatching {
-            val runtimeGraph = createAndroidRuntimeGraph(this, platformName = "Android Automotive")
+            val runtimeGraph = createAndroidRuntimeGraph(this, platformName = ANDROID_AUTOMOTIVE_PLATFORM_NAME)
             buildPlayerAppComponent(
                 sharedGraph = runtimeGraph.sharedGraph,
                 playerRuntimeServices = runtimeGraph.playerRuntimeServices,
