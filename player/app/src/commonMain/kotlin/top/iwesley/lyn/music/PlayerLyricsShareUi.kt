@@ -240,29 +240,15 @@ internal fun PlayerLyricsPane(
                             track = track,
                             secondaryTextColor = lyricsSecondaryTextColor,
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-                            showTrackInfo = mobilePlayback,
+                            showTrackInfo = true,
                             onShowTrackInfo = { showTrackInfoDialog = true },
                         )
                     } else {
                         PlayerLyricsPlainMetadataRow(
                             text = "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
                             secondaryTextColor = lyricsSecondaryTextColor,
-                            showTrackInfo = mobilePlayback,
+                            showTrackInfo = true,
                             onShowTrackInfo = { showTrackInfoDialog = true },
-                        )
-                    }
-                    if (!mobilePlayback) {
-                        Text(
-                            track.relativePath,
-                            color = lyricsSecondaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "格式：${trackDisplayFormat(track)}    大小：${formatTrackSize(track.sizeBytes)}",
-                            color = lyricsSecondaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -473,7 +459,7 @@ internal fun PlayerLyricsPane(
             }
         }
     }
-    if (showTrackInfoDialog && mobilePlayback) {
+    if (showTrackInfoDialog) {
         PlayerTrackInfoDialog(
             track = track,
             onDismiss = { showTrackInfoDialog = false },
@@ -631,6 +617,7 @@ private fun PlayerTrackInfoDialog(
     val shellColors = mainShellColors
     val primaryTextColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = shellColors.secondaryText
+    val audioQuality = formatTrackAudioQuality(track)
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
@@ -654,6 +641,14 @@ private fun PlayerTrackInfoDialog(
                     labelColor = secondaryTextColor,
                     valueColor = primaryTextColor,
                 )
+                audioQuality?.let { quality ->
+                    PlayerTrackInfoDialogLine(
+                        label = "音质",
+                        value = quality,
+                        labelColor = secondaryTextColor,
+                        valueColor = primaryTextColor,
+                    )
+                }
                 PlayerTrackInfoDialogLine(
                     label = "大小",
                     value = formatTrackSize(track.sizeBytes),
