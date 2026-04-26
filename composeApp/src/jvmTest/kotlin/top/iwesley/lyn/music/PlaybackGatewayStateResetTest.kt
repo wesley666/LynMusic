@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.platform.resetForTrackSwitch
 
@@ -18,6 +19,7 @@ class PlaybackGatewayStateResetTest {
             metadataTitle = "Song",
             metadataArtistName = "Artist",
             metadataAlbumTitle = "Album",
+            currentNavidromeAudioQuality = NavidromeAudioQuality.Kbps320,
             completionCount = 7L,
             errorMessage = "boom",
         )
@@ -31,6 +33,7 @@ class PlaybackGatewayStateResetTest {
         assertNull(reset.metadataTitle)
         assertNull(reset.metadataArtistName)
         assertNull(reset.metadataAlbumTitle)
+        assertNull(reset.currentNavidromeAudioQuality)
         assertEquals(7L, reset.completionCount)
         assertNull(reset.errorMessage)
     }

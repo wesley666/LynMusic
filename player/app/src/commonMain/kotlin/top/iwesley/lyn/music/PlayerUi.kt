@@ -121,10 +121,12 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.player.SLEEP_TIMER_PRESET_MINUTES
@@ -1673,6 +1675,10 @@ private fun CompactPlayerMoreSheet(
     val artistTarget = navigationTargets.artistTarget
     val albumTarget = navigationTargets.albumTarget
     val technicalSummary = formatTrackTechnicalSummary(track)
+    val currentNavidromeAudioQuality = formatCurrentNavidromePlaybackAudioQuality(
+        track = track,
+        audioQuality = snapshot.currentNavidromeAudioQuality,
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1723,6 +1729,16 @@ private fun CompactPlayerMoreSheet(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                currentNavidromeAudioQuality?.let { qualityText ->
+                    CompactPlayerMoreSheetRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = "当前播放音质",
+                        value = qualityText,
+                        enabled = true,
+                        clickable = false,
+                        onClick = {},
+                    )
+                }
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Person,
                     title = "歌手",
@@ -2002,6 +2018,7 @@ private fun CompactPlayerMoreSheetRow(
     value: String,
     enabled: Boolean,
     onClick: () -> Unit,
+    clickable: Boolean = enabled,
 ) {
     val shellColors = mainShellColors
     val contentColor = if (enabled) {
@@ -2009,7 +2026,7 @@ private fun CompactPlayerMoreSheetRow(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.46f)
     }
-    val rowModifier = if (enabled) {
+    val rowModifier = if (clickable) {
         Modifier.clickable(onClick = onClick)
     } else {
         Modifier
@@ -2076,6 +2093,14 @@ private fun compactPlayerMoreTrackTitle(
     track: Track,
 ): String {
     return snapshot.currentDisplayTitle.ifBlank { track.title }
+}
+
+internal fun formatCurrentNavidromePlaybackAudioQuality(
+    track: Track,
+    audioQuality: NavidromeAudioQuality?,
+): String? {
+    if (parseNavidromeSongLocator(track.mediaLocator) == null) return null
+    return audioQuality?.let(::navidromeAudioQualityLabel)
 }
 
 internal fun parseSleepTimerCustomMinutes(input: String): Int? {

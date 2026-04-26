@@ -4,6 +4,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -53,7 +55,11 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.NetworkConnectionType
+import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
@@ -75,7 +81,9 @@ import top.iwesley.lyn.music.core.model.appDisplayScalePresetOrDefault
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.navidromeAudioQualityOrDefault
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
+import top.iwesley.lyn.music.core.model.resolveNavidromeAudioQualityForCurrentNetwork
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -135,6 +143,7 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
         logger = logger,
     ).withSecureInMemoryCache()
     val appPreferencesStore = AndroidAppPreferencesStore(activity.applicationContext)
+    val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider(activity.applicationContext)
     val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val navidromeHttpClient = AndroidLyricsHttpClient()
     val platform = PlatformDescriptor(
@@ -158,6 +167,8 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
             themePreferencesStore = appPreferencesStore,
             appDisplayPreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            navidromeAudioQualityPreferencesStore = appPreferencesStore,
+            networkConnectionTypeProvider = networkConnectionTypeProvider,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
@@ -184,7 +195,15 @@ fun createAndroidAppComponent(activity: ComponentActivity): top.iwesley.lyn.musi
     return buildPlayerAppComponent(
         sharedGraph = sharedGraph,
         playerRuntimeServices = PlayerRuntimeServices(
-            playbackGateway = AndroidPlaybackGateway(activity.applicationContext, database, secureStore, appPreferencesStore, logger),
+            playbackGateway = AndroidPlaybackGateway(
+                context = activity.applicationContext,
+                database = database,
+                secureCredentialStore = secureStore,
+                playbackPreferencesStore = appPreferencesStore,
+                navidromeAudioQualityPreferencesStore = appPreferencesStore,
+                networkConnectionTypeProvider = networkConnectionTypeProvider,
+                logger = logger,
+            ),
             playbackPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
@@ -300,7 +319,8 @@ private class AndroidCredentialStore(
 private class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
-    CompactPlayerLyricsPreferencesStore, LibrarySourceFilterPreferencesStore, LyricsShareFontPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
+    LyricsShareFontPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
     private val mutableUseSambaCache = MutableStateFlow(
@@ -312,6 +332,12 @@ private class AndroidAppPreferencesStore(
     )
     private val mutableAppDisplayScalePreset = MutableStateFlow(
         readAppDisplayScalePreset(),
+    )
+    private val mutableNavidromeWifiAudioQuality = MutableStateFlow(
+        readNavidromeAudioQuality(KEY_NAVIDROME_WIFI_AUDIO_QUALITY, NavidromeAudioQuality.Original),
+    )
+    private val mutableNavidromeMobileAudioQuality = MutableStateFlow(
+        readNavidromeAudioQuality(KEY_NAVIDROME_MOBILE_AUDIO_QUALITY, NavidromeAudioQuality.Kbps192),
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(
         readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER),
@@ -330,6 +356,10 @@ private class AndroidAppPreferencesStore(
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> = mutableAppDisplayScalePreset.asStateFlow()
+    override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> =
+        mutableNavidromeWifiAudioQuality.asStateFlow()
+    override val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality> =
+        mutableNavidromeMobileAudioQuality.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -356,6 +386,16 @@ private class AndroidAppPreferencesStore(
     override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
         preferences.edit().putString(KEY_APP_DISPLAY_SCALE_PRESET, preset.name).apply()
         mutableAppDisplayScalePreset.value = preset
+    }
+
+    override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
+        preferences.edit().putString(KEY_NAVIDROME_WIFI_AUDIO_QUALITY, quality.name).apply()
+        mutableNavidromeWifiAudioQuality.value = quality
+    }
+
+    override suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality) {
+        preferences.edit().putString(KEY_NAVIDROME_MOBILE_AUDIO_QUALITY, quality.name).apply()
+        mutableNavidromeMobileAudioQuality.value = quality
     }
 
     override suspend fun setSelectedLyricsShareFontKey(value: String?) {
@@ -411,6 +451,13 @@ private class AndroidAppPreferencesStore(
         return appDisplayScalePresetOrDefault(preferences.getString(KEY_APP_DISPLAY_SCALE_PRESET, null))
     }
 
+    private fun readNavidromeAudioQuality(
+        key: String,
+        default: NavidromeAudioQuality,
+    ): NavidromeAudioQuality {
+        return navidromeAudioQualityOrDefault(preferences.getString(key, null), default)
+    }
+
     private fun readCustomThemeTokens(): AppThemeTokens {
         val defaults = defaultCustomThemeTokens()
         return AppThemeTokens(
@@ -443,6 +490,24 @@ private class AndroidAppPreferencesStore(
             AppThemeId.Ocean -> KEY_THEME_TEXT_PALETTE_OCEAN
             AppThemeId.Sand -> KEY_THEME_TEXT_PALETTE_SAND
             AppThemeId.Custom -> KEY_THEME_TEXT_PALETTE_CUSTOM
+        }
+    }
+}
+
+private class AndroidNetworkConnectionTypeProvider(
+    context: Context,
+) : NetworkConnectionTypeProvider {
+    private val connectivityManager =
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+
+    override fun currentNetworkConnectionType(): NetworkConnectionType {
+        val manager = connectivityManager ?: return NetworkConnectionType.MOBILE
+        val network = manager.activeNetwork ?: return NetworkConnectionType.MOBILE
+        val capabilities = manager.getNetworkCapabilities(network) ?: return NetworkConnectionType.MOBILE
+        return if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+            NetworkConnectionType.WIFI
+        } else {
+            NetworkConnectionType.MOBILE
         }
     }
 }
@@ -1329,6 +1394,8 @@ private class AndroidPlaybackGateway(
     private val database: LynMusicDatabase,
     private val secureCredentialStore: SecureCredentialStore,
     private val playbackPreferencesStore: PlaybackPreferencesStore,
+    private val navidromeAudioQualityPreferencesStore: NavidromeAudioQualityPreferencesStore,
+    private val networkConnectionTypeProvider: NetworkConnectionTypeProvider,
     private val logger: DiagnosticLogger,
 ) : PlaybackGateway {
     private val player = ExoPlayer.Builder(context).build()
@@ -1449,8 +1516,14 @@ private class AndroidPlaybackGateway(
         } else {
             null
         }
+        val navidromeAudioQuality = navidrome?.let {
+            resolveNavidromeAudioQualityForCurrentNetwork(
+                preferencesStore = navidromeAudioQualityPreferencesStore,
+                networkConnectionTypeProvider = networkConnectionTypeProvider,
+            )
+        }
         val resolvedUri = if (webDavTarget == null && sambaTarget == null) {
-            resolveLocator(track.mediaLocator)
+            resolveLocator(track.mediaLocator, navidromeAudioQuality)
         } else {
             null
         }
@@ -1479,6 +1552,9 @@ private class AndroidPlaybackGateway(
                 currentRemoteLogTag = if (navidrome != null) "Navidrome" else null
                 currentRemoteLabel = if (navidrome != null) track.mediaLocator else null
                 player.setMediaItem(MediaItem.fromUri(checkNotNull(resolvedUri)))
+            }
+            mutableState.update {
+                it.copy(currentNavidromeAudioQuality = navidromeAudioQuality)
             }
             player.prepare()
             player.seekTo(startPositionMs)
@@ -1544,8 +1620,16 @@ private class AndroidPlaybackGateway(
         }
     }
 
-    private suspend fun resolveLocator(locator: String): Uri {
-        resolveNavidromeStreamUrl(database, secureCredentialStore, locator)?.let { return Uri.parse(it) }
+    private suspend fun resolveLocator(
+        locator: String,
+        navidromeAudioQuality: NavidromeAudioQuality?,
+    ): Uri {
+        resolveNavidromeStreamUrl(
+            database = database,
+            secureCredentialStore = secureCredentialStore,
+            locator = locator,
+            audioQuality = navidromeAudioQuality ?: NavidromeAudioQuality.Original,
+        )?.let { return Uri.parse(it) }
         val samba = parseSambaLocator(locator) ?: return Uri.parse(locator)
         if (!playbackPreferencesStore.useSambaCache.value) {
             error("Samba 直连播放失败: Android 预期使用直连 MediaSource，但错误地落入了缓存路径。")
@@ -1803,6 +1887,8 @@ private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_APP_DISPLAY_SCALE_PRESET = "app_display_scale_preset"
+private const val KEY_NAVIDROME_WIFI_AUDIO_QUALITY = "navidrome_wifi_audio_quality"
+private const val KEY_NAVIDROME_MOBILE_AUDIO_QUALITY = "navidrome_mobile_audio_quality"
 private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"

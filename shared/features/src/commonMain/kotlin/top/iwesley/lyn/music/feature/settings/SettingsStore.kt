@@ -20,6 +20,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.UnsupportedAppStorageGateway
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
@@ -57,6 +58,8 @@ data class SettingsState(
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
     val appDisplayScalePreset: AppDisplayScalePreset = AppDisplayScalePreset.Default,
+    val navidromeWifiAudioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+    val navidromeMobileAudioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Kbps192,
     val supportsLyricsShareFontImport: Boolean = false,
     val importedLyricsShareFonts: List<LyricsShareFontOption> = emptyList(),
     val lyricsShareFontsLoading: Boolean = false,
@@ -99,6 +102,8 @@ sealed interface SettingsIntent {
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ShowCompactPlayerLyricsChanged(val value: Boolean) : SettingsIntent
     data class AppDisplayScalePresetChanged(val value: AppDisplayScalePreset) : SettingsIntent
+    data class NavidromeWifiAudioQualityChanged(val value: NavidromeAudioQuality) : SettingsIntent
+    data class NavidromeMobileAudioQualityChanged(val value: NavidromeAudioQuality) : SettingsIntent
     data class ThemeSelected(val value: AppThemeId) : SettingsIntent
     data class ThemeTextPaletteSelected(val themeId: AppThemeId, val value: AppThemeTextPalette) : SettingsIntent
     data class CustomThemeColorUpdated(val role: CustomThemeColorRole, val argb: Int) : SettingsIntent
@@ -207,6 +212,16 @@ class SettingsStore(
             }
         }
         scope.launch {
+            repository.navidromeWifiAudioQuality.collect { quality ->
+                updateState { state -> state.copy(navidromeWifiAudioQuality = quality) }
+            }
+        }
+        scope.launch {
+            repository.navidromeMobileAudioQuality.collect { quality ->
+                updateState { state -> state.copy(navidromeMobileAudioQuality = quality) }
+            }
+        }
+        scope.launch {
             repository.selectedTheme.collect { themeId ->
                 updateState { state -> state.copy(selectedTheme = themeId) }
             }
@@ -257,6 +272,16 @@ class SettingsStore(
             is SettingsIntent.AppDisplayScalePresetChanged -> {
                 repository.setAppDisplayScalePreset(intent.value)
                 updateState { it.copy(appDisplayScalePreset = intent.value) }
+            }
+
+            is SettingsIntent.NavidromeWifiAudioQualityChanged -> {
+                repository.setNavidromeWifiAudioQuality(intent.value)
+                updateState { it.copy(navidromeWifiAudioQuality = intent.value) }
+            }
+
+            is SettingsIntent.NavidromeMobileAudioQualityChanged -> {
+                repository.setNavidromeMobileAudioQuality(intent.value)
+                updateState { it.copy(navidromeMobileAudioQuality = intent.value) }
             }
 
             is SettingsIntent.ThemeSelected -> {

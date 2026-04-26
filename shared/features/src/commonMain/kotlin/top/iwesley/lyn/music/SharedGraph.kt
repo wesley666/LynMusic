@@ -18,7 +18,10 @@ import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.MobileNetworkConnectionTypeProvider
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -33,6 +36,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedDesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedNavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
@@ -64,6 +68,9 @@ data class SharedRuntimeServices(
     val appDisplayPreferencesStore: AppDisplayPreferencesStore = UnsupportedAppDisplayPreferencesStore,
     val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
         UnsupportedCompactPlayerLyricsPreferencesStore,
+    val navidromeAudioQualityPreferencesStore: NavidromeAudioQualityPreferencesStore =
+        UnsupportedNavidromeAudioQualityPreferencesStore,
+    val networkConnectionTypeProvider: NetworkConnectionTypeProvider = MobileNetworkConnectionTypeProvider,
     val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
@@ -118,14 +125,19 @@ fun buildSharedGraph(
         desktopVlcPreferencesStore = runtimeServices.desktopVlcPreferencesStore,
         appDisplayPreferencesStore = runtimeServices.appDisplayPreferencesStore,
         compactPlayerLyricsPreferencesStore = runtimeServices.compactPlayerLyricsPreferencesStore,
+        navidromeAudioQualityPreferencesStore = runtimeServices.navidromeAudioQualityPreferencesStore,
     )
     NavidromeLocatorRuntime.install(
         object : top.iwesley.lyn.music.core.model.NavidromeLocatorResolver {
-            override suspend fun resolveStreamUrl(locator: String): String? {
+            override suspend fun resolveStreamUrl(
+                locator: String,
+                audioQuality: top.iwesley.lyn.music.core.model.NavidromeAudioQuality,
+            ): String? {
                 return resolveNavidromeStreamUrl(
                     database = database,
                     secureCredentialStore = runtimeServices.secureCredentialStore,
                     locator = locator,
+                    audioQuality = audioQuality,
                 )
             }
 

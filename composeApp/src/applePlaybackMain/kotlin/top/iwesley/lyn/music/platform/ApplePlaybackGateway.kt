@@ -6,15 +6,23 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import top.iwesley.lyn.music.core.model.AppleMediaLocatorResolver
 import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UnsupportedNavidromeAudioQualityPreferencesStore
+import top.iwesley.lyn.music.core.model.WifiNetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.resolveNavidromeAudioQualityForCurrentNetwork
 
 internal class ApplePlaybackGateway(
     private val platformLabel: String,
+    private val navidromeAudioQualityPreferencesStore: NavidromeAudioQualityPreferencesStore =
+        UnsupportedNavidromeAudioQualityPreferencesStore,
+    private val networkConnectionTypeProvider: NetworkConnectionTypeProvider = WifiNetworkConnectionTypeProvider,
 ) : PlaybackGateway {
     private val player = AppleNativePlayer(platformLabel)
     private val mutableState = MutableStateFlow(PlaybackGatewayState(volume = 1f))
@@ -49,8 +57,18 @@ internal class ApplePlaybackGateway(
             return
         }
         stopAndResetForTrackSwitch()
-        val effectiveLocator = if (parseNavidromeSongLocator(track.mediaLocator) != null) {
-            NavidromeLocatorRuntime.resolveStreamUrl(track.mediaLocator) ?: track.mediaLocator
+        val navidrome = parseNavidromeSongLocator(track.mediaLocator)
+        val navidromeAudioQuality = navidrome?.let {
+            resolveNavidromeAudioQualityForCurrentNetwork(
+                preferencesStore = navidromeAudioQualityPreferencesStore,
+                networkConnectionTypeProvider = networkConnectionTypeProvider,
+            )
+        }
+        val effectiveLocator = if (navidrome != null) {
+            NavidromeLocatorRuntime.resolveStreamUrl(
+                locator = track.mediaLocator,
+                audioQuality = requireNotNull(navidromeAudioQuality),
+            ) ?: track.mediaLocator
         } else {
             track.mediaLocator
         }
@@ -87,6 +105,7 @@ internal class ApplePlaybackGateway(
                         isPlaying = playWhenReady,
                         positionMs = 0L,
                         durationMs = 0L,
+                        currentNavidromeAudioQuality = navidromeAudioQuality,
                         errorMessage = null,
                     )
                 }

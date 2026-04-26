@@ -475,7 +475,7 @@ object UnsupportedVlcPathPickerPlatformService : VlcPathPickerPlatformService {
 }
 
 interface NavidromeLocatorResolver {
-    suspend fun resolveStreamUrl(locator: String): String?
+    suspend fun resolveStreamUrl(locator: String, audioQuality: NavidromeAudioQuality): String?
     suspend fun resolveCoverArtUrl(locator: String): String?
 }
 
@@ -487,7 +487,10 @@ object NavidromeLocatorRuntime {
         this.resolver = resolver
     }
 
-    suspend fun resolveStreamUrl(locator: String): String? = resolver?.resolveStreamUrl(locator)
+    suspend fun resolveStreamUrl(
+        locator: String,
+        audioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+    ): String? = resolver?.resolveStreamUrl(locator, audioQuality)
 
     suspend fun resolveCoverArtUrl(locator: String): String? = resolver?.resolveCoverArtUrl(locator)
 }

@@ -22,6 +22,7 @@ data class PlaybackSnapshot(
     val metadataArtistName: String? = null,
     val metadataAlbumTitle: String? = null,
     val metadataArtworkLocator: String? = null,
+    val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
     val errorMessage: String? = null,
 ) {
     val currentTrack: Track?
@@ -70,6 +71,7 @@ data class PlaybackGatewayState(
     val metadataTitle: String? = null,
     val metadataArtistName: String? = null,
     val metadataAlbumTitle: String? = null,
+    val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
     val completionCount: Long = 0L,
     val errorMessage: String? = null,
     val errorRevision: Long = 0L,

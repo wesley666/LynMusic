@@ -84,6 +84,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.BuildMetadata
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
 import top.iwesley.lyn.music.core.model.formatThemeHexColor
@@ -553,6 +554,7 @@ private fun GeneralSettingsPane(
     val showAppDisplayScaleSetting =
         currentPlatformDescriptor.capabilities.supportsAppDisplayScaleAdjustment
     val showCompactPlayerLyricsSetting = isMobilePlatform
+    val showNavidromeAudioQualitySetting = isMobilePlatform
     val showDesktopVlcSettings = !isMobilePlatform
     val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
     val autoDetectedPath = state.desktopVlcAutoDetectedPath?.takeIf { it.isNotBlank() }
@@ -664,6 +666,41 @@ private fun GeneralSettingsPane(
                 }
             }
         }
+        if (showNavidromeAudioQualitySetting) {
+            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Navidrome 播放音质",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "仅影响 Navidrome 曲目，设置会在下一次加载歌曲时生效。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = shellColors.secondaryText,
+                        )
+                    }
+                    NavidromeAudioQualitySettingRow(
+                        title = "WiFi",
+                        selected = state.navidromeWifiAudioQuality,
+                        onSelected = { quality ->
+                            onSettingsIntent(SettingsIntent.NavidromeWifiAudioQualityChanged(quality))
+                        },
+                    )
+                    NavidromeAudioQualitySettingRow(
+                        title = "移动网络",
+                        selected = state.navidromeMobileAudioQuality,
+                        onSelected = { quality ->
+                            onSettingsIntent(SettingsIntent.NavidromeMobileAudioQualityChanged(quality))
+                        },
+                    )
+                }
+            }
+        }
         if (showAppDisplayScaleSetting) {
             MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
                 Column(
@@ -709,6 +746,58 @@ private fun GeneralSettingsPane(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavidromeAudioQualitySettingRow(
+    title: String,
+    selected: NavidromeAudioQuality,
+    onSelected: (NavidromeAudioQuality) -> Unit,
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            NavidromeAudioQuality.entries.forEach { quality ->
+                val isSelected = quality == selected
+                if (isSelected) {
+                    Button(
+                        onClick = { onSelected(quality) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            text = navidromeAudioQualityLabel(quality),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelected(quality) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text(
+                            text = navidromeAudioQualityLabel(quality),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
@@ -1935,6 +2024,15 @@ private fun appDisplayScalePresetLabel(preset: AppDisplayScalePreset): String {
         AppDisplayScalePreset.Compact -> "紧凑"
         AppDisplayScalePreset.Default -> "默认"
         AppDisplayScalePreset.Large -> "大号"
+    }
+}
+
+internal fun navidromeAudioQualityLabel(quality: NavidromeAudioQuality): String {
+    return when (quality) {
+        NavidromeAudioQuality.Original -> "原始"
+        NavidromeAudioQuality.Kbps320 -> "320kbps"
+        NavidromeAudioQuality.Kbps192 -> "192kbps"
+        NavidromeAudioQuality.Kbps128 -> "128kbps"
     }
 }
 

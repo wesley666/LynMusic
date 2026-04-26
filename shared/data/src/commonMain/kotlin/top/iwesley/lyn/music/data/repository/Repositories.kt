@@ -30,6 +30,8 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSourceDefinition
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
@@ -50,6 +52,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedNavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig
@@ -201,6 +204,8 @@ interface SettingsRepository {
     val useSambaCache: StateFlow<Boolean>
     val showCompactPlayerLyrics: StateFlow<Boolean>
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>
+    val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality>
+    val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality>
     val selectedTheme: StateFlow<AppThemeId>
     val customThemeTokens: StateFlow<AppThemeTokens>
     val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences>
@@ -212,6 +217,8 @@ interface SettingsRepository {
     suspend fun setUseSambaCache(enabled: Boolean)
     suspend fun setShowCompactPlayerLyrics(enabled: Boolean)
     suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset)
+    suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality)
+    suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality)
     suspend fun setSelectedTheme(themeId: AppThemeId)
     suspend fun setCustomThemeTokens(tokens: AppThemeTokens)
     suspend fun setTextPalette(themeId: AppThemeId, palette: AppThemeTextPalette)
@@ -927,6 +934,8 @@ class DefaultSettingsRepository(
     private val appDisplayPreferencesStore: AppDisplayPreferencesStore = UnsupportedAppDisplayPreferencesStore,
     private val compactPlayerLyricsPreferencesStore: CompactPlayerLyricsPreferencesStore =
         UnsupportedCompactPlayerLyricsPreferencesStore,
+    private val navidromeAudioQualityPreferencesStore: NavidromeAudioQualityPreferencesStore =
+        UnsupportedNavidromeAudioQualityPreferencesStore,
 ) : SettingsRepository {
     override val lyricsSources: Flow<List<LyricsSourceDefinition>> = combine(
         database.lyricsSourceConfigDao().observeAll(),
@@ -940,6 +949,10 @@ class DefaultSettingsRepository(
         compactPlayerLyricsPreferencesStore.showCompactPlayerLyrics
     override val appDisplayScalePreset: StateFlow<AppDisplayScalePreset> =
         appDisplayPreferencesStore.appDisplayScalePreset
+    override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> =
+        navidromeAudioQualityPreferencesStore.navidromeWifiAudioQuality
+    override val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality> =
+        navidromeAudioQualityPreferencesStore.navidromeMobileAudioQuality
     override val selectedTheme: StateFlow<AppThemeId> = themePreferencesStore.selectedTheme
     override val customThemeTokens: StateFlow<AppThemeTokens> = themePreferencesStore.customThemeTokens
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = themePreferencesStore.textPalettePreferences
@@ -978,6 +991,14 @@ class DefaultSettingsRepository(
 
     override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
         appDisplayPreferencesStore.setAppDisplayScalePreset(preset)
+    }
+
+    override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
+        navidromeAudioQualityPreferencesStore.setNavidromeWifiAudioQuality(quality)
+    }
+
+    override suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality) {
+        navidromeAudioQualityPreferencesStore.setNavidromeMobileAudioQuality(quality)
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {
@@ -2312,8 +2333,8 @@ fun effectiveArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<Strin
         val artworkLocator = normalizeArtworkLocator(row.artworkLocator)?.takeIf { it.isNotBlank() } ?: return@forEach
         if (row.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID) {
             manualOverrides[row.trackId] = artworkLocator
-        } else {
-            automaticOverrides.putIfAbsent(row.trackId, artworkLocator)
+        } else if (row.trackId !in automaticOverrides) {
+            automaticOverrides[row.trackId] = artworkLocator
         }
     }
     return automaticOverrides.toMutableMap().apply {

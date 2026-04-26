@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
@@ -107,13 +108,20 @@ fun buildNavidromeStreamUrl(
     username: String,
     password: String,
     songId: String,
+    audioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
 ): String {
     return buildNavidromeRestUrl(
         baseUrl = baseUrl,
         username = username,
         password = password,
         endpoint = "stream",
-        parameters = mapOf("id" to songId),
+        parameters = buildMap {
+            put("id", songId)
+            audioQuality.maxBitRateKbps?.let { maxBitRate ->
+                put("maxBitRate", maxBitRate.toString())
+                put("format", "mp3")
+            }
+        },
         includeJsonFormat = false,
     )
 }
@@ -323,6 +331,7 @@ suspend fun resolveNavidromeStreamUrl(
     database: LynMusicDatabase,
     secureCredentialStore: SecureCredentialStore,
     locator: String,
+    audioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
 ): String? {
     val (_, songId) = parseNavidromeSongLocator(locator) ?: return null
     val source = resolveNavidromeSource(database, secureCredentialStore, locator) ?: return null
@@ -331,6 +340,7 @@ suspend fun resolveNavidromeStreamUrl(
         username = source.username,
         password = source.password,
         songId = songId,
+        audioQuality = audioQuality,
     )
 }
 

@@ -10,12 +10,14 @@ import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UNSUPPORTED_AUDIO_IMPORT_REASON
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
+import top.iwesley.lyn.music.domain.buildNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
 import top.iwesley.lyn.music.domain.requestNavidromeLyrics
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -28,6 +30,38 @@ class NavidromeEngineTest {
             "https://demo.example.com/navidrome",
             normalizeNavidromeBaseUrl("https://demo.example.com/navidrome/rest"),
         )
+    }
+
+    @Test
+    fun `stream url keeps original quality without transcoding parameters`() {
+        val url = buildNavidromeStreamUrl(
+            baseUrl = "https://demo.example.com/navidrome",
+            username = "demo",
+            password = "secret",
+            songId = "song-1",
+            audioQuality = NavidromeAudioQuality.Original,
+        )
+        val parsed = checkNotNull(parseUrl(url))
+
+        assertEquals("song-1", parsed.parameters["id"])
+        assertEquals(null, parsed.parameters["maxBitRate"])
+        assertEquals(null, parsed.parameters["format"])
+    }
+
+    @Test
+    fun `stream url adds mp3 transcode parameters for limited quality`() {
+        val url = buildNavidromeStreamUrl(
+            baseUrl = "https://demo.example.com/navidrome",
+            username = "demo",
+            password = "secret",
+            songId = "song-1",
+            audioQuality = NavidromeAudioQuality.Kbps192,
+        )
+        val parsed = checkNotNull(parseUrl(url))
+
+        assertEquals("song-1", parsed.parameters["id"])
+        assertEquals("192", parsed.parameters["maxBitRate"])
+        assertEquals("mp3", parsed.parameters["format"])
     }
 
     @Test

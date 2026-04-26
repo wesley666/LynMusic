@@ -160,12 +160,17 @@ class DefaultPlaybackRepository(
                     it.copy(
                         isPlaying = gatewayState.isPlaying,
                         positionMs = gatewayState.positionMs,
-                        durationMs = gatewayState.durationMs,
+                        durationMs = resolvePlaybackDurationMs(
+                            gatewayDurationMs = gatewayState.durationMs,
+                            currentTrack = it.currentTrack,
+                            currentSnapshotDurationMs = it.durationMs,
+                        ),
                         volume = gatewayState.volume,
                         metadataTitle = gatewayState.metadataTitle,
                         metadataArtistName = gatewayState.metadataArtistName,
                         metadataAlbumTitle = gatewayState.metadataAlbumTitle,
                         metadataArtworkLocator = it.metadataArtworkLocator,
+                        currentNavidromeAudioQuality = gatewayState.currentNavidromeAudioQuality,
                         errorMessage = gatewayState.errorMessage,
                     )
                 }
@@ -669,6 +674,18 @@ data class PlayerRuntimeServices(
 )
 
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
+
+private fun resolvePlaybackDurationMs(
+    gatewayDurationMs: Long,
+    currentTrack: Track?,
+    currentSnapshotDurationMs: Long,
+): Long {
+    return when {
+        gatewayDurationMs > 0L -> gatewayDurationMs
+        currentTrack != null && currentTrack.durationMs > 0L -> currentTrack.durationMs
+        else -> currentSnapshotDurationMs.coerceAtLeast(0L)
+    }
+}
 
 private const val PLAYBACK_LOG_TAG = "Playback"
 

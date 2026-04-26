@@ -8,6 +8,7 @@ import kotlin.test.assertTrue
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.Track
 
 class MiniPlayerBarLogicTest {
@@ -184,6 +185,33 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
+    fun `current navidrome playback audio quality formats only navidrome tracks`() {
+        assertEquals(
+            "192kbps",
+            formatCurrentNavidromePlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+        assertNull(
+            formatCurrentNavidromePlaybackAudioQuality(
+                track = sampleQualityTrack(mediaLocator = "file:///music/blue.mp3"),
+                audioQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+    }
+
+    @Test
+    fun `current navidrome playback audio quality hides until gateway reports quality`() {
+        assertNull(
+            formatCurrentNavidromePlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioQuality = null,
+            ),
+        )
+    }
+
+    @Test
     fun `track technical summary includes format audio quality and size`() {
         assertEquals(
             "FLAC · 16bit / 44.1kHz · 880kbps · 2ch · 12.3 MB",
@@ -271,6 +299,7 @@ class MiniPlayerBarLogicTest {
 
     private fun sampleQualityTrack(
         relativePath: String = "Artist A/Album A/Blue.flac",
+        mediaLocator: String = "lynmusic-navidrome://nav-source/song-1",
         sizeBytes: Long = 0L,
         bitDepth: Int? = null,
         samplingRate: Int? = null,
@@ -281,7 +310,7 @@ class MiniPlayerBarLogicTest {
             id = "track-1",
             sourceId = "nav-source",
             title = "Blue",
-            mediaLocator = "lynmusic-navidrome://nav-source/song-1",
+            mediaLocator = mediaLocator,
             relativePath = relativePath,
             sizeBytes = sizeBytes,
             bitDepth = bitDepth,

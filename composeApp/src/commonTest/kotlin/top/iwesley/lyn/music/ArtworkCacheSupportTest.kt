@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
@@ -18,7 +19,10 @@ class ArtworkCacheSupportTest {
     fun `navidrome cover locator resolves through runtime before caching`() = runTest {
         NavidromeLocatorRuntime.install(
             object : NavidromeLocatorResolver {
-                override suspend fun resolveStreamUrl(locator: String): String? = null
+                override suspend fun resolveStreamUrl(
+                    locator: String,
+                    audioQuality: NavidromeAudioQuality,
+                ): String? = null
 
                 override suspend fun resolveCoverArtUrl(locator: String): String? {
                     return "https://demo.example.com/rest/getCoverArt.view?id=cover-123"

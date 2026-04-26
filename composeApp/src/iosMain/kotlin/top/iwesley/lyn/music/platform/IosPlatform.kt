@@ -31,7 +31,11 @@ import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.NetworkConnectionType
+import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
@@ -45,6 +49,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.navidromeAudioQualityOrDefault
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
@@ -75,6 +80,12 @@ import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUserDomainMask
+import platform.Network.nw_interface_type_wifi
+import platform.Network.nw_path_monitor_create
+import platform.Network.nw_path_monitor_set_queue
+import platform.Network.nw_path_monitor_set_update_handler
+import platform.Network.nw_path_monitor_start
+import platform.Network.nw_path_uses_interface_type
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
@@ -91,6 +102,7 @@ import platform.Security.kSecMatchLimit
 import platform.Security.kSecMatchLimitOne
 import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
+import platform.darwin.dispatch_get_main_queue
 import platform.posix.memcpy
 
 private val IOS_SUPPORTED_IMPORT_AUDIO_EXTENSIONS = setOf(
@@ -109,6 +121,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     ).getOrThrow()
     val secureStore = IosKeychainCredentialStore().withSecureInMemoryCache()
     val appPreferencesStore = IosAppPreferencesStore()
+    val networkConnectionTypeProvider = IosNetworkConnectionTypeProvider()
     val navidromeHttpClient = IosLyricsHttpClient()
     val platform = PlatformDescriptor(
         name = "iPhone / iPad",
@@ -129,6 +142,8 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             sambaCachePreferencesStore = appPreferencesStore,
             themePreferencesStore = appPreferencesStore,
             compactPlayerLyricsPreferencesStore = appPreferencesStore,
+            navidromeAudioQualityPreferencesStore = appPreferencesStore,
+            networkConnectionTypeProvider = networkConnectionTypeProvider,
             librarySourceFilterPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createIosArtworkCacheStore(),
@@ -142,7 +157,11 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
     return buildPlayerAppComponent(
         sharedGraph = sharedGraph,
         playerRuntimeServices = PlayerRuntimeServices(
-            playbackGateway = ApplePlaybackGateway(platformLabel = "iOS"),
+            playbackGateway = ApplePlaybackGateway(
+                platformLabel = "iOS",
+                navidromeAudioQualityPreferencesStore = appPreferencesStore,
+                networkConnectionTypeProvider = networkConnectionTypeProvider,
+            ),
             playbackPreferencesStore = appPreferencesStore,
             lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsSharePlatformService = IosLyricsSharePlatformService(),
@@ -245,7 +264,8 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
 }
 
 private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, LyricsShareFontPreferencesStore, LibrarySourceFilterPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore, LyricsShareFontPreferencesStore,
+    LibrarySourceFilterPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) false else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
@@ -258,6 +278,12 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             defaults.boolForKey(KEY_SHOW_COMPACT_PLAYER_LYRICS)
         },
     )
+    private val mutableNavidromeWifiAudioQuality = MutableStateFlow(
+        readNavidromeAudioQuality(KEY_NAVIDROME_WIFI_AUDIO_QUALITY, NavidromeAudioQuality.Original),
+    )
+    private val mutableNavidromeMobileAudioQuality = MutableStateFlow(
+        readNavidromeAudioQuality(KEY_NAVIDROME_MOBILE_AUDIO_QUALITY, NavidromeAudioQuality.Kbps192),
+    )
     private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
     private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
@@ -268,6 +294,10 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val useSambaCache: StateFlow<Boolean> = mutableUseSambaCache.asStateFlow()
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
+    override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> =
+        mutableNavidromeWifiAudioQuality.asStateFlow()
+    override val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality> =
+        mutableNavidromeMobileAudioQuality.asStateFlow()
     override val selectedTheme: StateFlow<AppThemeId> = mutableSelectedTheme.asStateFlow()
     override val customThemeTokens: StateFlow<AppThemeTokens> = mutableCustomThemeTokens.asStateFlow()
     override val textPalettePreferences: StateFlow<AppThemeTextPalettePreferences> = mutableTextPalettePreferences.asStateFlow()
@@ -289,6 +319,16 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         defaults.setBool(enabled, KEY_SHOW_COMPACT_PLAYER_LYRICS)
         mutableShowCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
+        defaults.setObject(quality.name, KEY_NAVIDROME_WIFI_AUDIO_QUALITY)
+        mutableNavidromeWifiAudioQuality.value = quality
+    }
+
+    override suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality) {
+        defaults.setObject(quality.name, KEY_NAVIDROME_MOBILE_AUDIO_QUALITY)
+        mutableNavidromeMobileAudioQuality.value = quality
     }
 
     override suspend fun setSelectedLyricsShareFontKey(value: String?) {
@@ -347,6 +387,13 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         return AppThemeId.entries.firstOrNull { it.name == name } ?: AppThemeId.Ocean
     }
 
+    private fun readNavidromeAudioQuality(
+        key: String,
+        default: NavidromeAudioQuality,
+    ): NavidromeAudioQuality {
+        return navidromeAudioQualityOrDefault(defaults.stringForKey(key), default)
+    }
+
     private fun readSelectedLyricsShareFontKey(): String? {
         return defaults.stringForKey(KEY_LYRICS_SHARE_FONT_KEY)?.trim()?.takeIf { it.isNotBlank() }
     }
@@ -389,6 +436,26 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
             AppThemeId.Custom -> KEY_THEME_TEXT_PALETTE_CUSTOM
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private class IosNetworkConnectionTypeProvider : NetworkConnectionTypeProvider {
+    private var currentType: NetworkConnectionType = NetworkConnectionType.MOBILE
+    private val monitor = nw_path_monitor_create()
+
+    init {
+        nw_path_monitor_set_update_handler(monitor) { path ->
+            currentType = if (nw_path_uses_interface_type(path, nw_interface_type_wifi)) {
+                NetworkConnectionType.WIFI
+            } else {
+                NetworkConnectionType.MOBILE
+            }
+        }
+        nw_path_monitor_set_queue(monitor, dispatch_get_main_queue())
+        nw_path_monitor_start(monitor)
+    }
+
+    override fun currentNetworkConnectionType(): NetworkConnectionType = currentType
 }
 
 private class IosImportSourceGateway(
@@ -477,6 +544,8 @@ private const val IOS_KEYCHAIN_SERVICE = "top.iwesley.lyn.music.credentials"
 private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
+private const val KEY_NAVIDROME_WIFI_AUDIO_QUALITY = "navidrome_wifi_audio_quality"
+private const val KEY_NAVIDROME_MOBILE_AUDIO_QUALITY = "navidrome_mobile_audio_quality"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
 private const val KEY_SELECTED_THEME = "selected_theme"

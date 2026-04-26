@@ -11,8 +11,27 @@ enum class AppDisplayScalePreset(
     Large(1.1f),
 }
 
+enum class NavidromeAudioQuality(
+    val maxBitRateKbps: Int?,
+) {
+    Original(null),
+    Kbps320(320),
+    Kbps192(192),
+    Kbps128(128),
+}
+
+val DEFAULT_NAVIDROME_WIFI_AUDIO_QUALITY: NavidromeAudioQuality = NavidromeAudioQuality.Original
+val DEFAULT_NAVIDROME_MOBILE_AUDIO_QUALITY: NavidromeAudioQuality = NavidromeAudioQuality.Kbps192
+
 fun appDisplayScalePresetOrDefault(name: String?): AppDisplayScalePreset {
     return AppDisplayScalePreset.entries.firstOrNull { it.name == name } ?: AppDisplayScalePreset.Default
+}
+
+fun navidromeAudioQualityOrDefault(
+    name: String?,
+    default: NavidromeAudioQuality,
+): NavidromeAudioQuality {
+    return NavidromeAudioQuality.entries.firstOrNull { it.name == name } ?: default
 }
 
 fun effectiveAppDisplayDensity(
@@ -51,6 +70,14 @@ interface AppDisplayPreferencesStore {
     suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset)
 }
 
+interface NavidromeAudioQualityPreferencesStore {
+    val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality>
+    val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality>
+
+    suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality)
+    suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality)
+}
+
 interface LyricsShareFontPreferencesStore {
     val selectedLyricsShareFontKey: StateFlow<String?>
 
@@ -74,6 +101,22 @@ object UnsupportedAppDisplayPreferencesStore : AppDisplayPreferencesStore {
 
     override suspend fun setAppDisplayScalePreset(preset: AppDisplayScalePreset) {
         mutableAppDisplayScalePreset.value = preset
+    }
+}
+
+object UnsupportedNavidromeAudioQualityPreferencesStore : NavidromeAudioQualityPreferencesStore {
+    private val mutableWifiAudioQuality = MutableStateFlow(DEFAULT_NAVIDROME_WIFI_AUDIO_QUALITY)
+    private val mutableMobileAudioQuality = MutableStateFlow(DEFAULT_NAVIDROME_MOBILE_AUDIO_QUALITY)
+
+    override val navidromeWifiAudioQuality: StateFlow<NavidromeAudioQuality> = mutableWifiAudioQuality
+    override val navidromeMobileAudioQuality: StateFlow<NavidromeAudioQuality> = mutableMobileAudioQuality
+
+    override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
+        mutableWifiAudioQuality.value = quality
+    }
+
+    override suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality) {
+        mutableMobileAudioQuality.value = quality
     }
 }
 

@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
@@ -28,6 +29,7 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
@@ -37,6 +39,94 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackRepositoriesTest {
+
+    @Test
+    fun `playback snapshot records current navidrome audio quality from gateway`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway().apply {
+            nextNavidromeAudioQuality = NavidromeAudioQuality.Kbps192
+        }
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals(NavidromeAudioQuality.Kbps192, repository.snapshot.value.currentNavidromeAudioQuality)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback snapshot keeps track duration when gateway reports unknown duration`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            gateway.updateState { it.copy(durationMs = 0L) }
+            advanceUntilIdle()
+
+            assertEquals(180_000L, repository.snapshot.value.durationMs)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback snapshot clears navidrome audio quality for non navidrome track`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway().apply {
+            nextNavidromeAudioQuality = NavidromeAudioQuality.Kbps192
+        }
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+            gateway.nextNavidromeAudioQuality = null
+            repository.playTracks(listOf(sampleTrack("track-local", "Local Song")), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals(null, repository.snapshot.value.currentNavidromeAudioQuality)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
 
     @Test
     fun `natural completion wraps to first track in order mode`() = runTest {
@@ -1165,6 +1255,13 @@ private fun sampleTrack(id: String, title: String): Track {
     )
 }
 
+private fun sampleNavidromeTrack(): Track {
+    return sampleTrack("nav-track-1", "Remote Song").copy(
+        sourceId = "nav-source",
+        mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
+    )
+}
+
 private fun sampleTrackEntity(id: String, title: String): TrackEntity {
     return TrackEntity(
         id = id,
@@ -1216,6 +1313,7 @@ private class FakePlaybackGateway(
     val loadCalls = mutableListOf<LoadCall>()
     val seekCalls = mutableListOf<Long>()
     val volumeCalls = mutableListOf<Float>()
+    var nextNavidromeAudioQuality: NavidromeAudioQuality? = null
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
@@ -1243,6 +1341,7 @@ private class FakePlaybackGateway(
             isPlaying = playWhenReady,
             positionMs = startPositionMs,
             durationMs = track.durationMs,
+            currentNavidromeAudioQuality = nextNavidromeAudioQuality,
             errorMessage = null,
         )
     }

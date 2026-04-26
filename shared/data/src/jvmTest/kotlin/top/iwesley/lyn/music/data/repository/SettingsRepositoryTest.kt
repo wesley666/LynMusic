@@ -18,6 +18,8 @@ import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.RequestMethod
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
@@ -102,6 +104,43 @@ class SettingsRepositoryTest {
 
         assertEquals(true, preferences.showCompactPlayerLyrics.value)
         assertEquals(true, repository.showCompactPlayerLyrics.value)
+    }
+
+    @Test
+    fun `navidrome audio quality preferences default to wifi original and mobile 192`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            navidromeAudioQualityPreferencesStore = preferences,
+        )
+
+        assertEquals(NavidromeAudioQuality.Original, repository.navidromeWifiAudioQuality.value)
+        assertEquals(NavidromeAudioQuality.Kbps192, repository.navidromeMobileAudioQuality.value)
+    }
+
+    @Test
+    fun `setting navidrome audio quality preferences writes through to preference store`() = runTest {
+        val database = createSettingsTestDatabase()
+        val preferences = FakePreferencesStore()
+        val repository = DefaultSettingsRepository(
+            database = database,
+            sambaCachePreferencesStore = preferences,
+            themePreferencesStore = preferences,
+            desktopVlcPreferencesStore = preferences,
+            navidromeAudioQualityPreferencesStore = preferences,
+        )
+
+        repository.setNavidromeWifiAudioQuality(NavidromeAudioQuality.Kbps320)
+        repository.setNavidromeMobileAudioQuality(NavidromeAudioQuality.Kbps128)
+
+        assertEquals(NavidromeAudioQuality.Kbps320, preferences.navidromeWifiAudioQuality.value)
+        assertEquals(NavidromeAudioQuality.Kbps128, preferences.navidromeMobileAudioQuality.value)
+        assertEquals(NavidromeAudioQuality.Kbps320, repository.navidromeWifiAudioQuality.value)
+        assertEquals(NavidromeAudioQuality.Kbps128, repository.navidromeMobileAudioQuality.value)
     }
 
     @Test
@@ -351,9 +390,11 @@ private fun createSettingsTestDatabase(): LynMusicDatabase {
 }
 
 private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreferencesStore, DesktopVlcPreferencesStore,
-    CompactPlayerLyricsPreferencesStore {
+    CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore {
     override val useSambaCache = MutableStateFlow(true)
     override val showCompactPlayerLyrics = MutableStateFlow(false)
+    override val navidromeWifiAudioQuality = MutableStateFlow(NavidromeAudioQuality.Original)
+    override val navidromeMobileAudioQuality = MutableStateFlow(NavidromeAudioQuality.Kbps192)
     override val selectedTheme = MutableStateFlow(AppThemeId.Ocean)
     override val customThemeTokens = MutableStateFlow(defaultCustomThemeTokens())
     override val textPalettePreferences = MutableStateFlow(defaultThemeTextPalettePreferences())
@@ -367,6 +408,14 @@ private class FakePreferencesStore : SambaCachePreferencesStore, ThemePreference
 
     override suspend fun setShowCompactPlayerLyrics(enabled: Boolean) {
         showCompactPlayerLyrics.value = enabled
+    }
+
+    override suspend fun setNavidromeWifiAudioQuality(quality: NavidromeAudioQuality) {
+        navidromeWifiAudioQuality.value = quality
+    }
+
+    override suspend fun setNavidromeMobileAudioQuality(quality: NavidromeAudioQuality) {
+        navidromeMobileAudioQuality.value = quality
     }
 
     override suspend fun setSelectedTheme(themeId: AppThemeId) {

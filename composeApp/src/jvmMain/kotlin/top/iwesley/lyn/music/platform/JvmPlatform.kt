@@ -49,6 +49,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
@@ -1345,6 +1346,12 @@ private class JvmPlaybackGateway(
             } else {
                 null
             }
+            val currentNavidromeAudioQuality =
+                if (webDavTarget == null && sambaTarget == null && parseNavidromeSongLocator(track.mediaLocator) != null) {
+                    NavidromeAudioQuality.Original
+                } else {
+                    null
+                }
             val actualPlaybackSource = when {
                 sambaTarget != null -> sambaTarget.sourceReference
                 webDavTarget != null -> webDavTarget.requestUrl
@@ -1376,6 +1383,7 @@ private class JvmPlaybackGateway(
                     metadataTitle = null,
                     metadataArtistName = null,
                     metadataAlbumTitle = null,
+                    currentNavidromeAudioQuality = currentNavidromeAudioQuality,
                     errorMessage = null,
                 )
             }
