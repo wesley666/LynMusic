@@ -45,8 +45,6 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.AlertDialog
@@ -253,52 +251,17 @@ internal fun PlayerLyricsPane(
                     }
                 }
             }
-            if (!compact || state.isLyricsLoading) {
+            if (state.isLyricsLoading) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.isLyricsLoading) {
-                        Text(
-                            "正在请求歌词...",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = lyricsSecondaryTextColor,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (!compact) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                                enabled = state.lyrics != null && !state.isLyricsLoading,
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Share,
-                                    contentDescription = "分享歌词",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
-                                        Color.White.copy(alpha = 0.92f)
-                                    } else {
-                                        lyricsSecondaryTextColor.copy(alpha = 0.45f)
-                                    },
-                                )
-                            }
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                                modifier = Modifier.size(44.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Search,
-                                    contentDescription = "手动搜索",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        "正在请求歌词...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = lyricsSecondaryTextColor,
+                    )
                 }
             }
             if (lyrics == null || visibleLyricsLines.isEmpty()) {

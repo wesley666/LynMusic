@@ -831,7 +831,6 @@ private fun PlayerOverlay(
     val desktopWindowChrome = currentDesktopWindowChrome
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
-    val playbackStatusColor = Color.White.copy(alpha = 0.6f)
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
     val backgroundPalette = rememberPlaybackArtworkBackgroundPalette(
         artworkBitmap = artworkBitmap,
@@ -973,18 +972,36 @@ private fun PlayerOverlay(
                     }
                     if (wide) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = playbackModeIcon(state.snapshot.mode),
-                                contentDescription = null,
-                                tint = playbackStatusColor,
-                            )
-                            Text(
-                                text = modeLabel(state.snapshot.mode),
-                                color = playbackStatusColor,
-                            )
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                enabled = state.lyrics != null && !state.isLyricsLoading,
+                                modifier = Modifier.size(52.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = "分享歌词",
+                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                        Color.White.copy(alpha = 0.92f)
+                                    } else {
+                                        Color.White.copy(alpha = 0.42f)
+                                    },
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                modifier = Modifier.size(52.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = "手动搜索",
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
                     } else {
                         Row(
