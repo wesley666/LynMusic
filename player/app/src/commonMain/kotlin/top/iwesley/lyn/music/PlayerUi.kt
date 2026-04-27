@@ -1546,16 +1546,18 @@ private fun PlayerBottomControls(
                                 tint = Color.White.copy(alpha = 0.92f),
                             )
                         }
+                        QueueToggleButton(
+                            onClick = onOpenQueue,
+                            tint = Color.White.copy(alpha = 0.96f),
+                            buttonSize = skipButtonSize,
+                            iconSize = modeIconSize,
+                        )
                     }
                     Row(
                         modifier = Modifier.weight(0.30f),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        QueueToggleButton(
-                            onClick = onOpenQueue,
-                            tint = Color.White.copy(alpha = 0.96f),
-                        )
                         AddToPlaylistButton(
                             onClick = onOpenAddToPlaylist,
                             tint = Color.White.copy(alpha = 0.96f),
