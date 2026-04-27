@@ -1,26 +1,6 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-fun readSharedVersionConfig(): Map<String, String> =
-    rootProject.file("app-version.xcconfig")
-        .readLines()
-        .map(String::trim)
-        .filter { line ->
-            line.isNotEmpty() &&
-                !line.startsWith("//") &&
-                !line.startsWith("#")
-        }
-        .mapNotNull { line ->
-            val separatorIndex = line.indexOf('=')
-            if (separatorIndex < 0) {
-                null
-            } else {
-                line.substring(0, separatorIndex).trim() to
-                    line.substring(separatorIndex + 1).trim()
-            }
-        }
-        .toMap()
-
-val sharedVersionConfig = readSharedVersionConfig()
+val sharedVersionConfig = rootProject.readSharedVersionConfig()
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -54,6 +34,7 @@ android {
             excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
+    configureLynReleaseSigning(rootProject)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -76,4 +57,3 @@ dependencies {
 
     debugImplementation(libs.compose.uiTooling)
 }
-

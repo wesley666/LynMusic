@@ -2,27 +2,7 @@ import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-fun readSharedVersionConfig(): Map<String, String> =
-    rootProject.file("app-version.xcconfig")
-        .readLines()
-        .map(String::trim)
-        .filter { line ->
-            line.isNotEmpty() &&
-                !line.startsWith("//") &&
-                !line.startsWith("#")
-        }
-        .mapNotNull { line ->
-            val separatorIndex = line.indexOf('=')
-            if (separatorIndex < 0) {
-                null
-            } else {
-                line.substring(0, separatorIndex).trim() to
-                    line.substring(separatorIndex + 1).trim()
-            }
-        }
-        .toMap()
-
-val sharedVersionConfig = readSharedVersionConfig()
+val sharedVersionConfig = rootProject.readSharedVersionConfig()
 val appVersionCode = sharedVersionConfig.getValue("APP_VERSION_CODE").toInt()
 val appVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 val desktopPackageVersion = sharedVersionConfig
@@ -151,6 +131,7 @@ android {
             excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
+    configureLynReleaseSigning(rootProject)
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false

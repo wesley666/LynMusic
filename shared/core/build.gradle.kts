@@ -9,27 +9,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-fun readSharedVersionConfig(): Map<String, String> =
-    rootProject.file("app-version.xcconfig")
-        .readLines()
-        .map(String::trim)
-        .filter { line ->
-            line.isNotEmpty() &&
-                !line.startsWith("//") &&
-                !line.startsWith("#")
-        }
-        .mapNotNull { line ->
-            val separatorIndex = line.indexOf('=')
-            if (separatorIndex < 0) {
-                null
-            } else {
-                line.substring(0, separatorIndex).trim() to
-                    line.substring(separatorIndex + 1).trim()
-            }
-        }
-        .toMap()
-
-val sharedVersionConfig = readSharedVersionConfig()
+val sharedVersionConfig = rootProject.readSharedVersionConfig()
 val sharedAppVersionCode = sharedVersionConfig.getValue("APP_VERSION_CODE").toInt()
 val sharedAppVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 
