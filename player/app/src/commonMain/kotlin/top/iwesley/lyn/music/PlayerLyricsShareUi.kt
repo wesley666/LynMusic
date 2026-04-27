@@ -298,13 +298,28 @@ internal fun PlayerLyricsPane(
                     } else {
                         state.snapshot.positionMs + lyrics.offsetMs
                     }
+                    val lyricsMaxWidth = when {
+                        compact -> 540.dp
+                        pure -> 600.dp
+                        else -> 520.dp
+                    }
+                    val lyricsLineSpacing = when {
+                        compact -> 12.dp
+                        pure -> 24.dp
+                        else -> 16.dp
+                    }
+                    val translationLineSpacing = when {
+                        compact -> 3.dp
+                        pure -> 6.dp
+                        else -> 4.dp
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .widthIn(max = if (compact) 540.dp else 520.dp),
+                            .widthIn(max = lyricsMaxWidth),
                         state = listState,
                         contentPadding = PaddingValues(vertical = centerPadding),
-                        verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(lyricsLineSpacing),
                     ) {
                         itemsIndexed(visibleLyricsLines) { index, visibleLine ->
                             val line = visibleLine.line
@@ -318,10 +333,14 @@ internal fun PlayerLyricsPane(
                                 Int.MAX_VALUE
                             }
                             val targetAlpha = when {
+                                pure && activeHighlightedVisibleIndex < 0 -> 0.48f
                                 activeHighlightedVisibleIndex < 0 -> 0.6f
                                 distance == 0 -> 1f
+                                pure && distance == 1 -> 0.58f
                                 distance == 1 -> 0.72f
+                                pure && distance == 2 -> 0.38f
                                 distance == 2 -> 0.5f
+                                pure -> 0.22f
                                 else -> 0.34f
                             }
                             val targetScale = when {
@@ -351,7 +370,7 @@ internal fun PlayerLyricsPane(
                             if (translationText != null) {
                                 Column(
                                     modifier = lineModifier,
-                                    verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(translationLineSpacing),
                                 ) {
                                     if (isHighlighted && hasEnhancedSegments) {
                                         EnhancedLyricsLineText(
