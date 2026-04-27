@@ -126,6 +126,7 @@ internal fun PlayerLyricsPane(
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    pure: Boolean = false,
     mobilePlayback: Boolean = false,
 ) {
     val listState = rememberLazyListState()
@@ -222,7 +223,7 @@ internal fun PlayerLyricsPane(
                 ),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            if (!compact) {
+            if (!compact && !pure) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         state.snapshot.currentDisplayTitle,

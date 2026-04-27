@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
@@ -831,6 +832,7 @@ private fun PlayerOverlay(
     val desktopWindowChrome = currentDesktopWindowChrome
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
+    var isPureModeRequested by remember { mutableStateOf(false) }
     val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
     val backgroundPalette = rememberPlaybackArtworkBackgroundPalette(
         artworkBitmap = artworkBitmap,
@@ -942,7 +944,13 @@ private fun PlayerOverlay(
                     0.dp
                 }
             val wide = layoutProfile.isExpandedLayout
+            val isPureMode = wide && isPureModeRequested
             val useTapToRevealLyrics = layoutProfile.isCompactLayout
+            LaunchedEffect(wide) {
+                if (!wide) {
+                    isPureModeRequested = false
+                }
+            }
             LaunchedEffect(platform.name, maxWidth, maxHeight) {
                 logger.debug(PLAYER_UI_LOG_TAG) {
                     "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight orientation=${layoutProfile.orientation} wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"
@@ -954,86 +962,99 @@ private fun PlayerOverlay(
                     .padding(horizontal = 26.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    IconButton(
-                        onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
-                        modifier = Modifier.padding(start = immersiveDesktopTrafficLightsInset),
+                if (!isPureMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "收起播放页",
-                            tint = Color.White.copy(alpha = 0.92f),
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
-                    if (wide) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        IconButton(
+                            onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
+                            modifier = Modifier.padding(start = immersiveDesktopTrafficLightsInset),
                         ) {
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                                enabled = state.lyrics != null && !state.isLyricsLoading,
-                                modifier = Modifier.size(52.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Share,
-                                    contentDescription = "分享歌词",
-                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
-                                        Color.White.copy(alpha = 0.92f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.42f)
-                                    },
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                                modifier = Modifier.size(52.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Search,
-                                    contentDescription = "手动搜索",
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = "收起播放页",
+                                tint = Color.White.copy(alpha = 0.92f),
+                                modifier = Modifier.size(34.dp),
+                            )
                         }
-                    } else {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                                enabled = state.lyrics != null && !state.isLyricsLoading,
-                                modifier = Modifier.size(52.dp),
+                        if (wide) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Share,
-                                    contentDescription = "分享歌词",
-                                    tint = if (state.lyrics != null && !state.isLyricsLoading) {
-                                        Color.White.copy(alpha = 0.92f)
-                                    } else {
-                                        Color.White.copy(alpha = 0.42f)
-                                    },
-                                    modifier = Modifier.size(24.dp),
-                                )
+                                IconButton(
+                                    onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                    enabled = state.lyrics != null && !state.isLyricsLoading,
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Share,
+                                        contentDescription = "分享歌词",
+                                        tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                            Color.White.copy(alpha = 0.92f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.42f)
+                                        },
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = "手动搜索",
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { isPureModeRequested = true },
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Fullscreen,
+                                        contentDescription = "纯净模式",
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
-                            IconButton(
-                                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                                modifier = Modifier.size(52.dp),
+                        } else {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Search,
-                                    contentDescription = "手动搜索",
-                                    tint = Color.White.copy(alpha = 0.92f),
-                                    modifier = Modifier.size(24.dp),
-                                )
+                                IconButton(
+                                    onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                    enabled = state.lyrics != null && !state.isLyricsLoading,
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Share,
+                                        contentDescription = "分享歌词",
+                                        tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                            Color.White.copy(alpha = 0.92f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.42f)
+                                        },
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                    modifier = Modifier.size(52.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = "手动搜索",
+                                        tint = Color.White.copy(alpha = 0.92f),
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1071,6 +1092,7 @@ private fun PlayerOverlay(
                             onPlayerIntent = onPlayerIntent,
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                             mobilePlayback = mobilePlayback,
+                            pure = isPureMode,
                             modifier = Modifier
                                 .weight(0.5f)
                                 .fillMaxHeight(),
@@ -1100,18 +1122,30 @@ private fun PlayerOverlay(
                         )
                     }
                 }
-                PlayerBottomControls(
-                    snapshot = state.snapshot,
-                    sleepTimer = state.sleepTimer,
-                    track = track,
-                    mobilePlayback = mobilePlayback,
-                    wide = wide,
-                    isFavorite = isFavorite,
-                    onToggleFavorite = onToggleFavorite,
-                    onOpenAddToPlaylist = onOpenAddToPlaylist,
-                    onOpenQueue = onOpenQueue,
-                    onPlayerIntent = onPlayerIntent,
-                    onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                if (!isPureMode) {
+                    PlayerBottomControls(
+                        snapshot = state.snapshot,
+                        sleepTimer = state.sleepTimer,
+                        track = track,
+                        mobilePlayback = mobilePlayback,
+                        wide = wide,
+                        isFavorite = isFavorite,
+                        onToggleFavorite = onToggleFavorite,
+                        onOpenAddToPlaylist = onOpenAddToPlaylist,
+                        onOpenQueue = onOpenQueue,
+                        onPlayerIntent = onPlayerIntent,
+                        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                    )
+                }
+            }
+            if (isPureMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { isPureModeRequested = false },
                 )
             }
             if (state.isLyricsShareVisible) {
