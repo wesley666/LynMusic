@@ -1062,7 +1062,7 @@ private fun PlayerOverlay(
                             track = track,
                             artworkBitmap = artworkBitmap,
                             modifier = Modifier
-                                .weight(0.46f)
+                                .weight(0.5f)
                                 .fillMaxHeight(),
                         )
                         PlayerLyricsPane(
@@ -1072,7 +1072,7 @@ private fun PlayerOverlay(
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                             mobilePlayback = mobilePlayback,
                             modifier = Modifier
-                                .weight(0.54f)
+                                .weight(0.5f)
                                 .fillMaxHeight(),
                         )
                     }
