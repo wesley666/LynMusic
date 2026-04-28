@@ -1,8 +1,6 @@
 package top.iwesley.lyn.music
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,13 +19,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -320,21 +318,31 @@ internal fun DesktopShell(
     Row(
         modifier = Modifier.fillMaxSize(),
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .width(260.dp)
+                .width(240.dp)
                 .fillMaxHeight()
-                .padding(20.dp),
+                .background(Color.White),
         ) {
-            HeroHeader()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize(),
+            ) {
+                HeroHeader()
+                Spacer(Modifier.height(40.dp))
+                DesktopNav(
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected,
+                    modifier = Modifier.padding(horizontal = 22.dp),
+                )
+            }
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                DesktopNav(selectedTab = selectedTab, onTabSelected = onTabSelected)
-            }
+                    .align(Alignment.CenterEnd)
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(Color(0xFFE3E3E3)),
+            )
         }
 
         Column(
@@ -391,55 +399,52 @@ internal fun DesktopShell(
 private fun DesktopNav(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val shellColors = mainShellColors
-    Card(
-        colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, shellColors.cardBorder),
+    val primary = MaterialTheme.colorScheme.primary
+    val selectedBackground = primary.copy(alpha = 0.09f)
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            listOf(
-                Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-                Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
-                Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
-                Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
-                Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
-                Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
-            ).forEach { (tab, icon, label) ->
-                val selected = selectedTab == tab
-                Row(
+        listOf(
+            Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
+            Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
+            Triple(AppTab.Favorites, Icons.Rounded.FavoriteBorder, "喜欢"),
+            Triple(AppTab.Tags, Icons.Rounded.LocalOffer, "音乐标签"),
+            Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
+            Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
+        ).forEach { (tab, icon, label) ->
+            val selected = selectedTab == tab
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (selected) selectedBackground else Color.Transparent)
+                    .clickable { onTabSelected(tab) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.secondary
-                            else Color.Transparent,
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent,
-                            shape = RoundedCornerShape(18.dp),
-                        )
-                        .clickable { onTabSelected(tab) }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = label,
-                        tint = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        label,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+                        .width(5.dp)
+                        .fillMaxHeight()
+                        .background(if (selected) primary else Color.Transparent),
+                )
+                Spacer(Modifier.width(21.dp))
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    tint = if (selected) primary else Color(0xFF111111),
+                    modifier = Modifier.size(27.dp),
+                )
+                Spacer(Modifier.width(22.dp))
+                Text(
+                    label,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    color = Color(0xFF111111),
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
     }
@@ -448,14 +453,17 @@ private fun DesktopNav(
 @Composable
 private fun HeroHeader() {
     val desktopWindowChrome = currentDesktopWindowChrome
+    val topPadding =
+        if (desktopWindowChrome.immersiveTitleBarEnabled) desktopWindowChrome.topInset + 48.dp
+        else 56.dp
     Text(
         text = "LynMusic",
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.ExtraBold,
+        color = Color.Black,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = if (desktopWindowChrome.immersiveTitleBarEnabled) 0.dp else 0.dp,
-            top =  20.dp),
+            .padding(start = 42.dp, top = topPadding),
     )
 }
 
