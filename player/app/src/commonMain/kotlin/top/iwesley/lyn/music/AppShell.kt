@@ -333,7 +333,7 @@ internal fun DesktopShell(
                 DesktopNav(
                     selectedTab = selectedTab,
                     onTabSelected = onTabSelected,
-                    modifier = Modifier.padding(horizontal = 22.dp),
+                    modifier = Modifier.padding(horizontal = 18.dp),
                 )
             }
             Box(
@@ -405,7 +405,7 @@ private fun DesktopNav(
     val selectedBackground = primary.copy(alpha = 0.09f)
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
             Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
@@ -419,7 +419,7 @@ private fun DesktopNav(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
+                    .height(52.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(if (selected) selectedBackground else Color.Transparent)
                     .clickable { onTabSelected(tab) },
@@ -431,14 +431,14 @@ private fun DesktopNav(
                         .fillMaxHeight()
                         .background(if (selected) primary else Color.Transparent),
                 )
-                Spacer(Modifier.width(21.dp))
+                Spacer(Modifier.width(17.dp))
                 Icon(
                     icon,
                     contentDescription = label,
                     tint = if (selected) primary else Color(0xFF111111),
-                    modifier = Modifier.size(27.dp),
+                    modifier = Modifier.size(24.dp),
                 )
-                Spacer(Modifier.width(22.dp))
+                Spacer(Modifier.width(18.dp))
                 Text(
                     label,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
