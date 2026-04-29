@@ -761,6 +761,27 @@ internal fun resolvePlayerInfoVinylSize(
     }
 }
 
+internal fun resolvePlayerArtworkDragOffsetPx(
+    currentOffsetPx: Float,
+    dragAmountPx: Float,
+    maxVisualOffsetPx: Float,
+): Float {
+    if (maxVisualOffsetPx <= 0f) return 0f
+    return (currentOffsetPx + dragAmountPx).coerceIn(-maxVisualOffsetPx, maxVisualOffsetPx)
+}
+
+internal fun resolvePlayerArtworkSwipeIntent(
+    finalOffsetPx: Float,
+    swipeThresholdPx: Float,
+): PlayerIntent? {
+    if (swipeThresholdPx <= 0f) return null
+    return when {
+        finalOffsetPx <= -swipeThresholdPx -> PlayerIntent.SkipNext
+        finalOffsetPx >= swipeThresholdPx -> PlayerIntent.SkipPrevious
+        else -> null
+    }
+}
+
 internal fun hasMiniPlayerLyricsContent(
     showPortraitLyrics: Boolean,
     lyricsText: String?,
@@ -1098,6 +1119,7 @@ private fun PlayerOverlay(
                                 snapshot = state.snapshot,
                                 track = track,
                                 artworkBitmap = artworkBitmap,
+                                onPlayerIntent = onPlayerIntent,
                                 modifier = Modifier
                                     .weight(0.5f)
                                     .fillMaxHeight(),
@@ -1236,6 +1258,7 @@ private fun MobilePlayerPrimaryPane(
             modifier = Modifier.fillMaxSize(),
             compact = true,
             compactLyricsText = displayCompactLyricsText,
+            onPlayerIntent = onPlayerIntent,
         )
     }
 }
@@ -1249,6 +1272,7 @@ private fun PlayerInfoPane(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     compactLyricsText: String? = null,
+    onPlayerIntent: ((PlayerIntent) -> Unit)? = null,
 ) {
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -1265,15 +1289,25 @@ private fun PlayerInfoPane(
         }
         val compactLyricsAreaTopOffset = ((maxHeight - vinylSize) / 2) + vinylSize
         val compactLyricsAreaHeight = (maxHeight - compactLyricsAreaTopOffset).coerceAtLeast(0.dp)
-        VinylPlaceholder(
-            vinylSize = vinylSize,
-            artworkBitmap = artworkBitmap,
-            artworkLocator = snapshot.currentDisplayArtworkLocator,
-            spinning = snapshot.isPlaying,
-            artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
-            innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
-            modifier = Modifier.align(Alignment.Center),
-        )
+        if (onPlayerIntent != null) {
+            SwipeablePlayerArtwork(
+                snapshot = snapshot,
+                artworkBitmap = artworkBitmap,
+                vinylSize = vinylSize,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else {
+            VinylPlaceholder(
+                vinylSize = vinylSize,
+                artworkBitmap = artworkBitmap,
+                artworkLocator = snapshot.currentDisplayArtworkLocator,
+                spinning = snapshot.isPlaying,
+                artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+                innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
         if (hasCompactLyrics) {
             Box(
                 modifier = Modifier
@@ -1297,6 +1331,64 @@ private fun PlayerInfoPane(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SwipeablePlayerArtwork(
+    snapshot: PlaybackSnapshot,
+    artworkBitmap: ImageBitmap?,
+    vinylSize: Dp,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 72.dp.toPx() }
+    val maxVisualOffsetPx = with(density) {
+        minOf(vinylSize * 0.32f, 132.dp).toPx()
+    }
+    var dragOffsetPx by remember(snapshot.currentTrack?.id) { mutableStateOf(0f) }
+    val animatedDragOffsetPx by animateFloatAsState(
+        targetValue = dragOffsetPx,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "player-artwork-swipe-offset",
+    )
+    Box(
+        modifier = modifier
+            .size(vinylSize)
+            .offset { IntOffset(animatedDragOffsetPx.roundToInt(), 0) }
+            .pointerInput(snapshot.currentTrack?.id, swipeThresholdPx, maxVisualOffsetPx) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount ->
+                        dragOffsetPx = resolvePlayerArtworkDragOffsetPx(
+                            currentOffsetPx = dragOffsetPx,
+                            dragAmountPx = dragAmount,
+                            maxVisualOffsetPx = maxVisualOffsetPx,
+                        )
+                    },
+                    onDragEnd = {
+                        val swipeIntent = resolvePlayerArtworkSwipeIntent(
+                            finalOffsetPx = dragOffsetPx,
+                            swipeThresholdPx = swipeThresholdPx,
+                        )
+                        dragOffsetPx = 0f
+                        if (swipeIntent != null) {
+                            onPlayerIntent(swipeIntent)
+                        }
+                    },
+                    onDragCancel = { dragOffsetPx = 0f },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        VinylPlaceholder(
+            vinylSize = vinylSize,
+            artworkBitmap = artworkBitmap,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
+            spinning = snapshot.isPlaying,
+            artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
+            innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+        )
     }
 }
 

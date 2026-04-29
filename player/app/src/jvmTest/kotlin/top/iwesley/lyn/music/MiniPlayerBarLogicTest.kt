@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.feature.player.PlayerIntent
 
 class MiniPlayerBarLogicTest {
 
@@ -285,6 +286,78 @@ class MiniPlayerBarLogicTest {
                 maxHeight = 900.dp,
                 compact = false,
                 hasCompactLyrics = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `player artwork swipe resolves skip intent by threshold and direction`() {
+        assertEquals(
+            PlayerIntent.SkipNext,
+            resolvePlayerArtworkSwipeIntent(
+                finalOffsetPx = -72f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertEquals(
+            PlayerIntent.SkipPrevious,
+            resolvePlayerArtworkSwipeIntent(
+                finalOffsetPx = 72f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolvePlayerArtworkSwipeIntent(
+                finalOffsetPx = -71.9f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolvePlayerArtworkSwipeIntent(
+                finalOffsetPx = 71.9f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolvePlayerArtworkSwipeIntent(
+                finalOffsetPx = 100f,
+                swipeThresholdPx = 0f,
+            ),
+        )
+    }
+
+    @Test
+    fun `player artwork drag offset is clamped to visual bounds`() {
+        assertEquals(
+            40f,
+            resolvePlayerArtworkDragOffsetPx(
+                currentOffsetPx = 25f,
+                dragAmountPx = 15f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            80f,
+            resolvePlayerArtworkDragOffsetPx(
+                currentOffsetPx = 70f,
+                dragAmountPx = 20f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            -80f,
+            resolvePlayerArtworkDragOffsetPx(
+                currentOffsetPx = -70f,
+                dragAmountPx = -20f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            0f,
+            resolvePlayerArtworkDragOffsetPx(
+                currentOffsetPx = 20f,
+                dragAmountPx = 10f,
+                maxVisualOffsetPx = 0f,
             ),
         )
     }
