@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 
@@ -358,6 +359,31 @@ class MiniPlayerBarLogicTest {
                 currentOffsetPx = 20f,
                 dragAmountPx = 10f,
                 maxVisualOffsetPx = 0f,
+            ),
+        )
+    }
+
+    @Test
+    fun `player seek position resolves only on valid seekable playback`() {
+        val seekableSnapshot = PlaybackSnapshot(
+            durationMs = 100_000L,
+            canSeek = true,
+        )
+
+        assertEquals(50_000L, resolvePlayerSeekPositionMs(50_000L, seekableSnapshot))
+        assertEquals(0L, resolvePlayerSeekPositionMs(-1L, seekableSnapshot))
+        assertEquals(100_000L, resolvePlayerSeekPositionMs(120_000L, seekableSnapshot))
+        assertNull(resolvePlayerSeekPositionMs(null, seekableSnapshot))
+        assertNull(
+            resolvePlayerSeekPositionMs(
+                50_000L,
+                seekableSnapshot.copy(canSeek = false),
+            ),
+        )
+        assertNull(
+            resolvePlayerSeekPositionMs(
+                50_000L,
+                seekableSnapshot.copy(durationMs = 0L),
             ),
         )
     }

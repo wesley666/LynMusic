@@ -782,6 +782,16 @@ internal fun resolvePlayerArtworkSwipeIntent(
     }
 }
 
+internal fun resolvePlayerSeekPositionMs(
+    positionMs: Long?,
+    snapshot: PlaybackSnapshot,
+): Long? {
+    if (positionMs == null || !snapshot.canSeek || snapshot.durationMs <= 0L) {
+        return null
+    }
+    return positionMs.coerceIn(0L, snapshot.durationMs)
+}
+
 internal fun hasMiniPlayerLyricsContent(
     showPortraitLyrics: Boolean,
     lyricsText: String?,
@@ -797,9 +807,10 @@ private const val MINI_PLAYER_LYRICS_LOADING_TEXT = "正在准备歌词"
 private fun MiniPlayerPlaybackProgress(
     snapshot: PlaybackSnapshot,
     modifier: Modifier = Modifier,
+    displayPositionMs: Long = snapshot.positionMs,
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
-    val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    val progressFraction = (displayPositionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
     RoundedSliderTrack(
         progressFraction = progressFraction,
         modifier = modifier.height(8.dp),
@@ -814,12 +825,17 @@ private fun MiniPlayerProgressScrubber(
     modifier: Modifier = Modifier,
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
+    var dragPositionMs by remember(snapshot.currentTrack?.id, snapshot.durationMs) {
+        mutableStateOf<Long?>(null)
+    }
+    val displayPositionMs = (dragPositionMs ?: snapshot.positionMs).coerceIn(0L, duration)
     Box(
         modifier = modifier.height(8.dp),
         contentAlignment = Alignment.Center,
     ) {
         MiniPlayerPlaybackProgress(
             snapshot = snapshot,
+            displayPositionMs = displayPositionMs,
             modifier = Modifier.fillMaxWidth(),
         )
         Slider(
@@ -828,8 +844,16 @@ private fun MiniPlayerProgressScrubber(
                 .height(8.dp)
                 .graphicsLayer(scaleY = 0.36f),
             colors = transparentTrackSliderColors(),
-            value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
-            onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
+            value = displayPositionMs.toFloat(),
+            onValueChange = { dragPositionMs = it.toLong() },
+            onValueChangeFinished = {
+                val targetPositionMs = resolvePlayerSeekPositionMs(dragPositionMs, snapshot)
+                dragPositionMs = null
+                if (targetPositionMs != null) {
+                    onPlayerIntent(PlayerIntent.SeekTo(targetPositionMs))
+                }
+            },
+            enabled = snapshot.canSeek && snapshot.durationMs > 0L,
             valueRange = 0f..duration.toFloat(),
         )
     }
@@ -2300,7 +2324,11 @@ private fun PlaybackProgress(
     floating: Boolean = false,
 ) {
     val duration = snapshot.durationMs.coerceAtLeast(1L)
-    val progressFraction = (snapshot.positionMs.coerceIn(0L, duration).toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+    var dragPositionMs by remember(snapshot.currentTrack?.id, snapshot.durationMs) {
+        mutableStateOf<Long?>(null)
+    }
+    val displayPositionMs = (dragPositionMs ?: snapshot.positionMs).coerceIn(0L, duration)
+    val progressFraction = (displayPositionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
     val showFlowerParticles = !currentPlatformDescriptor.isAndroidTV() && !currentPlatformDescriptor.isAndroidAutomotivePlatform()
     val particles = remember { mutableStateListOf<ProgressFlowerParticle>() }
     var lastEmissionFraction by remember { mutableStateOf(progressFraction) }
@@ -2311,7 +2339,7 @@ private fun PlaybackProgress(
             particles.clear()
         }
     }
-    LaunchedEffect(snapshot.positionMs, snapshot.isPlaying, duration, showFlowerParticles) {
+    LaunchedEffect(progressFraction, snapshot.isPlaying, duration, showFlowerParticles) {
         val currentFraction = progressFraction
         if (!showFlowerParticles) {
             lastEmissionFraction = currentFraction
@@ -2393,8 +2421,16 @@ private fun PlaybackProgress(
                     .height(8.dp)
                     .graphicsLayer(scaleY = if (floating) 0.36f else 0.44f),
                 colors = transparentTrackSliderColors(),
-                value = snapshot.positionMs.coerceIn(0L, duration).toFloat(),
-                onValueChange = { onPlayerIntent(PlayerIntent.SeekTo(it.toLong())) },
+                value = displayPositionMs.toFloat(),
+                onValueChange = { dragPositionMs = it.toLong() },
+                onValueChangeFinished = {
+                    val targetPositionMs = resolvePlayerSeekPositionMs(dragPositionMs, snapshot)
+                    dragPositionMs = null
+                    if (targetPositionMs != null) {
+                        onPlayerIntent(PlayerIntent.SeekTo(targetPositionMs))
+                    }
+                },
+                enabled = snapshot.canSeek && snapshot.durationMs > 0L,
                 valueRange = 0f..duration.toFloat(),
             )
         }
@@ -2404,7 +2440,7 @@ private fun PlaybackProgress(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = formatDuration(snapshot.positionMs),
+                    text = formatDuration(displayPositionMs),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White,
                 )
