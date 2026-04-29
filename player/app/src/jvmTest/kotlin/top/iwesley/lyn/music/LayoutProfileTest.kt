@@ -33,8 +33,54 @@ class LayoutProfileTest {
         assertTrue(profile.isExpandedLayout)
     }
 
+    @Test
+    fun `automotive landscape uses automotive player overlay`() {
+        val profile = buildLayoutProfile(
+            maxWidth = 1280.dp,
+            maxHeight = 720.dp,
+            platform = automotivePlatform(),
+        )
+
+        assertTrue(profile.isAndroidAuto)
+        assertTrue(profile.isLandscape)
+        assertTrue(profile.isExpandedLayout)
+        assertTrue(shouldUseAutomotiveLandscapePlayerOverlay(profile))
+    }
+
+    @Test
+    fun `automotive portrait keeps shared compact player overlay`() {
+        val profile = buildLayoutProfile(
+            maxWidth = 720.dp,
+            maxHeight = 1280.dp,
+            platform = automotivePlatform(),
+        )
+
+        assertTrue(profile.isAndroidAuto)
+        assertTrue(profile.isPortrait)
+        assertFalse(profile.isExpandedLayout)
+        assertFalse(shouldUseAutomotiveLandscapePlayerOverlay(profile))
+    }
+
+    @Test
+    fun `android landscape does not use automotive player overlay`() {
+        val profile = buildLayoutProfile(
+            maxWidth = 900.dp,
+            maxHeight = 420.dp,
+            platform = androidPlatform(),
+        )
+
+        assertTrue(profile.isLandscape)
+        assertFalse(profile.isAndroidAuto)
+        assertFalse(shouldUseAutomotiveLandscapePlayerOverlay(profile))
+    }
+
     private fun androidPlatform(): PlatformDescriptor = PlatformDescriptor(
         name = "Android",
+        capabilities = emptyCapabilities(),
+    )
+
+    private fun automotivePlatform(): PlatformDescriptor = PlatformDescriptor(
+        name = "Android Automotive",
         capabilities = emptyCapabilities(),
     )
 

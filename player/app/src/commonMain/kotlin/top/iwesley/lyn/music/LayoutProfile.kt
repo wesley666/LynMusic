@@ -94,6 +94,10 @@ internal fun buildLayoutProfile(
     density = density,
 )
 
+internal fun shouldUseAutomotiveLandscapePlayerOverlay(layoutProfile: LayoutProfile): Boolean {
+    return layoutProfile.isAndroidAuto && layoutProfile.isLandscape
+}
+
 
 internal fun PlatformDescriptor.isPCPlatform(): Boolean {
     return name == "Desktop"

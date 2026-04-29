@@ -128,6 +128,7 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
+import top.iwesley.lyn.music.automotive.AutomotiveLandscapePlayerOverlayContent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.player.SLEEP_TIMER_PRESET_MINUTES
@@ -946,6 +947,8 @@ private fun PlayerOverlay(
             val wide = layoutProfile.isExpandedLayout
             val isPureMode = wide && isPureModeRequested
             val useTapToRevealLyrics = layoutProfile.isCompactLayout
+            val useAutomotiveLandscapePlayer =
+                shouldUseAutomotiveLandscapePlayerOverlay(layoutProfile)
             LaunchedEffect(wide) {
                 if (!wide) {
                     isPureModeRequested = false
@@ -956,197 +959,211 @@ private fun PlayerOverlay(
                     "platform=${platform.name} maxWidth=$maxWidth maxHeight=$maxHeight orientation=${layoutProfile.orientation} wide=$wide useTapToRevealLyrics=$useTapToRevealLyrics"
                 }
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 26.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-            ) {
-                if (!isPureMode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        IconButton(
-                            onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
-                            modifier = Modifier.padding(start = immersiveDesktopTrafficLightsInset),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = "收起播放页",
-                                tint = Color.White.copy(alpha = 0.92f),
-                                modifier = Modifier.size(34.dp),
-                            )
-                        }
-                        if (wide) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconButton(
-                                    onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                                    enabled = state.lyrics != null && !state.isLyricsLoading,
-                                    modifier = Modifier.size(52.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Share,
-                                        contentDescription = "分享歌词",
-                                        tint = if (state.lyrics != null && !state.isLyricsLoading) {
-                                            Color.White.copy(alpha = 0.92f)
-                                        } else {
-                                            Color.White.copy(alpha = 0.42f)
-                                        },
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                                    modifier = Modifier.size(52.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Search,
-                                        contentDescription = "手动搜索",
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { isPureModeRequested = true },
-                                    modifier = Modifier.size(52.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Fullscreen,
-                                        contentDescription = "纯净模式",
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                        } else {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IconButton(
-                                    onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
-                                    enabled = state.lyrics != null && !state.isLyricsLoading,
-                                    modifier = Modifier.size(52.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Share,
-                                        contentDescription = "分享歌词",
-                                        tint = if (state.lyrics != null && !state.isLyricsLoading) {
-                                            Color.White.copy(alpha = 0.92f)
-                                        } else {
-                                            Color.White.copy(alpha = 0.42f)
-                                        },
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
-                                    modifier = Modifier.size(52.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Search,
-                                        contentDescription = "手动搜索",
-                                        tint = Color.White.copy(alpha = 0.92f),
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                if (useTapToRevealLyrics) {
-                    MobilePlayerPrimaryPane(
-                        state = state,
-                        track = track,
-                        artworkBitmap = artworkBitmap,
-                        showCompactPlayerLyrics = showCompactPlayerLyrics,
-                        onPlayerIntent = onPlayerIntent,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    )
-                } else if (wide) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(34.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PlayerInfoPane(
-                            snapshot = state.snapshot,
-                            track = track,
-                            artworkBitmap = artworkBitmap,
-                            modifier = Modifier
-                                .weight(0.5f)
-                                .fillMaxHeight(),
-                        )
-                        PlayerLyricsPane(
-                            state = state,
-                            track = track,
-                            onPlayerIntent = onPlayerIntent,
-                            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-                            mobilePlayback = mobilePlayback,
-                            pure = isPureMode,
-                            modifier = Modifier
-                                .weight(0.5f)
-                                .fillMaxHeight(),
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(24.dp),
-                    ) {
-                        PlayerInfoPane(
-                            snapshot = state.snapshot,
-                            track = track,
-                            artworkBitmap = artworkBitmap,
-                            modifier = Modifier.fillMaxWidth(),
-                            compact = true,
-                        )
-                        PlayerLyricsPane(
-                            state = state,
-                            track = track,
-                            onPlayerIntent = onPlayerIntent,
-                            mobilePlayback = mobilePlayback,
-                            modifier = Modifier.weight(1f),
-                            compact = true,
-                        )
-                    }
-                }
-                if (!isPureMode) {
-                    PlayerBottomControls(
-                        snapshot = state.snapshot,
-                        sleepTimer = state.sleepTimer,
-                        track = track,
-                        mobilePlayback = mobilePlayback,
-                        wide = wide,
-                        isFavorite = isFavorite,
-                        onToggleFavorite = onToggleFavorite,
-                        onOpenAddToPlaylist = onOpenAddToPlaylist,
-                        onOpenQueue = onOpenQueue,
-                        onPlayerIntent = onPlayerIntent,
-                        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-                    )
-                }
-            }
-            if (isPureMode) {
-                Box(
+            if (useAutomotiveLandscapePlayer) {
+                AutomotiveLandscapePlayerOverlayContent(
+                    state = state,
+                    track = track,
+                    artworkBitmap = artworkBitmap,
+                    isFavorite = isFavorite,
+                    onToggleFavorite = onToggleFavorite,
+                    onOpenQueue = onOpenQueue,
+                    onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { isPureModeRequested = false },
-                )
+                        .padding(horizontal = 26.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    if (!isPureMode) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            IconButton(
+                                onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
+                                modifier = Modifier.padding(start = immersiveDesktopTrafficLightsInset),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = "收起播放页",
+                                    tint = Color.White.copy(alpha = 0.92f),
+                                    modifier = Modifier.size(34.dp),
+                                )
+                            }
+                            if (wide) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    IconButton(
+                                        onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                        enabled = state.lyrics != null && !state.isLyricsLoading,
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Share,
+                                            contentDescription = "分享歌词",
+                                            tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                                Color.White.copy(alpha = 0.92f)
+                                            } else {
+                                                Color.White.copy(alpha = 0.42f)
+                                            },
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = "手动搜索",
+                                            tint = Color.White.copy(alpha = 0.92f),
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { isPureModeRequested = true },
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Fullscreen,
+                                            contentDescription = "纯净模式",
+                                            tint = Color.White.copy(alpha = 0.92f),
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    IconButton(
+                                        onClick = { onPlayerIntent(PlayerIntent.OpenLyricsShare) },
+                                        enabled = state.lyrics != null && !state.isLyricsLoading,
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Share,
+                                            contentDescription = "分享歌词",
+                                            tint = if (state.lyrics != null && !state.isLyricsLoading) {
+                                                Color.White.copy(alpha = 0.92f)
+                                            } else {
+                                                Color.White.copy(alpha = 0.42f)
+                                            },
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = "手动搜索",
+                                            tint = Color.White.copy(alpha = 0.92f),
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (useTapToRevealLyrics) {
+                        MobilePlayerPrimaryPane(
+                            state = state,
+                            track = track,
+                            artworkBitmap = artworkBitmap,
+                            showCompactPlayerLyrics = showCompactPlayerLyrics,
+                            onPlayerIntent = onPlayerIntent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                    } else if (wide) {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(34.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PlayerInfoPane(
+                                snapshot = state.snapshot,
+                                track = track,
+                                artworkBitmap = artworkBitmap,
+                                modifier = Modifier
+                                    .weight(0.5f)
+                                    .fillMaxHeight(),
+                            )
+                            PlayerLyricsPane(
+                                state = state,
+                                track = track,
+                                onPlayerIntent = onPlayerIntent,
+                                onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                                mobilePlayback = mobilePlayback,
+                                pure = isPureMode,
+                                modifier = Modifier
+                                    .weight(0.5f)
+                                    .fillMaxHeight(),
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
+                            PlayerInfoPane(
+                                snapshot = state.snapshot,
+                                track = track,
+                                artworkBitmap = artworkBitmap,
+                                modifier = Modifier.fillMaxWidth(),
+                                compact = true,
+                            )
+                            PlayerLyricsPane(
+                                state = state,
+                                track = track,
+                                onPlayerIntent = onPlayerIntent,
+                                mobilePlayback = mobilePlayback,
+                                modifier = Modifier.weight(1f),
+                                compact = true,
+                            )
+                        }
+                    }
+                    if (!isPureMode) {
+                        PlayerBottomControls(
+                            snapshot = state.snapshot,
+                            sleepTimer = state.sleepTimer,
+                            track = track,
+                            mobilePlayback = mobilePlayback,
+                            wide = wide,
+                            isFavorite = isFavorite,
+                            onToggleFavorite = onToggleFavorite,
+                            onOpenAddToPlaylist = onOpenAddToPlaylist,
+                            onOpenQueue = onOpenQueue,
+                            onPlayerIntent = onPlayerIntent,
+                            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                        )
+                    }
+                }
+                if (isPureMode) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { isPureModeRequested = false },
+                    )
+                }
             }
             if (state.isLyricsShareVisible) {
                 LynMusicTheme(
