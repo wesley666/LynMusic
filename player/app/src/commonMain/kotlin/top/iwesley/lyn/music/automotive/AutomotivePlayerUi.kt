@@ -1,7 +1,11 @@
 package top.iwesley.lyn.music.automotive
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,12 +50,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import top.iwesley.lyn.music.LibraryNavigationTarget
 import top.iwesley.lyn.music.PlayerLyricsPane
@@ -202,14 +210,11 @@ private fun AutomotiveTrackAndProgress(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            VinylPlaceholder(
-                vinylSize = artworkSize,
+            AutomotiveSwipeableArtwork(
+                snapshot = snapshot,
                 artworkBitmap = artworkBitmap,
-                artworkLocator = snapshot.currentDisplayArtworkLocator,
-                spinning = snapshot.isPlaying,
-                enableArtworkTint = true,
-                artworkDiameterFraction = 0.76f,
-                innerGlowDiameterFraction = 0.72f,
+                artworkSize = artworkSize,
+                onPlayerIntent = onPlayerIntent,
             )
             Spacer(Modifier.height(if (compactVertical) 10.dp else 18.dp))
             Column(
@@ -256,6 +261,65 @@ private fun AutomotiveTrackAndProgress(
                 modifier = Modifier.fillMaxWidth(progressWidthFraction),
             )
         }
+    }
+}
+
+@Composable
+private fun AutomotiveSwipeableArtwork(
+    snapshot: PlaybackSnapshot,
+    artworkBitmap: ImageBitmap?,
+    artworkSize: Dp,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 72.dp.toPx() }
+    val maxVisualOffsetPx = with(density) {
+        minOf(artworkSize * 0.32f, 132.dp).toPx()
+    }
+    var dragOffsetPx by remember(snapshot.currentTrack?.id) { mutableStateOf(0f) }
+    val animatedDragOffsetPx by animateFloatAsState(
+        targetValue = dragOffsetPx,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "automotive-artwork-swipe-offset",
+    )
+    Box(
+        modifier = modifier
+            .size(artworkSize)
+            .offset { IntOffset(animatedDragOffsetPx.roundToInt(), 0) }
+            .pointerInput(snapshot.currentTrack?.id, swipeThresholdPx, maxVisualOffsetPx) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount ->
+                        dragOffsetPx = resolveAutomotiveArtworkDragOffsetPx(
+                            currentOffsetPx = dragOffsetPx,
+                            dragAmountPx = dragAmount,
+                            maxVisualOffsetPx = maxVisualOffsetPx,
+                        )
+                    },
+                    onDragEnd = {
+                        val swipeIntent = resolveAutomotiveArtworkSwipeIntent(
+                            finalOffsetPx = dragOffsetPx,
+                            swipeThresholdPx = swipeThresholdPx,
+                        )
+                        dragOffsetPx = 0f
+                        if (swipeIntent != null) {
+                            onPlayerIntent(swipeIntent)
+                        }
+                    },
+                    onDragCancel = { dragOffsetPx = 0f },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        VinylPlaceholder(
+            vinylSize = artworkSize,
+            artworkBitmap = artworkBitmap,
+            artworkLocator = snapshot.currentDisplayArtworkLocator,
+            spinning = snapshot.isPlaying,
+            enableArtworkTint = true,
+            artworkDiameterFraction = 0.76f,
+            innerGlowDiameterFraction = 0.72f,
+        )
     }
 }
 
@@ -603,6 +667,27 @@ internal fun resolveAutomotivePlayerSeekPositionMs(
         return null
     }
     return (snapshot.durationMs * fraction.coerceIn(0f, 1f)).roundToLong()
+}
+
+internal fun resolveAutomotiveArtworkDragOffsetPx(
+    currentOffsetPx: Float,
+    dragAmountPx: Float,
+    maxVisualOffsetPx: Float,
+): Float {
+    if (maxVisualOffsetPx <= 0f) return 0f
+    return (currentOffsetPx + dragAmountPx).coerceIn(-maxVisualOffsetPx, maxVisualOffsetPx)
+}
+
+internal fun resolveAutomotiveArtworkSwipeIntent(
+    finalOffsetPx: Float,
+    swipeThresholdPx: Float,
+): PlayerIntent? {
+    if (swipeThresholdPx <= 0f) return null
+    return when {
+        finalOffsetPx <= -swipeThresholdPx -> PlayerIntent.SkipNext
+        finalOffsetPx >= swipeThresholdPx -> PlayerIntent.SkipPrevious
+        else -> null
+    }
 }
 
 private fun automotiveMetadataValue(

@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.feature.player.PlayerIntent
 
 class AutomotivePlayerUiLogicTest {
     @Test
@@ -49,6 +50,78 @@ class AutomotivePlayerUiLogicTest {
             resolveAutomotivePlayerSeekPositionMs(
                 0.5f,
                 seekableSnapshot.copy(durationMs = 0L),
+            ),
+        )
+    }
+
+    @Test
+    fun `artwork swipe resolves skip intent by threshold and direction`() {
+        assertEquals(
+            PlayerIntent.SkipNext,
+            resolveAutomotiveArtworkSwipeIntent(
+                finalOffsetPx = -72f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertEquals(
+            PlayerIntent.SkipPrevious,
+            resolveAutomotiveArtworkSwipeIntent(
+                finalOffsetPx = 72f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolveAutomotiveArtworkSwipeIntent(
+                finalOffsetPx = -71.9f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolveAutomotiveArtworkSwipeIntent(
+                finalOffsetPx = 71.9f,
+                swipeThresholdPx = 72f,
+            ),
+        )
+        assertNull(
+            resolveAutomotiveArtworkSwipeIntent(
+                finalOffsetPx = 100f,
+                swipeThresholdPx = 0f,
+            ),
+        )
+    }
+
+    @Test
+    fun `artwork drag offset is clamped to visual bounds`() {
+        assertEquals(
+            40f,
+            resolveAutomotiveArtworkDragOffsetPx(
+                currentOffsetPx = 25f,
+                dragAmountPx = 15f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            80f,
+            resolveAutomotiveArtworkDragOffsetPx(
+                currentOffsetPx = 70f,
+                dragAmountPx = 20f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            -80f,
+            resolveAutomotiveArtworkDragOffsetPx(
+                currentOffsetPx = -70f,
+                dragAmountPx = -20f,
+                maxVisualOffsetPx = 80f,
+            ),
+        )
+        assertEquals(
+            0f,
+            resolveAutomotiveArtworkDragOffsetPx(
+                currentOffsetPx = 20f,
+                dragAmountPx = 10f,
+                maxVisualOffsetPx = 0f,
             ),
         )
     }
