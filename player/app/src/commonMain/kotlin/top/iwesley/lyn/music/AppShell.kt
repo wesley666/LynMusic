@@ -1031,24 +1031,23 @@ private fun MobileLibraryHubTabItem(
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
     val inactiveColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f)
-    Column(
+    Box(
         modifier = modifier
             .height(44.dp)
             .widthIn(min = 56.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Text(
             text = label,
             color = if (selected) activeColor else inactiveColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            modifier = Modifier.align(Alignment.Center),
         )
-        Spacer(modifier = Modifier.height(5.dp))
         Box(
             modifier = Modifier
                 .size(width = 24.dp, height = 3.dp)
+                .align(Alignment.BottomCenter)
                 .clip(RoundedCornerShape(percent = 50))
                 .background(if (selected) activeColor else Color.Transparent),
         )
