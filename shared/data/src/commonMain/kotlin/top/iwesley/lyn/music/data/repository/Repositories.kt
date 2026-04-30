@@ -610,6 +610,7 @@ class RoomImportSourceRepository(
                 ?: error("Source $sourceId does not exist.")
             source.credentialKey?.let { secureCredentialStore.remove(it) }
             database.favoriteTrackDao().deleteBySourceId(source.id)
+            database.trackPlaybackStatsDao().deleteBySourceId(source.id)
             database.trackDao().deleteBySourceId(source.id)
             database.lyricsCacheDao().deleteByTrackIdPrefix(trackIdPrefix(source.id))
             database.importIndexStateDao().deleteBySourceId(source.id)

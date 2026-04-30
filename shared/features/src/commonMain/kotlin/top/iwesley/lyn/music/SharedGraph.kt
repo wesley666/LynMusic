@@ -7,6 +7,7 @@ import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AutoPlayOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.AppStorageGateway
+import top.iwesley.lyn.music.core.model.CompositePlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AudioTagGateway
@@ -46,6 +47,7 @@ import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
+import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
@@ -167,10 +169,18 @@ fun buildSharedGraph(
         artworkCacheStore = runtimeServices.artworkCacheStore,
         logger = runtimeServices.logger,
     )
-    val playbackStatsReporter = NavidromePlaybackStatsReporter(
-        database = database,
-        secureCredentialStore = runtimeServices.secureCredentialStore,
-        httpClient = runtimeServices.lyricsHttpClient,
+    val playbackStatsReporter = CompositePlaybackStatsReporter(
+        reporters = listOf(
+            NavidromePlaybackStatsReporter(
+                database = database,
+                secureCredentialStore = runtimeServices.secureCredentialStore,
+                httpClient = runtimeServices.lyricsHttpClient,
+                logger = runtimeServices.logger,
+            ),
+            LocalPlaybackStatsReporter(
+                database = database,
+            ),
+        ),
         logger = runtimeServices.logger,
     )
     val favoritesRepository = RoomFavoritesRepository(

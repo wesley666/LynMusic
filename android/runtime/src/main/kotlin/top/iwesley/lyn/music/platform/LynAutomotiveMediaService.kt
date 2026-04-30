@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
+import top.iwesley.lyn.music.core.model.CompositePlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
@@ -28,6 +29,7 @@ import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
+import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.effectiveArtworkOverridesByTrackId
@@ -81,10 +83,18 @@ class LynAutomotiveMediaService : MediaBrowserServiceCompat() {
                 scope = serviceScope,
                 systemPlaybackControlsPlatformService = sessionControls,
                 logger = logger,
-                playbackStatsReporter = NavidromePlaybackStatsReporter(
-                    database = openedDatabase,
-                    secureCredentialStore = secureStore,
-                    httpClient = navidromeHttpClient,
+                playbackStatsReporter = CompositePlaybackStatsReporter(
+                    reporters = listOf(
+                        NavidromePlaybackStatsReporter(
+                            database = openedDatabase,
+                            secureCredentialStore = secureStore,
+                            httpClient = navidromeHttpClient,
+                            logger = logger,
+                        ),
+                        LocalPlaybackStatsReporter(
+                            database = openedDatabase,
+                        ),
+                    ),
                     logger = logger,
                 ),
             )

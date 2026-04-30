@@ -82,6 +82,21 @@ data class TrackEntity(
     val channelCount: Int? = null,
 )
 
+@Entity(tableName = "track_playback_stats")
+data class TrackPlaybackStatsEntity(
+    @PrimaryKey val trackId: String,
+    val sourceId: String,
+    val playCount: Int,
+    val lastPlayedAt: Long,
+)
+
+@Entity(tableName = "album_playback_stats")
+data class AlbumPlaybackStatsEntity(
+    @PrimaryKey val albumId: String,
+    val playCount: Int,
+    val lastPlayedAt: Long,
+)
+
 @Entity(tableName = "playback_queue_snapshot")
 data class PlaybackQueueSnapshotEntity(
     @PrimaryKey val id: Int = 0,
@@ -291,6 +306,44 @@ interface TrackDao {
 
     @Upsert
     suspend fun upsertAll(items: List<TrackEntity>)
+}
+
+@Dao
+interface TrackPlaybackStatsDao {
+    @Query("SELECT * FROM track_playback_stats WHERE trackId = :trackId LIMIT 1")
+    suspend fun getByTrackId(trackId: String): TrackPlaybackStatsEntity?
+
+    @Query("DELETE FROM track_playback_stats WHERE sourceId = :sourceId")
+    suspend fun deleteBySourceId(sourceId: String)
+
+    @Query(
+        """
+        INSERT INTO track_playback_stats (trackId, sourceId, playCount, lastPlayedAt)
+        VALUES (:trackId, :sourceId, 1, :lastPlayedAt)
+        ON CONFLICT(trackId) DO UPDATE SET
+            sourceId = excluded.sourceId,
+            playCount = track_playback_stats.playCount + 1,
+            lastPlayedAt = excluded.lastPlayedAt
+        """,
+    )
+    suspend fun incrementPlay(trackId: String, sourceId: String, lastPlayedAt: Long)
+}
+
+@Dao
+interface AlbumPlaybackStatsDao {
+    @Query("SELECT * FROM album_playback_stats WHERE albumId = :albumId LIMIT 1")
+    suspend fun getByAlbumId(albumId: String): AlbumPlaybackStatsEntity?
+
+    @Query(
+        """
+        INSERT INTO album_playback_stats (albumId, playCount, lastPlayedAt)
+        VALUES (:albumId, 1, :lastPlayedAt)
+        ON CONFLICT(albumId) DO UPDATE SET
+            playCount = album_playback_stats.playCount + 1,
+            lastPlayedAt = excluded.lastPlayedAt
+        """,
+    )
+    suspend fun incrementPlay(albumId: String, lastPlayedAt: Long)
 }
 
 @Dao
@@ -504,6 +557,8 @@ interface LyricsCacheDao {
         ImportSourceEntity::class,
         ImportIndexStateEntity::class,
         TrackEntity::class,
+        TrackPlaybackStatsEntity::class,
+        AlbumPlaybackStatsEntity::class,
         PlaybackQueueSnapshotEntity::class,
         FavoriteTrackEntity::class,
         PlaylistEntity::class,
@@ -513,7 +568,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 10,
+    version = 11,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -522,6 +577,8 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun importSourceDao(): ImportSourceDao
     abstract fun importIndexStateDao(): ImportIndexStateDao
     abstract fun trackDao(): TrackDao
+    abstract fun trackPlaybackStatsDao(): TrackPlaybackStatsDao
+    abstract fun albumPlaybackStatsDao(): AlbumPlaybackStatsDao
     abstract fun playbackQueueSnapshotDao(): PlaybackQueueSnapshotDao
     abstract fun favoriteTrackDao(): FavoriteTrackDao
     abstract fun playlistDao(): PlaylistDao
@@ -550,6 +607,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_7_8)
         .addMigrations(MIGRATION_8_9)
         .addMigrations(MIGRATION_9_10)
+        .addMigrations(MIGRATION_10_11)
         .build()
 }
 
@@ -727,6 +785,30 @@ val MIGRATION_9_10: Migration = object : Migration(9, 10) {
         connection.execSql("ALTER TABLE track ADD COLUMN samplingRate INTEGER")
         connection.execSql("ALTER TABLE track ADD COLUMN bitRate INTEGER")
         connection.execSql("ALTER TABLE track ADD COLUMN channelCount INTEGER")
+    }
+}
+
+val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS track_playback_stats (
+                trackId TEXT NOT NULL PRIMARY KEY,
+                sourceId TEXT NOT NULL,
+                playCount INTEGER NOT NULL,
+                lastPlayedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS album_playback_stats (
+                albumId TEXT NOT NULL PRIMARY KEY,
+                playCount INTEGER NOT NULL,
+                lastPlayedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+        )
     }
 }
 

@@ -13,6 +13,7 @@ import top.iwesley.lyn.music.data.db.MIGRATION_2_3
 import top.iwesley.lyn.music.data.db.MIGRATION_4_5
 import top.iwesley.lyn.music.data.db.MIGRATION_8_9
 import top.iwesley.lyn.music.data.db.MIGRATION_9_10
+import top.iwesley.lyn.music.data.db.MIGRATION_10_11
 
 class DatabaseMigrationTest {
 
@@ -210,6 +211,66 @@ class DatabaseMigrationTest {
             assertNull(connection.singleNullableLong("SELECT samplingRate FROM track WHERE id = 'track-1'"))
             assertNull(connection.singleNullableLong("SELECT bitRate FROM track WHERE id = 'track-1'"))
             assertNull(connection.singleNullableLong("SELECT channelCount FROM track WHERE id = 'track-1'"))
+        }
+    }
+
+    @Test
+    fun `migration 10 to 11 creates playback stats tables without changing library data`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE track (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    sourceId TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    artistId TEXT,
+                    artistName TEXT,
+                    albumId TEXT,
+                    albumTitle TEXT,
+                    durationMs INTEGER NOT NULL,
+                    trackNumber INTEGER,
+                    discNumber INTEGER,
+                    mediaLocator TEXT NOT NULL,
+                    relativePath TEXT NOT NULL,
+                    artworkLocator TEXT,
+                    sizeBytes INTEGER NOT NULL,
+                    modifiedAt INTEGER NOT NULL,
+                    bitDepth INTEGER,
+                    samplingRate INTEGER,
+                    bitRate INTEGER,
+                    channelCount INTEGER
+                )
+                """.trimIndent(),
+            )
+            connection.execSql(
+                """
+                INSERT INTO track (
+                    id, sourceId, title, artistId, artistName, albumId, albumTitle,
+                    durationMs, trackNumber, discNumber, mediaLocator, relativePath,
+                    artworkLocator, sizeBytes, modifiedAt, bitDepth, samplingRate, bitRate, channelCount
+                ) VALUES (
+                    'track-1', 'local-1', 'Blue', NULL, 'Artist A', 'album-1', 'Album A',
+                    215000, 4, 1, 'file:///music/Blue.flac',
+                    'Artist A/Album A/Blue.flac', NULL, 12345, 0, 16, 44100, 900000, 2
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_10_11.migrate(connection)
+
+            assertTrue(connection.hasColumn("track_playback_stats", "trackId"))
+            assertTrue(connection.hasColumn("track_playback_stats", "sourceId"))
+            assertTrue(connection.hasColumn("track_playback_stats", "playCount"))
+            assertTrue(connection.hasColumn("track_playback_stats", "lastPlayedAt"))
+            assertEquals(listOf("trackId"), connection.primaryKeyColumns("track_playback_stats"))
+            assertTrue(connection.hasColumn("album_playback_stats", "albumId"))
+            assertTrue(connection.hasColumn("album_playback_stats", "playCount"))
+            assertTrue(connection.hasColumn("album_playback_stats", "lastPlayedAt"))
+            assertEquals(listOf("albumId"), connection.primaryKeyColumns("album_playback_stats"))
+            assertEquals("Blue", connection.singleText("SELECT title FROM track WHERE id = 'track-1'"))
         }
     }
 
