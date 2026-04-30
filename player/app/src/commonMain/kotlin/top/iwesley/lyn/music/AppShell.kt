@@ -2,6 +2,7 @@ package top.iwesley.lyn.music
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +16,11 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -35,13 +37,18 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +56,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
@@ -73,6 +82,42 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.mainShellColors
+
+internal val mobilePrimaryNavigationTabs: List<AppTab> = listOf(AppTab.My, AppTab.Library)
+internal val mobileLibraryHubTabs: List<AppTab> = listOf(AppTab.Library, AppTab.Favorites, AppTab.Playlists)
+
+internal fun isMobileLibraryHubTab(tab: AppTab): Boolean = tab in mobileLibraryHubTabs
+
+internal fun isMobilePrimaryNavigationSelected(
+    selectedTab: AppTab,
+    navTab: AppTab,
+): Boolean {
+    return if (navTab == AppTab.Library) {
+        isMobileLibraryHubTab(selectedTab)
+    } else {
+        selectedTab == navTab
+    }
+}
+
+internal fun mobileLibraryHubPageForTab(tab: AppTab): Int {
+    return mobileLibraryHubTabs.indexOf(tab).takeIf { it >= 0 } ?: 0
+}
+
+internal fun mobileLibraryHubTabForPage(page: Int): AppTab {
+    return mobileLibraryHubTabs.getOrElse(page) { AppTab.Library }
+}
+
+internal fun mobileLibraryHubTabLabel(tab: AppTab): String {
+    return when (tab) {
+        AppTab.Library -> "曲库"
+        AppTab.Favorites -> "喜欢"
+        AppTab.Playlists -> "歌单"
+        AppTab.My -> "我的"
+        AppTab.Tags -> "音乐标签"
+        AppTab.Sources -> "来源"
+        AppTab.Settings -> "设置"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,21 +184,20 @@ internal fun MobileShell(
                     )
                 }
                 NavigationBar(containerColor = shellColors.navContainer) {
-                    listOf(
-                        Triple(AppTab.My, Icons.Rounded.Person, "我的"),
-                        Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-                        Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
-                        Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
-                    ).forEach { (tab, icon, label) ->
+                    mobilePrimaryNavigationTabs.forEach { tab ->
+                        val label = mobileLibraryHubTabLabel(tab)
                         NavigationBarItem(
-                            selected = selectedTab == tab,
+                            selected = isMobilePrimaryNavigationSelected(selectedTab, tab),
                             onClick = {
                                 isMoreSheetVisible = false
                                 onTabSelected(tab)
                             },
                             icon = {
                                 Icon(
-                                    icon,
+                                    imageVector = when (tab) {
+                                        AppTab.My -> Icons.Rounded.Person
+                                        else -> Icons.Rounded.LibraryMusic
+                                    },
                                     contentDescription = label,
                                     modifier = Modifier.size(mobileNavIconSize),
                                 )
@@ -217,6 +261,8 @@ internal fun MobileShell(
                 onLibraryNavigationHandled = onLibraryNavigationHandled,
                 onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
+                mobileLibraryHub = true,
+                onTabSelected = onTabSelected,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -385,6 +431,8 @@ internal fun DesktopShell(
                 libraryNavigationTarget = libraryNavigationTarget,
                 onLibraryNavigationHandled = onLibraryNavigationHandled,
                 onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                mobileLibraryHub = false,
+                onTabSelected = onTabSelected,
                 modifier = Modifier.weight(1f),
             )
             LynMusicTheme(
@@ -508,8 +556,28 @@ private fun TabContent(
     onLibraryNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
+    mobileLibraryHub: Boolean,
+    onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (mobileLibraryHub && isMobileLibraryHubTab(selectedTab)) {
+        MobileLibraryHubTab(
+            selectedTab = selectedTab,
+            libraryState = libraryState,
+            playlistsState = playlistsState,
+            favoritesState = favoritesState,
+            onLibraryIntent = onLibraryIntent,
+            onPlaylistsIntent = onPlaylistsIntent,
+            onFavoritesIntent = onFavoritesIntent,
+            onPlayerIntent = onPlayerIntent,
+            libraryNavigationTarget = libraryNavigationTarget,
+            onLibraryNavigationHandled = onLibraryNavigationHandled,
+            onTabSelected = onTabSelected,
+            modifier = modifier,
+        )
+        return
+    }
+
     when (selectedTab) {
         AppTab.My -> MyTab(
             platform = platform,
@@ -572,5 +640,104 @@ private fun TabContent(
             onSettingsIntent = onSettingsIntent,
             modifier = modifier,
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun MobileLibraryHubTab(
+    selectedTab: AppTab,
+    libraryState: LibraryState,
+    playlistsState: PlaylistsState,
+    favoritesState: FavoritesState,
+    onLibraryIntent: (LibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget?,
+    onLibraryNavigationHandled: () -> Unit,
+    onTabSelected: (AppTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val initialPage = mobileLibraryHubPageForTab(selectedTab)
+    val pagerState = rememberPagerState(initialPage = initialPage) { mobileLibraryHubTabs.size }
+    val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(selectedTab) {
+        val targetPage = mobileLibraryHubPageForTab(selectedTab)
+        if (pagerState.currentPage != targetPage) {
+            pagerState.animateScrollToPage(targetPage)
+        }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                onTabSelected(mobileLibraryHubTabForPage(page))
+            }
+    }
+    Column(modifier = modifier.fillMaxSize()) {
+        SecondaryTabRow(
+            selectedTabIndex = pagerState.currentPage,
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.primary,
+        ) {
+            mobileLibraryHubTabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        onTabSelected(tab)
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    text = {
+                        Text(
+                            text = mobileLibraryHubTabLabel(tab),
+                            fontWeight = if (pagerState.currentPage == index) {
+                                FontWeight.SemiBold
+                            } else {
+                                FontWeight.Medium
+                            },
+                        )
+                    },
+                )
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            key = { page -> mobileLibraryHubTabForPage(page).name },
+        ) { page ->
+            when (mobileLibraryHubTabForPage(page)) {
+                AppTab.Library -> LibraryTab(
+                    state = libraryState,
+                    favoritesState = favoritesState,
+                    onLibraryIntent = onLibraryIntent,
+                    onFavoritesIntent = onFavoritesIntent,
+                    onPlayerIntent = onPlayerIntent,
+                    showDuration = false,
+                    navigationTarget = libraryNavigationTarget,
+                    onNavigationHandled = onLibraryNavigationHandled,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                AppTab.Favorites -> FavoritesTab(
+                    state = favoritesState,
+                    onFavoritesIntent = onFavoritesIntent,
+                    onPlayerIntent = onPlayerIntent,
+                    showDuration = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                AppTab.Playlists -> PlaylistsTab(
+                    state = playlistsState,
+                    onPlaylistsIntent = onPlaylistsIntent,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                else -> Unit
+            }
+        }
     }
 }
