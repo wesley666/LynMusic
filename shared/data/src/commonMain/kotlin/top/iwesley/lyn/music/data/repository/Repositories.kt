@@ -101,6 +101,7 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsDocument
 import top.iwesley.lyn.music.domain.parsePlainText
 import top.iwesley.lyn.music.domain.parseLrc
 import top.iwesley.lyn.music.domain.DEFAULT_DIRECT_LYRICS_SELECTION
+import top.iwesley.lyn.music.domain.AUTO_DIRECT_LYRICS_SYNCED_BONUS
 import top.iwesley.lyn.music.domain.rankDirectLyricsCandidates
 import top.iwesley.lyn.music.domain.rankWorkflowSongCandidates
 import top.iwesley.lyn.music.domain.rewriteWorkflowLyricsSourceEnabled
@@ -1301,6 +1302,7 @@ class DefaultLyricsRepository(
                             requestType = "auto",
                         ),
                         selection = DEFAULT_DIRECT_LYRICS_SELECTION,
+                        syncedBonus = AUTO_DIRECT_LYRICS_SYNCED_BONUS,
                     )
                     val topCandidate = rankedCandidates.firstOrNull()
                     val matchedCandidate = topCandidate
