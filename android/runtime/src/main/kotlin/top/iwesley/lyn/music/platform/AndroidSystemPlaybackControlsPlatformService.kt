@@ -26,8 +26,13 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.SystemAudioFocusChange
+import top.iwesley.lyn.music.core.model.SystemAudioFocusCommand
+import top.iwesley.lyn.music.core.model.SystemAudioFocusState
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
+import top.iwesley.lyn.music.core.model.resolveSystemAudioFocusChange
+import top.iwesley.lyn.music.core.model.shouldKeepAudioFocusWhilePausedForResume
 
 fun createAndroidSystemPlaybackControlsPlatformService(
     context: Context,
@@ -53,7 +58,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
     private var lastArtworkBitmap: Bitmap? = null
     private var isNoisyReceiverRegistered = false
     private var hasAudioFocus = false
-    private var shouldResumeAfterFocusGain = false
+    private var audioFocusState = SystemAudioFocusState()
     private var audioFocusRequest: AudioFocusRequest? = null
 
     private val noisyReceiver = object : BroadcastReceiver() {
@@ -65,23 +70,21 @@ private class AndroidSystemPlaybackControlsPlatformService(
     }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                if (shouldResumeAfterFocusGain && latestSnapshot.currentTrack != null) {
-                    shouldResumeAfterFocusGain = false
-                    serviceScope.launch { callbacks.play() }
-                }
-            }
-
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
-            -> {
-                shouldResumeAfterFocusGain = focusChange != AudioManager.AUDIOFOCUS_LOSS && latestSnapshot.isPlaying
-                if (latestSnapshot.isPlaying) {
-                    serviceScope.launch { callbacks.pause() }
-                }
-            }
+        val change = focusChange.toSystemAudioFocusChange() ?: return@OnAudioFocusChangeListener
+        val result = resolveSystemAudioFocusChange(
+            state = audioFocusState,
+            change = change,
+            isPlaying = latestSnapshot.isPlaying,
+            hasCurrentTrack = latestSnapshot.currentTrack != null,
+        )
+        audioFocusState = result.state
+        if (change == SystemAudioFocusChange.Gain) {
+            hasAudioFocus = true
+        }
+        when (result.command) {
+            SystemAudioFocusCommand.Play -> serviceScope.launch { callbacks.play() }
+            SystemAudioFocusCommand.Pause -> serviceScope.launch { callbacks.pause() }
+            SystemAudioFocusCommand.None -> Unit
         }
     }
 
@@ -141,6 +144,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
 
     override suspend fun close() {
         updateNoisyReceiver(PlaybackSnapshot())
+        audioFocusState = SystemAudioFocusState()
         abandonAudioFocus()
         mediaSession.isActive = false
         mediaSession.release()
@@ -281,8 +285,10 @@ private class AndroidSystemPlaybackControlsPlatformService(
             if (!requestAudioFocus()) {
                 serviceScope.launch { callbacks.pause() }
             }
+        } else if (shouldKeepAudioFocusWhilePausedForResume(audioFocusState)) {
+            return
         } else {
-            shouldResumeAfterFocusGain = false
+            audioFocusState = SystemAudioFocusState()
             abandonAudioFocus()
         }
     }
@@ -308,7 +314,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
             val request = audioFocusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(audioAttributes)
                 .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                .setWillPauseWhenDucked(true)
+                .setWillPauseWhenDucked(false)
                 .build()
                 .also { audioFocusRequest = it }
             audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
@@ -363,6 +369,16 @@ private class AndroidSystemPlaybackControlsPlatformService(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
+
+    private fun Int.toSystemAudioFocusChange(): SystemAudioFocusChange? {
+        return when (this) {
+            AudioManager.AUDIOFOCUS_GAIN -> SystemAudioFocusChange.Gain
+            AudioManager.AUDIOFOCUS_LOSS -> SystemAudioFocusChange.Loss
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> SystemAudioFocusChange.LossTransient
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> SystemAudioFocusChange.LossTransientCanDuck
+            else -> null
+        }
     }
 }
 
