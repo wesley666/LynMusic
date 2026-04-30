@@ -58,6 +58,12 @@ class SystemAudioFocusTest {
 
         assertEquals(SystemAudioFocusCommand.Pause, result.command)
         assertFalse(result.state.shouldResumeAfterFocusGain)
+        assertFalse(
+            shouldKeepPlaybackNotificationForeground(
+                isPlaying = false,
+                audioFocusState = result.state,
+            ),
+        )
     }
 
     @Test

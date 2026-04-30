@@ -171,6 +171,10 @@ private class AndroidSystemPlaybackControlsPlatformService(
 
     fun buildNotificationState(): AndroidNotificationState {
         val track = latestSnapshot.currentTrack ?: return AndroidNotificationState(null, false)
+        val keepForeground = shouldKeepPlaybackNotificationForeground(
+            isPlaying = latestSnapshot.isPlaying,
+            audioFocusState = audioFocusState,
+        )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, AndroidPlaybackNotificationService.CHANNEL_ID)
         } else {
@@ -189,7 +193,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setOngoing(latestSnapshot.isPlaying)
+            .setOngoing(keepForeground)
             .setContentIntent(buildContentIntent())
             .addAction(
                 Notification.Action.Builder(
@@ -224,7 +228,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
                     .setShowActionsInCompactView(0, 1, 2),
             )
             .build()
-        return AndroidNotificationState(notification, latestSnapshot.isPlaying)
+        return AndroidNotificationState(notification, keepForeground)
     }
 
     private suspend fun resolveArtworkBitmap(locator: String?): Bitmap? {
