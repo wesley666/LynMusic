@@ -19,11 +19,13 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.NoopPlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.PlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
@@ -34,6 +36,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedSystemPlaybackControlsPlatfor
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
+import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaybackQueueSnapshotEntity
 
@@ -63,6 +66,8 @@ class DefaultPlaybackRepository(
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
     private val shuffleRandom: Random = Random.Default,
     hydrateImmediately: Boolean = true,
+    private val playbackStatsReporter: PlaybackStatsReporter = NoopPlaybackStatsReporter,
+    private val currentTimeMillis: () -> Long = ::now,
 ) : PlaybackRepository {
     private val initialPlaybackVolume = normalizePlaybackVolume(playbackPreferencesStore.playbackVolume.value)
     private val mutableSnapshot = MutableStateFlow(
@@ -77,6 +82,7 @@ class DefaultPlaybackRepository(
     @Volatile
     private var hasHydratedPersistedQueue = false
     private var observedCompletionCount = 0L
+    private var playbackStatsSession: PlaybackStatsSession? = null
     private var loggedArtworkTrackId: String? = null
     private var loggedDisplayArtworkLocator: String? = null
 
@@ -175,6 +181,7 @@ class DefaultPlaybackRepository(
                         errorMessage = gatewayState.errorMessage,
                     )
                 }
+                updatePlaybackStats(mutableSnapshot.value)
                 val completionLoadRequest = if (completionChanged) {
                     playbackCommandMutex.withLock {
                         advanceLocked(autoTriggered = true)
@@ -212,6 +219,7 @@ class DefaultPlaybackRepository(
         var loadRequest: PlaybackLoadRequest? = null
         playbackCommandMutex.withLock {
             if (tracks.isEmpty()) return@withLock
+            updatePlaybackStats(mutableSnapshot.value)
             val currentSnapshot = mutableSnapshot.value
             val index = startIndex.coerceIn(0, tracks.lastIndex)
             val (queue, currentIndex) = if (currentSnapshot.mode == PlaybackMode.SHUFFLE) {
@@ -369,6 +377,7 @@ class DefaultPlaybackRepository(
     }
 
     override suspend fun close() {
+        updatePlaybackStats(mutableSnapshot.value)
         systemPlaybackControlsPlatformService.close()
         gateway.release()
     }
@@ -421,6 +430,7 @@ class DefaultPlaybackRepository(
     private suspend fun loadIndexLocked(index: Int, playWhenReady: Boolean): PlaybackLoadRequest? {
         val queue = mutableSnapshot.value.queue
         val target = queue.getOrNull(index) ?: return null
+        updatePlaybackStats(mutableSnapshot.value)
         mutableSnapshot.update {
             it.copy(
                 currentIndex = index,
@@ -570,6 +580,75 @@ class DefaultPlaybackRepository(
         }
     }
 
+    private fun updatePlaybackStats(snapshot: PlaybackSnapshot) {
+        val track = snapshot.currentTrack
+        if (track == null) {
+            playbackStatsSession = null
+            return
+        }
+        val nowMs = currentTimeMillis()
+        val session = playbackStatsSession
+            ?.takeIf { it.matches(latestLoadRequestId, track) }
+            ?: PlaybackStatsSession(
+                sessionId = latestLoadRequestId,
+                trackId = track.id,
+                mediaLocator = track.mediaLocator,
+            )
+        val elapsedMs = session.lastPlayingAtMs
+            ?.let { startedAt -> (nowMs - startedAt).coerceAtLeast(0L) }
+            ?: 0L
+        val accumulatedPlayingMs = (session.accumulatedPlayingMs + elapsedMs).coerceAtLeast(0L)
+        var nextSession = session.copy(
+            durationMs = playbackStatsDurationMs(snapshot, track),
+            accumulatedPlayingMs = accumulatedPlayingMs,
+            lastPlayingAtMs = if (snapshot.isPlaying) nowMs else null,
+        )
+        if (snapshot.isPlaying && !nextSession.nowPlayingReported) {
+            dispatchPlaybackStatsCommand(
+                PlaybackStatsCommand.ReportNowPlaying(
+                    track = track,
+                    atMillis = nowMs,
+                ),
+            )
+            nextSession = nextSession.copy(nowPlayingReported = true)
+        }
+        if (
+            !nextSession.playSubmitted &&
+            accumulatedPlayingMs >= playbackStatsSubmissionThresholdMs(nextSession.durationMs)
+        ) {
+            dispatchPlaybackStatsCommand(
+                PlaybackStatsCommand.SubmitPlay(
+                    track = track,
+                    atMillis = nowMs,
+                ),
+            )
+            nextSession = nextSession.copy(playSubmitted = true)
+        }
+        playbackStatsSession = nextSession
+    }
+
+    private fun dispatchPlaybackStatsCommand(command: PlaybackStatsCommand) {
+        scope.launch {
+            runCatching {
+                when (command) {
+                    is PlaybackStatsCommand.ReportNowPlaying -> {
+                        playbackStatsReporter.reportNowPlaying(command.track, command.atMillis)
+                    }
+
+                    is PlaybackStatsCommand.SubmitPlay -> {
+                        playbackStatsReporter.submitPlay(command.track, command.atMillis)
+                    }
+                }
+            }.onFailure { throwable ->
+                if (throwable is CancellationException) throw throwable
+                logger.warn(PLAYBACK_LOG_TAG) {
+                    "stats-report-failed track=${command.track.id} event=${command.eventName} " +
+                        "cause=${throwable.message.orEmpty()}"
+                }
+            }
+        }
+    }
+
     private fun createLoadRequest(
         track: Track,
         playWhenReady: Boolean,
@@ -682,6 +761,19 @@ data class PlayerRuntimeServices(
 
 private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
+internal fun playbackStatsSubmissionThresholdMs(durationMs: Long): Long {
+    if (durationMs <= 0L) return PLAYBACK_STATS_FALLBACK_THRESHOLD_MS
+    return minOf((durationMs / 2L).coerceAtLeast(1L), PLAYBACK_STATS_FALLBACK_THRESHOLD_MS)
+}
+
+private fun playbackStatsDurationMs(snapshot: PlaybackSnapshot, track: Track): Long {
+    return when {
+        snapshot.durationMs > 0L -> snapshot.durationMs
+        track.durationMs > 0L -> track.durationMs
+        else -> 0L
+    }
+}
+
 private fun resolvePlaybackDurationMs(
     gatewayDurationMs: Long,
     currentTrack: Track?,
@@ -695,6 +787,44 @@ private fun resolvePlaybackDurationMs(
 }
 
 private const val PLAYBACK_LOG_TAG = "Playback"
+private const val PLAYBACK_STATS_FALLBACK_THRESHOLD_MS = 4 * 60 * 1000L
+
+private data class PlaybackStatsSession(
+    val sessionId: Long,
+    val trackId: String,
+    val mediaLocator: String,
+    val durationMs: Long = 0L,
+    val accumulatedPlayingMs: Long = 0L,
+    val lastPlayingAtMs: Long? = null,
+    val nowPlayingReported: Boolean = false,
+    val playSubmitted: Boolean = false,
+) {
+    fun matches(sessionId: Long, track: Track): Boolean {
+        return this.sessionId == sessionId &&
+            trackId == track.id &&
+            mediaLocator == track.mediaLocator
+    }
+}
+
+private sealed interface PlaybackStatsCommand {
+    val track: Track
+    val atMillis: Long
+    val eventName: String
+
+    data class ReportNowPlaying(
+        override val track: Track,
+        override val atMillis: Long,
+    ) : PlaybackStatsCommand {
+        override val eventName: String = "now-playing"
+    }
+
+    data class SubmitPlay(
+        override val track: Track,
+        override val atMillis: Long,
+    ) : PlaybackStatsCommand {
+        override val eventName: String = "submit-play"
+    }
+}
 
 private data class PlaybackLoadRequest(
     val track: Track,

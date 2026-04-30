@@ -87,6 +87,7 @@ fun buildPlayerAppComponent(
         scope = sharedGraph.scope,
         systemPlaybackControlsPlatformService = playerRuntimeServices.systemPlaybackControlsPlatformService,
         logger = sharedGraph.logger,
+        playbackStatsReporter = sharedGraph.playbackStatsReporter,
         hydrateImmediately = false,
     )
     return LynMusicAppComponent(

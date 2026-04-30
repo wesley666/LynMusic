@@ -28,6 +28,7 @@ import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
+import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.effectiveArtworkOverridesByTrackId
 import top.iwesley.lyn.music.data.repository.toDomain
@@ -59,6 +60,7 @@ class LynAutomotiveMediaService : MediaBrowserServiceCompat() {
             val secureStore = AndroidCredentialStore(applicationContext, logger).withSecureInMemoryCache()
             val preferencesStore = AndroidAppPreferencesStore(applicationContext)
             val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider(applicationContext)
+            val navidromeHttpClient = AndroidLyricsHttpClient()
             val sessionControls = AutomotiveMediaSessionControls(
                 context = applicationContext,
                 mediaSession = mediaSession,
@@ -79,6 +81,12 @@ class LynAutomotiveMediaService : MediaBrowserServiceCompat() {
                 scope = serviceScope,
                 systemPlaybackControlsPlatformService = sessionControls,
                 logger = logger,
+                playbackStatsReporter = NavidromePlaybackStatsReporter(
+                    database = openedDatabase,
+                    secureCredentialStore = secureStore,
+                    httpClient = navidromeHttpClient,
+                    logger = logger,
+                ),
             )
         }.onFailure { throwable ->
             initFailure = throwable

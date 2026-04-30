@@ -24,6 +24,7 @@ import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.SameNameLyricsFileGateway
@@ -46,6 +47,7 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.LyricsRepository
+import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
@@ -104,6 +106,7 @@ class SharedGraph(
     val importStore: ImportStore,
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
+    val playbackStatsReporter: PlaybackStatsReporter,
     val audioTagGateway: AudioTagGateway,
     val appDisplayScalePreset: kotlinx.coroutines.flow.StateFlow<AppDisplayScalePreset>,
     val logger: DiagnosticLogger,
@@ -162,6 +165,12 @@ fun buildSharedGraph(
         audioTagGateway = runtimeServices.audioTagGateway,
         sameNameLyricsFileGateway = runtimeServices.sameNameLyricsFileGateway,
         artworkCacheStore = runtimeServices.artworkCacheStore,
+        logger = runtimeServices.logger,
+    )
+    val playbackStatsReporter = NavidromePlaybackStatsReporter(
+        database = database,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+        httpClient = runtimeServices.lyricsHttpClient,
         logger = runtimeServices.logger,
     )
     val favoritesRepository = RoomFavoritesRepository(
@@ -224,6 +233,7 @@ fun buildSharedGraph(
             vlcPathPickerPlatformService = runtimeServices.vlcPathPickerPlatformService,
         ),
         lyricsRepository = lyricsRepository,
+        playbackStatsReporter = playbackStatsReporter,
         audioTagGateway = runtimeServices.audioTagGateway,
         appDisplayScalePreset = runtimeServices.appDisplayPreferencesStore.appDisplayScalePreset,
         logger = runtimeServices.logger,

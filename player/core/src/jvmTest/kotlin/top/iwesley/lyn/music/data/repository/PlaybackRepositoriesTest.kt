@@ -26,6 +26,7 @@ import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.PlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
@@ -39,6 +40,13 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackRepositoriesTest {
+
+    @Test
+    fun `playback stats threshold uses half duration capped at four minutes`() {
+        assertEquals(90_000L, playbackStatsSubmissionThresholdMs(180_000L))
+        assertEquals(240_000L, playbackStatsSubmissionThresholdMs(900_000L))
+        assertEquals(240_000L, playbackStatsSubmissionThresholdMs(0L))
+    }
 
     @Test
     fun `playback snapshot records current navidrome audio quality from gateway`() = runTest {
@@ -61,6 +69,242 @@ class PlaybackRepositoriesTest {
             advanceUntilIdle()
 
             assertEquals(NavidromeAudioQuality.Kbps192, repository.snapshot.value.currentNavidromeAudioQuality)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats reports now playing once when navidrome playback starts`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val reporter = FakePlaybackStatsReporter()
+        var nowMs = 1_000L
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+            playbackStatsReporter = reporter,
+            currentTimeMillis = { nowMs },
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals(listOf(PlaybackStatsCall("now", "nav-track-1", 1_000L)), reporter.calls)
+
+            nowMs += 1_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 1_000L) }
+            advanceUntilIdle()
+
+            assertEquals(listOf(PlaybackStatsCall("now", "nav-track-1", 1_000L)), reporter.calls)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats submits once after reaching playback threshold`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val reporter = FakePlaybackStatsReporter()
+        var nowMs = 0L
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+            playbackStatsReporter = reporter,
+            currentTimeMillis = { nowMs },
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            nowMs = 90_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 90_000L) }
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    PlaybackStatsCall("now", "nav-track-1", 0L),
+                    PlaybackStatsCall("submit", "nav-track-1", 90_000L),
+                ),
+                reporter.calls,
+            )
+
+            nowMs = 120_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 120_000L) }
+            advanceUntilIdle()
+
+            assertEquals(2, reporter.calls.size)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats does not accumulate while paused`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val reporter = FakePlaybackStatsReporter()
+        var nowMs = 0L
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+            playbackStatsReporter = reporter,
+            currentTimeMillis = { nowMs },
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            nowMs = 30_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 30_000L) }
+            advanceUntilIdle()
+
+            repository.pause()
+            advanceUntilIdle()
+
+            nowMs = 150_000L
+            gateway.updateState { it.copy(isPlaying = false, positionMs = 30_000L) }
+            advanceUntilIdle()
+
+            assertEquals(listOf(PlaybackStatsCall("now", "nav-track-1", 0L)), reporter.calls)
+
+            repository.togglePlayPause()
+            advanceUntilIdle()
+
+            nowMs = 210_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 90_000L) }
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    PlaybackStatsCall("now", "nav-track-1", 0L),
+                    PlaybackStatsCall("submit", "nav-track-1", 210_000L),
+                ),
+                reporter.calls,
+            )
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats does not submit when skipped before threshold`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val reporter = FakePlaybackStatsReporter()
+        var nowMs = 0L
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+            playbackStatsReporter = reporter,
+            currentTimeMillis = { nowMs },
+        )
+
+        try {
+            repository.playTracks(
+                listOf(
+                    sampleNavidromeTrack(),
+                    sampleNavidromeTrack("nav-track-2", "song-2"),
+                ),
+                startIndex = 0,
+            )
+            advanceUntilIdle()
+
+            nowMs = 30_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 30_000L) }
+            advanceUntilIdle()
+
+            repository.skipNext()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    PlaybackStatsCall("now", "nav-track-1", 0L),
+                    PlaybackStatsCall("now", "nav-track-2", 30_000L),
+                ),
+                reporter.calls,
+            )
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats starts a new session when same track is loaded again`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val reporter = FakePlaybackStatsReporter()
+        var nowMs = 0L
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+            playbackStatsReporter = reporter,
+            currentTimeMillis = { nowMs },
+        )
+
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), startIndex = 0)
+            advanceUntilIdle()
+
+            nowMs = 90_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 90_000L) }
+            advanceUntilIdle()
+
+            repository.playQueueIndex(0)
+            advanceUntilIdle()
+
+            nowMs = 180_000L
+            gateway.updateState { it.copy(isPlaying = true, positionMs = 90_000L) }
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    PlaybackStatsCall("now", "nav-track-1", 0L),
+                    PlaybackStatsCall("submit", "nav-track-1", 90_000L),
+                    PlaybackStatsCall("now", "nav-track-1", 90_000L),
+                    PlaybackStatsCall("submit", "nav-track-1", 180_000L),
+                ),
+                reporter.calls,
+            )
         } finally {
             repository.close()
             scope.cancel()
@@ -1432,10 +1676,13 @@ private fun sampleTrack(id: String, title: String): Track {
     )
 }
 
-private fun sampleNavidromeTrack(): Track {
-    return sampleTrack("nav-track-1", "Remote Song").copy(
+private fun sampleNavidromeTrack(
+    id: String = "nav-track-1",
+    songId: String = "song-1",
+): Track {
+    return sampleTrack(id, "Remote Song").copy(
         sourceId = "nav-source",
-        mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
+        mediaLocator = buildNavidromeSongLocator("nav-source", songId),
     )
 }
 
@@ -1457,6 +1704,24 @@ private fun sampleTrackEntity(id: String, title: String): TrackEntity {
         sizeBytes = 0L,
         modifiedAt = 0L,
     )
+}
+
+private data class PlaybackStatsCall(
+    val type: String,
+    val trackId: String,
+    val atMillis: Long,
+)
+
+private class FakePlaybackStatsReporter : PlaybackStatsReporter {
+    val calls = mutableListOf<PlaybackStatsCall>()
+
+    override suspend fun reportNowPlaying(track: Track, atMillis: Long) {
+        calls += PlaybackStatsCall("now", track.id, atMillis)
+    }
+
+    override suspend fun submitPlay(track: Track, atMillis: Long) {
+        calls += PlaybackStatsCall("submit", track.id, atMillis)
+    }
 }
 
 private class FakePlaybackPreferencesStore(
