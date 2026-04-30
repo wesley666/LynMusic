@@ -50,6 +50,7 @@ import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
+import top.iwesley.lyn.music.data.repository.RoomMyRepository
 import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
@@ -61,6 +62,7 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
+import top.iwesley.lyn.music.feature.my.MyStore
 import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
@@ -101,6 +103,7 @@ data class SharedRuntimeServices(
 class SharedGraph(
     val platform: PlatformDescriptor,
     val database: LynMusicDatabase,
+    val myStore: MyStore,
     val libraryStore: LibraryStore,
     val playlistsStore: PlaylistsStore,
     val favoritesStore: FavoritesStore,
@@ -199,12 +202,23 @@ fun buildSharedGraph(
         database = database,
         audioTagGateway = runtimeServices.audioTagGateway,
     )
+    val myRepository = RoomMyRepository(
+        database = database,
+        secureCredentialStore = runtimeServices.secureCredentialStore,
+        httpClient = runtimeServices.lyricsHttpClient,
+        logger = runtimeServices.logger,
+    )
     scope.launch {
         settingsRepository.ensureDefaults()
     }
     return SharedGraph(
         platform = platform,
         database = database,
+        myStore = MyStore(
+            repository = myRepository,
+            storeScope = scope,
+            startImmediately = false,
+        ),
         libraryStore = LibraryStore(
             repository = libraryRepository,
             importSourceRepository = importSourceRepository,

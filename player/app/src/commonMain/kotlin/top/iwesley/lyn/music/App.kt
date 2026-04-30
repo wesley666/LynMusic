@@ -40,6 +40,7 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
+import top.iwesley.lyn.music.feature.my.MyStore
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
@@ -53,6 +54,7 @@ import top.iwesley.lyn.music.ui.mainShellColors
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
     val logger: DiagnosticLogger,
+    val myStore: MyStore,
     val libraryStore: LibraryStore,
     val playlistsStore: PlaylistsStore,
     val favoritesStore: FavoritesStore,
@@ -93,6 +95,7 @@ fun buildPlayerAppComponent(
     return LynMusicAppComponent(
         platform = sharedGraph.platform,
         logger = sharedGraph.logger,
+        myStore = sharedGraph.myStore,
         libraryStore = sharedGraph.libraryStore,
         playlistsStore = sharedGraph.playlistsStore,
         favoritesStore = sharedGraph.favoritesStore,
@@ -126,13 +129,14 @@ fun App(
     }
 
     val libraryState by component.libraryStore.state.collectAsState()
+    val myState by component.myStore.state.collectAsState()
     val playlistsState by component.playlistsStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
     val musicTagsState by component.musicTagsStore.state.collectAsState()
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
-    var selectedTab by rememberSaveable { mutableStateOf(AppTab.Library) }
+    var selectedTab by rememberSaveable { mutableStateOf(AppTab.My) }
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
     var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
@@ -220,6 +224,7 @@ fun App(
                             selectedTab = selectedTab,
                             onTabSelected = { selectedTab = it },
                             platform = component.platform,
+                            myState = myState,
                             libraryState = libraryState,
                             playlistsState = playlistsState,
                             favoritesState = favoritesState,
@@ -228,6 +233,7 @@ fun App(
                             importState = importState,
                             playerState = playerState,
                             settingsState = settingsState,
+                            onMyIntent = component.myStore::dispatch,
                             onLibraryIntent = component.libraryStore::dispatch,
                             onPlaylistsIntent = component.playlistsStore::dispatch,
                             onFavoritesIntent = component.favoritesStore::dispatch,
@@ -237,6 +243,10 @@ fun App(
                             onSettingsIntent = component.settingsStore::dispatch,
                             libraryNavigationTarget = pendingLibraryNavigationTarget,
                             onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                            onOpenLibraryNavigationTarget = { target ->
+                                pendingLibraryNavigationTarget = target
+                                selectedTab = AppTab.Library
+                            },
                             mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                             hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
                             onMobileEditorVisibilityChanged = {
@@ -251,6 +261,7 @@ fun App(
                             selectedTab = selectedTab,
                             onTabSelected = { selectedTab = it },
                             platform = component.platform,
+                            myState = myState,
                             libraryState = libraryState,
                             playlistsState = playlistsState,
                             favoritesState = favoritesState,
@@ -259,6 +270,7 @@ fun App(
                             importState = importState,
                             playerState = playerState,
                             settingsState = settingsState,
+                            onMyIntent = component.myStore::dispatch,
                             onLibraryIntent = component.libraryStore::dispatch,
                             onPlaylistsIntent = component.playlistsStore::dispatch,
                             onFavoritesIntent = component.favoritesStore::dispatch,
@@ -268,6 +280,10 @@ fun App(
                             onSettingsIntent = component.settingsStore::dispatch,
                             libraryNavigationTarget = pendingLibraryNavigationTarget,
                             onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                            onOpenLibraryNavigationTarget = { target ->
+                                pendingLibraryNavigationTarget = target
+                                selectedTab = AppTab.Library
+                            },
                             onOpenAddToPlaylist = {
                                 pendingPlaylistTrack = playerState.snapshot.currentTrack
                             },
@@ -395,6 +411,7 @@ private fun activateStartupStores(
     pendingPlaylistTrack: Track?,
 ) {
     when (selectedTab) {
+        AppTab.My -> component.myStore.ensureStarted()
         AppTab.Library -> component.libraryStore.ensureStarted()
         AppTab.Favorites -> component.favoritesStore.ensureContentStarted()
         AppTab.Playlists -> component.playlistsStore.ensureContentStarted()

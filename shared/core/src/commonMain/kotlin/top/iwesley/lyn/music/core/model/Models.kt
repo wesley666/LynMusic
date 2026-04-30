@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.core.model
 import kotlin.concurrent.Volatile
 
 enum class AppTab {
+    My,
     Library,
     Playlists,
     Favorites,
@@ -68,6 +69,19 @@ data class Track(
     val samplingRate: Int? = null,
     val bitRate: Int? = null,
     val channelCount: Int? = null,
+)
+
+data class RecentTrack(
+    val track: Track,
+    val playCount: Int,
+    val lastPlayedAt: Long,
+)
+
+data class RecentAlbum(
+    val album: Album,
+    val playCount: Int,
+    val lastPlayedAt: Long,
+    val artworkLocator: String? = null,
 )
 
 data class PlaylistTrackEntry(

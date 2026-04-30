@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +60,8 @@ import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibraryState
+import top.iwesley.lyn.music.feature.my.MyIntent
+import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
@@ -77,6 +80,7 @@ internal fun MobileShell(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
+    myState: MyState,
     libraryState: LibraryState,
     playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
@@ -85,6 +89,7 @@ internal fun MobileShell(
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
+    onMyIntent: (MyIntent) -> Unit,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
@@ -94,6 +99,7 @@ internal fun MobileShell(
     onSettingsIntent: (SettingsIntent) -> Unit,
     libraryNavigationTarget: LibraryNavigationTarget? = null,
     onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     mobilePortraitMiniPlayer: Boolean,
     hideMiniPlayerBar: Boolean,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
@@ -134,6 +140,7 @@ internal fun MobileShell(
                 }
                 NavigationBar(containerColor = shellColors.navContainer) {
                     listOf(
+                        Triple(AppTab.My, Icons.Rounded.Person, "我的"),
                         Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
                         Triple(AppTab.Favorites, Icons.Rounded.Favorite, "喜欢"),
                         Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
@@ -190,6 +197,7 @@ internal fun MobileShell(
             TabContent(
                 selectedTab = selectedTab,
                 platform = platform,
+                myState = myState,
                 libraryState = libraryState,
                 playlistsState = playlistsState,
                 favoritesState = favoritesState,
@@ -197,6 +205,7 @@ internal fun MobileShell(
                 musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
+                onMyIntent = onMyIntent,
                 onLibraryIntent = onLibraryIntent,
                 onPlaylistsIntent = onPlaylistsIntent,
                 onFavoritesIntent = onFavoritesIntent,
@@ -206,6 +215,7 @@ internal fun MobileShell(
                 onSettingsIntent = onSettingsIntent,
                 libraryNavigationTarget = libraryNavigationTarget,
                 onLibraryNavigationHandled = onLibraryNavigationHandled,
+                onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
                 modifier = Modifier.weight(1f),
             )
@@ -296,6 +306,7 @@ internal fun DesktopShell(
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
+    myState: MyState,
     libraryState: LibraryState,
     playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
@@ -304,6 +315,7 @@ internal fun DesktopShell(
     importState: ImportState,
     playerState: PlayerState,
     settingsState: SettingsState,
+    onMyIntent: (MyIntent) -> Unit,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
@@ -313,6 +325,7 @@ internal fun DesktopShell(
     onSettingsIntent: (SettingsIntent) -> Unit,
     libraryNavigationTarget: LibraryNavigationTarget? = null,
     onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
 ) {
     Row(
@@ -353,6 +366,7 @@ internal fun DesktopShell(
             TabContent(
                 selectedTab = selectedTab,
                 platform = platform,
+                myState = myState,
                 libraryState = libraryState,
                 playlistsState = playlistsState,
                 favoritesState = favoritesState,
@@ -360,6 +374,7 @@ internal fun DesktopShell(
                 musicTagsEffects = musicTagsEffects,
                 importState = importState,
                 settingsState = settingsState,
+                onMyIntent = onMyIntent,
                 onLibraryIntent = onLibraryIntent,
                 onPlaylistsIntent = onPlaylistsIntent,
                 onFavoritesIntent = onFavoritesIntent,
@@ -369,6 +384,7 @@ internal fun DesktopShell(
                 onSettingsIntent = onSettingsIntent,
                 libraryNavigationTarget = libraryNavigationTarget,
                 onLibraryNavigationHandled = onLibraryNavigationHandled,
+                onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 modifier = Modifier.weight(1f),
             )
             LynMusicTheme(
@@ -408,6 +424,7 @@ private fun DesktopNav(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         listOf(
+            Triple(AppTab.My, Icons.Rounded.Person, "我的"),
             Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
             Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
             Triple(AppTab.Favorites, Icons.Rounded.FavoriteBorder, "喜欢"),
@@ -471,6 +488,7 @@ private fun HeroHeader() {
 private fun TabContent(
     selectedTab: AppTab,
     platform: PlatformDescriptor,
+    myState: MyState,
     libraryState: LibraryState,
     playlistsState: PlaylistsState,
     favoritesState: FavoritesState,
@@ -478,6 +496,7 @@ private fun TabContent(
     musicTagsEffects: Flow<MusicTagsEffect>,
     importState: ImportState,
     settingsState: SettingsState,
+    onMyIntent: (MyIntent) -> Unit,
     onLibraryIntent: (LibraryIntent) -> Unit,
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
@@ -487,10 +506,22 @@ private fun TabContent(
     onSettingsIntent: (SettingsIntent) -> Unit,
     libraryNavigationTarget: LibraryNavigationTarget? = null,
     onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     when (selectedTab) {
+        AppTab.My -> MyTab(
+            platform = platform,
+            state = myState,
+            onMyIntent = onMyIntent,
+            onPlayerIntent = onPlayerIntent,
+            onOpenAlbum = { albumId ->
+                onOpenLibraryNavigationTarget(LibraryNavigationTarget.Album(albumId))
+            },
+            modifier = modifier,
+        )
+
         AppTab.Library -> LibraryTab(
             state = libraryState,
             favoritesState = favoritesState,

@@ -310,8 +310,14 @@ interface TrackDao {
 
 @Dao
 interface TrackPlaybackStatsDao {
+    @Query("SELECT * FROM track_playback_stats ORDER BY lastPlayedAt DESC, trackId ASC")
+    fun observeAllByRecent(): Flow<List<TrackPlaybackStatsEntity>>
+
     @Query("SELECT * FROM track_playback_stats WHERE trackId = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: String): TrackPlaybackStatsEntity?
+
+    @Query("SELECT * FROM track_playback_stats WHERE trackId IN (:trackIds)")
+    suspend fun getByTrackIds(trackIds: List<String>): List<TrackPlaybackStatsEntity>
 
     @Query("DELETE FROM track_playback_stats WHERE sourceId = :sourceId")
     suspend fun deleteBySourceId(sourceId: String)
@@ -327,12 +333,30 @@ interface TrackPlaybackStatsDao {
         """,
     )
     suspend fun incrementPlay(trackId: String, sourceId: String, lastPlayedAt: Long)
+
+    @Query(
+        """
+        INSERT INTO track_playback_stats (trackId, sourceId, playCount, lastPlayedAt)
+        VALUES (:trackId, :sourceId, :playCount, :lastPlayedAt)
+        ON CONFLICT(trackId) DO UPDATE SET
+            sourceId = excluded.sourceId,
+            playCount = excluded.playCount,
+            lastPlayedAt = excluded.lastPlayedAt
+        """,
+    )
+    suspend fun setPlayStats(trackId: String, sourceId: String, playCount: Int, lastPlayedAt: Long)
 }
 
 @Dao
 interface AlbumPlaybackStatsDao {
+    @Query("SELECT * FROM album_playback_stats ORDER BY lastPlayedAt DESC, albumId ASC")
+    fun observeAllByRecent(): Flow<List<AlbumPlaybackStatsEntity>>
+
     @Query("SELECT * FROM album_playback_stats WHERE albumId = :albumId LIMIT 1")
     suspend fun getByAlbumId(albumId: String): AlbumPlaybackStatsEntity?
+
+    @Query("SELECT * FROM album_playback_stats WHERE albumId IN (:albumIds)")
+    suspend fun getByAlbumIds(albumIds: List<String>): List<AlbumPlaybackStatsEntity>
 
     @Query(
         """
@@ -344,6 +368,17 @@ interface AlbumPlaybackStatsDao {
         """,
     )
     suspend fun incrementPlay(albumId: String, lastPlayedAt: Long)
+
+    @Query(
+        """
+        INSERT INTO album_playback_stats (albumId, playCount, lastPlayedAt)
+        VALUES (:albumId, :playCount, :lastPlayedAt)
+        ON CONFLICT(albumId) DO UPDATE SET
+            playCount = excluded.playCount,
+            lastPlayedAt = excluded.lastPlayedAt
+        """,
+    )
+    suspend fun setPlayStats(albumId: String, playCount: Int, lastPlayedAt: Long)
 }
 
 @Dao

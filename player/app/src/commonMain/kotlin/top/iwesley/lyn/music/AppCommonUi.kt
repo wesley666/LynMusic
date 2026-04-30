@@ -361,13 +361,12 @@ internal fun TrackRow(
 @Composable
 internal fun TrackArtworkThumbnail(
     artworkLocator: String?,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.size(52.dp),
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     val shellColors = mainShellColors
     Box(
         modifier = modifier
-            .size(52.dp)
             .clip(RoundedCornerShape(1.dp))
             .background(shellColors.cardContainer)
             .border(
