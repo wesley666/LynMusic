@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,8 +38,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -643,7 +642,7 @@ private fun TabContent(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MobileLibraryHubTab(
     selectedTab: AppTab,
@@ -676,33 +675,15 @@ private fun MobileLibraryHubTab(
             }
     }
     Column(modifier = modifier.fillMaxSize()) {
-        SecondaryTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            containerColor = MaterialTheme.colorScheme.background,
-            contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-            mobileLibraryHubTabs.forEachIndexed { index, tab ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = {
-                        onTabSelected(tab)
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(index)
-                        }
-                    },
-                    text = {
-                        Text(
-                            text = mobileLibraryHubTabLabel(tab),
-                            fontWeight = if (pagerState.currentPage == index) {
-                                FontWeight.SemiBold
-                            } else {
-                                FontWeight.Medium
-                            },
-                        )
-                    },
-                )
-            }
-        }
+        MobileLibraryHubTabStrip(
+            selectedPage = pagerState.currentPage,
+            onTabClick = { index, tab ->
+                onTabSelected(tab)
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(index)
+                }
+            },
+        )
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.weight(1f),
@@ -739,5 +720,62 @@ private fun MobileLibraryHubTab(
                 else -> Unit
             }
         }
+    }
+}
+
+@Composable
+private fun MobileLibraryHubTabStrip(
+    selectedPage: Int,
+    onTabClick: (Int, AppTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .padding(start = 20.dp, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        mobileLibraryHubTabs.forEachIndexed { index, tab ->
+            MobileLibraryHubTabItem(
+                label = mobileLibraryHubTabLabel(tab),
+                selected = selectedPage == index,
+                onClick = { onTabClick(index, tab) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MobileLibraryHubTabItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f)
+    Column(
+        modifier = modifier
+            .height(44.dp)
+            .widthIn(min = 56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) activeColor else inactiveColor,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
+        Spacer(modifier = Modifier.height(5.dp))
+        Box(
+            modifier = Modifier
+                .size(width = 24.dp, height = 3.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(if (selected) activeColor else Color.Transparent),
+        )
     }
 }
