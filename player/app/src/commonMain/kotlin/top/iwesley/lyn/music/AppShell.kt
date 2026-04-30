@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,22 +22,31 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LocalOffer
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -52,8 +62,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
@@ -62,11 +77,13 @@ import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.CLASSIC_APP_THEME_TOKENS
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
@@ -115,6 +132,47 @@ internal fun mobileLibraryHubTabLabel(tab: AppTab): String {
         AppTab.Tags -> "音乐标签"
         AppTab.Sources -> "来源"
         AppTab.Settings -> "设置"
+    }
+}
+
+internal fun mobileLibraryHubSearchPlaceholder(tab: AppTab): String {
+    return when (tab) {
+        AppTab.Library -> "搜索歌曲 / 艺人 / 专辑"
+        AppTab.Favorites -> "搜索喜欢的歌曲 / 艺人 / 专辑"
+        AppTab.Playlists -> "搜索歌单"
+        else -> "搜索"
+    }
+}
+
+internal fun mobileLibraryHubShowsSourceMenu(tab: AppTab): Boolean {
+    return tab == AppTab.Library || tab == AppTab.Favorites
+}
+
+private fun mobileLibraryHubSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部来源"
+        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.SAMBA -> "Samba"
+        LibrarySourceFilter.WEBDAV -> "WebDAV"
+        LibrarySourceFilter.NAVIDROME -> "Navidrome"
+    }
+}
+
+private fun mobileLibraryHubSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
+    return when (filter) {
+        LibrarySourceFilter.ALL -> "全部"
+        else -> mobileLibraryHubSourceFilterButtonLabel(filter)
+    }
+}
+
+internal fun filterMobileLibraryHubPlaylists(
+    playlists: List<PlaylistSummary>,
+    query: String,
+): List<PlaylistSummary> {
+    val normalizedQuery = query.trim().lowercase()
+    if (normalizedQuery.isBlank()) return playlists
+    return playlists.filter { playlist ->
+        playlist.name.lowercase().contains(normalizedQuery)
     }
 }
 
@@ -661,6 +719,34 @@ private fun MobileLibraryHubTab(
     val initialPage = mobileLibraryHubPageForTab(selectedTab)
     val pagerState = rememberPagerState(initialPage = initialPage) { mobileLibraryHubTabs.size }
     val coroutineScope = rememberCoroutineScope()
+    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
+    val activeSearchTab = mobileLibraryHubTabForPage(pagerState.currentPage)
+    val activeSearchQuery = when (activeSearchTab) {
+        AppTab.Library -> libraryState.query
+        AppTab.Favorites -> favoritesState.query
+        AppTab.Playlists -> playlistSearchQuery
+        else -> ""
+    }
+
+    fun updateActiveSearchQuery(query: String) {
+        when (activeSearchTab) {
+            AppTab.Library -> onLibraryIntent(LibraryIntent.SearchChanged(query))
+            AppTab.Favorites -> onFavoritesIntent(FavoritesIntent.SearchChanged(query))
+            AppTab.Playlists -> playlistSearchQuery = query
+            else -> Unit
+        }
+    }
+
+    fun clearActiveSearchQuery() {
+        updateActiveSearchQuery("")
+    }
+
+    fun exitSearchMode() {
+        clearActiveSearchQuery()
+        isSearchMode = false
+    }
+
     LaunchedEffect(selectedTab) {
         val targetPage = mobileLibraryHubPageForTab(selectedTab)
         if (pagerState.currentPage != targetPage) {
@@ -675,18 +761,60 @@ private fun MobileLibraryHubTab(
             }
     }
     Column(modifier = modifier.fillMaxSize()) {
-        MobileLibraryHubTabStrip(
-            selectedPage = pagerState.currentPage,
-            onTabClick = { index, tab ->
-                onTabSelected(tab)
-                coroutineScope.launch {
-                    pagerState.animateScrollToPage(index)
-                }
-            },
-        )
+        if (isSearchMode) {
+            MobileLibraryHubSearchBar(
+                query = activeSearchQuery,
+                placeholder = mobileLibraryHubSearchPlaceholder(activeSearchTab),
+                onQueryChanged = ::updateActiveSearchQuery,
+                onBack = ::exitSearchMode,
+                onClearOrClose = {
+                    if (activeSearchQuery.isBlank()) {
+                        exitSearchMode()
+                    } else {
+                        clearActiveSearchQuery()
+                    }
+                },
+            )
+        } else {
+            MobileLibraryHubTabStrip(
+                selectedPage = pagerState.currentPage,
+                sourceMenu = when (activeSearchTab) {
+                    AppTab.Library -> MobileLibraryHubSourceMenu(
+                        selectedSourceFilter = libraryState.selectedSourceFilter,
+                        availableSourceFilters = libraryState.availableSourceFilters,
+                        onSourceFilterChanged = { filter ->
+                            onLibraryIntent(LibraryIntent.SourceFilterChanged(filter))
+                        },
+                    )
+
+                    AppTab.Favorites -> MobileLibraryHubSourceMenu(
+                        selectedSourceFilter = favoritesState.selectedSourceFilter,
+                        availableSourceFilters = favoritesState.availableSourceFilters,
+                        onSourceFilterChanged = { filter ->
+                            onFavoritesIntent(FavoritesIntent.SourceFilterChanged(filter))
+                        },
+                    )
+
+                    else -> null
+                },
+                onSearchClick = {
+                    if (activeSearchTab == AppTab.Playlists) {
+                        onPlaylistsIntent(PlaylistsIntent.BackToList)
+                    }
+                    isSearchMode = true
+                },
+                onTabClick = { index, tab ->
+                    onTabSelected(tab)
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index)
+                    }
+                },
+            )
+        }
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.weight(1f),
+            userScrollEnabled = !isSearchMode,
             key = { page -> mobileLibraryHubTabForPage(page).name },
         ) { page ->
             when (mobileLibraryHubTabForPage(page)) {
@@ -697,6 +825,7 @@ private fun MobileLibraryHubTab(
                     onFavoritesIntent = onFavoritesIntent,
                     onPlayerIntent = onPlayerIntent,
                     showDuration = false,
+                    showSearchField = false,
                     navigationTarget = libraryNavigationTarget,
                     onNavigationHandled = onLibraryNavigationHandled,
                     modifier = Modifier.fillMaxSize(),
@@ -707,6 +836,7 @@ private fun MobileLibraryHubTab(
                     onFavoritesIntent = onFavoritesIntent,
                     onPlayerIntent = onPlayerIntent,
                     showDuration = false,
+                    showSearchField = false,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -714,6 +844,7 @@ private fun MobileLibraryHubTab(
                     state = playlistsState,
                     onPlaylistsIntent = onPlaylistsIntent,
                     onPlayerIntent = onPlayerIntent,
+                    playlistSearchQuery = playlistSearchQuery,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -723,12 +854,21 @@ private fun MobileLibraryHubTab(
     }
 }
 
+private data class MobileLibraryHubSourceMenu(
+    val selectedSourceFilter: LibrarySourceFilter,
+    val availableSourceFilters: List<LibrarySourceFilter>,
+    val onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+)
+
 @Composable
 private fun MobileLibraryHubTabStrip(
     selectedPage: Int,
+    sourceMenu: MobileLibraryHubSourceMenu?,
+    onSearchClick: () -> Unit,
     onTabClick: (Int, AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -742,6 +882,141 @@ private fun MobileLibraryHubTabStrip(
                 label = mobileLibraryHubTabLabel(tab),
                 selected = selectedPage == index,
                 onClick = { onTabClick(index, tab) },
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        if (sourceMenu != null) {
+            Box {
+                IconButton(onClick = { sourceFilterMenuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreVert,
+                        contentDescription = "选择来源",
+                    )
+                }
+                MobileLibraryHubSourceDropdownMenu(
+                    expanded = sourceFilterMenuExpanded,
+                    sourceMenu = sourceMenu,
+                    onDismiss = { sourceFilterMenuExpanded = false },
+                    onSourceFilterChanged = { filter ->
+                        sourceFilterMenuExpanded = false
+                        sourceMenu.onSourceFilterChanged(filter)
+                    },
+                )
+            }
+        }
+        IconButton(onClick = onSearchClick) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = "搜索",
+            )
+        }
+    }
+}
+
+@Composable
+private fun MobileLibraryHubSourceDropdownMenu(
+    expanded: Boolean,
+    sourceMenu: MobileLibraryHubSourceMenu,
+    onDismiss: () -> Unit,
+    onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        containerColor = mainShellColors.navContainer,
+    ) {
+        sourceMenu.availableSourceFilters.forEach { filter ->
+            val isSelected = filter == sourceMenu.selectedSourceFilter
+            DropdownMenuItem(
+                text = { Text(mobileLibraryHubSourceFilterMenuLabel(filter)) },
+                trailingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                        )
+                    }
+                } else {
+                    null
+                },
+                onClick = { onSourceFilterChanged(filter) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MobileLibraryHubSearchBar(
+    query: String,
+    placeholder: String,
+    onQueryChanged: (String) -> Unit,
+    onBack: () -> Unit,
+    onClearOrClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val shellColors = mainShellColors
+    val searchFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = shellColors.cardBorder,
+        unfocusedContainerColor = shellColors.cardBorder,
+        disabledContainerColor = shellColors.cardBorder,
+        focusedBorderColor = Color.Transparent,
+        unfocusedBorderColor = Color.Transparent,
+        disabledBorderColor = Color.Transparent,
+    )
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .padding(start = 8.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        IconButton(
+            onClick = {
+                keyboardController?.hide()
+                onBack()
+            },
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "退出搜索",
+            )
+        }
+        ImeAwareOutlinedTextField(
+            value = query,
+            onValueChange = onQueryChanged,
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
+            shape = RoundedCornerShape(22.dp),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            colors = searchFieldColors,
+        )
+        IconButton(
+            onClick = {
+                if (query.isBlank()) {
+                    keyboardController?.hide()
+                }
+                onClearOrClose()
+            },
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = if (query.isBlank()) "关闭搜索" else "清空搜索",
             )
         }
     }

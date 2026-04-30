@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 
 class MobileLibraryHubNavigationTest {
 
@@ -40,5 +41,36 @@ class MobileLibraryHubNavigationTest {
         assertEquals(1, mobileLibraryHubPageForTab(AppTab.Favorites))
         assertEquals(2, mobileLibraryHubPageForTab(AppTab.Playlists))
         assertEquals(0, mobileLibraryHubPageForTab(AppTab.Settings))
+    }
+
+    @Test
+    fun `mobile library hub search placeholders match selected page`() {
+        assertEquals("搜索歌曲 / 艺人 / 专辑", mobileLibraryHubSearchPlaceholder(AppTab.Library))
+        assertEquals("搜索喜欢的歌曲 / 艺人 / 专辑", mobileLibraryHubSearchPlaceholder(AppTab.Favorites))
+        assertEquals("搜索歌单", mobileLibraryHubSearchPlaceholder(AppTab.Playlists))
+        assertEquals("搜索", mobileLibraryHubSearchPlaceholder(AppTab.Settings))
+    }
+
+    @Test
+    fun `mobile library hub source menu only shows for song based pages`() {
+        assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Library))
+        assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Favorites))
+        assertFalse(mobileLibraryHubShowsSourceMenu(AppTab.Playlists))
+        assertFalse(mobileLibraryHubShowsSourceMenu(AppTab.My))
+    }
+
+    @Test
+    fun `mobile library hub filters playlists by name only`() {
+        val playlists = listOf(
+            PlaylistSummary(id = "1", name = "Daily Mix"),
+            PlaylistSummary(id = "2", name = "夜晚驾驶"),
+            PlaylistSummary(id = "3", name = "Workout"),
+        )
+
+        assertEquals(playlists, filterMobileLibraryHubPlaylists(playlists, ""))
+        assertEquals(playlists, filterMobileLibraryHubPlaylists(playlists, "   "))
+        assertEquals(listOf(playlists[0]), filterMobileLibraryHubPlaylists(playlists, "daily"))
+        assertEquals(listOf(playlists[1]), filterMobileLibraryHubPlaylists(playlists, "驾驶"))
+        assertEquals(emptyList(), filterMobileLibraryHubPlaylists(playlists, "album"))
     }
 }

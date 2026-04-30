@@ -606,11 +606,16 @@ internal fun PlaylistsTab(
     state: PlaylistsState,
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    playlistSearchQuery: String = "",
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     val detail = state.selectedPlaylist
     val requestedPlaylistId = state.selectedPlaylistId
+    val filteredPlaylists = remember(state.playlists, playlistSearchQuery) {
+        filterMobileLibraryHubPlaylists(state.playlists, playlistSearchQuery)
+    }
+    val isFilteringPlaylists = playlistSearchQuery.isNotBlank() && state.playlists.isNotEmpty()
     PlatformBackHandler(
         enabled = canNavigateBackFromPlaylistDetail(requestedPlaylistId),
         onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
@@ -667,12 +672,13 @@ internal fun PlaylistsTab(
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 PlaylistListPane(
-                    playlists = state.playlists,
+                    playlists = filteredPlaylists,
                     isLoadingContent = state.isLoadingContent,
                     selectedPlaylistId = requestedPlaylistId,
                     isRefreshing = state.isRefreshing,
                     selectedSourceFilter = state.selectedSourceFilter,
                     availableSourceFilters = state.availableSourceFilters,
+                    isFilteringByQuery = isFilteringPlaylists,
                     onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                     onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                     onCreate = { showCreateDialog = true },
@@ -707,12 +713,13 @@ internal fun PlaylistsTab(
             }
         } else if (!filteredDetailPresentation.shouldShowDetailPane) {
             PlaylistListPane(
-                playlists = state.playlists,
+                playlists = filteredPlaylists,
                 isLoadingContent = state.isLoadingContent,
                 selectedPlaylistId = requestedPlaylistId,
                 isRefreshing = state.isRefreshing,
                 selectedSourceFilter = state.selectedSourceFilter,
                 availableSourceFilters = state.availableSourceFilters,
+                isFilteringByQuery = isFilteringPlaylists,
                 onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                 onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                 onCreate = { showCreateDialog = true },
@@ -781,6 +788,7 @@ private fun PlaylistListPane(
     isRefreshing: Boolean,
     selectedSourceFilter: LibrarySourceFilter,
     availableSourceFilters: List<LibrarySourceFilter>,
+    isFilteringByQuery: Boolean = false,
     onRefresh: () -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onCreate: () -> Unit,
@@ -876,10 +884,17 @@ private fun PlaylistListPane(
                 }
             } else if (playlists.isEmpty()) {
                 item {
-                    EmptyStateCard(
-                        title = "还没有普通歌单",
-                        body = "从播放器把当前歌曲加入歌单，或先新建一个空歌单。",
-                    )
+                    if (isFilteringByQuery) {
+                        EmptyStateCard(
+                            title = "没有匹配的歌单",
+                            body = "试试调整搜索词，或清空搜索后查看全部歌单。",
+                        )
+                    } else {
+                        EmptyStateCard(
+                            title = "还没有普通歌单",
+                            body = "从播放器把当前歌曲加入歌单，或先新建一个空歌单。",
+                        )
+                    }
                 }
             } else {
                 items(playlists, key = { it.id }) { playlist ->

@@ -38,7 +38,6 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +108,7 @@ internal fun LibraryTab(
     onPlayerIntent: (PlayerIntent) -> Unit,
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
+    showSearchField: Boolean = true,
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -146,6 +146,7 @@ internal fun LibraryTab(
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
         showFavoriteButton = showFavoriteButton,
         showDuration = showDuration,
+        showSearchField = showSearchField,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         modifier = modifier,
@@ -159,6 +160,7 @@ internal fun FavoritesTab(
     onPlayerIntent: (PlayerIntent) -> Unit,
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
+    showSearchField: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -209,6 +211,7 @@ internal fun FavoritesTab(
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
         showFavoriteButton = showFavoriteButton,
         showDuration = showDuration,
+        showSearchField = showSearchField,
         modifier = modifier,
     )
 }
@@ -255,6 +258,7 @@ private fun LibraryBrowserTab(
     onToggleFavorite: (Track) -> Unit,
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
+    showSearchField: Boolean = true,
     actionButton: (@Composable () -> Unit)? = null,
     onDismissMessage: () -> Unit,
     onPlayTracks: (List<Track>, Int) -> Unit,
@@ -410,67 +414,64 @@ private fun LibraryBrowserTab(
             contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(bottom = 10.dp),
-                        //.height(56.dp)
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ImeAwareOutlinedTextField(
-                        value = state.query,
-                        onValueChange = onSearchChanged,
-                        placeholder = {
-                            Text(
-                                text = strings.searchLabel,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = searchFieldColors,
-                        trailingIcon = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box {
-                                    IconButton(onClick = { sourceFilterMenuExpanded = true }) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.MoreVert,
-                                            contentDescription = "选择来源",
-                                        )
-                                    }
-                                    DropdownMenu(
-                                        expanded = sourceFilterMenuExpanded,
-                                        onDismissRequest = { sourceFilterMenuExpanded = false },
-                                        containerColor = mainShellColors.navContainer,
-                                    ) {
-                                        state.availableSourceFilters.forEach { filter ->
-                                            val isSelected = filter == state.selectedSourceFilter
-                                            DropdownMenuItem(
-                                                text = { Text(librarySourceFilterMenuLabel(filter)) },
-                                                trailingIcon = if (isSelected) {
-                                                    {
-                                                        Icon(
-                                                            imageVector = Icons.Rounded.Check,
-                                                            contentDescription = null,
-                                                        )
-                                                    }
-                                                } else {
-                                                    null
-                                                },
-                                                onClick = {
+            if (showSearchField || actionButton != null) {
+                item {
+                    if (showSearchField) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                                //.height(56.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ImeAwareOutlinedTextField(
+                                value = state.query,
+                                onValueChange = onSearchChanged,
+                                placeholder = {
+                                    Text(
+                                        text = strings.searchLabel,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(22.dp),
+                                colors = searchFieldColors,
+                                trailingIcon = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box {
+                                            IconButton(onClick = { sourceFilterMenuExpanded = true }) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.MoreVert,
+                                                    contentDescription = "选择来源",
+                                                )
+                                            }
+                                            LibrarySourceFilterDropdownMenu(
+                                                expanded = sourceFilterMenuExpanded,
+                                                availableSourceFilters = state.availableSourceFilters,
+                                                selectedSourceFilter = state.selectedSourceFilter,
+                                                onDismiss = { sourceFilterMenuExpanded = false },
+                                                onSourceFilterChanged = { filter ->
                                                     sourceFilterMenuExpanded = false
                                                     onSourceFilterChanged(filter)
                                                 },
                                             )
                                         }
+                                        actionButton?.invoke()
                                     }
-                                }
-                                actionButton?.invoke()
-                            }
-                        },
-                    )
+                                },
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            actionButton?.invoke()
+                        }
+                    }
                 }
             }
             item {
@@ -755,6 +756,39 @@ private fun librarySourceFilterMenuLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
         LibrarySourceFilter.ALL -> "全部"
         else -> librarySourceFilterButtonLabel(filter)
+    }
+}
+
+@Composable
+private fun LibrarySourceFilterDropdownMenu(
+    expanded: Boolean,
+    availableSourceFilters: List<LibrarySourceFilter>,
+    selectedSourceFilter: LibrarySourceFilter,
+    onDismiss: () -> Unit,
+    onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        containerColor = mainShellColors.navContainer,
+    ) {
+        availableSourceFilters.forEach { filter ->
+            val isSelected = filter == selectedSourceFilter
+            DropdownMenuItem(
+                text = { Text(librarySourceFilterMenuLabel(filter)) },
+                trailingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                        )
+                    }
+                } else {
+                    null
+                },
+                onClick = { onSourceFilterChanged(filter) },
+            )
+        }
     }
 }
 
