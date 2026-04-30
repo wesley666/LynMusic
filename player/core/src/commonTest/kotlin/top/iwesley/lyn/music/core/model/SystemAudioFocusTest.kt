@@ -72,4 +72,34 @@ class SystemAudioFocusTest {
         assertEquals(SystemAudioFocusCommand.None, result.command)
         assertFalse(result.state.shouldResumeAfterFocusGain)
     }
+
+    @Test
+    fun `playback notification stays foreground while waiting for focus resume`() {
+        assertTrue(
+            shouldKeepPlaybackNotificationForeground(
+                isPlaying = false,
+                audioFocusState = SystemAudioFocusState(shouldResumeAfterFocusGain = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `playback notification stays foreground while playing`() {
+        assertTrue(
+            shouldKeepPlaybackNotificationForeground(
+                isPlaying = true,
+                audioFocusState = SystemAudioFocusState(),
+            ),
+        )
+    }
+
+    @Test
+    fun `playback notification does not stay foreground for user paused playback`() {
+        assertFalse(
+            shouldKeepPlaybackNotificationForeground(
+                isPlaying = false,
+                audioFocusState = SystemAudioFocusState(),
+            ),
+        )
+    }
 }

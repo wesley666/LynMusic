@@ -65,3 +65,10 @@ fun resolveSystemAudioFocusChange(
 fun shouldKeepAudioFocusWhilePausedForResume(state: SystemAudioFocusState): Boolean {
     return state.shouldResumeAfterFocusGain
 }
+
+fun shouldKeepPlaybackNotificationForeground(
+    isPlaying: Boolean,
+    audioFocusState: SystemAudioFocusState,
+): Boolean {
+    return isPlaying || audioFocusState.shouldResumeAfterFocusGain
+}

@@ -33,6 +33,7 @@ import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.resolveSystemAudioFocusChange
 import top.iwesley.lyn.music.core.model.shouldKeepAudioFocusWhilePausedForResume
+import top.iwesley.lyn.music.core.model.shouldKeepPlaybackNotificationForeground
 
 fun createAndroidSystemPlaybackControlsPlatformService(
     context: Context,
@@ -135,10 +136,17 @@ private class AndroidSystemPlaybackControlsPlatformService(
         }
         if (shouldRefreshNotification(previous, snapshot)) {
             lastNotificationKey = AndroidNotificationKey.from(snapshot)
-            AndroidPlaybackNotificationService.requestSync(
-                context = context,
-                promoteToForeground = snapshot.isPlaying,
+            val keepForeground = shouldKeepPlaybackNotificationForeground(
+                isPlaying = snapshot.isPlaying,
+                audioFocusState = audioFocusState,
             )
+            val syncStarted = AndroidPlaybackNotificationService.requestSync(
+                context = context,
+                promoteToForeground = keepForeground,
+            )
+            if (!syncStarted && keepForeground && snapshot.isPlaying) {
+                serviceScope.launch { callbacks.pause() }
+            }
         }
     }
 
@@ -460,21 +468,26 @@ internal class AndroidPlaybackNotificationService : Service() {
         private const val EXTRA_REQUIRE_FOREGROUND = "top.iwesley.lyn.music.extra.REQUIRE_FOREGROUND"
         private const val NOTIFICATION_ID = 3107
 
-        fun requestSync(context: Context, promoteToForeground: Boolean) {
+        fun requestSync(context: Context, promoteToForeground: Boolean): Boolean {
             val intent = Intent(context, AndroidPlaybackNotificationService::class.java)
                 .setAction(ACTION_SYNC)
                 .putExtra(EXTRA_REQUIRE_FOREGROUND, promoteToForeground)
-            if (promoteToForeground) {
-                ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
-            }
+            return runCatching {
+                if (promoteToForeground) {
+                    ContextCompat.startForegroundService(context, intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            }.getOrDefault(false)
         }
 
         fun stop(context: Context) {
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(NOTIFICATION_ID)
-            context.stopService(Intent(context, AndroidPlaybackNotificationService::class.java))
+            runCatching {
+                context.stopService(Intent(context, AndroidPlaybackNotificationService::class.java))
+            }
         }
     }
 }
