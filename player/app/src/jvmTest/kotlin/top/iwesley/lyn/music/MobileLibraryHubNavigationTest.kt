@@ -52,18 +52,18 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub source menu only shows for song based pages`() {
+    fun `mobile library hub source menu shows for library hub content pages`() {
         assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Library))
         assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Favorites))
-        assertFalse(mobileLibraryHubShowsSourceMenu(AppTab.Playlists))
+        assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Playlists))
         assertFalse(mobileLibraryHubShowsSourceMenu(AppTab.My))
     }
 
     @Test
-    fun `mobile library hub only uses pull to refresh for favorites`() {
+    fun `mobile library hub uses pull to refresh for remote-backed hub pages`() {
         assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Library))
         assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Favorites))
-        assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Playlists))
+        assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Playlists))
         assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.My))
     }
 

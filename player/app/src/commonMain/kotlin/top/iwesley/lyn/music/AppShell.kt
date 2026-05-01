@@ -149,11 +149,11 @@ internal fun mobileLibraryHubSearchPlaceholder(tab: AppTab): String {
 }
 
 internal fun mobileLibraryHubShowsSourceMenu(tab: AppTab): Boolean {
-    return tab == AppTab.Library || tab == AppTab.Favorites
+    return tab == AppTab.Library || tab == AppTab.Favorites || tab == AppTab.Playlists
 }
 
 internal fun mobileLibraryHubUsesPullToRefresh(tab: AppTab): Boolean {
-    return tab == AppTab.Favorites
+    return tab == AppTab.Favorites || tab == AppTab.Playlists
 }
 
 internal fun mobileLibraryHubRefreshIndicatorVisible(
@@ -738,7 +738,10 @@ private fun MobileLibraryHubTab(
     var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
     var favoritesRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
     var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
+    var playlistsRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
+    var playlistsRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
     val favoritesPullRefreshState = rememberPullToRefreshState()
+    val playlistsPullRefreshState = rememberPullToRefreshState()
     val activeSearchTab = mobileLibraryHubTabForPage(pagerState.currentPage)
     val activeSearchQuery = when (activeSearchTab) {
         AppTab.Library -> libraryState.query
@@ -770,6 +773,11 @@ private fun MobileLibraryHubTab(
         favoritesRefreshHoldKey += 1
     }
 
+    fun startPlaylistsRefreshHold() {
+        playlistsRefreshHoldActive = true
+        playlistsRefreshHoldKey += 1
+    }
+
     LaunchedEffect(selectedTab) {
         val targetPage = mobileLibraryHubPageForTab(selectedTab)
         if (pagerState.currentPage != targetPage) {
@@ -791,6 +799,16 @@ private fun MobileLibraryHubTab(
     LaunchedEffect(favoritesState.isRefreshing) {
         if (favoritesState.isRefreshing) {
             startFavoritesRefreshHold()
+        }
+    }
+    LaunchedEffect(playlistsRefreshHoldKey) {
+        if (playlistsRefreshHoldKey <= 0) return@LaunchedEffect
+        delay(2_000)
+        playlistsRefreshHoldActive = false
+    }
+    LaunchedEffect(playlistsState.isRefreshing) {
+        if (playlistsState.isRefreshing) {
+            startPlaylistsRefreshHold()
         }
     }
     Column(modifier = modifier.fillMaxSize()) {
@@ -825,6 +843,14 @@ private fun MobileLibraryHubTab(
                         availableSourceFilters = favoritesState.availableSourceFilters,
                         onSourceFilterChanged = { filter ->
                             onFavoritesIntent(FavoritesIntent.SourceFilterChanged(filter))
+                        },
+                    )
+
+                    AppTab.Playlists -> MobileLibraryHubSourceMenu(
+                        selectedSourceFilter = playlistsState.selectedSourceFilter,
+                        availableSourceFilters = playlistsState.availableSourceFilters,
+                        onSourceFilterChanged = { filter ->
+                            onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(filter))
                         },
                     )
 
@@ -900,13 +926,40 @@ private fun MobileLibraryHubTab(
                     }
                 }
 
-                AppTab.Playlists -> PlaylistsTab(
-                    state = playlistsState,
-                    onPlaylistsIntent = onPlaylistsIntent,
-                    onPlayerIntent = onPlayerIntent,
-                    playlistSearchQuery = playlistSearchQuery,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                AppTab.Playlists -> {
+                    val isPlaylistsRefreshing = mobileLibraryHubRefreshIndicatorVisible(
+                        isRefreshing = playlistsState.isRefreshing,
+                        isMinimumHoldActive = playlistsRefreshHoldActive,
+                    )
+                    PullToRefreshBox(
+                        isRefreshing = isPlaylistsRefreshing,
+                        onRefresh = {
+                            startPlaylistsRefreshHold()
+                            onPlaylistsIntent(PlaylistsIntent.Refresh)
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        state = playlistsPullRefreshState,
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                isRefreshing = isPlaylistsRefreshing,
+                                state = playlistsPullRefreshState,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    ) {
+                        PlaylistsTab(
+                            state = playlistsState,
+                            onPlaylistsIntent = onPlaylistsIntent,
+                            onPlayerIntent = onPlayerIntent,
+                            playlistSearchQuery = playlistSearchQuery,
+                            showRefreshActionButton = false,
+                            showSourceFilterActionButton = false,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
 
                 else -> Unit
             }

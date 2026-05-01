@@ -607,6 +607,8 @@ internal fun PlaylistsTab(
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     playlistSearchQuery: String = "",
+    showRefreshActionButton: Boolean = true,
+    showSourceFilterActionButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -679,6 +681,8 @@ internal fun PlaylistsTab(
                     selectedSourceFilter = state.selectedSourceFilter,
                     availableSourceFilters = state.availableSourceFilters,
                     isFilteringByQuery = isFilteringPlaylists,
+                    showRefreshActionButton = showRefreshActionButton,
+                    showSourceFilterActionButton = showSourceFilterActionButton,
                     onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                     onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                     onCreate = { showCreateDialog = true },
@@ -720,6 +724,8 @@ internal fun PlaylistsTab(
                 selectedSourceFilter = state.selectedSourceFilter,
                 availableSourceFilters = state.availableSourceFilters,
                 isFilteringByQuery = isFilteringPlaylists,
+                showRefreshActionButton = showRefreshActionButton,
+                showSourceFilterActionButton = showSourceFilterActionButton,
                 onRefresh = { onPlaylistsIntent(PlaylistsIntent.Refresh) },
                 onSourceFilterChanged = { onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it)) },
                 onCreate = { showCreateDialog = true },
@@ -789,6 +795,8 @@ private fun PlaylistListPane(
     selectedSourceFilter: LibrarySourceFilter,
     availableSourceFilters: List<LibrarySourceFilter>,
     isFilteringByQuery: Boolean = false,
+    showRefreshActionButton: Boolean = true,
+    showSourceFilterActionButton: Boolean = true,
     onRefresh: () -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
     onCreate: () -> Unit,
@@ -838,38 +846,42 @@ private fun PlaylistListPane(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    OutlinedButton(onClick = onRefresh) {
-                        Icon(Icons.Rounded.Sync, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = if (isRefreshing) "同步中" else "同步远端",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Box {
-                        OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
-                            Icon(Icons.Rounded.Tune, contentDescription = null)
+                    if (showRefreshActionButton) {
+                        OutlinedButton(onClick = onRefresh) {
+                            Icon(Icons.Rounded.Sync, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = playlistSourceFilterButtonLabel(selectedSourceFilter),
+                                text = if (isRefreshing) "同步中" else "同步远端",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        DropdownMenu(
-                            expanded = sourceFilterMenuExpanded,
-                            onDismissRequest = { sourceFilterMenuExpanded = false },
-                            containerColor = mainShellColors.navContainer,
-                        ) {
-                            availableSourceFilters.forEach { filter ->
-                                DropdownMenuItem(
-                                    text = { Text(playlistSourceFilterMenuLabel(filter)) },
-                                    onClick = {
-                                        sourceFilterMenuExpanded = false
-                                        onSourceFilterChanged(filter)
-                                    },
+                    }
+                    if (showSourceFilterActionButton) {
+                        Box {
+                            OutlinedButton(onClick = { sourceFilterMenuExpanded = true }) {
+                                Icon(Icons.Rounded.Tune, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = playlistSourceFilterButtonLabel(selectedSourceFilter),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
+                            }
+                            DropdownMenu(
+                                expanded = sourceFilterMenuExpanded,
+                                onDismissRequest = { sourceFilterMenuExpanded = false },
+                                containerColor = mainShellColors.navContainer,
+                            ) {
+                                availableSourceFilters.forEach { filter ->
+                                    DropdownMenuItem(
+                                        text = { Text(playlistSourceFilterMenuLabel(filter)) },
+                                        onClick = {
+                                            sourceFilterMenuExpanded = false
+                                            onSourceFilterChanged(filter)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
