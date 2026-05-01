@@ -11,9 +11,14 @@ class MobileLibraryHubNavigationTest {
 
     @Test
     fun `mobile primary navigation only contains my and library`() {
-        assertEquals(listOf(AppTab.My, AppTab.Library), mobilePrimaryNavigationTabs)
+        assertEquals(listOf(AppTab.Library, AppTab.My), mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Favorites in mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Playlists in mobilePrimaryNavigationTabs)
+    }
+
+    @Test
+    fun `default selected app tab is library`() {
+        assertEquals(AppTab.Library, defaultSelectedAppTab)
     }
 
     @Test

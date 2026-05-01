@@ -51,6 +51,8 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsStore
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.mainShellColors
 
+internal val defaultSelectedAppTab: AppTab = AppTab.Library
+
 class LynMusicAppComponent(
     val platform: PlatformDescriptor,
     val logger: DiagnosticLogger,
@@ -136,7 +138,7 @@ fun App(
     val importState by component.importStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
-    var selectedTab by rememberSaveable { mutableStateOf(AppTab.My) }
+    var selectedTab by rememberSaveable { mutableStateOf(defaultSelectedAppTab) }
     var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
     var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }

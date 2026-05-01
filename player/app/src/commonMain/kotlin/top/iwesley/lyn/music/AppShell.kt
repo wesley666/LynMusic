@@ -104,7 +104,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.mainShellColors
 
-internal val mobilePrimaryNavigationTabs: List<AppTab> = listOf(AppTab.My, AppTab.Library)
+internal val mobilePrimaryNavigationTabs: List<AppTab> = listOf(AppTab.Library, AppTab.My)
 internal val mobileLibraryHubTabs: List<AppTab> = listOf(AppTab.Library, AppTab.Favorites, AppTab.Playlists)
 
 internal fun isMobileLibraryHubTab(tab: AppTab): Boolean = tab in mobileLibraryHubTabs
