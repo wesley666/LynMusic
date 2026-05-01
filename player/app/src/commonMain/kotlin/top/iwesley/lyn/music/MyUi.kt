@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -51,6 +52,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -65,6 +67,9 @@ internal fun MyTab(
 ) {
     val isMobile = platform.isMobilePlatform()
     var detailPage by rememberSaveable { mutableStateOf<MyDetailPage?>(null) }
+    PlatformBackHandler(enabled = detailPage != null) {
+        detailPage = null
+    }
     when (detailPage) {
         MyDetailPage.DailyRecommendation -> {
             DailyRecommendationDetail(
@@ -417,17 +422,7 @@ private fun DailyRecommendationDetail(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = "返回",
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
+                MyDetailBackButton(onBack = onBack)
                 Box(modifier = Modifier.weight(1f)) {
                     SectionTitle(
                         title = "每日推荐",
@@ -578,23 +573,26 @@ private fun MyDetailHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = "返回",
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
+        MyDetailBackButton(onBack = onBack)
         Box(modifier = Modifier.weight(1f)) {
             SectionTitle(
                 title = title,
                 subtitle = subtitle,
             )
         }
+    }
+}
+
+@Composable
+private fun MyDetailBackButton(
+    onBack: () -> Unit,
+) {
+    IconButton(onClick = onBack) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = "返回",
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 
