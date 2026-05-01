@@ -278,7 +278,11 @@ private fun LibraryBrowserTab(
     onNavigationHandled: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val listState = rememberLazyListState()
+    val tracksListState = rememberLazyListState()
+    val albumsListState = rememberLazyListState()
+    val artistsListState = rememberLazyListState()
+    val albumDetailListState = rememberLazyListState()
+    val artistDetailListState = rememberLazyListState()
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     var trackSortMenuExpanded by remember { mutableStateOf(false) }
     var rootView by rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
@@ -422,11 +426,18 @@ private fun LibraryBrowserTab(
         unfocusedBorderColor = searchFieldContainerColor,
         disabledBorderColor = searchFieldContainerColor,
     )
+    val activeListState = when {
+        selectedAlbum != null -> albumDetailListState
+        rootView == LibraryBrowserRootView.Artists && selectedArtist != null -> artistDetailListState
+        rootView == LibraryBrowserRootView.Albums -> albumsListState
+        rootView == LibraryBrowserRootView.Artists -> artistsListState
+        else -> tracksListState
+    }
 
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
-            state = listState,
+            state = activeListState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -747,7 +758,7 @@ private fun LibraryBrowserTab(
             }
         }
         LibraryFastScrollbar(
-            listState = listState,
+            listState = activeListState,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
