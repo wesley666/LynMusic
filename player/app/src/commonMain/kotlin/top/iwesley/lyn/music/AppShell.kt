@@ -781,7 +781,7 @@ private fun MobileLibraryHubTab(
     LaunchedEffect(selectedTab) {
         val targetPage = mobileLibraryHubPageForTab(selectedTab)
         if (pagerState.currentPage != targetPage) {
-            pagerState.animateScrollToPage(targetPage)
+            pagerState.scrollToPage(targetPage)
         }
     }
     LaunchedEffect(pagerState) {
@@ -865,7 +865,7 @@ private fun MobileLibraryHubTab(
                 onTabClick = { index, tab ->
                     onTabSelected(tab)
                     coroutineScope.launch {
-                        pagerState.animateScrollToPage(index)
+                        pagerState.scrollToPage(index)
                     }
                 },
             )
