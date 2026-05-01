@@ -47,6 +47,7 @@ import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
@@ -57,6 +58,7 @@ import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
 import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
 import top.iwesley.lyn.music.data.repository.RoomPlaylistRepository
 import top.iwesley.lyn.music.data.repository.RoomTrackPlaybackStatsRepository
+import top.iwesley.lyn.music.data.repository.UtcDailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
@@ -85,6 +87,8 @@ data class SharedRuntimeServices(
     val desktopVlcPreferencesStore: DesktopVlcPreferencesStore = UnsupportedDesktopVlcPreferencesStore,
     val librarySourceFilterPreferencesStore: LibrarySourceFilterPreferencesStore,
     val lyricsHttpClient: LyricsHttpClient,
+    val dailyRecommendationDateKeyProvider: DailyRecommendationDateKeyProvider =
+        UtcDailyRecommendationDateKeyProvider,
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
@@ -209,6 +213,7 @@ fun buildSharedGraph(
         secureCredentialStore = runtimeServices.secureCredentialStore,
         httpClient = runtimeServices.lyricsHttpClient,
         logger = runtimeServices.logger,
+        dailyRecommendationDateKeyProvider = runtimeServices.dailyRecommendationDateKeyProvider,
     )
     scope.launch {
         settingsRepository.ensureDefaults()

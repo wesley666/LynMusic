@@ -60,6 +60,7 @@ import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import top.iwesley.lyn.music.domain.testNavidromeConnection
@@ -73,11 +74,14 @@ import platform.CoreFoundation.CFMutableDictionaryRef
 import platform.CoreFoundation.CFTypeRef
 import platform.CoreFoundation.CFTypeRefVar
 import platform.CoreFoundation.kCFBooleanTrue
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
+import platform.Foundation.NSLocale
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUserDomainMask
@@ -153,6 +157,7 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             deviceInfoGateway = createIosDeviceInfoGateway(),
             audioTagGateway = UnsupportedAudioTagGateway,
             audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
+            dailyRecommendationDateKeyProvider = IosDailyRecommendationDateKeyProvider,
             logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
         ),
     )
@@ -170,6 +175,15 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             systemPlaybackControlsPlatformService = createIosSystemPlaybackControlsPlatformService(),
         ),
     )
+}
+
+private object IosDailyRecommendationDateKeyProvider : DailyRecommendationDateKeyProvider {
+    override fun currentDateKey(): String {
+        val formatter = NSDateFormatter()
+        formatter.locale = NSLocale(localeIdentifier = "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.stringFromDate(NSDate())
+    }
 }
 
 private class IosLyricsHttpClient : LyricsHttpClient {

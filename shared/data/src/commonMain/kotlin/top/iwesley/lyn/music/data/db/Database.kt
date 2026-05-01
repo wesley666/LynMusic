@@ -98,6 +98,13 @@ data class AlbumPlaybackStatsEntity(
     val lastPlayedAt: Long,
 )
 
+@Entity(tableName = "daily_recommendation")
+data class DailyRecommendationEntity(
+    @PrimaryKey val dateKey: String,
+    val generatedAt: Long,
+    val trackIds: String,
+)
+
 @Entity(tableName = "playback_queue_snapshot")
 data class PlaybackQueueSnapshotEntity(
     @PrimaryKey val id: Int = 0,
@@ -386,6 +393,28 @@ interface AlbumPlaybackStatsDao {
 }
 
 @Dao
+interface DailyRecommendationDao {
+    @Query("SELECT * FROM daily_recommendation ORDER BY dateKey DESC")
+    fun observeAll(): Flow<List<DailyRecommendationEntity>>
+
+    @Query("SELECT * FROM daily_recommendation WHERE dateKey = :dateKey LIMIT 1")
+    suspend fun getByDateKey(dateKey: String): DailyRecommendationEntity?
+
+    @Query(
+        """
+        SELECT * FROM daily_recommendation
+        WHERE dateKey < :dateKey
+          AND generatedAt >= :sinceGeneratedAt
+        ORDER BY dateKey DESC
+        """,
+    )
+    suspend fun getRecentBefore(dateKey: String, sinceGeneratedAt: Long): List<DailyRecommendationEntity>
+
+    @Upsert
+    suspend fun upsert(item: DailyRecommendationEntity)
+}
+
+@Dao
 interface PlaybackQueueSnapshotDao {
     @Query("SELECT * FROM playback_queue_snapshot WHERE id = 0 LIMIT 1")
     suspend fun get(): PlaybackQueueSnapshotEntity?
@@ -398,6 +427,9 @@ interface PlaybackQueueSnapshotDao {
 interface FavoriteTrackDao {
     @Query("SELECT * FROM favorite_track ORDER BY favoritedAt DESC, trackId ASC")
     fun observeAll(): Flow<List<FavoriteTrackEntity>>
+
+    @Query("SELECT * FROM favorite_track ORDER BY favoritedAt DESC, trackId ASC")
+    suspend fun getAll(): List<FavoriteTrackEntity>
 
     @Query("SELECT * FROM favorite_track WHERE trackId = :trackId LIMIT 1")
     suspend fun getByTrackId(trackId: String): FavoriteTrackEntity?
@@ -598,6 +630,7 @@ interface LyricsCacheDao {
         TrackEntity::class,
         TrackPlaybackStatsEntity::class,
         AlbumPlaybackStatsEntity::class,
+        DailyRecommendationEntity::class,
         PlaybackQueueSnapshotEntity::class,
         FavoriteTrackEntity::class,
         PlaylistEntity::class,
@@ -607,7 +640,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 12,
+    version = 13,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -618,6 +651,7 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
     abstract fun trackPlaybackStatsDao(): TrackPlaybackStatsDao
     abstract fun albumPlaybackStatsDao(): AlbumPlaybackStatsDao
+    abstract fun dailyRecommendationDao(): DailyRecommendationDao
     abstract fun playbackQueueSnapshotDao(): PlaybackQueueSnapshotDao
     abstract fun favoriteTrackDao(): FavoriteTrackDao
     abstract fun playlistDao(): PlaylistDao
@@ -648,6 +682,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_9_10)
         .addMigrations(MIGRATION_10_11)
         .addMigrations(MIGRATION_11_12)
+        .addMigrations(MIGRATION_12_13)
         .build()
 }
 
@@ -856,6 +891,20 @@ val MIGRATION_11_12: Migration = object : Migration(11, 12) {
     override fun migrate(connection: SQLiteConnection) {
         connection.execSql("ALTER TABLE track ADD COLUMN addedAt INTEGER NOT NULL DEFAULT 0")
         connection.execSql("UPDATE track SET addedAt = modifiedAt")
+    }
+}
+
+val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS daily_recommendation (
+                dateKey TEXT NOT NULL PRIMARY KEY,
+                generatedAt INTEGER NOT NULL,
+                trackIds TEXT NOT NULL
+            )
+            """.trimIndent(),
+        )
     }
 }
 

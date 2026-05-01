@@ -13,6 +13,7 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDate
 import java.util.ArrayDeque
 import java.util.Properties
 import kotlin.io.path.ExperimentalPathApi
@@ -98,6 +99,7 @@ import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -191,6 +193,7 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             ),
             audioTagEditorPlatformService = JvmAudioTagEditorPlatformService(),
             vlcPathPickerPlatformService = JvmVlcPathPickerPlatformService(),
+            dailyRecommendationDateKeyProvider = JvmDailyRecommendationDateKeyProvider,
             logger = logger,
         ),
     )
@@ -204,6 +207,10 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             lyricsShareFontPreferencesStore = appPreferencesStore,
         ),
     )
+}
+
+private object JvmDailyRecommendationDateKeyProvider : DailyRecommendationDateKeyProvider {
+    override fun currentDateKey(): String = LocalDate.now().toString()
 }
 
 private class JvmLyricsHttpClient : LyricsHttpClient {

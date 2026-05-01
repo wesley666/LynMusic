@@ -15,6 +15,7 @@ import top.iwesley.lyn.music.data.db.MIGRATION_8_9
 import top.iwesley.lyn.music.data.db.MIGRATION_9_10
 import top.iwesley.lyn.music.data.db.MIGRATION_10_11
 import top.iwesley.lyn.music.data.db.MIGRATION_11_12
+import top.iwesley.lyn.music.data.db.MIGRATION_12_13
 
 class DatabaseMigrationTest {
 
@@ -324,6 +325,21 @@ class DatabaseMigrationTest {
 
             assertTrue(connection.hasColumn("track", "addedAt"))
             assertEquals(987654321L, connection.singleLong("SELECT addedAt FROM track WHERE id = 'track-1'"))
+        }
+    }
+
+    @Test
+    fun `migration 12 to 13 creates daily recommendation table`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            MIGRATION_12_13.migrate(connection)
+
+            assertTrue(connection.hasColumn("daily_recommendation", "dateKey"))
+            assertTrue(connection.hasColumn("daily_recommendation", "generatedAt"))
+            assertTrue(connection.hasColumn("daily_recommendation", "trackIds"))
+            assertEquals(listOf("dateKey"), connection.primaryKeyColumns("daily_recommendation"))
         }
     }
 

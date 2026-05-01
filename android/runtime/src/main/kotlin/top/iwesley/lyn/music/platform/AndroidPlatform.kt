@@ -106,6 +106,7 @@ import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -123,6 +124,9 @@ import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbRemoteFile
 import java.io.File
 import java.security.KeyStore
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -215,6 +219,7 @@ fun createAndroidRuntimeGraph(
                 logger = logger,
             ),
             audioTagEditorPlatformService = AndroidAudioTagEditorPlatformService(activity),
+            dailyRecommendationDateKeyProvider = AndroidDailyRecommendationDateKeyProvider,
             logger = logger,
         ),
     )
@@ -237,6 +242,12 @@ fun createAndroidRuntimeGraph(
             systemPlaybackControlsPlatformService = createAndroidSystemPlaybackControlsPlatformService(activity.applicationContext),
         ),
     )
+}
+
+private object AndroidDailyRecommendationDateKeyProvider : DailyRecommendationDateKeyProvider {
+    override fun currentDateKey(): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
 }
 
 internal class AndroidLyricsHttpClient : LyricsHttpClient {

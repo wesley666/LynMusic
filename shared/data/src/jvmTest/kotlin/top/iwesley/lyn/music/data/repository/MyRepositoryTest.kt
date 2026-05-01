@@ -16,9 +16,11 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.AlbumEntity
+import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.TrackEntity
+import top.iwesley.lyn.music.data.db.TrackPlaybackStatsEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 class MyRepositoryTest {
@@ -162,6 +164,123 @@ class MyRepositoryTest {
             database.close()
         }
     }
+
+    @Test
+    fun `daily recommendation caches current date and creates next date separately`() = runTest {
+        val database = createMyTestDatabase()
+        val dateProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01")
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = dateProvider,
+        )
+
+        try {
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-1", "local-1", "A Song", null, null),
+                    trackEntity("track-2", "local-1", "B Song", null, null),
+                ),
+            )
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val first = database.dailyRecommendationDao().getByDateKey("2026-05-01")
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val repeated = database.dailyRecommendationDao().getByDateKey("2026-05-01")
+            dateProvider.dateKey = "2026-05-02"
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val next = database.dailyRecommendationDao().getByDateKey("2026-05-02")
+
+            assertEquals(first?.generatedAt, repeated?.generatedAt)
+            assertEquals(first?.trackIds, repeated?.trackIds)
+            assertTrue(first?.trackIds.orEmpty().isNotBlank())
+            assertTrue(next?.trackIds.orEmpty().isNotBlank())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation hides disabled sources from generated and cached rows`() = runTest {
+        val database = createMyTestDatabase()
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01"),
+        )
+
+        try {
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+            seedSource(database, sourceId = "local-disabled", type = "LOCAL_FOLDER", enabled = false)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-enabled", "local-1", "Visible Song", null, null),
+                    trackEntity("track-disabled", "local-disabled", "Hidden Song", null, null),
+                ),
+            )
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val dailyRecommendation = repository.dailyRecommendation.first()
+
+            assertEquals(listOf("track-enabled"), dailyRecommendation.map { it.id })
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation ranking rewards liked and played tracks`() {
+        val now = 10_000_000_000L
+        val tracks = listOf(
+            trackEntity("plain", "local-1", "Plain", null, null, addedAt = now - 90.daysMs()),
+            trackEntity("liked", "local-1", "Liked", null, null, addedAt = now - 90.daysMs()),
+            trackEntity("played", "local-1", "Played", null, null, addedAt = now - 90.daysMs()),
+        )
+
+        val ranked = rankDailyRecommendationTrackIds(
+            tracks = tracks,
+            favoriteTracks = listOf(favoriteEntity("liked")),
+            trackStats = mapOf(
+                "played" to TrackPlaybackStatsEntity(
+                    trackId = "played",
+                    sourceId = "local-1",
+                    playCount = 20,
+                    lastPlayedAt = now - 40.daysMs(),
+                ),
+            ),
+            recentRecommendationTrackIds = emptySet(),
+            dateKey = "2026-05-01",
+            nowMs = now,
+            limit = 3,
+        )
+
+        assertTrue(ranked.indexOf("liked") < ranked.indexOf("plain"))
+        assertTrue(ranked.indexOf("played") < ranked.indexOf("plain"))
+    }
+
+    @Test
+    fun `daily recommendation ranking penalizes recent recommendations`() {
+        val now = 10_000_000_000L
+        val tracks = listOf(
+            trackEntity("fresh", "local-1", "Fresh", null, null, addedAt = now - 90.daysMs()),
+            trackEntity("recently-recommended", "local-1", "Recent", null, null, addedAt = now - 90.daysMs()),
+        )
+
+        val ranked = rankDailyRecommendationTrackIds(
+            tracks = tracks,
+            favoriteTracks = listOf(favoriteEntity("recently-recommended")),
+            trackStats = emptyMap(),
+            recentRecommendationTrackIds = setOf("recently-recommended"),
+            dateKey = "2026-05-01",
+            nowMs = now,
+            limit = 2,
+        )
+
+        assertEquals("fresh", ranked.first())
+    }
 }
 
 private fun createMyTestDatabase(): LynMusicDatabase {
@@ -215,13 +334,15 @@ private fun trackEntity(
     albumId: String?,
     albumTitle: String?,
     mediaLocator: String = "file:///music/$title.flac",
+    artistName: String? = "Artist A",
+    addedAt: Long = 0L,
 ): TrackEntity {
     return TrackEntity(
         id = trackId,
         sourceId = sourceId,
         title = title,
         artistId = null,
-        artistName = "Artist A",
+        artistName = artistName,
         albumId = albumId,
         albumTitle = albumTitle,
         durationMs = 180_000L,
@@ -232,6 +353,16 @@ private fun trackEntity(
         artworkLocator = null,
         sizeBytes = 0L,
         modifiedAt = 0L,
+        addedAt = addedAt,
+    )
+}
+
+private fun favoriteEntity(trackId: String): FavoriteTrackEntity {
+    return FavoriteTrackEntity(
+        trackId = trackId,
+        sourceId = "local-1",
+        remoteSongId = null,
+        favoritedAt = 1L,
     )
 }
 
@@ -311,3 +442,11 @@ private class MyCredentialStore(
         values.remove(key)
     }
 }
+
+private class FakeDailyRecommendationDateKeyProvider(
+    var dateKey: String,
+) : DailyRecommendationDateKeyProvider {
+    override fun currentDateKey(): String = dateKey
+}
+
+private fun Int.daysMs(): Long = this.toLong() * 24L * 60L * 60L * 1_000L
