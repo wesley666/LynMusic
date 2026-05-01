@@ -12,6 +12,12 @@ class DesktopLibraryToolbarTest {
     }
 
     @Test
+    fun `desktop library search field height and corner radius are compact`() {
+        assertEquals(40, desktopLibrarySearchFieldHeightDp())
+        assertEquals(14, desktopLibrarySearchFieldCornerRadiusDp())
+    }
+
+    @Test
     fun `desktop library search clear button only shows for non blank query`() {
         assertFalse(shouldShowDesktopLibrarySearchClearButton(""))
         assertFalse(shouldShowDesktopLibrarySearchClearButton("   "))

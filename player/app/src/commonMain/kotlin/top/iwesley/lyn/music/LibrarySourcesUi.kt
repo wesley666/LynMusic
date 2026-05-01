@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +28,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -54,6 +57,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -66,12 +70,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -188,7 +196,7 @@ internal fun FavoritesTab(
             message = state.message,
         ),
         strings = LibraryBrowserStrings(
-            searchLabel = "搜索喜欢的歌曲 / 艺人 / 专辑",
+            searchLabel = "搜索歌曲 / 艺人 / 专辑",
             sectionTitle = "",
             sectionSubtitle = "",
             songsIcon = Icons.Rounded.Favorite,
@@ -487,28 +495,20 @@ private fun LibraryBrowserTab(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ImeAwareOutlinedTextField(
-                                value = state.query,
-                                onValueChange = onSearchChanged,
-                                placeholder = {
-                                    Text(
-                                        text = strings.searchLabel,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
+                            LibraryBrowserSearchField(
+                                query = state.query,
+                                onQueryChanged = onSearchChanged,
+                                placeholder = strings.searchLabel,
+                                useDesktopToolbar = useDesktopToolbar,
+                                containerColor = searchFieldContainerColor,
+                                colors = searchFieldColors,
                                 modifier = if (useDesktopToolbar) {
-                                    Modifier.width(desktopLibrarySearchFieldWidthDp().dp)
+                                    Modifier
                                 } else {
                                     Modifier.weight(1f)
                                 },
-                                shape = RoundedCornerShape(22.dp),
-                                colors = searchFieldColors,
-                                trailingIcon = if (useDesktopToolbar) {
-                                    desktopLibrarySearchTrailingIcon(
-                                        query = state.query,
-                                        onClearSearch = { onSearchChanged("") },
-                                    )
+                                nonDesktopTrailingIcon = if (useDesktopToolbar) {
+                                    null
                                 } else {
                                     {
                                         LibraryBrowserToolbarActions(
@@ -833,7 +833,11 @@ private fun Track.albumLibraryIdOrNull(): String? {
     return libraryAlbumId(artistName, title)
 }
 
-internal fun desktopLibrarySearchFieldWidthDp(): Int = 360
+internal fun desktopLibrarySearchFieldWidthDp(): Int = 200
+
+internal fun desktopLibrarySearchFieldHeightDp(): Int = 40
+
+internal fun desktopLibrarySearchFieldCornerRadiusDp(): Int = 8
 
 internal fun shouldShowDesktopLibrarySearchClearButton(query: String): Boolean = query.isNotBlank()
 
@@ -863,22 +867,137 @@ internal fun resolveDesktopLibraryToolbarActions(
 }
 
 @Composable
-private fun desktopLibrarySearchTrailingIcon(
+private fun LibraryBrowserSearchField(
     query: String,
-    onClearSearch: () -> Unit,
-): (@Composable () -> Unit)? {
-    return if (shouldShowDesktopLibrarySearchClearButton(query)) {
-        {
-            IconButton(onClick = onClearSearch) {
-                Icon(
-                    imageVector = Icons.Rounded.Close,
-                    contentDescription = "清空搜索",
-                )
-            }
-        }
+    onQueryChanged: (String) -> Unit,
+    placeholder: String,
+    useDesktopToolbar: Boolean,
+    containerColor: Color,
+    colors: TextFieldColors,
+    nonDesktopTrailingIcon: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    if (useDesktopToolbar) {
+        DesktopLibrarySearchField(
+            query = query,
+            onQueryChanged = onQueryChanged,
+            placeholder = placeholder,
+            containerColor = containerColor,
+            modifier = modifier,
+        )
     } else {
-        null
+        ImeAwareOutlinedTextField(
+            value = query,
+            onValueChange = onQueryChanged,
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            modifier = modifier,
+            shape = RoundedCornerShape(22.dp),
+            colors = colors,
+            trailingIcon = nonDesktopTrailingIcon,
+        )
     }
+}
+
+@Composable
+private fun DesktopLibrarySearchField(
+    query: String,
+    onQueryChanged: (String) -> Unit,
+    placeholder: String,
+    containerColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    var textFieldValueState by remember {
+        mutableStateOf(librarySearchTextFieldValueFor(query))
+    }
+    LaunchedEffect(query) {
+        if (query != textFieldValueState.text) {
+            textFieldValueState = librarySearchTextFieldValueFor(query)
+        }
+    }
+
+    val shape = RoundedCornerShape(desktopLibrarySearchFieldCornerRadiusDp().dp)
+    val textStyle = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+    BasicTextField(
+        value = textFieldValueState,
+        onValueChange = { updatedValue ->
+            textFieldValueState = updatedValue
+            if (updatedValue.composition == null && updatedValue.text != query) {
+                onQueryChanged(updatedValue.text)
+            }
+        },
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        modifier = modifier
+            .width(desktopLibrarySearchFieldWidthDp().dp)
+            .height(desktopLibrarySearchFieldHeightDp().dp)
+            .clip(shape)
+            .background(containerColor),
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        start = 18.dp,
+                        end = if (shouldShowDesktopLibrarySearchClearButton(textFieldValueState.text)) {
+                            4.dp
+                        } else {
+                            18.dp
+                        },
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (textFieldValueState.text.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            style = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    innerTextField()
+                }
+                if (shouldShowDesktopLibrarySearchClearButton(textFieldValueState.text)) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                textFieldValueState = librarySearchTextFieldValueFor("")
+                                onQueryChanged("")
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "清空搜索",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+    )
+}
+
+private fun librarySearchTextFieldValueFor(value: String): TextFieldValue {
+    return TextFieldValue(
+        text = value,
+        selection = TextRange(value.length),
+    )
 }
 
 @Composable
