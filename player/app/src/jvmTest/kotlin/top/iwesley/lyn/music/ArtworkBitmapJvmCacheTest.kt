@@ -22,17 +22,7 @@ class ArtworkBitmapJvmCacheTest {
     @Test
     fun `direct remote artwork writes cache reuses it and rebuilds after deletion`() {
         val temporaryUserHome = Files.createTempDirectory("lynmusic-player-artwork-home")
-        val payload = byteArrayOf(
-            0x89.toByte(),
-            0x50,
-            0x4E,
-            0x47,
-            0x0D,
-            0x0A,
-            0x1A,
-            0x0A,
-            0x01,
-        )
+        val payload = completePngPayload(0x01)
         val locator = "https://img.example.com/cover"
         var requestCount = 0
 
@@ -81,17 +71,7 @@ class ArtworkBitmapJvmCacheTest {
     @Test
     fun `navidrome artwork caches by original locator hash`() {
         val temporaryUserHome = Files.createTempDirectory("lynmusic-player-navidrome-artwork-home")
-        val payload = byteArrayOf(
-            0x89.toByte(),
-            0x50,
-            0x4E,
-            0x47,
-            0x0D,
-            0x0A,
-            0x1A,
-            0x0A,
-            0x02,
-        )
+        val payload = completePngPayload(0x02)
         val locator = buildNavidromeCoverLocator("nav-source", "cover-123")
         val actualUrl = "https://demo.example.com/rest/getCoverArt.view?id=cover-123"
         NavidromeLocatorRuntime.install(
@@ -121,17 +101,7 @@ class ArtworkBitmapJvmCacheTest {
     @Test
     fun `preview mode downloads remote artwork without writing cache`() {
         val temporaryUserHome = Files.createTempDirectory("lynmusic-player-preview-artwork-home")
-        val payload = byteArrayOf(
-            0x89.toByte(),
-            0x50,
-            0x4E,
-            0x47,
-            0x0D,
-            0x0A,
-            0x1A,
-            0x0A,
-            0x03,
-        )
+        val payload = completePngPayload(0x03)
         val locator = "https://img.example.com/preview"
         var requestCount = 0
 
@@ -153,6 +123,73 @@ class ArtworkBitmapJvmCacheTest {
         assertContentEquals(payload, second)
         assertEquals(2, requestCount)
         assertTrue(cacheDirectory.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `remote artwork with incomplete payload falls back without writing cache`() {
+        val temporaryUserHome = Files.createTempDirectory("lynmusic-player-invalid-artwork-home")
+        val expected = runBlocking { loadBundledDefaultCoverBytes() }
+        val locator = "https://img.example.com/truncated"
+
+        val actual = runBlocking {
+            loadJvmArtworkBytes(locator, userHomePath = temporaryUserHome.absolutePathString()) {
+                truncatedPngPayload()
+            }
+        }
+        val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache")
+
+        assertNotNull(expected)
+        assertContentEquals(expected, actual)
+        assertTrue(cacheDirectory.listFiles().isNullOrEmpty())
+    }
+
+    @Test
+    fun `damaged cache file is ignored and rebuilt`() {
+        val temporaryUserHome = Files.createTempDirectory("lynmusic-player-damaged-artwork-home")
+        val payload = completePngPayload(0x04)
+        val locator = "https://img.example.com/damaged"
+        val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache").apply { mkdirs() }
+        File(cacheDirectory, "${locator.stableArtworkCacheHash()}.png").writeBytes(truncatedPngPayload())
+        var requestCount = 0
+
+        val actual = runBlocking {
+            loadJvmArtworkBytes(locator, userHomePath = temporaryUserHome.absolutePathString()) {
+                requestCount += 1
+                payload
+            }
+        }
+        val cacheFile = assertNotNull(
+            cacheDirectory.listFiles()?.singleOrNull { file -> !file.name.contains(".tmp-") },
+        )
+
+        assertContentEquals(payload, actual)
+        assertEquals(1, requestCount)
+        assertContentEquals(payload, Files.readAllBytes(cacheFile.toPath()))
+    }
+
+    @Test
+    fun `temporary cache files are ignored`() {
+        val temporaryUserHome = Files.createTempDirectory("lynmusic-player-temp-artwork-home")
+        val payload = completePngPayload(0x05)
+        val locator = "https://img.example.com/temp"
+        val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache").apply { mkdirs() }
+        File(cacheDirectory, "${locator.stableArtworkCacheHash()}.png.tmp-old").writeBytes(completePngPayload(0x06))
+        var requestCount = 0
+
+        val actual = runBlocking {
+            loadJvmArtworkBytes(locator, userHomePath = temporaryUserHome.absolutePathString()) {
+                requestCount += 1
+                payload
+            }
+        }
+        val finalCacheFiles = cacheDirectory.listFiles()
+            .orEmpty()
+            .filter { file -> !file.name.contains(".tmp-") }
+
+        assertContentEquals(payload, actual)
+        assertEquals(1, requestCount)
+        assertEquals(1, finalCacheFiles.size)
+        assertContentEquals(payload, Files.readAllBytes(finalCacheFiles.single().toPath()))
     }
 
     @Test
@@ -180,4 +217,44 @@ class ArtworkBitmapJvmCacheTest {
         assertNotNull(expected)
         assertContentEquals(expected, actual)
     }
+}
+
+private fun completePngPayload(marker: Byte): ByteArray {
+    return byteArrayOf(
+        0x89.toByte(),
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        marker,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE.toByte(),
+        0x42,
+        0x60,
+        0x82.toByte(),
+    )
+}
+
+private fun truncatedPngPayload(): ByteArray {
+    return byteArrayOf(
+        0x89.toByte(),
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x01,
+    )
 }

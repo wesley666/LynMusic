@@ -18,24 +18,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
 import platform.Foundation.NSCachesDirectory
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSData
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
+import platform.Foundation.NSUUID
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
-import platform.posix.closedir
-import platform.posix.opendir
-import platform.posix.readdir
-import platform.posix.memcpy
 import platform.posix.SEEK_END
 import platform.posix.SEEK_SET
+import platform.posix.closedir
 import platform.posix.fclose
 import platform.posix.fopen
 import platform.posix.fread
 import platform.posix.fseek
 import platform.posix.ftell
 import platform.posix.fwrite
+import platform.posix.memcpy
+import platform.posix.opendir
+import platform.posix.readdir
+import platform.posix.remove
+import platform.posix.rename
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
@@ -70,10 +74,13 @@ private suspend fun loadNativeArtworkBytes(locator: String?, cacheRemote: Boolea
                     readLocalBytes(existingCachePath)
                 } else {
                     val payload = readRemoteBytes(target)
-                    if (payload == null || payload.isEmpty()) return@runCatching null
+                    if (payload == null || !isCompleteArtworkPayload(payload)) return@runCatching null
                     if (cacheRemote) {
-                        val output = "$cacheDirectory/$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
-                        writeLocalBytes(output, payload)
+                        writeNativeArtworkCacheFileAtomically(
+                            directory = cacheDirectory,
+                            fileName = "$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}",
+                            payload = payload,
+                        )
                     }
                     payload
                 }
@@ -117,10 +124,13 @@ private fun findNativeArtworkCachePath(directory: String, cachePrefix: String): 
             val name = entry.d_name.toKString()
             if (name == "." || name == "..") continue
             if (!name.startsWith(cachePrefix)) continue
+            if (name.contains(NATIVE_ARTWORK_CACHE_TEMP_MARKER)) continue
             val path = "$directory/$name"
-            if (readLocalBytes(path)?.isNotEmpty() == true) {
+            val valid = readLocalBytes(path)?.let { isCompleteArtworkPayload(it) } == true
+            if (valid) {
                 return path
             }
+            remove(path)
         }
         null
     } finally {
@@ -179,6 +189,41 @@ private fun writeLocalBytes(path: String, bytes: ByteArray): Boolean {
 private fun isRemoteArtworkTarget(target: String): Boolean {
     return target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)
 }
+
+private fun writeNativeArtworkCacheFileAtomically(
+    directory: String,
+    fileName: String,
+    payload: ByteArray,
+): String? {
+    if (!isCompleteArtworkPayload(payload)) return null
+    val output = "$directory/$fileName"
+    if (readLocalBytes(output)?.let { isCompleteArtworkPayload(it) } == true) {
+        return output
+    }
+    remove(output)
+    val temporary = "$output$NATIVE_ARTWORK_CACHE_TEMP_MARKER${NSUUID.UUID().UUIDString}"
+    return runCatching {
+        if (!writeLocalBytes(temporary, payload)) {
+            return@runCatching null
+        }
+        val written = readLocalBytes(temporary) ?: return@runCatching null
+        if (written.size != payload.size || !isCompleteArtworkPayload(written)) {
+            return@runCatching null
+        }
+        if (readLocalBytes(output)?.let { isCompleteArtworkPayload(it) } == true) {
+            return@runCatching output
+        }
+        remove(output)
+        if (rename(temporary, output) != 0) {
+            return@runCatching null
+        }
+        output.takeIf { readLocalBytes(it)?.let { bytes -> isCompleteArtworkPayload(bytes) } == true }
+    }.also {
+        remove(temporary)
+    }.getOrNull()
+}
+
+private const val NATIVE_ARTWORK_CACHE_TEMP_MARKER = ".tmp-"
 
 @OptIn(ExperimentalForeignApi::class)
 private fun NSData.toByteArray(): ByteArray {

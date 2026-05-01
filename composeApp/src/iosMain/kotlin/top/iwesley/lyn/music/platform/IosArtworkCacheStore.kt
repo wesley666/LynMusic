@@ -12,7 +12,10 @@ import platform.Foundation.NSUserDomainMask
 import platform.posix.closedir
 import platform.posix.opendir
 import platform.posix.readdir
+import platform.posix.remove
+import platform.posix.rename
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 
 fun createIosArtworkCacheStore(): ArtworkCacheStore = IosArtworkCacheStore()
 
@@ -31,14 +34,9 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
             val cachePrefix = cacheKey.stableArtworkCacheHash()
             findIosArtworkCacheFile(directory, cachePrefix)?.let { return@runCatching it }
             val payload = readIosRemoteBytes(target) ?: return@runCatching null
-            val output = "$directory/$cachePrefix${artworkCacheExtension(target, payload)}"
-            if (readIosLocalBytes(output)?.isNotEmpty() == true) {
-                return@runCatching output
-            }
-            if (!writeIosFileBytes(output, payload)) {
-                return@runCatching null
-            }
-            output.takeIf { readIosLocalBytes(it)?.isNotEmpty() == true }
+            if (!isCompleteArtworkPayload(payload)) return@runCatching null
+            val fileName = "$cachePrefix${artworkCacheExtension(target, payload)}"
+            writeIosArtworkCacheFileAtomically(directory, fileName, payload)
         }.getOrNull()
     }
 }
@@ -52,10 +50,13 @@ private fun findIosArtworkCacheFile(directory: String, cachePrefix: String): Str
             val name = entry.d_name.toKString()
             if (name == "." || name == "..") continue
             if (!name.startsWith(cachePrefix)) continue
+            if (name.contains(IOS_ARTWORK_CACHE_TEMP_MARKER)) continue
             val path = "$directory/$name"
-            if (readIosLocalBytes(path)?.isNotEmpty() == true) {
+            val valid = readIosLocalBytes(path)?.let { isCompleteArtworkPayload(it) } == true
+            if (valid) {
                 return path
             }
+            remove(path)
         }
         null
     } finally {
@@ -83,3 +84,38 @@ internal fun iosArtworkCacheDirectory(): String {
     )
     return directory
 }
+
+private fun writeIosArtworkCacheFileAtomically(
+    directory: String,
+    fileName: String,
+    payload: ByteArray,
+): String? {
+    if (!isCompleteArtworkPayload(payload)) return null
+    val output = "$directory/$fileName"
+    if (readIosLocalBytes(output)?.let { isCompleteArtworkPayload(it) } == true) {
+        return output
+    }
+    remove(output)
+    val temporary = "$output$IOS_ARTWORK_CACHE_TEMP_MARKER${platform.Foundation.NSUUID.UUID().UUIDString}"
+    return runCatching {
+        if (!writeIosFileBytes(temporary, payload)) {
+            return@runCatching null
+        }
+        val written = readIosLocalBytes(temporary) ?: return@runCatching null
+        if (written.size != payload.size || !isCompleteArtworkPayload(written)) {
+            return@runCatching null
+        }
+        if (readIosLocalBytes(output)?.let { isCompleteArtworkPayload(it) } == true) {
+            return@runCatching output
+        }
+        remove(output)
+        if (rename(temporary, output) != 0) {
+            return@runCatching null
+        }
+        output.takeIf { readIosLocalBytes(it)?.let { bytes -> isCompleteArtworkPayload(bytes) } == true }
+    }.also {
+        remove(temporary)
+    }.getOrNull()
+}
+
+private const val IOS_ARTWORK_CACHE_TEMP_MARKER = ".tmp-"
