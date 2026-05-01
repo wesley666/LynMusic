@@ -551,8 +551,8 @@ private fun DesktopNav(
         listOf(
             Triple(AppTab.My, Icons.Rounded.Person, "我的"),
             Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-            Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
             Triple(AppTab.Favorites, Icons.Rounded.FavoriteBorder, "喜欢"),
+            Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
             Triple(AppTab.Tags, Icons.Rounded.LocalOffer, "音乐标签"),
             Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
             Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
