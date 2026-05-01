@@ -124,9 +124,6 @@ internal fun MyTab(
         ),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item {
-            MyHeader()
-        }
         state.message?.let { message ->
             item {
                 BannerCard(
@@ -177,14 +174,6 @@ private enum class MyDetailPage {
     DailyRecommendation,
     RecentTracks,
     RecentAlbums,
-}
-
-@Composable
-private fun MyHeader() {
-    SectionTitle(
-        title = "我的",
-        subtitle = "",
-    )
 }
 
 @Composable
