@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -67,6 +68,7 @@ internal fun MyTab(
 ) {
     val isMobile = platform.isMobilePlatform()
     var detailPage by rememberSaveable { mutableStateOf<MyDetailPage?>(null) }
+    val mainListState = rememberLazyListState()
     PlatformBackHandler(enabled = detailPage != null) {
         detailPage = null
     }
@@ -115,6 +117,7 @@ internal fun MyTab(
     }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = mainListState,
         contentPadding = PaddingValues(
             horizontal = if (isMobile) 16.dp else 32.dp,
             vertical = if (isMobile) 16.dp else 28.dp,
