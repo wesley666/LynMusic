@@ -110,9 +110,9 @@ class DefaultPlaybackRepository(
         scope.launch {
             combine(
                 database.trackDao().observeAll(),
-                database.lyricsCacheDao().observeBySourceId(MANUAL_LYRICS_OVERRIDE_SOURCE_ID),
-            ) { entities, overrides ->
-                val artworkOverrides = manualArtworkOverridesByTrackId(overrides)
+                database.lyricsCacheDao().observeArtworkLocators(),
+            ) { entities, artworkRows ->
+                val artworkOverrides = effectiveArtworkOverridesByTrackId(artworkRows)
                 entities.associate { entity ->
                     entity.id to entity.toDomain(artworkOverrides[entity.id])
                 }
@@ -484,10 +484,8 @@ class DefaultPlaybackRepository(
             .filter { it.isNotBlank() }
             .ifEmpty { queueIds }
         val allIds = (queueIds + orderedQueueIds).distinct()
-        val artworkOverrides = manualArtworkOverridesByTrackId(
-            allIds.mapNotNull { trackId ->
-                database.lyricsCacheDao().getByTrackIdAndSourceId(trackId, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
-            },
+        val artworkOverrides = effectiveArtworkOverridesByTrackId(
+            database.lyricsCacheDao().getArtworkLocatorsByTrackIds(allIds),
         )
         val tracksById = database.trackDao().getByIds(allIds)
             .associateBy { it.id }

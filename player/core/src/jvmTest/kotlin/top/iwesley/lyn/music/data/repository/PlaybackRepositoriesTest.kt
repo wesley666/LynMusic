@@ -1053,6 +1053,58 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
+    fun `automatic artwork override survives repeat one natural reload`() = runTest {
+        val database = createTestDatabase()
+        val gateway = FakePlaybackGateway()
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val trackEntity = sampleTrackEntity("track-1", "First Song")
+        database.trackDao().upsertAll(listOf(trackEntity))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = "track-1",
+                sourceId = "auto-lyrics",
+                rawPayload = "auto line",
+                updatedAt = 1L,
+                artworkLocator = "/tmp/auto.jpg",
+            ),
+        )
+        database.playbackQueueSnapshotDao().upsert(
+            PlaybackQueueSnapshotEntity(
+                queueTrackIds = "track-1",
+                currentIndex = 0,
+                positionMs = 0L,
+                mode = PlaybackMode.REPEAT_ONE.name,
+                updatedAt = 1L,
+            ),
+        )
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+        )
+
+        try {
+            advanceUntilIdle()
+            assertEquals(PlaybackMode.REPEAT_ONE, repository.snapshot.value.mode)
+            assertEquals("/tmp/auto.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
+
+            gateway.emitCompletion()
+            advanceUntilIdle()
+
+            assertEquals(PlaybackMode.REPEAT_ONE, repository.snapshot.value.mode)
+            assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
+            assertEquals("/tmp/auto.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
+            assertEquals("/tmp/auto.jpg", gateway.loadCalls.last().track.artworkLocator)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
     fun `concurrent skip next commands keep latest requested track while stale load finishes later`() = runTest {
         val database = createTestDatabase()
         val gateway = BlockingPlaybackGateway()
@@ -1150,6 +1202,7 @@ class PlaybackRepositoriesTest {
             assertEquals("/tmp/manual.jpg", gateway.loadCalls.single().track.artworkLocator)
 
             database.lyricsCacheDao().deleteByTrackIdAndSourceId("track-1", MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
+            advanceUntilIdle()
             database.trackDao().upsertAll(listOf(trackEntity.copy(modifiedAt = 1L)))
             advanceUntilIdle()
 
