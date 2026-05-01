@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -463,6 +464,10 @@ private fun LibraryBrowserTab(
         rootView == LibraryBrowserRootView.Artists -> artistsListState
         else -> tracksListState
     }
+    val useDesktopToolbar = useDesktopLibraryBrowserToolbar(
+        showSearchField = showSearchField,
+        showDuration = showDuration,
+    )
 
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -492,52 +497,52 @@ private fun LibraryBrowserTab(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 },
-                                modifier = Modifier.weight(1f),
+                                modifier = if (useDesktopToolbar) {
+                                    Modifier.width(desktopLibrarySearchFieldWidthDp().dp)
+                                } else {
+                                    Modifier.weight(1f)
+                                },
                                 shape = RoundedCornerShape(22.dp),
                                 colors = searchFieldColors,
-                                trailingIcon = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box {
-                                            IconButton(onClick = { sourceFilterMenuExpanded = true }) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.MoreVert,
-                                                    contentDescription = "选择来源",
-                                                )
-                                            }
-                                            LibrarySourceFilterDropdownMenu(
-                                                expanded = sourceFilterMenuExpanded,
-                                                availableSourceFilters = state.availableSourceFilters,
-                                                selectedSourceFilter = state.selectedSourceFilter,
-                                                onDismiss = { sourceFilterMenuExpanded = false },
-                                                onSourceFilterChanged = { filter ->
-                                                    sourceFilterMenuExpanded = false
-                                                    onSourceFilterChanged(filter)
-                                                },
-                                            )
-                                        }
-                                        if (showTrackSortMenu) {
-                                            Box {
-                                                IconButton(onClick = { trackSortMenuExpanded = true }) {
-                                                    Icon(
-                                                        imageVector = Icons.Rounded.Tune,
-                                                        contentDescription = "歌曲排序",
-                                                    )
-                                                }
-                                                TrackSortDropdownMenu(
-                                                    expanded = trackSortMenuExpanded,
-                                                    selectedTrackSortMode = state.selectedTrackSortMode,
-                                                    onDismiss = { trackSortMenuExpanded = false },
-                                                    onTrackSortChanged = { mode ->
-                                                        trackSortMenuExpanded = false
-                                                        onTrackSortChanged(mode)
-                                                    },
-                                                )
-                                            }
-                                        }
-                                        actionButton?.invoke()
+                                trailingIcon = if (useDesktopToolbar) {
+                                    desktopLibrarySearchTrailingIcon(
+                                        query = state.query,
+                                        onClearSearch = { onSearchChanged("") },
+                                    )
+                                } else {
+                                    {
+                                        LibraryBrowserToolbarActions(
+                                            availableSourceFilters = state.availableSourceFilters,
+                                            selectedSourceFilter = state.selectedSourceFilter,
+                                            sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                                            onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                                            onSourceFilterChanged = onSourceFilterChanged,
+                                            showTrackSortMenu = showTrackSortMenu,
+                                            selectedTrackSortMode = state.selectedTrackSortMode,
+                                            trackSortMenuExpanded = trackSortMenuExpanded,
+                                            onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                                            onTrackSortChanged = onTrackSortChanged,
+                                            actionButton = actionButton,
+                                        )
                                     }
                                 },
                             )
+                            if (useDesktopToolbar) {
+                                Spacer(Modifier.weight(1f))
+                                LibraryBrowserToolbarActions(
+                                    availableSourceFilters = state.availableSourceFilters,
+                                    selectedSourceFilter = state.selectedSourceFilter,
+                                    sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                                    onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                                    onSourceFilterChanged = onSourceFilterChanged,
+                                    showTrackSortMenu = showTrackSortMenu,
+                                    selectedTrackSortMode = state.selectedTrackSortMode,
+                                    trackSortMenuExpanded = trackSortMenuExpanded,
+                                    onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                                    onTrackSortChanged = onTrackSortChanged,
+                                    actionButton = actionButton,
+                                )
+                            }
                         }
                     } else {
                         Row(
@@ -826,6 +831,110 @@ private fun Track.artistLibraryIdOrNull(): String? {
 private fun Track.albumLibraryIdOrNull(): String? {
     val title = albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: return null
     return libraryAlbumId(artistName, title)
+}
+
+internal fun desktopLibrarySearchFieldWidthDp(): Int = 360
+
+internal fun shouldShowDesktopLibrarySearchClearButton(query: String): Boolean = query.isNotBlank()
+
+internal fun useDesktopLibraryBrowserToolbar(
+    showSearchField: Boolean,
+    showDuration: Boolean,
+): Boolean = showSearchField && showDuration
+
+internal data class DesktopLibraryToolbarActions(
+    val showsSourceFilter: Boolean,
+    val showsTrackSort: Boolean,
+    val showsActionButton: Boolean,
+)
+
+internal fun resolveDesktopLibraryToolbarActions(
+    showSearchField: Boolean,
+    showDuration: Boolean,
+    showTrackSortMenu: Boolean,
+    hasActionButton: Boolean,
+): DesktopLibraryToolbarActions {
+    val usesDesktopToolbar = useDesktopLibraryBrowserToolbar(showSearchField, showDuration)
+    return DesktopLibraryToolbarActions(
+        showsSourceFilter = usesDesktopToolbar,
+        showsTrackSort = usesDesktopToolbar && showTrackSortMenu,
+        showsActionButton = usesDesktopToolbar && hasActionButton,
+    )
+}
+
+@Composable
+private fun desktopLibrarySearchTrailingIcon(
+    query: String,
+    onClearSearch: () -> Unit,
+): (@Composable () -> Unit)? {
+    return if (shouldShowDesktopLibrarySearchClearButton(query)) {
+        {
+            IconButton(onClick = onClearSearch) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "清空搜索",
+                )
+            }
+        }
+    } else {
+        null
+    }
+}
+
+@Composable
+private fun LibraryBrowserToolbarActions(
+    availableSourceFilters: List<LibrarySourceFilter>,
+    selectedSourceFilter: LibrarySourceFilter,
+    sourceFilterMenuExpanded: Boolean,
+    onSourceFilterMenuExpandedChange: (Boolean) -> Unit,
+    onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+    showTrackSortMenu: Boolean,
+    selectedTrackSortMode: TrackSortMode,
+    trackSortMenuExpanded: Boolean,
+    onTrackSortMenuExpandedChange: (Boolean) -> Unit,
+    onTrackSortChanged: (TrackSortMode) -> Unit,
+    actionButton: (@Composable () -> Unit)?,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            IconButton(onClick = { onSourceFilterMenuExpandedChange(true) }) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreVert,
+                    contentDescription = "选择来源",
+                )
+            }
+            LibrarySourceFilterDropdownMenu(
+                expanded = sourceFilterMenuExpanded,
+                availableSourceFilters = availableSourceFilters,
+                selectedSourceFilter = selectedSourceFilter,
+                onDismiss = { onSourceFilterMenuExpandedChange(false) },
+                onSourceFilterChanged = { filter ->
+                    onSourceFilterMenuExpandedChange(false)
+                    onSourceFilterChanged(filter)
+                },
+            )
+        }
+        if (showTrackSortMenu) {
+            Box {
+                IconButton(onClick = { onTrackSortMenuExpandedChange(true) }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Tune,
+                        contentDescription = "歌曲排序",
+                    )
+                }
+                TrackSortDropdownMenu(
+                    expanded = trackSortMenuExpanded,
+                    selectedTrackSortMode = selectedTrackSortMode,
+                    onDismiss = { onTrackSortMenuExpandedChange(false) },
+                    onTrackSortChanged = { mode ->
+                        onTrackSortMenuExpandedChange(false)
+                        onTrackSortChanged(mode)
+                    },
+                )
+            }
+        }
+        actionButton?.invoke()
+    }
 }
 
 private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String {
