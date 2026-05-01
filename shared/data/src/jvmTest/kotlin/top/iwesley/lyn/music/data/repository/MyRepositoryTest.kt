@@ -281,6 +281,58 @@ class MyRepositoryTest {
 
         assertEquals("fresh", ranked.first())
     }
+
+    @Test
+    fun `daily recommendation ranking avoids duplicate normalized titles when unique titles are available`() {
+        val now = 10_000_000_000L
+        val tracks = listOf(
+            trackEntity("same-liked", "local-1", "Same Song", null, null, artistName = "Artist A", addedAt = now - 90.daysMs()),
+            trackEntity("same-plain", "local-1", " same song ", null, null, artistName = "Artist B", addedAt = now - 90.daysMs()),
+            trackEntity("unique-a", "local-1", "Unique A", null, null, artistName = "Artist C", addedAt = now - 90.daysMs()),
+            trackEntity("unique-b", "local-1", "Unique B", null, null, artistName = "Artist D", addedAt = now - 90.daysMs()),
+        )
+
+        val ranked = rankDailyRecommendationTrackIds(
+            tracks = tracks,
+            favoriteTracks = listOf(favoriteEntity("same-liked")),
+            trackStats = emptyMap(),
+            recentRecommendationTrackIds = emptySet(),
+            dateKey = "2026-05-01",
+            nowMs = now,
+            limit = 3,
+        )
+
+        assertEquals(3, ranked.size)
+        assertTrue("same-liked" in ranked)
+        assertTrue("same-plain" !in ranked)
+        assertEquals(
+            ranked.size,
+            ranked.map { id -> tracks.first { it.id == id }.title.trim().lowercase() }.toSet().size,
+        )
+    }
+
+    @Test
+    fun `daily recommendation ranking allows duplicate titles when unique titles cannot fill limit`() {
+        val now = 10_000_000_000L
+        val tracks = listOf(
+            trackEntity("same-a", "local-1", "Same Song", null, null, addedAt = now - 90.daysMs()),
+            trackEntity("same-b", "local-1", "Same Song", null, null, addedAt = now - 90.daysMs()),
+            trackEntity("same-c", "local-1", "Same Song", null, null, addedAt = now - 90.daysMs()),
+        )
+
+        val ranked = rankDailyRecommendationTrackIds(
+            tracks = tracks,
+            favoriteTracks = emptyList(),
+            trackStats = emptyMap(),
+            recentRecommendationTrackIds = emptySet(),
+            dateKey = "2026-05-01",
+            nowMs = now,
+            limit = 3,
+        )
+
+        assertEquals(3, ranked.size)
+        assertEquals(tracks.map { it.id }.toSet(), ranked.toSet())
+    }
 }
 
 private fun createMyTestDatabase(): LynMusicDatabase {

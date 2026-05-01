@@ -429,6 +429,7 @@ internal fun rankDailyRecommendationTrackIds(
             val stats = trackStats[track.id]
             val artistKey = track.artistName.recommendationTextKey()
             val albumKey = track.albumId.recommendationTextKey() ?: track.albumTitle.recommendationTextKey()
+            val titleKey = track.title.recommendationTextKey()
             val playCount = stats?.playCount ?: 0
             val seededHash = stableRecommendationHash(dateKey, track.id)
             var score = 0.0
@@ -452,6 +453,7 @@ internal fun rankDailyRecommendationTrackIds(
                 seededHash = seededHash,
                 artistKey = artistKey,
                 albumKey = albumKey,
+                titleKey = titleKey,
             )
         }
         .sortedWith(
@@ -462,18 +464,33 @@ internal fun rankDailyRecommendationTrackIds(
         )
     val selected = mutableListOf<DailyRecommendationCandidate>()
     val selectedIds = mutableSetOf<String>()
+    val selectedTitleKeys = mutableSetOf<String>()
     val artistCounts = mutableMapOf<String, Int>()
     val albumCounts = mutableMapOf<String, Int>()
     scored.forEach { candidate ->
         if (selected.size >= limit) return@forEach
+        if (candidate.titleKey != null && candidate.titleKey in selectedTitleKeys) return@forEach
         val artistCount = candidate.artistKey?.let { artistCounts[it] } ?: 0
         val albumCount = candidate.albumKey?.let { albumCounts[it] } ?: 0
         if (artistCount >= DAILY_RECOMMENDATION_ARTIST_LIMIT) return@forEach
         if (albumCount >= DAILY_RECOMMENDATION_ALBUM_LIMIT) return@forEach
         selected += candidate
         selectedIds += candidate.track.id
+        candidate.titleKey?.let(selectedTitleKeys::add)
         candidate.artistKey?.let { artistCounts[it] = artistCount + 1 }
         candidate.albumKey?.let { albumCounts[it] = albumCount + 1 }
+    }
+    if (selected.size < limit) {
+        scored.forEach { candidate ->
+            if (selected.size >= limit) return@forEach
+            if (candidate.track.id !in selectedIds &&
+                (candidate.titleKey == null || candidate.titleKey !in selectedTitleKeys)
+            ) {
+                selected += candidate
+                selectedIds += candidate.track.id
+                candidate.titleKey?.let(selectedTitleKeys::add)
+            }
+        }
     }
     if (selected.size < limit) {
         scored.forEach { candidate ->
@@ -570,6 +587,7 @@ private data class DailyRecommendationCandidate(
     val seededHash: Long,
     val artistKey: String?,
     val albumKey: String?,
+    val titleKey: String?,
 )
 
 private const val DEFAULT_RECENT_ITEM_LIMIT = 20
