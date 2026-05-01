@@ -8,13 +8,13 @@ import kotlin.test.assertTrue
 class DesktopLibraryToolbarTest {
     @Test
     fun `desktop library search field width is fixed`() {
-        assertEquals(360, desktopLibrarySearchFieldWidthDp())
+        assertEquals(200, desktopLibrarySearchFieldWidthDp())
     }
 
     @Test
     fun `desktop library search field height and corner radius are compact`() {
         assertEquals(40, desktopLibrarySearchFieldHeightDp())
-        assertEquals(14, desktopLibrarySearchFieldCornerRadiusDp())
+        assertEquals(8, desktopLibrarySearchFieldCornerRadiusDp())
     }
 
     @Test

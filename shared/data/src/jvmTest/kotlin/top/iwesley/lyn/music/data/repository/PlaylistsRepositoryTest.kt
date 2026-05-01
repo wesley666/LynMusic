@@ -21,6 +21,8 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.LyricsCacheEntity
+import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
@@ -45,6 +47,108 @@ class PlaylistsRepositoryTest {
         assertNotNull(detail)
         assertEquals(listOf(localTrack().id), detail.tracks.map { it.track.id })
         assertEquals(setOf(localTrack().id), repository.playlists.first().first().memberTrackIds)
+    }
+
+    @Test
+    fun `playlist summary artwork uses newest visible playlist track`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        database.trackDao().upsertAll(
+            listOf(
+                localTrackEntity(id = "track-old", title = "Old", artworkLocator = "/art/old.jpg"),
+                localTrackEntity(id = "track-new", title = "New", artworkLocator = "/art/new.jpg"),
+            ),
+        )
+        val repository = playlistRepository(database)
+        val playlist = repository.createPlaylist("封面测试").getOrThrow()
+        database.playlistTrackDao().upsertAll(
+            listOf(
+                playlistTrackEntity(playlist.id, "track-old", addedAt = 10L, localOrdinal = 0),
+                playlistTrackEntity(playlist.id, "track-new", addedAt = 20L, localOrdinal = 1),
+            ),
+        )
+
+        val summary = repository.playlists.first().single()
+
+        assertEquals("/art/new.jpg", summary.artworkLocator)
+    }
+
+    @Test
+    fun `playlist summary artwork ignores disabled sources and missing tracks`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity(sourceId = "enabled"))
+        database.importSourceDao().upsert(localSourceEntity(sourceId = "disabled", enabled = false))
+        database.trackDao().upsertAll(
+            listOf(
+                localTrackEntity(id = "track-enabled", sourceId = "enabled", artworkLocator = "/art/enabled.jpg"),
+                localTrackEntity(id = "track-disabled", sourceId = "disabled", artworkLocator = "/art/disabled.jpg"),
+            ),
+        )
+        val repository = playlistRepository(database)
+        val playlist = repository.createPlaylist("过滤测试").getOrThrow()
+        database.playlistTrackDao().upsertAll(
+            listOf(
+                playlistTrackEntity(playlist.id, "track-enabled", sourceId = "enabled", addedAt = 10L),
+                playlistTrackEntity(playlist.id, "track-disabled", sourceId = "disabled", addedAt = 30L),
+                playlistTrackEntity(playlist.id, "track-missing", sourceId = "enabled", addedAt = 40L),
+            ),
+        )
+
+        val summary = repository.playlists.first().single()
+
+        assertEquals(1, summary.trackCount)
+        assertEquals("/art/enabled.jpg", summary.artworkLocator)
+    }
+
+    @Test
+    fun `playlist summary artwork uses artwork override`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        database.trackDao().upsertAll(
+            listOf(localTrackEntity(id = "track-override", artworkLocator = "/art/original.jpg")),
+        )
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = "track-override",
+                sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                rawPayload = "",
+                updatedAt = 100L,
+                artworkLocator = "/art/manual.jpg",
+            ),
+        )
+        val repository = playlistRepository(database)
+        val playlist = repository.createPlaylist("覆盖测试").getOrThrow()
+        database.playlistTrackDao().upsert(
+            playlistTrackEntity(playlist.id, "track-override", addedAt = 10L),
+        )
+
+        val summary = repository.playlists.first().single()
+
+        assertEquals("/art/manual.jpg", summary.artworkLocator)
+    }
+
+    @Test
+    fun `playlist summary artwork resolves same time by newer ordinal`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(localSourceEntity())
+        database.trackDao().upsertAll(
+            listOf(
+                localTrackEntity(id = "track-low", title = "Low", artworkLocator = "/art/low.jpg"),
+                localTrackEntity(id = "track-high", title = "High", artworkLocator = "/art/high.jpg"),
+            ),
+        )
+        val repository = playlistRepository(database)
+        val playlist = repository.createPlaylist("顺序测试").getOrThrow()
+        database.playlistTrackDao().upsertAll(
+            listOf(
+                playlistTrackEntity(playlist.id, "track-low", addedAt = 10L, localOrdinal = 1),
+                playlistTrackEntity(playlist.id, "track-high", addedAt = 10L, localOrdinal = null, remoteOrdinal = 2),
+            ),
+        )
+
+        val summary = repository.playlists.first().single()
+
+        assertEquals("/art/high.jpg", summary.artworkLocator)
     }
 
     @Test
@@ -352,6 +456,15 @@ private fun createPlaylistTestDatabase(): LynMusicDatabase {
     )
 }
 
+private fun playlistRepository(database: LynMusicDatabase): RoomPlaylistRepository {
+    return RoomPlaylistRepository(
+        database = database,
+        secureCredentialStore = MapPlaylistSecureCredentialStore(),
+        httpClient = RecordingPlaylistsHttpClient(),
+        logger = NoopDiagnosticLogger,
+    )
+}
+
 private suspend fun seedNavidromeSource(
     database: LynMusicDatabase,
     sourceId: String,
@@ -377,7 +490,10 @@ private suspend fun seedNavidromeSource(
     )
 }
 
-private fun localSourceEntity(sourceId: String = "local-1"): ImportSourceEntity {
+private fun localSourceEntity(
+    sourceId: String = "local-1",
+    enabled: Boolean = true,
+): ImportSourceEntity {
     return ImportSourceEntity(
         id = sourceId,
         type = "LOCAL_FOLDER",
@@ -389,6 +505,7 @@ private fun localSourceEntity(sourceId: String = "local-1"): ImportSourceEntity 
         username = null,
         credentialKey = null,
         allowInsecureTls = false,
+        enabled = enabled,
         lastScannedAt = null,
         createdAt = 1L,
     )
@@ -407,11 +524,16 @@ private fun localTrack(): Track {
     )
 }
 
-private fun localTrackEntity(): TrackEntity {
+private fun localTrackEntity(
+    id: String = localTrack().id,
+    sourceId: String = "local-1",
+    title: String = "Morning Light",
+    artworkLocator: String? = null,
+): TrackEntity {
     return TrackEntity(
-        id = localTrack().id,
-        sourceId = "local-1",
-        title = "Morning Light",
+        id = id,
+        sourceId = sourceId,
+        title = title,
         artistId = "artist:artist a",
         artistName = "Artist A",
         albumId = "album:artist a:album one",
@@ -419,11 +541,29 @@ private fun localTrackEntity(): TrackEntity {
         durationMs = 210_000L,
         trackNumber = 1,
         discNumber = 1,
-        mediaLocator = "file:///music/morning-light.mp3",
-        relativePath = "Artist A/Morning Light.mp3",
-        artworkLocator = null,
+        mediaLocator = "file:///music/$id.mp3",
+        relativePath = "Artist A/$title.mp3",
+        artworkLocator = artworkLocator,
         sizeBytes = 0L,
         modifiedAt = 0L,
+    )
+}
+
+private fun playlistTrackEntity(
+    playlistId: String,
+    trackId: String,
+    sourceId: String = "local-1",
+    addedAt: Long,
+    localOrdinal: Int? = 0,
+    remoteOrdinal: Int? = null,
+): PlaylistTrackEntity {
+    return PlaylistTrackEntity(
+        playlistId = playlistId,
+        trackId = trackId,
+        sourceId = sourceId,
+        addedAt = addedAt,
+        localOrdinal = localOrdinal,
+        remoteOrdinal = remoteOrdinal,
     )
 }
 

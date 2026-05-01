@@ -66,6 +66,18 @@ class PlaylistsUiLogicTest {
         assertEquals("通勤", state.requestedPlaylistName)
     }
 
+    @Test
+    fun `playlist summary artwork locator ignores blank values`() {
+        assertNull(playlistSummaryArtworkLocator(PlaylistSummary(id = "empty", name = "空")))
+        assertNull(playlistSummaryArtworkLocator(PlaylistSummary(id = "blank", name = "空白", artworkLocator = " ")))
+        assertEquals(
+            "/art/latest.jpg",
+            playlistSummaryArtworkLocator(
+                PlaylistSummary(id = "cover", name = "封面", artworkLocator = "/art/latest.jpg"),
+            ),
+        )
+    }
+
     private fun samplePlaylists(): List<PlaylistSummary> = listOf(
         PlaylistSummary(id = "playlist-1", name = "晨跑"),
         PlaylistSummary(id = "playlist-2", name = "通勤"),

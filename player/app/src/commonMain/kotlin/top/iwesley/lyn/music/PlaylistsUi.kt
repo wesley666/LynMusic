@@ -76,6 +76,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.iwesley.lyn.music.core.model.PlaylistAddTarget
@@ -994,10 +995,7 @@ private fun PlaylistSummaryCard(
             colors = CardDefaults.cardColors(
                 containerColor = if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardContainer,
             ),
-            border = BorderStroke(
-                1.dp,
-                if (selected) MaterialTheme.colorScheme.secondary else shellColors.cardBorder,
-            ),
+            border = null,
         ) {
             Row(
                 modifier = Modifier
@@ -1006,25 +1004,16 @@ private fun PlaylistSummaryCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            if (selected) Color.Transparent else shellColors.navContainer,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.List,
-                        contentDescription = null,
-                        tint = if (selected) {
-                            MaterialTheme.colorScheme.onSecondary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                    )
-                }
+                PlaylistArtworkThumbnail(
+                    artworkLocator = playlistSummaryArtworkLocator(playlist),
+                    cornerRadius = 8.dp,
+                    containerColor = if (selected) Color.Transparent else shellColors.navContainer,
+                    fallbackTint = if (selected) {
+                        MaterialTheme.colorScheme.onSecondary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         playlist.name,
@@ -1067,6 +1056,10 @@ private fun PlaylistSummaryCard(
             )
         }
     }
+}
+
+internal fun playlistSummaryArtworkLocator(playlist: PlaylistSummary): String? {
+    return playlist.artworkLocator?.takeIf { it.isNotBlank() }
 }
 
 @Composable
@@ -1399,13 +1392,18 @@ private fun PlaylistSectionTitle(
 private fun PlaylistArtworkThumbnail(
     artworkLocator: String?,
     modifier: Modifier = Modifier,
+    cornerRadius: Dp = 1.dp,
+    containerColor: Color? = null,
+    fallbackTint: Color? = null,
 ) {
     val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
+    val resolvedContainerColor = containerColor ?: mainShellColors.cardContainer
+    val resolvedFallbackTint = fallbackTint ?: MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = modifier
             .size(52.dp)
-            .clip(RoundedCornerShape(1.dp))
-            .background(mainShellColors.cardContainer)
+            .clip(RoundedCornerShape(cornerRadius))
+            .background(resolvedContainerColor)
             .padding(0.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -1420,7 +1418,7 @@ private fun PlaylistArtworkThumbnail(
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.List,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = resolvedFallbackTint,
                 modifier = Modifier.size(24.dp),
             )
         }

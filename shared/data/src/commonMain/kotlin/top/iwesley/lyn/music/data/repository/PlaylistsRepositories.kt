@@ -52,15 +52,20 @@ class RoomPlaylistRepository(
             entity.id to entity.toDomain(artworkOverrides[entity.id])
         }
         playlists.map { playlist ->
-            val memberTrackIds = playlistTracks.asSequence()
+            val visiblePlaylistTracks = playlistTracks.asSequence()
                 .filter {
                     it.playlistId == playlist.id &&
                         it.sourceId in enabledSourceIds &&
                         trackById.containsKey(it.trackId)
                 }
+                .toList()
+            val memberTrackIds = visiblePlaylistTracks.asSequence()
                 .map { it.trackId }
                 .toCollection(linkedSetOf())
-            playlist.toSummary(memberTrackIds)
+            playlist.toSummary(
+                memberTrackIds = memberTrackIds,
+                artworkLocator = visiblePlaylistTracks.latestPlaylistArtworkLocator(trackById),
+            )
         }
     }
 
@@ -474,7 +479,10 @@ class RoomPlaylistRepository(
     }
 }
 
-private fun PlaylistEntity.toSummary(memberTrackIds: Set<String> = emptySet()): PlaylistSummary {
+private fun PlaylistEntity.toSummary(
+    memberTrackIds: Set<String> = emptySet(),
+    artworkLocator: String? = null,
+): PlaylistSummary {
     return PlaylistSummary(
         id = id,
         name = name,
@@ -482,7 +490,16 @@ private fun PlaylistEntity.toSummary(memberTrackIds: Set<String> = emptySet()): 
         trackCount = memberTrackIds.size,
         updatedAt = updatedAt,
         memberTrackIds = memberTrackIds,
+        artworkLocator = artworkLocator,
     )
+}
+
+private fun List<PlaylistTrackEntity>.latestPlaylistArtworkLocator(trackById: Map<String, Track>): String? {
+    val latestTrack = maxWithOrNull(
+        compareBy<PlaylistTrackEntity> { it.addedAt }
+            .thenBy { it.localOrdinal ?: it.remoteOrdinal ?: -1 },
+    ) ?: return null
+    return trackById[latestTrack.trackId]?.artworkLocator?.takeIf { it.isNotBlank() }
 }
 
 private fun PlaylistEntity.toDetail(

@@ -97,6 +97,7 @@ data class PlaylistSummary(
     val trackCount: Int = 0,
     val updatedAt: Long = 0L,
     val memberTrackIds: Set<String> = emptySet(),
+    val artworkLocator: String? = null,
 )
 
 data class PlaylistDetail(
