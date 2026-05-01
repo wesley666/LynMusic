@@ -14,6 +14,7 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
@@ -41,19 +42,18 @@ private suspend fun loadAndroidArtworkBitmap(
             isRemoteArtworkTarget(target) -> {
                 val cacheDirectory = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
                 val cacheKey = normalizedLocator.stableArtworkCacheHash()
-                val existingCacheFile = cacheDirectory
-                    .listFiles()
-                    ?.firstOrNull { file -> file.isFile && file.name.startsWith(cacheKey) && file.length() > 0L }
+                val existingCacheFile = findValidAndroidArtworkCacheFile(cacheDirectory, cacheKey)
                 if (existingCacheFile != null) {
                     BitmapFactory.decodeFile(existingCacheFile.absolutePath)
                 } else {
                     val payload = URL(target).openStream().use { it.readBytes() }
-                    if (payload.isEmpty()) return@runCatching null
+                    if (!isCompleteArtworkPayload(payload)) return@runCatching null
                     if (cacheRemote) {
-                        val cacheFile = cacheDirectory.resolve(
-                            "$cacheKey${inferArtworkFileExtension(locator = target, bytes = payload)}",
+                        writeAndroidArtworkCacheFileAtomically(
+                            directory = cacheDirectory,
+                            fileName = "$cacheKey${inferArtworkFileExtension(locator = target, bytes = payload)}",
+                            payload = payload,
                         )
-                        runCatching { cacheFile.writeBytes(payload) }
                     }
                     BitmapFactory.decodeByteArray(payload, 0, payload.size)
                 }
@@ -70,3 +70,62 @@ private suspend fun loadAndroidArtworkBitmap(
 private fun isRemoteArtworkTarget(target: String): Boolean {
     return target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)
 }
+
+private fun findValidAndroidArtworkCacheFile(directory: File, cacheKey: String): File? {
+    return directory.listFiles()
+        ?.asSequence()
+        ?.filter { file ->
+            file.isFile &&
+                file.name.startsWith(cacheKey) &&
+                !file.name.contains(ANDROID_ARTWORK_CACHE_TEMP_MARKER) &&
+                file.length() > 0L
+        }
+        ?.firstOrNull { file ->
+            val valid = runCatching { isCompleteArtworkPayload(file.readBytes()) }.getOrDefault(false)
+            if (!valid) {
+                runCatching { file.delete() }
+            }
+            valid
+        }
+}
+
+private fun writeAndroidArtworkCacheFileAtomically(
+    directory: File,
+    fileName: String,
+    payload: ByteArray,
+): File? {
+    if (!isCompleteArtworkPayload(payload)) return null
+    val output = directory.resolve(fileName)
+    if (output.exists() && output.length() > 0L) {
+        if (runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)) {
+            return output
+        }
+        runCatching { output.delete() }
+    }
+    val temporary = directory.resolve("$fileName$ANDROID_ARTWORK_CACHE_TEMP_MARKER${System.nanoTime()}")
+    return runCatching {
+        temporary.writeBytes(payload)
+        if (temporary.length() != payload.size.toLong()) {
+            return@runCatching null
+        }
+        if (output.exists() && runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)) {
+            return@runCatching output
+        }
+        runCatching { output.delete() }
+        if (!temporary.renameTo(output)) {
+            temporary.copyTo(output, overwrite = true)
+            temporary.delete()
+        }
+        output.takeIf {
+            it.exists() &&
+                it.length() > 0L &&
+                runCatching { isCompleteArtworkPayload(it.readBytes()) }.getOrDefault(false)
+        }
+    }.also {
+        if (temporary.exists()) {
+            runCatching { temporary.delete() }
+        }
+    }.getOrNull()
+}
+
+private const val ANDROID_ARTWORK_CACHE_TEMP_MARKER = ".tmp-"

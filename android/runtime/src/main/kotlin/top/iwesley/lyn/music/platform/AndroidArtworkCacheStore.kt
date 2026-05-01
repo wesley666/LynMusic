@@ -6,6 +6,7 @@ import java.net.URI
 import java.net.URL
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
@@ -27,18 +28,67 @@ private class AndroidArtworkCacheStore(
                 return@runCatching target
             }
             val cachePrefix = cacheKey.stableArtworkCacheHash()
-            directory.listFiles()
-                ?.firstOrNull { file -> file.isFile && file.name.startsWith(cachePrefix) && file.length() > 0L }
+            findValidArtworkCacheFile(cachePrefix)
                 ?.let { return@runCatching it.absolutePath }
             val payload = URL(target).openStream().use { it.readBytes() }
-            if (payload.isEmpty()) return@runCatching null
+            if (!isCompleteArtworkPayload(payload)) return@runCatching null
             val fileName = "$cachePrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
-            val output = File(directory, fileName)
-            if (output.exists() && output.length() > 0L) {
-                return@runCatching output.absolutePath
+            writeArtworkCacheFileAtomically(fileName, payload)?.absolutePath
+        }.getOrNull()
+    }
+
+    private fun findValidArtworkCacheFile(cachePrefix: String): File? {
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith(cachePrefix) &&
+                    !file.name.contains(ARTWORK_CACHE_TEMP_MARKER) &&
+                    file.length() > 0L
             }
-            output.writeBytes(payload)
-            output.absolutePath.takeIf { output.length() > 0L }
+            ?.firstOrNull { file ->
+                val valid = runCatching { isCompleteArtworkPayload(file.readBytes()) }.getOrDefault(false)
+                if (!valid) {
+                    runCatching { file.delete() }
+                }
+                valid
+            }
+    }
+
+    private fun writeArtworkCacheFileAtomically(fileName: String, payload: ByteArray): File? {
+        if (!isCompleteArtworkPayload(payload)) return null
+        val output = File(directory, fileName)
+        if (output.exists() && output.length() > 0L) {
+            if (runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)) {
+                return output
+            }
+            runCatching { output.delete() }
+        }
+        val temporary = File(directory, "$fileName$ARTWORK_CACHE_TEMP_MARKER${System.nanoTime()}")
+        return runCatching {
+            temporary.writeBytes(payload)
+            if (temporary.length() != payload.size.toLong()) {
+                return@runCatching null
+            }
+            if (output.exists() && runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)) {
+                return@runCatching output
+            }
+            runCatching { output.delete() }
+            if (!temporary.renameTo(output)) {
+                temporary.copyTo(output, overwrite = true)
+                temporary.delete()
+            }
+            output.takeIf {
+                it.exists() &&
+                    it.length() > 0L &&
+                    runCatching { isCompleteArtworkPayload(it.readBytes()) }.getOrDefault(false)
+            }
+        }.also {
+            if (temporary.exists()) {
+                runCatching { temporary.delete() }
+            }
         }.getOrNull()
     }
 }
+
+private const val ARTWORK_CACHE_TEMP_MARKER = ".tmp-"

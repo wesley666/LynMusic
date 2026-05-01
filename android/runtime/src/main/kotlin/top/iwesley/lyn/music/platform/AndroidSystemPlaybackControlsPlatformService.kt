@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -19,12 +18,10 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
 import androidx.core.content.ContextCompat
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemAudioFocusChange
 import top.iwesley.lyn.music.core.model.SystemAudioFocusCommand
@@ -124,8 +121,11 @@ private class AndroidSystemPlaybackControlsPlatformService(
 
     override suspend fun updateSnapshot(snapshot: PlaybackSnapshot) {
         val previous = latestSnapshot
+        val previousArtworkKey = lastArtworkKey
+        val previousArtworkBitmap = lastArtworkBitmap
         latestSnapshot = snapshot
         lastArtworkBitmap = resolveArtworkBitmap(snapshot.currentDisplayArtworkLocator)
+        val artworkStateChanged = previousArtworkKey != lastArtworkKey || previousArtworkBitmap !== lastArtworkBitmap
         updateMediaSession(snapshot)
         updateAudioFocus(snapshot)
         updateNoisyReceiver(snapshot)
@@ -134,7 +134,7 @@ private class AndroidSystemPlaybackControlsPlatformService(
             AndroidPlaybackNotificationService.stop(context)
             return
         }
-        if (shouldRefreshNotification(previous, snapshot)) {
+        if (shouldRefreshNotification(previous, snapshot) || artworkStateChanged) {
             lastNotificationKey = AndroidNotificationKey.from(snapshot)
             val keepForeground = shouldKeepPlaybackNotificationForeground(
                 isPlaying = snapshot.isPlaying,
@@ -233,12 +233,20 @@ private class AndroidSystemPlaybackControlsPlatformService(
 
     private suspend fun resolveArtworkBitmap(locator: String?): Bitmap? {
         val normalized = locator?.trim().orEmpty().ifBlank { null }
-        if (normalized == lastArtworkKey) return lastArtworkBitmap
-        lastArtworkKey = normalized
-        lastArtworkBitmap = withContext(Dispatchers.IO) {
-            val target = normalized?.let { artworkCacheStore.cache(it, it) } ?: return@withContext null
-            BitmapFactory.decodeFile(File(target).absolutePath)
+        if (normalized == null) {
+            lastArtworkKey = null
+            lastArtworkBitmap = null
+            return null
         }
+        if (normalized == lastArtworkKey && lastArtworkBitmap != null) return lastArtworkBitmap
+        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(normalized, artworkCacheStore)
+        if (resolvedBitmap == null) {
+            lastArtworkKey = null
+            lastArtworkBitmap = null
+            return null
+        }
+        lastArtworkKey = normalized
+        lastArtworkBitmap = resolvedBitmap
         return lastArtworkBitmap
     }
 
@@ -264,6 +272,8 @@ private class AndroidSystemPlaybackControlsPlatformService(
                 .apply {
                     lastArtworkBitmap?.let { bitmap ->
                         putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap)
+                        putBitmap(MediaMetadata.METADATA_KEY_ART, bitmap)
+                        putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, bitmap)
                     }
                 }
                 .build(),

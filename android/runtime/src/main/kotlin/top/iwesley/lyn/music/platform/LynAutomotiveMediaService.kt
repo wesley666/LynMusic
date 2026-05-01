@@ -1,7 +1,7 @@
 package top.iwesley.lyn.music.platform
 
 import android.content.Context
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat
 import android.support.v4.media.MediaDescriptionCompat
@@ -9,7 +9,6 @@ import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.media.MediaBrowserServiceCompat
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -221,7 +220,7 @@ private class AutomotiveMediaSessionControls(
     private val artworkCacheStore = createAndroidArtworkCacheStore(context)
     private var callbacks = SystemPlaybackControlCallbacks()
     private var latestArtworkKey: String? = null
-    private var latestArtworkPath: String? = null
+    private var latestArtworkBitmap: Bitmap? = null
 
     override fun bind(callbacks: SystemPlaybackControlCallbacks) {
         this.callbacks = callbacks
@@ -229,7 +228,7 @@ private class AutomotiveMediaSessionControls(
 
     override suspend fun updateSnapshot(snapshot: PlaybackSnapshot) {
         mediaSession.isActive = snapshot.currentTrack != null
-        mediaSession.setMetadata(snapshot.toMediaMetadata(resolveArtworkPath(snapshot.currentDisplayArtworkLocator)))
+        mediaSession.setMetadata(snapshot.toMediaMetadata(resolveArtworkBitmap(snapshot.currentDisplayArtworkLocator)))
         mediaSession.setPlaybackState(snapshot.toPlaybackState())
     }
 
@@ -244,14 +243,23 @@ private class AutomotiveMediaSessionControls(
         )
     }
 
-    private suspend fun resolveArtworkPath(locator: String?): String? {
+    private suspend fun resolveArtworkBitmap(locator: String?): Bitmap? {
         val normalized = locator?.trim().orEmpty().ifBlank { null }
-        if (normalized == latestArtworkKey) return latestArtworkPath
-        latestArtworkKey = normalized
-        latestArtworkPath = withContext(Dispatchers.IO) {
-            normalized?.let { artworkCacheStore.cache(it, it) }
+        if (normalized == null) {
+            latestArtworkKey = null
+            latestArtworkBitmap = null
+            return null
         }
-        return latestArtworkPath
+        if (normalized == latestArtworkKey && latestArtworkBitmap != null) return latestArtworkBitmap
+        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(normalized, artworkCacheStore)
+        if (resolvedBitmap == null) {
+            latestArtworkKey = null
+            latestArtworkBitmap = null
+            return null
+        }
+        latestArtworkKey = normalized
+        latestArtworkBitmap = resolvedBitmap
+        return latestArtworkBitmap
     }
 }
 
@@ -420,7 +428,7 @@ private fun Track.toPlayableMediaItem(scope: String): MediaBrowserCompat.MediaIt
     return MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
 }
 
-private suspend fun PlaybackSnapshot.toMediaMetadata(artworkPath: String?): MediaMetadataCompat? {
+private fun PlaybackSnapshot.toMediaMetadata(artworkBitmap: Bitmap?): MediaMetadataCompat? {
     val track = currentTrack ?: return null
     val builder = MediaMetadataCompat.Builder()
         .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, CarMediaIds.track(CarMediaIds.SCOPE_ALL, track.id))
@@ -428,10 +436,11 @@ private suspend fun PlaybackSnapshot.toMediaMetadata(artworkPath: String?): Medi
         .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentDisplayArtistName ?: track.artistName.orEmpty())
         .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, currentDisplayAlbumTitle ?: track.albumTitle.orEmpty())
         .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs.coerceAtLeast(track.durationMs))
-    val bitmap = withContext(Dispatchers.IO) {
-        artworkPath?.let { BitmapFactory.decodeFile(File(it).absolutePath) }
+    artworkBitmap?.let { bitmap ->
+        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, bitmap)
+        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, bitmap)
+        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, bitmap)
     }
-    bitmap?.let { builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it) }
     return builder.build()
 }
 
