@@ -1244,13 +1244,22 @@ internal fun LyricsShareOverlay(
     val primaryTextColor = MaterialTheme.colorScheme.onSurface
     val secondaryTextColor = shellColors.secondaryText
     val bannerMessage = state.sharePreviewError ?: state.shareMessage
-    val exportActionsEnabled =
-        state.selectedLyricsLineIndices.isNotEmpty() && !state.isShareSaving && !state.isShareCopying
+    val exportActionsEnabled = isLyricsShareCopyMenuEnabled(
+        selectedLineCount = state.selectedLyricsLineIndices.size,
+        isSaving = state.isShareSaving,
+        isCopying = state.isShareCopying,
+    )
     var isFullscreenPreviewVisible by remember { mutableStateOf(false) }
+    var isCopyMenuExpanded by rememberSaveable { mutableStateOf(false) }
     val fullscreenPreviewEnabled = shouldEnableLyricsShareFullscreen(
         platform = platform,
         hasPreviewContent = state.shareCardModel != null,
     )
+    LaunchedEffect(exportActionsEnabled) {
+        if (!exportActionsEnabled) {
+            isCopyMenuExpanded = false
+        }
+    }
     LaunchedEffect(fullscreenPreviewEnabled) {
         if (!fullscreenPreviewEnabled) {
             isFullscreenPreviewVisible = false
@@ -1474,30 +1483,22 @@ internal fun LyricsShareOverlay(
                                     contentDescription = null,
                                 )
                             }
-                            OutlinedButton(
-                                onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                            LyricsShareCopyMenuButton(
                                 enabled = exportActionsEnabled,
+                                isCopying = state.isShareCopying,
+                                expanded = isCopyMenuExpanded,
+                                onExpandedChange = { isCopyMenuExpanded = it },
                                 modifier = Modifier
                                     .weight(1f)
                                     .semantics {
                                         contentDescription =
-                                            if (state.isShareCopying) "复制中" else "复制图片"
+                                            if (state.isShareCopying) "复制中" else "复制"
                                     },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                                iconOnly = true,
                                 contentPadding = mobileActionContentPadding,
-                            ) {
-                                if (state.isShareCopying) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Rounded.ContentCopy,
-                                        contentDescription = null,
-                                    )
-                                }
-                            }
+                                onCopyImage = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                                onCopyText = { onPlayerIntent(PlayerIntent.CopyLyricsShareText) },
+                            )
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
                                 enabled = exportActionsEnabled,
@@ -1558,13 +1559,14 @@ internal fun LyricsShareOverlay(
                                 Text("清空")
                             }
                             Spacer(Modifier.width(10.dp))
-                            OutlinedButton(
-                                onClick = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                            LyricsShareCopyMenuButton(
                                 enabled = exportActionsEnabled,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                            ) {
-                                Text(if (state.isShareCopying) "复制中..." else "复制图片")
-                            }
+                                isCopying = state.isShareCopying,
+                                expanded = isCopyMenuExpanded,
+                                onExpandedChange = { isCopyMenuExpanded = it },
+                                onCopyImage = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
+                                onCopyText = { onPlayerIntent(PlayerIntent.CopyLyricsShareText) },
+                            )
                             Spacer(Modifier.width(10.dp))
                             Button(
                                 onClick = { onPlayerIntent(PlayerIntent.SaveLyricsShareImage) },
@@ -1594,6 +1596,100 @@ internal fun LyricsShareOverlay(
         }
     }
 }
+
+@Composable
+private fun LyricsShareCopyMenuButton(
+    enabled: Boolean,
+    isCopying: Boolean,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onCopyImage: () -> Unit,
+    onCopyText: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconOnly: Boolean = false,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+) {
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { onExpandedChange(true) },
+            enabled = enabled,
+            modifier = if (iconOnly) Modifier.fillMaxWidth() else Modifier,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+            contentPadding = contentPadding,
+        ) {
+            if (isCopying) {
+                if (iconOnly) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text("复制中...")
+                }
+            } else if (iconOnly) {
+                Icon(
+                    imageVector = Icons.Rounded.ContentCopy,
+                    contentDescription = null,
+                )
+            } else {
+                Text("复制")
+            }
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        lyricsShareCopyMenuLabels().first(),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = {
+                    onExpandedChange(false)
+                    onCopyImage()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        lyricsShareCopyMenuLabels()[1],
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.TextFields,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = {
+                    onExpandedChange(false)
+                    onCopyText()
+                },
+            )
+        }
+    }
+}
+
+internal fun lyricsShareCopyMenuLabels(): List<String> = listOf("复制图片", "复制文字")
+
+internal fun isLyricsShareCopyMenuEnabled(
+    selectedLineCount: Int,
+    isSaving: Boolean,
+    isCopying: Boolean,
+): Boolean = selectedLineCount > 0 && !isSaving && !isCopying
 
 internal fun shouldEnableLyricsShareFullscreen(
     platform: PlatformDescriptor,

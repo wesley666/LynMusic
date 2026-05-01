@@ -134,6 +134,7 @@ sealed interface PlayerIntent {
     data object BuildLyricsSharePreview : PlayerIntent
     data object SaveLyricsShareImage : PlayerIntent
     data object CopyLyricsShareImage : PlayerIntent
+    data object CopyLyricsShareText : PlayerIntent
     data object ClearLyricsShareMessage : PlayerIntent
     data object ClearMessage : PlayerIntent
 }
@@ -268,6 +269,7 @@ class PlayerStore(
             PlayerIntent.BuildLyricsSharePreview -> rebuildLyricsSharePreview()
             PlayerIntent.SaveLyricsShareImage -> saveLyricsShareImage()
             PlayerIntent.CopyLyricsShareImage -> copyLyricsShareImage()
+            PlayerIntent.CopyLyricsShareText -> copyLyricsShareText()
             PlayerIntent.ClearLyricsShareMessage -> updateState {
                 it.copy(shareMessage = null, sharePreviewError = null)
             }
@@ -814,6 +816,27 @@ class PlayerStore(
         }
     }
 
+    private suspend fun copyLyricsShareText() {
+        val text = buildSelectedLyricsShareText(
+            lyrics = state.value.lyrics,
+            selectedLineIndices = state.value.selectedLyricsLineIndices,
+        ) ?: run {
+            updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
+            return
+        }
+        updateState { it.copy(isShareCopying = true, shareMessage = null) }
+        val result = lyricsSharePlatformService.copyText(text)
+        updateState {
+            it.copy(
+                isShareCopying = false,
+                shareMessage = result.fold(
+                    onSuccess = { "文字已复制" },
+                    onFailure = { throwable -> "复制文字失败: ${throwable.message.orEmpty()}" },
+                ),
+            )
+        }
+    }
+
     private suspend fun obtainLyricsSharePreviewBytes(): ByteArray? {
         if (state.value.selectedLyricsLineIndices.isEmpty()) {
             updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
@@ -1099,6 +1122,20 @@ class PlayerStore(
             else -> false
         }
     }
+}
+
+internal fun buildSelectedLyricsShareText(
+    lyrics: LyricsDocument?,
+    selectedLineIndices: Set<Int>,
+): String? {
+    val selectedLines = lyrics?.lines.orEmpty()
+        .mapIndexedNotNull { index, line ->
+            if (index !in selectedLineIndices) return@mapIndexedNotNull null
+            line.text.trim().takeIf { text ->
+                text.isNotEmpty() && !isPlayerLyricsStructureTagLine(text)
+            }
+        }
+    return selectedLines.takeIf { it.isNotEmpty() }?.joinToString(separator = "\n")
 }
 
 private fun PlayerState.clearLyricsShareState(): PlayerState {

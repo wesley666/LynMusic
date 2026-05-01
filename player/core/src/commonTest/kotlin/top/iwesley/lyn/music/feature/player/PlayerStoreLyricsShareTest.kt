@@ -970,6 +970,77 @@ class PlayerStoreLyricsShareTest {
 
         assertEquals("请先选择至少一句歌词", store.state.value.shareMessage)
         assertEquals(0, shareService.copyImageCalls)
+
+        store.dispatch(PlayerIntent.CopyLyricsShareText)
+        advanceUntilIdle()
+
+        assertEquals("请先选择至少一句歌词", store.state.value.shareMessage)
+        assertEquals(0, shareService.copyTextCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `copy lyrics share text copies selected lyric lines only`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeLyricsSharePlatformService()
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_000L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(structuredTagLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.ToggleLyricsLineSelection(0))
+        store.dispatch(PlayerIntent.ToggleLyricsLineSelection(3))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CopyLyricsShareText)
+        advanceUntilIdle()
+
+        assertEquals(1, shareService.copyTextCalls)
+        assertEquals("第一句\n第二句", shareService.lastCopiedText)
+        assertEquals("文字已复制", store.state.value.shareMessage)
+        assertEquals(0, shareService.copyImageCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `copy lyrics share text failure surfaces message`() = runTest {
+        val track = sampleTrack("track-1", "第一首")
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val shareService = FakeLyricsSharePlatformService(
+            copyTextResult = Result.failure(IllegalStateException("clipboard unavailable")),
+        )
+        val store = PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(
+                    queue = listOf(track),
+                    currentIndex = 0,
+                    positionMs = 1_500L,
+                ),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = shareService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenLyricsShare)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CopyLyricsShareText)
+        advanceUntilIdle()
+
+        assertEquals(1, shareService.copyTextCalls)
+        assertEquals("复制文字失败: clipboard unavailable", store.state.value.shareMessage)
         scope.cancel()
     }
 
@@ -1163,6 +1234,7 @@ private class FakeLyricsSharePlatformService(
     private val previewResults: ArrayDeque<PreviewResponse> = ArrayDeque(),
     private val saveResult: Result<LyricsShareSaveResult> = Result.success(LyricsShareSaveResult("图片已保存到文件")),
     private val copyResult: Result<Unit> = Result.success(Unit),
+    private val copyTextResult: Result<Unit> = Result.success(Unit),
     private val fontListResult: Result<List<LyricsShareFontOption>> = Result.success(emptyList()),
 ) : LyricsSharePlatformService {
     var buildPreviewCalls: Int = 0
@@ -1170,6 +1242,10 @@ private class FakeLyricsSharePlatformService(
     var saveImageCalls: Int = 0
         private set
     var copyImageCalls: Int = 0
+        private set
+    var copyTextCalls: Int = 0
+        private set
+    var lastCopiedText: String? = null
         private set
     var listAvailableFontFamiliesCalls: Int = 0
         private set
@@ -1197,6 +1273,12 @@ private class FakeLyricsSharePlatformService(
         copyImageCalls += 1
         assertEquals(previewBytes.toList(), pngBytes.toList())
         return copyResult
+    }
+
+    override suspend fun copyText(text: String): Result<Unit> {
+        copyTextCalls += 1
+        lastCopiedText = text
+        return copyTextResult
     }
 
     companion object {
@@ -1227,6 +1309,10 @@ private class FakeReloadableLyricsSharePlatformService(
         return Result.success(Unit)
     }
 
+    override suspend fun copyText(text: String): Result<Unit> {
+        return Result.success(Unit)
+    }
+
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
         listAvailableFontFamiliesCalls += 1
         return fontListResult
@@ -1247,6 +1333,8 @@ private class FakeDeferredFontLookupLyricsSharePlatformService(
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = Result.success(Unit)
+
+    override suspend fun copyText(text: String): Result<Unit> = Result.success(Unit)
 
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
         listAvailableFontFamiliesCalls += 1

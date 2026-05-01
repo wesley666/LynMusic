@@ -107,6 +107,14 @@ class AndroidLyricsSharePlatformService(
         }
     }
 
+    override suspend fun copyText(text: String): Result<Unit> = withContext(Dispatchers.Main) {
+        runCatching {
+            val clipboard = ContextCompat.getSystemService(context, android.content.ClipboardManager::class.java)
+                ?: error("系统剪贴板不可用。")
+            clipboard.setPrimaryClip(ClipData.newPlainText("歌词分享文字", text))
+        }
+    }
+
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> {
         return withContext(Dispatchers.IO) {
             runCatching {

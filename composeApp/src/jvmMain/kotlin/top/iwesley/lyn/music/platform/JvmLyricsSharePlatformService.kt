@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.platform
 import java.awt.Image as AwtImage
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
 import java.io.ByteArrayInputStream
 import javax.imageio.ImageIO
@@ -54,6 +55,13 @@ class JvmLyricsSharePlatformService(
             val image = ImageIO.read(ByteArrayInputStream(pngBytes)) ?: error("无法读取图片数据。")
             val clipboard = Toolkit.getDefaultToolkit().systemClipboard
             clipboard.setContents(ImageTransferable(image), null)
+        }
+    }
+
+    override suspend fun copyText(text: String): Result<Unit> = withContext(Dispatchers.Swing) {
+        runCatching {
+            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+            clipboard.setContents(StringSelection(text), null)
         }
     }
 

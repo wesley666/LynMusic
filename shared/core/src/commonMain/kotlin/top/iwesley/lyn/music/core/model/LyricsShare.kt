@@ -38,6 +38,7 @@ interface LyricsSharePlatformService {
     suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray>
     suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult>
     suspend fun copyImage(pngBytes: ByteArray): Result<Unit>
+    suspend fun copyText(text: String): Result<Unit>
     suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>>
 }
 
@@ -57,6 +58,8 @@ object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> = Result.failure(error)
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = Result.failure(error)
+
+    override suspend fun copyText(text: String): Result<Unit> = Result.failure(error)
 
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = Result.failure(fontError)
 }

@@ -68,6 +68,12 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         }
     }
 
+    override suspend fun copyText(text: String): Result<Unit> = withContext(Dispatchers.Main) {
+        runCatching {
+            UIPasteboard.generalPasteboard.string = text
+        }
+    }
+
     override suspend fun listAvailableFontFamilies(): Result<List<LyricsShareFontOption>> = withContext(Dispatchers.Default) {
         runCatching {
             prioritizeIosLyricsShareFontFamilyNames(
