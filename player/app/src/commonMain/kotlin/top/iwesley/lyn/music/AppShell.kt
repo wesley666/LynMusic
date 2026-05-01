@@ -89,6 +89,7 @@ import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
+import top.iwesley.lyn.music.feature.library.TrackSortMode
 import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -107,6 +108,10 @@ internal val mobilePrimaryNavigationTabs: List<AppTab> = listOf(AppTab.My, AppTa
 internal val mobileLibraryHubTabs: List<AppTab> = listOf(AppTab.Library, AppTab.Favorites, AppTab.Playlists)
 
 internal fun isMobileLibraryHubTab(tab: AppTab): Boolean = tab in mobileLibraryHubTabs
+
+internal fun mobileLibraryHubSupportsTrackSort(tab: AppTab): Boolean {
+    return tab == AppTab.Library || tab == AppTab.Favorites
+}
 
 internal fun isMobilePrimaryNavigationSelected(
     selectedTab: AppTab,
@@ -856,6 +861,23 @@ private fun MobileLibraryHubTab(
 
                     else -> null
                 },
+                sortMenu = when (activeSearchTab) {
+                    AppTab.Library -> MobileLibraryHubSortMenu(
+                        selectedTrackSortMode = libraryState.selectedTrackSortMode,
+                        onTrackSortChanged = { mode ->
+                            onLibraryIntent(LibraryIntent.TrackSortChanged(mode))
+                        },
+                    )
+
+                    AppTab.Favorites -> MobileLibraryHubSortMenu(
+                        selectedTrackSortMode = favoritesState.selectedTrackSortMode,
+                        onTrackSortChanged = { mode ->
+                            onFavoritesIntent(FavoritesIntent.TrackSortChanged(mode))
+                        },
+                    )
+
+                    else -> null
+                },
                 onSearchClick = {
                     if (activeSearchTab == AppTab.Playlists) {
                         onPlaylistsIntent(PlaylistsIntent.BackToList)
@@ -973,15 +995,28 @@ private data class MobileLibraryHubSourceMenu(
     val onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
 )
 
+private data class MobileLibraryHubSortMenu(
+    val selectedTrackSortMode: TrackSortMode,
+    val onTrackSortChanged: (TrackSortMode) -> Unit,
+)
+
+private enum class MobileLibraryHubMenuLayer {
+    Root,
+    Source,
+    Sort,
+}
+
 @Composable
 private fun MobileLibraryHubTabStrip(
     selectedPage: Int,
     sourceMenu: MobileLibraryHubSourceMenu?,
+    sortMenu: MobileLibraryHubSortMenu?,
     onSearchClick: () -> Unit,
     onTabClick: (Int, AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var menuLayer by remember { mutableStateOf(MobileLibraryHubMenuLayer.Root) }
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -998,21 +1033,33 @@ private fun MobileLibraryHubTabStrip(
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        if (sourceMenu != null) {
+        if (sourceMenu != null || sortMenu != null) {
             Box {
-                IconButton(onClick = { sourceFilterMenuExpanded = true }) {
+                IconButton(
+                    onClick = {
+                        menuLayer = MobileLibraryHubMenuLayer.Root
+                        menuExpanded = true
+                    },
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
-                        contentDescription = "选择来源",
+                        contentDescription = "更多操作",
                     )
                 }
-                MobileLibraryHubSourceDropdownMenu(
-                    expanded = sourceFilterMenuExpanded,
+                MobileLibraryHubActionsDropdownMenu(
+                    expanded = menuExpanded,
+                    layer = menuLayer,
                     sourceMenu = sourceMenu,
-                    onDismiss = { sourceFilterMenuExpanded = false },
+                    sortMenu = sortMenu,
+                    onLayerChanged = { menuLayer = it },
+                    onDismiss = { menuExpanded = false },
                     onSourceFilterChanged = { filter ->
-                        sourceFilterMenuExpanded = false
-                        sourceMenu.onSourceFilterChanged(filter)
+                        menuExpanded = false
+                        sourceMenu?.onSourceFilterChanged(filter)
+                    },
+                    onTrackSortChanged = { mode ->
+                        menuExpanded = false
+                        sortMenu?.onTrackSortChanged(mode)
                     },
                 )
             }
@@ -1027,33 +1074,108 @@ private fun MobileLibraryHubTabStrip(
 }
 
 @Composable
-private fun MobileLibraryHubSourceDropdownMenu(
+private fun MobileLibraryHubActionsDropdownMenu(
     expanded: Boolean,
-    sourceMenu: MobileLibraryHubSourceMenu,
+    layer: MobileLibraryHubMenuLayer,
+    sourceMenu: MobileLibraryHubSourceMenu?,
+    sortMenu: MobileLibraryHubSortMenu?,
+    onLayerChanged: (MobileLibraryHubMenuLayer) -> Unit,
     onDismiss: () -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+    onTrackSortChanged: (TrackSortMode) -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
         containerColor = mainShellColors.navContainer,
     ) {
-        sourceMenu.availableSourceFilters.forEach { filter ->
-            val isSelected = filter == sourceMenu.selectedSourceFilter
-            DropdownMenuItem(
-                text = { Text(mobileLibraryHubSourceFilterMenuLabel(filter)) },
-                trailingIcon = if (isSelected) {
-                    {
+        when (layer) {
+            MobileLibraryHubMenuLayer.Root -> {
+                if (sourceMenu != null) {
+                    DropdownMenuItem(
+                        text = { Text("来源") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.FolderOpen,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = { onLayerChanged(MobileLibraryHubMenuLayer.Source) },
+                    )
+                }
+                if (sortMenu != null) {
+                    DropdownMenuItem(
+                        text = { Text("排序") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = { onLayerChanged(MobileLibraryHubMenuLayer.Sort) },
+                    )
+                }
+            }
+
+            MobileLibraryHubMenuLayer.Source -> {
+                DropdownMenuItem(
+                    text = { Text("来源") },
+                    leadingIcon = {
                         Icon(
-                            imageVector = Icons.Rounded.Check,
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                             contentDescription = null,
                         )
-                    }
-                } else {
-                    null
-                },
-                onClick = { onSourceFilterChanged(filter) },
-            )
+                    },
+                    onClick = { onLayerChanged(MobileLibraryHubMenuLayer.Root) },
+                )
+                sourceMenu?.availableSourceFilters.orEmpty().forEach { filter ->
+                    val isSelected = filter == sourceMenu?.selectedSourceFilter
+                    DropdownMenuItem(
+                        text = { Text(mobileLibraryHubSourceFilterMenuLabel(filter)) },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = { onSourceFilterChanged(filter) },
+                    )
+                }
+            }
+
+            MobileLibraryHubMenuLayer.Sort -> {
+                DropdownMenuItem(
+                    text = { Text("排序") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = { onLayerChanged(MobileLibraryHubMenuLayer.Root) },
+                )
+                TrackSortMode.entries.forEach { mode ->
+                    val isSelected = mode == sortMenu?.selectedTrackSortMode
+                    DropdownMenuItem(
+                        text = { Text(trackSortModeLabel(mode)) },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Rounded.Check,
+                                    contentDescription = null,
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = { onTrackSortChanged(mode) },
+                    )
+                }
+            }
         }
     }
 }

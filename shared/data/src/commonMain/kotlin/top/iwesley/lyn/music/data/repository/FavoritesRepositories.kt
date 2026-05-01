@@ -30,11 +30,17 @@ import top.iwesley.lyn.music.domain.requestNavidromeJson
 interface FavoritesRepository {
     val favoriteTrackIds: Flow<Set<String>>
     val favoriteTracks: Flow<List<Track>>
+    val favoriteTrackMetadata: Flow<Map<String, FavoriteTrackMetadata>>
 
     suspend fun toggleFavorite(track: Track): Result<Boolean>
     suspend fun setFavorite(track: Track, favorite: Boolean): Result<Boolean>
     suspend fun refreshNavidromeFavorites(): Result<Unit>
 }
+
+data class FavoriteTrackMetadata(
+    val trackId: String,
+    val favoritedAt: Long,
+)
 
 class RoomFavoritesRepository(
     private val database: LynMusicDatabase,
@@ -46,6 +52,16 @@ class RoomFavoritesRepository(
 
     override val favoriteTrackIds: Flow<Set<String>> = favoriteRows
         .map { rows -> rows.mapTo(linkedSetOf()) { it.trackId } }
+
+    override val favoriteTrackMetadata: Flow<Map<String, FavoriteTrackMetadata>> = favoriteRows
+        .map { rows ->
+            rows.associate { row ->
+                row.trackId to FavoriteTrackMetadata(
+                    trackId = row.trackId,
+                    favoritedAt = row.favoritedAt,
+                )
+            }
+        }
 
     override val favoriteTracks: Flow<List<Track>> = combine(
         favoriteRows,

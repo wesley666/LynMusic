@@ -20,9 +20,13 @@ import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.data.repository.FavoriteTrackMetadata
 import top.iwesley.lyn.music.data.repository.FavoritesRepository
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.TrackSortMode
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesStoreTest {
@@ -203,27 +207,79 @@ class FavoritesStoreTest {
         assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
         scope.cancel()
     }
+
+    @Test
+    fun `favorites default to favorited time sort and keep sort preference independent`() = runTest {
+        val tracks = sampleFavoriteTracks()
+        val favoritesRepository = FakeFavoritesRepository(
+            tracks = tracks,
+            favoriteTrackIds = tracks.mapTo(linkedSetOf()) { it.id },
+            favoriteTrackMetadata = mapOf(
+                "track-local-1" to FavoriteTrackMetadata("track-local-1", favoritedAt = 100L),
+                "track-nav-1" to FavoriteTrackMetadata("track-nav-1", favoritedAt = 300L),
+            ),
+        )
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
+        val trackStatsRepository = FakeTrackPlaybackStatsRepository(
+            mapOf(
+                "track-local-1" to TrackPlaybackStat("track-local-1", playCount = 9, lastPlayedAt = 90L),
+                "track-nav-1" to TrackPlaybackStat("track-nav-1", playCount = 1, lastPlayedAt = 10L),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(
+            favoritesRepository = favoritesRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = preferencesStore,
+            storeScope = scope,
+            trackPlaybackStatsRepository = trackStatsRepository,
+        )
+
+        advanceUntilIdle()
+        assertEquals(TrackSortMode.ADDED_AT, store.state.value.selectedTrackSortMode)
+        assertEquals(listOf("track-nav-1", "track-local-1"), store.state.value.filteredTracks.map { it.id })
+
+        store.dispatch(FavoritesIntent.TrackSortChanged(TrackSortMode.PLAY_COUNT))
+        advanceUntilIdle()
+
+        assertEquals(TrackSortMode.PLAY_COUNT, preferencesStore.favoritesTrackSortMode.value)
+        assertEquals(listOf("track-local-1", "track-nav-1"), store.state.value.filteredTracks.map { it.id })
+        scope.cancel()
+    }
 }
 
 private class FakeFavoritesRepository(
     tracks: List<Track> = emptyList(),
     favoriteTrackIds: Set<String> = emptySet(),
+    favoriteTrackMetadata: Map<String, FavoriteTrackMetadata> =
+        favoriteTrackIds.mapIndexed { index, trackId ->
+            trackId to FavoriteTrackMetadata(trackId, favoritedAt = index.toLong())
+        }.toMap(),
 ) : FavoritesRepository {
     private val mutableTracks = MutableStateFlow(tracks)
     private val mutableFavoriteTrackIds = MutableStateFlow(favoriteTrackIds)
+    private val mutableFavoriteTrackMetadata = MutableStateFlow(favoriteTrackMetadata)
 
     var refreshCalls: Int = 0
         private set
 
     override val favoriteTrackIds: Flow<Set<String>> = mutableFavoriteTrackIds.asStateFlow()
     override val favoriteTracks: Flow<List<Track>> = mutableTracks.asStateFlow()
+    override val favoriteTrackMetadata: Flow<Map<String, FavoriteTrackMetadata>> =
+        mutableFavoriteTrackMetadata.asStateFlow()
 
     fun updateFavorites(
         tracks: List<Track>,
         favoriteTrackIds: Set<String>,
+        favoriteTrackMetadata: Map<String, FavoriteTrackMetadata> =
+            favoriteTrackIds.mapIndexed { index, trackId ->
+                trackId to FavoriteTrackMetadata(trackId, favoritedAt = index.toLong())
+            }.toMap(),
     ) {
         mutableTracks.value = tracks
         mutableFavoriteTrackIds.value = favoriteTrackIds
+        mutableFavoriteTrackMetadata.value = favoriteTrackMetadata
     }
 
     override suspend fun toggleFavorite(track: Track): Result<Boolean> {
@@ -236,6 +292,9 @@ private class FakeFavoritesRepository(
             true
         }
         mutableFavoriteTrackIds.value = nextIds
+        mutableFavoriteTrackMetadata.value = nextIds.mapIndexed { index, trackId ->
+            trackId to FavoriteTrackMetadata(trackId, favoritedAt = index.toLong())
+        }.toMap()
         mutableTracks.value = if (isNowFavorite) {
             listOf(track) + mutableTracks.value.filterNot { it.id == track.id }
         } else {
@@ -252,6 +311,9 @@ private class FakeFavoritesRepository(
             nextIds.remove(track.id)
         }
         mutableFavoriteTrackIds.value = nextIds
+        mutableFavoriteTrackMetadata.value = nextIds.mapIndexed { index, trackId ->
+            trackId to FavoriteTrackMetadata(trackId, favoritedAt = index.toLong())
+        }.toMap()
         mutableTracks.value = if (favorite) {
             listOf(track) + mutableTracks.value.filterNot { it.id == track.id }
         } else {
@@ -345,9 +407,13 @@ private fun testScanSummary(sourceId: String = "source-1"): ImportScanSummary {
 private class FakeLibrarySourceFilterPreferencesStore(
     librarySourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     favoritesSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    libraryTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
+    favoritesTrackSortMode: TrackSortMode = TrackSortMode.ADDED_AT,
 ) : top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore {
     override val librarySourceFilter = MutableStateFlow(librarySourceFilter)
     override val favoritesSourceFilter = MutableStateFlow(favoritesSourceFilter)
+    override val libraryTrackSortMode = MutableStateFlow(libraryTrackSortMode)
+    override val favoritesTrackSortMode = MutableStateFlow(favoritesTrackSortMode)
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
         librarySourceFilter.value = filter
@@ -356,6 +422,20 @@ private class FakeLibrarySourceFilterPreferencesStore(
     override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
         favoritesSourceFilter.value = filter
     }
+
+    override suspend fun setLibraryTrackSortMode(mode: TrackSortMode) {
+        libraryTrackSortMode.value = mode
+    }
+
+    override suspend fun setFavoritesTrackSortMode(mode: TrackSortMode) {
+        favoritesTrackSortMode.value = mode
+    }
+}
+
+private class FakeTrackPlaybackStatsRepository(
+    initialStats: Map<String, TrackPlaybackStat> = emptyMap(),
+) : TrackPlaybackStatsRepository {
+    override val trackStats = MutableStateFlow(initialStats)
 }
 
 private fun sampleFavoriteTracks(): List<Track> {

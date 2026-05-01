@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -91,6 +92,7 @@ import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
+import top.iwesley.lyn.music.feature.library.TrackSortMode
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.libraryAlbumId
 import top.iwesley.lyn.music.feature.library.libraryArtistId
@@ -123,6 +125,7 @@ internal fun LibraryTab(
             filteredArtists = state.filteredArtists,
             selectedSourceFilter = state.selectedSourceFilter,
             availableSourceFilters = state.availableSourceFilters,
+            selectedTrackSortMode = state.selectedTrackSortMode,
             favoriteTrackIds = favoritesState.favoriteTrackIds,
             message = favoritesState.message,
         ),
@@ -141,12 +144,14 @@ internal fun LibraryTab(
         ),
         onSearchChanged = { onLibraryIntent(LibraryIntent.SearchChanged(it)) },
         onSourceFilterChanged = { onLibraryIntent(LibraryIntent.SourceFilterChanged(it)) },
+        onTrackSortChanged = { onLibraryIntent(LibraryIntent.TrackSortChanged(it)) },
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
         onDismissMessage = { onFavoritesIntent(FavoritesIntent.ClearMessage) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
         showFavoriteButton = showFavoriteButton,
         showDuration = showDuration,
         showSearchField = showSearchField,
+        showTrackSortActionButton = showSearchField,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         modifier = modifier,
@@ -174,6 +179,7 @@ internal fun FavoritesTab(
             filteredArtists = state.filteredArtists,
             selectedSourceFilter = state.selectedSourceFilter,
             availableSourceFilters = state.availableSourceFilters,
+            selectedTrackSortMode = state.selectedTrackSortMode,
             favoriteTrackIds = state.favoriteTrackIds,
             message = state.message,
         ),
@@ -192,6 +198,7 @@ internal fun FavoritesTab(
         ),
         onSearchChanged = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
         onSourceFilterChanged = { onFavoritesIntent(FavoritesIntent.SourceFilterChanged(it)) },
+        onTrackSortChanged = { onFavoritesIntent(FavoritesIntent.TrackSortChanged(it)) },
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
         actionButton = if (showRefreshActionButton && state.canRefreshRemote) {
             {
@@ -213,6 +220,7 @@ internal fun FavoritesTab(
         showFavoriteButton = showFavoriteButton,
         showDuration = showDuration,
         showSearchField = showSearchField,
+        showTrackSortActionButton = showSearchField,
         modifier = modifier,
     )
 }
@@ -226,6 +234,7 @@ private data class LibraryBrowserPageState(
     val filteredArtists: List<Artist>,
     val selectedSourceFilter: LibrarySourceFilter,
     val availableSourceFilters: List<LibrarySourceFilter>,
+    val selectedTrackSortMode: TrackSortMode,
     val favoriteTrackIds: Set<String>,
     val message: String?,
 )
@@ -256,10 +265,12 @@ private fun LibraryBrowserTab(
     strings: LibraryBrowserStrings,
     onSearchChanged: (String) -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
+    onTrackSortChanged: (TrackSortMode) -> Unit,
     onToggleFavorite: (Track) -> Unit,
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
+    showTrackSortActionButton: Boolean = true,
     actionButton: (@Composable () -> Unit)? = null,
     onDismissMessage: () -> Unit,
     onPlayTracks: (List<Track>, Int) -> Unit,
@@ -269,6 +280,7 @@ private fun LibraryBrowserTab(
 ) {
     val listState = rememberLazyListState()
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
+    var trackSortMenuExpanded by remember { mutableStateOf(false) }
     var rootView by rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
     var selectedArtistId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -398,6 +410,10 @@ private fun LibraryBrowserTab(
 
     val shellColors = mainShellColors
     val searchFieldContainerColor = shellColors.cardBorder
+    val showTrackSortMenu = showTrackSortActionButton &&
+        rootView == LibraryBrowserRootView.Tracks &&
+        selectedArtistId == null &&
+        selectedAlbumId == null
     val searchFieldColors = OutlinedTextFieldDefaults.colors(
         focusedContainerColor = searchFieldContainerColor,
         unfocusedContainerColor = searchFieldContainerColor,
@@ -457,6 +473,25 @@ private fun LibraryBrowserTab(
                                                     onSourceFilterChanged(filter)
                                                 },
                                             )
+                                        }
+                                        if (showTrackSortMenu) {
+                                            Box {
+                                                IconButton(onClick = { trackSortMenuExpanded = true }) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Tune,
+                                                        contentDescription = "歌曲排序",
+                                                    )
+                                                }
+                                                TrackSortDropdownMenu(
+                                                    expanded = trackSortMenuExpanded,
+                                                    selectedTrackSortMode = state.selectedTrackSortMode,
+                                                    onDismiss = { trackSortMenuExpanded = false },
+                                                    onTrackSortChanged = { mode ->
+                                                        trackSortMenuExpanded = false
+                                                        onTrackSortChanged(mode)
+                                                    },
+                                                )
+                                            }
                                         }
                                         actionButton?.invoke()
                                     }
@@ -790,6 +825,48 @@ private fun LibrarySourceFilterDropdownMenu(
                 onClick = { onSourceFilterChanged(filter) },
             )
         }
+    }
+}
+
+@Composable
+private fun TrackSortDropdownMenu(
+    expanded: Boolean,
+    selectedTrackSortMode: TrackSortMode,
+    onDismiss: () -> Unit,
+    onTrackSortChanged: (TrackSortMode) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        containerColor = mainShellColors.navContainer,
+    ) {
+        TrackSortMode.entries.forEach { mode ->
+            val isSelected = mode == selectedTrackSortMode
+            DropdownMenuItem(
+                text = { Text(trackSortModeLabel(mode)) },
+                trailingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Rounded.Check,
+                            contentDescription = null,
+                        )
+                    }
+                } else {
+                    null
+                },
+                onClick = { onTrackSortChanged(mode) },
+            )
+        }
+    }
+}
+
+internal fun trackSortModeLabel(mode: TrackSortMode): String {
+    return when (mode) {
+        TrackSortMode.TITLE -> "标题"
+        TrackSortMode.ARTIST -> "艺人"
+        TrackSortMode.ALBUM -> "专辑"
+        TrackSortMode.PLAY_COUNT -> "播放次数"
+        TrackSortMode.ADDED_AT -> "添加时间"
     }
 }
 

@@ -24,6 +24,8 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.LibraryRepository
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryStoreTest {
@@ -42,7 +44,7 @@ class LibraryStoreTest {
         val state = store.state.value
         assertEquals(listOf(LibrarySourceFilter.ALL), state.availableSourceFilters)
         assertEquals(LibrarySourceFilter.ALL, state.selectedSourceFilter)
-        assertEquals(tracks.map { it.id }, state.filteredTracks.map { it.id })
+        assertEquals(listOf("track-local-2", "track-webdav-1", "track-local-1"), state.filteredTracks.map { it.id })
         assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
         assertEquals(listOf(2, 1), state.filteredAlbums.map { it.trackCount })
         assertEquals(listOf("Artist A", "Artist B"), state.filteredArtists.map { it.name })
@@ -92,7 +94,7 @@ class LibraryStoreTest {
 
         val state = store.state.value
         assertEquals(LibrarySourceFilter.LOCAL_FOLDER, state.selectedSourceFilter)
-        assertEquals(listOf("track-local-1", "track-local-2"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("track-local-2", "track-local-1"), state.filteredTracks.map { it.id })
         assertEquals(listOf("Album One"), state.filteredAlbums.map { it.title })
         assertEquals(listOf("Artist A"), state.filteredArtists.map { it.name })
         scope.cancel()
@@ -201,6 +203,43 @@ class LibraryStoreTest {
         assertEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
         scope.cancel()
     }
+
+    @Test
+    fun `track sort mode loads from preferences and updates filtered tracks`() = runTest {
+        val libraryRepository = FakeLibraryRepository(
+            sampleTracks().mapIndexed { index, track -> track.copy(addedAt = (index + 1) * 100L) },
+        )
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore(
+            libraryTrackSortMode = TrackSortMode.PLAY_COUNT,
+        )
+        val trackStatsRepository = FakeTrackPlaybackStatsRepository(
+            mapOf(
+                "track-local-1" to TrackPlaybackStat("track-local-1", playCount = 2, lastPlayedAt = 20L),
+                "track-local-2" to TrackPlaybackStat("track-local-2", playCount = 7, lastPlayedAt = 70L),
+                "track-webdav-1" to TrackPlaybackStat("track-webdav-1", playCount = 4, lastPlayedAt = 40L),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = LibraryStore(
+            repository = libraryRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = preferencesStore,
+            storeScope = scope,
+            trackPlaybackStatsRepository = trackStatsRepository,
+        )
+
+        advanceUntilIdle()
+        assertEquals(TrackSortMode.PLAY_COUNT, store.state.value.selectedTrackSortMode)
+        assertEquals(listOf("track-local-2", "track-webdav-1", "track-local-1"), store.state.value.filteredTracks.map { it.id })
+
+        store.dispatch(LibraryIntent.TrackSortChanged(TrackSortMode.ADDED_AT))
+        advanceUntilIdle()
+
+        assertEquals(TrackSortMode.ADDED_AT, preferencesStore.libraryTrackSortMode.value)
+        assertEquals(listOf("track-webdav-1", "track-local-2", "track-local-1"), store.state.value.filteredTracks.map { it.id })
+        scope.cancel()
+    }
 }
 
 private class FakeLibraryRepository(
@@ -305,9 +344,13 @@ private fun testScanSummary(sourceId: String = "source-1"): ImportScanSummary {
 private class FakeLibrarySourceFilterPreferencesStore(
     librarySourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     favoritesSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    libraryTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
+    favoritesTrackSortMode: TrackSortMode = TrackSortMode.ADDED_AT,
 ) : LibrarySourceFilterPreferencesStore {
     override val librarySourceFilter = MutableStateFlow(librarySourceFilter)
     override val favoritesSourceFilter = MutableStateFlow(favoritesSourceFilter)
+    override val libraryTrackSortMode = MutableStateFlow(libraryTrackSortMode)
+    override val favoritesTrackSortMode = MutableStateFlow(favoritesTrackSortMode)
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
         librarySourceFilter.value = filter
@@ -316,6 +359,20 @@ private class FakeLibrarySourceFilterPreferencesStore(
     override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
         favoritesSourceFilter.value = filter
     }
+
+    override suspend fun setLibraryTrackSortMode(mode: TrackSortMode) {
+        libraryTrackSortMode.value = mode
+    }
+
+    override suspend fun setFavoritesTrackSortMode(mode: TrackSortMode) {
+        favoritesTrackSortMode.value = mode
+    }
+}
+
+private class FakeTrackPlaybackStatsRepository(
+    initialStats: Map<String, TrackPlaybackStat> = emptyMap(),
+) : TrackPlaybackStatsRepository {
+    override val trackStats = MutableStateFlow(initialStats)
 }
 
 private fun sampleTracks(): List<Track> {

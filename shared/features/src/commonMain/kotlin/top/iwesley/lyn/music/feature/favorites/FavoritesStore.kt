@@ -9,12 +9,17 @@ import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
+import top.iwesley.lyn.music.data.repository.FavoriteTrackMetadata
 import top.iwesley.lyn.music.data.repository.FavoritesRepository
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
+import top.iwesley.lyn.music.feature.library.TrackSortMode
+import top.iwesley.lyn.music.feature.library.sortTracks
 
 data class FavoritesState(
     val query: String = "",
@@ -24,8 +29,11 @@ data class FavoritesState(
     val filteredAlbums: List<Album> = emptyList(),
     val filteredArtists: List<Artist> = emptyList(),
     val favoriteTrackIds: Set<String> = emptySet(),
+    val favoriteTrackMetadata: Map<String, FavoriteTrackMetadata> = emptyMap(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
+    val selectedTrackSortMode: TrackSortMode = TrackSortMode.ADDED_AT,
+    val trackPlaybackStats: Map<String, TrackPlaybackStat> = emptyMap(),
     val visibleAlbumCount: Int = 0,
     val visibleArtistCount: Int = 0,
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
@@ -37,6 +45,7 @@ data class FavoritesState(
 sealed interface FavoritesIntent {
     data class SearchChanged(val query: String) : FavoritesIntent
     data class SourceFilterChanged(val filter: LibrarySourceFilter) : FavoritesIntent
+    data class TrackSortChanged(val mode: TrackSortMode) : FavoritesIntent
     data class ToggleFavorite(val track: Track) : FavoritesIntent
     data class EnsureFavorite(val track: Track) : FavoritesIntent
     data object Refresh : FavoritesIntent
@@ -50,6 +59,7 @@ class FavoritesStore(
     private val importSourceRepository: ImportSourceRepository,
     private val preferencesStore: LibrarySourceFilterPreferencesStore,
     private val storeScope: CoroutineScope,
+    private val trackPlaybackStatsRepository: TrackPlaybackStatsRepository = EmptyTrackPlaybackStatsRepository,
     startImmediately: Boolean = true,
 ) : BaseStore<FavoritesState, FavoritesIntent, FavoritesEffect>(
     initialState = FavoritesState(),
@@ -73,15 +83,26 @@ class FavoritesStore(
         if (contentStarted) return
         contentStarted = true
         storeScope.launch {
+            val preferencesFlow = combine(
+                preferencesStore.favoritesSourceFilter,
+                preferencesStore.favoritesTrackSortMode,
+            ) { selectedSourceFilter, selectedTrackSortMode ->
+                selectedSourceFilter to selectedTrackSortMode
+            }
             combine(
                 favoritesRepository.favoriteTracks,
+                favoritesRepository.favoriteTrackMetadata,
                 importSourceRepository.observeSources(),
-                preferencesStore.favoritesSourceFilter,
-            ) { tracks, sources, selectedSourceFilter ->
+                preferencesFlow,
+                trackPlaybackStatsRepository.trackStats,
+            ) { tracks, favoriteTrackMetadata, sources, preferences, trackPlaybackStats ->
                 val enabledSources = sources.map { it.source }.filter { it.enabled }
                 FavoritesSnapshot(
                     tracks = tracks,
-                    selectedSourceFilter = selectedSourceFilter,
+                    favoriteTrackMetadata = favoriteTrackMetadata,
+                    selectedSourceFilter = preferences.first,
+                    selectedTrackSortMode = preferences.second,
+                    trackPlaybackStats = trackPlaybackStats,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
                     availableSourceFilters = buildAvailableSourceFilters(sources.filter { it.source.enabled }),
                     navidromeSourceIds = enabledSources
@@ -95,7 +116,10 @@ class FavoritesStore(
                         state.copy(
                             isLoadingContent = false,
                             tracks = snapshot.tracks,
+                            favoriteTrackMetadata = snapshot.favoriteTrackMetadata,
                             selectedSourceFilter = snapshot.selectedSourceFilter,
+                            selectedTrackSortMode = snapshot.selectedTrackSortMode,
+                            trackPlaybackStats = snapshot.trackPlaybackStats,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
                             canRefreshRemote = snapshot.navidromeSourceIds.isNotEmpty(),
@@ -116,6 +140,8 @@ class FavoritesStore(
             }
 
             is FavoritesIntent.SourceFilterChanged -> preferencesStore.setFavoritesSourceFilter(intent.filter)
+
+            is FavoritesIntent.TrackSortChanged -> preferencesStore.setFavoritesTrackSortMode(intent.mode)
 
             is FavoritesIntent.ToggleFavorite -> {
                 favoritesRepository.toggleFavorite(intent.track)
@@ -175,11 +201,16 @@ class FavoritesStore(
         val selectedSourceFilter = state.selectedSourceFilter
             .takeIf { it == LibrarySourceFilter.ALL || it in state.availableSourceFilters }
             ?: LibrarySourceFilter.ALL
-        val filteredTracks = filterTracks(
-            tracks = state.tracks,
-            query = state.query,
-            selectedSourceFilter = selectedSourceFilter,
-            sourceTypesById = state.sourceTypesById,
+        val filteredTracks = sortTracks(
+            tracks = filterTracks(
+                tracks = state.tracks,
+                query = state.query,
+                selectedSourceFilter = selectedSourceFilter,
+                sourceTypesById = state.sourceTypesById,
+            ),
+            sortMode = state.selectedTrackSortMode,
+            trackPlaybackStats = state.trackPlaybackStats,
+            addedAtByTrackId = state.favoriteTrackMetadata.mapValues { it.value.favoritedAt },
         )
         val filteredAlbums = deriveVisibleAlbums(filteredTracks)
         val filteredArtists = deriveVisibleArtists(filteredTracks)
@@ -243,7 +274,10 @@ class FavoritesStore(
 
     private data class FavoritesSnapshot(
         val tracks: List<Track>,
+        val favoriteTrackMetadata: Map<String, FavoriteTrackMetadata>,
         val selectedSourceFilter: LibrarySourceFilter,
+        val selectedTrackSortMode: TrackSortMode,
+        val trackPlaybackStats: Map<String, TrackPlaybackStat>,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,
         val navidromeSourceIds: Set<String>,
@@ -257,4 +291,8 @@ class FavoritesStore(
             LibrarySourceFilter.NAVIDROME,
         )
     }
+}
+
+private object EmptyTrackPlaybackStatsRepository : TrackPlaybackStatsRepository {
+    override val trackStats = kotlinx.coroutines.flow.MutableStateFlow<Map<String, TrackPlaybackStat>>(emptyMap())
 }

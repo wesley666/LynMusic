@@ -76,6 +76,7 @@ data class TrackEntity(
     val artworkLocator: String?,
     val sizeBytes: Long,
     val modifiedAt: Long,
+    val addedAt: Long = modifiedAt,
     val bitDepth: Int? = null,
     val samplingRate: Int? = null,
     val bitRate: Int? = null,
@@ -266,6 +267,9 @@ interface TrackDao {
 
     @Query("SELECT * FROM track WHERE id IN (:trackIds)")
     suspend fun getByIds(trackIds: List<String>): List<TrackEntity>
+
+    @Query("SELECT * FROM track WHERE sourceId = :sourceId")
+    suspend fun getBySourceId(sourceId: String): List<TrackEntity>
 
     @Query("DELETE FROM track WHERE sourceId = :sourceId")
     suspend fun deleteBySourceId(sourceId: String)
@@ -603,7 +607,7 @@ interface LyricsCacheDao {
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
     ],
-    version = 11,
+    version = 12,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -643,6 +647,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_8_9)
         .addMigrations(MIGRATION_9_10)
         .addMigrations(MIGRATION_10_11)
+        .addMigrations(MIGRATION_11_12)
         .build()
 }
 
@@ -844,6 +849,13 @@ val MIGRATION_10_11: Migration = object : Migration(10, 11) {
             )
             """.trimIndent(),
         )
+    }
+}
+
+val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql("ALTER TABLE track ADD COLUMN addedAt INTEGER NOT NULL DEFAULT 0")
+        connection.execSql("UPDATE track SET addedAt = modifiedAt")
     }
 }
 

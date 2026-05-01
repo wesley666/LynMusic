@@ -120,6 +120,16 @@ interface LibraryRepository {
     suspend fun getTracksByIds(trackIds: List<String>): List<Track>
 }
 
+data class TrackPlaybackStat(
+    val trackId: String,
+    val playCount: Int,
+    val lastPlayedAt: Long,
+)
+
+interface TrackPlaybackStatsRepository {
+    val trackStats: Flow<Map<String, TrackPlaybackStat>>
+}
+
 interface ImportSourceRepository {
     fun observeSources(): Flow<List<SourceWithStatus>>
     suspend fun importLocalFolder(): Result<ImportScanSummary?>
@@ -268,6 +278,22 @@ class RoomLibraryRepository(
         val byId = items.associateBy { it.id }
         return trackIds.mapNotNull { trackId -> byId[trackId]?.toDomain(artworkOverrides[trackId]) }
     }
+}
+
+class RoomTrackPlaybackStatsRepository(
+    database: LynMusicDatabase,
+) : TrackPlaybackStatsRepository {
+    override val trackStats: Flow<Map<String, TrackPlaybackStat>> = database.trackPlaybackStatsDao()
+        .observeAllByRecent()
+        .map { rows ->
+            rows.associate { row ->
+                row.trackId to TrackPlaybackStat(
+                    trackId = row.trackId,
+                    playCount = row.playCount,
+                    lastPlayedAt = row.lastPlayedAt,
+                )
+            }
+        }
 }
 
 class RoomImportSourceRepository(
@@ -768,6 +794,10 @@ class RoomImportSourceRepository(
     }
 
     private suspend fun persistScan(source: ImportSource, report: ImportScanReport): ImportScanSummary {
+        val scannedAt = now()
+        val existingAddedAtByTrackId = database.trackDao()
+            .getBySourceId(source.id)
+            .associate { it.id to it.addedAt }
         database.trackDao().deleteBySourceId(source.id)
         database.lyricsCacheDao().deleteByTrackIdPrefixAndSourceId(trackIdPrefix(source.id), EMBEDDED_LYRICS_SOURCE_ID)
         val trackEntities = report.tracks.map { candidate ->
@@ -775,9 +805,10 @@ class RoomImportSourceRepository(
             val albumId = candidate.albumTitle?.takeIf { it.isNotBlank() }?.let {
                 albumIdFor(candidate.artistName, it)
             }
+            val trackId = trackIdFor(source.id, candidate.relativePath, candidate.mediaLocator)
 
             TrackEntity(
-                id = trackIdFor(source.id, candidate.relativePath, candidate.mediaLocator),
+                id = trackId,
                 sourceId = source.id,
                 title = candidate.title,
                 artistId = artistId,
@@ -792,6 +823,7 @@ class RoomImportSourceRepository(
                 artworkLocator = candidate.artworkLocator,
                 sizeBytes = candidate.sizeBytes,
                 modifiedAt = candidate.modifiedAt,
+                addedAt = existingAddedAtByTrackId[trackId] ?: scannedAt,
                 bitDepth = candidate.bitDepth,
                 samplingRate = candidate.samplingRate,
                 bitRate = candidate.bitRate,
@@ -802,7 +834,6 @@ class RoomImportSourceRepository(
         if (trackEntities.isNotEmpty()) {
             database.trackDao().upsertAll(trackEntities)
         }
-        val scannedAt = now()
         report.tracks.zip(trackEntities).forEach { (candidate, entity) ->
             candidate.embeddedLyrics
                 ?.trim()
@@ -2376,6 +2407,7 @@ fun TrackEntity.toDomain(artworkOverrideLocator: String? = null): Track {
         artworkLocator = artworkOverrideLocator?.takeIf { it.isNotBlank() } ?: artworkLocator,
         sizeBytes = sizeBytes,
         modifiedAt = modifiedAt,
+        addedAt = addedAt,
         bitDepth = bitDepth,
         samplingRate = samplingRate,
         bitRate = bitRate,

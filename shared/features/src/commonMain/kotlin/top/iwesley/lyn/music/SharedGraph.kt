@@ -56,6 +56,7 @@ import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
 import top.iwesley.lyn.music.data.repository.RoomImportSourceRepository
 import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
 import top.iwesley.lyn.music.data.repository.RoomPlaylistRepository
+import top.iwesley.lyn.music.data.repository.RoomTrackPlaybackStatsRepository
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
@@ -125,6 +126,7 @@ fun buildSharedGraph(
 ): SharedGraph {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val libraryRepository = RoomLibraryRepository(database)
+    val trackPlaybackStatsRepository = RoomTrackPlaybackStatsRepository(database)
     val importSourceRepository = RoomImportSourceRepository(
         database = database,
         gateway = runtimeServices.importSourceGateway,
@@ -224,6 +226,7 @@ fun buildSharedGraph(
             importSourceRepository = importSourceRepository,
             preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
             storeScope = scope,
+            trackPlaybackStatsRepository = trackPlaybackStatsRepository,
             startImmediately = false,
         ),
         playlistsStore = PlaylistsStore(
@@ -237,6 +240,7 @@ fun buildSharedGraph(
             importSourceRepository = importSourceRepository,
             preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
             storeScope = scope,
+            trackPlaybackStatsRepository = trackPlaybackStatsRepository,
             startImmediately = false,
         ),
         musicTagsStore = MusicTagsStore(

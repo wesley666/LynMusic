@@ -65,6 +65,7 @@ data class Track(
     val artworkLocator: String? = null,
     val sizeBytes: Long = 0L,
     val modifiedAt: Long = 0L,
+    val addedAt: Long = modifiedAt,
     val bitDepth: Int? = null,
     val samplingRate: Int? = null,
     val bitRate: Int? = null,

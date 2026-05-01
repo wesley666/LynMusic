@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.feature.library
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.Album
@@ -10,6 +11,8 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.LibraryRepository
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
+import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 
 enum class LibrarySourceFilter {
     ALL,
@@ -17,6 +20,14 @@ enum class LibrarySourceFilter {
     SAMBA,
     WEBDAV,
     NAVIDROME,
+}
+
+enum class TrackSortMode {
+    TITLE,
+    ARTIST,
+    ALBUM,
+    PLAY_COUNT,
+    ADDED_AT,
 }
 
 data class LibraryState(
@@ -30,6 +41,8 @@ data class LibraryState(
     val filteredArtists: List<Artist> = emptyList(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
     val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
+    val selectedTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
+    val trackPlaybackStats: Map<String, TrackPlaybackStat> = emptyMap(),
     val visibleAlbumCount: Int = 0,
     val visibleArtistCount: Int = 0,
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
@@ -38,6 +51,7 @@ data class LibraryState(
 sealed interface LibraryIntent {
     data class SearchChanged(val query: String) : LibraryIntent
     data class SourceFilterChanged(val filter: LibrarySourceFilter) : LibraryIntent
+    data class TrackSortChanged(val mode: TrackSortMode) : LibraryIntent
 }
 
 sealed interface LibraryEffect
@@ -47,6 +61,7 @@ class LibraryStore(
     private val importSourceRepository: ImportSourceRepository,
     private val preferencesStore: LibrarySourceFilterPreferencesStore,
     private val storeScope: CoroutineScope,
+    private val trackPlaybackStatsRepository: TrackPlaybackStatsRepository = EmptyTrackPlaybackStatsRepository,
     startImmediately: Boolean = true,
 ) : BaseStore<LibraryState, LibraryIntent, LibraryEffect>(
     initialState = LibraryState(),
@@ -64,19 +79,38 @@ class LibraryStore(
         if (hasStarted) return
         hasStarted = true
         storeScope.launch {
-            combine(
+            val contentFlow = combine(
                 repository.tracks,
                 repository.albums,
                 repository.artists,
                 importSourceRepository.observeSources(),
-                preferencesStore.librarySourceFilter,
-            ) { tracks, albums, artists, sources, selectedSourceFilter ->
-                val enabledSources = sources.map { it.source }.filter { it.enabled }
-                LibrarySnapshot(
+            ) { tracks, albums, artists, sources ->
+                LibraryContentSnapshot(
                     tracks = tracks,
                     albums = albums,
                     artists = artists,
-                    selectedSourceFilter = selectedSourceFilter,
+                    sources = sources,
+                )
+            }
+            val preferencesFlow = combine(
+                preferencesStore.librarySourceFilter,
+                preferencesStore.libraryTrackSortMode,
+            ) { selectedSourceFilter, selectedTrackSortMode ->
+                selectedSourceFilter to selectedTrackSortMode
+            }
+            combine(
+                contentFlow,
+                preferencesFlow,
+                trackPlaybackStatsRepository.trackStats,
+            ) { content, preferences, trackPlaybackStats ->
+                val enabledSources = content.sources.map { it.source }.filter { it.enabled }
+                LibrarySnapshot(
+                    tracks = content.tracks,
+                    albums = content.albums,
+                    artists = content.artists,
+                    selectedSourceFilter = preferences.first,
+                    selectedTrackSortMode = preferences.second,
+                    trackPlaybackStats = trackPlaybackStats,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
                     availableSourceFilters = buildAvailableSourceFilters(enabledSources.map { it.type }),
                 )
@@ -89,6 +123,8 @@ class LibraryStore(
                             albums = snapshot.albums,
                             artists = snapshot.artists,
                             selectedSourceFilter = snapshot.selectedSourceFilter,
+                            selectedTrackSortMode = snapshot.selectedTrackSortMode,
+                            trackPlaybackStats = snapshot.trackPlaybackStats,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
                         ),
@@ -105,6 +141,8 @@ class LibraryStore(
             }
 
             is LibraryIntent.SourceFilterChanged -> preferencesStore.setLibrarySourceFilter(intent.filter)
+
+            is LibraryIntent.TrackSortChanged -> preferencesStore.setLibraryTrackSortMode(intent.mode)
         }
     }
 
@@ -112,11 +150,15 @@ class LibraryStore(
         val selectedSourceFilter = state.selectedSourceFilter
             .takeIf { it == LibrarySourceFilter.ALL || it in state.availableSourceFilters }
             ?: LibrarySourceFilter.ALL
-        val filteredTracks = filterTracks(
-            tracks = state.tracks,
-            query = state.query,
-            selectedSourceFilter = selectedSourceFilter,
-            sourceTypesById = state.sourceTypesById,
+        val filteredTracks = sortTracks(
+            tracks = filterTracks(
+                tracks = state.tracks,
+                query = state.query,
+                selectedSourceFilter = selectedSourceFilter,
+                sourceTypesById = state.sourceTypesById,
+            ),
+            sortMode = state.selectedTrackSortMode,
+            trackPlaybackStats = state.trackPlaybackStats,
         )
         val filteredAlbums = deriveVisibleAlbums(filteredTracks)
         val filteredArtists = deriveVisibleArtists(filteredTracks)
@@ -179,8 +221,17 @@ class LibraryStore(
         val albums: List<Album>,
         val artists: List<Artist>,
         val selectedSourceFilter: LibrarySourceFilter,
+        val selectedTrackSortMode: TrackSortMode,
+        val trackPlaybackStats: Map<String, TrackPlaybackStat>,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,
+    )
+
+    private data class LibraryContentSnapshot(
+        val tracks: List<Track>,
+        val albums: List<Album>,
+        val artists: List<Artist>,
+        val sources: List<top.iwesley.lyn.music.core.model.SourceWithStatus>,
     )
 
     private companion object {
@@ -191,4 +242,44 @@ class LibraryStore(
             LibrarySourceFilter.NAVIDROME,
         )
     }
+}
+
+internal fun sortTracks(
+    tracks: List<Track>,
+    sortMode: TrackSortMode,
+    trackPlaybackStats: Map<String, TrackPlaybackStat>,
+    addedAtByTrackId: Map<String, Long> = emptyMap(),
+): List<Track> {
+    fun textKey(value: String?): String = value?.trim().orEmpty().lowercase()
+    fun missingText(value: String?): Boolean = value.isNullOrBlank()
+    fun addedAt(track: Track): Long = addedAtByTrackId[track.id] ?: track.addedAt
+    val comparator = when (sortMode) {
+        TrackSortMode.TITLE -> compareBy<Track> { textKey(it.title) }
+            .thenBy { it.id }
+
+        TrackSortMode.ARTIST -> compareBy<Track> { missingText(it.artistName) }
+            .thenBy { textKey(it.artistName) }
+            .thenBy { textKey(it.title) }
+            .thenBy { it.id }
+
+        TrackSortMode.ALBUM -> compareBy<Track> { missingText(it.albumTitle) }
+            .thenBy { textKey(it.albumTitle) }
+            .thenBy { it.discNumber ?: Int.MAX_VALUE }
+            .thenBy { it.trackNumber ?: Int.MAX_VALUE }
+            .thenBy { textKey(it.title) }
+            .thenBy { it.id }
+
+        TrackSortMode.PLAY_COUNT -> compareByDescending<Track> { trackPlaybackStats[it.id]?.playCount ?: 0 }
+            .thenBy { textKey(it.title) }
+            .thenBy { it.id }
+
+        TrackSortMode.ADDED_AT -> compareByDescending<Track> { addedAt(it) }
+            .thenBy { textKey(it.title) }
+            .thenBy { it.id }
+    }
+    return tracks.sortedWith(comparator)
+}
+
+private object EmptyTrackPlaybackStatsRepository : TrackPlaybackStatsRepository {
+    override val trackStats = MutableStateFlow<Map<String, TrackPlaybackStat>>(emptyMap())
 }

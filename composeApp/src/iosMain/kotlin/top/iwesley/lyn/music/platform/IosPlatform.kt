@@ -65,6 +65,7 @@ import top.iwesley.lyn.music.domain.scanNavidromeLibrary
 import top.iwesley.lyn.music.domain.testNavidromeConnection
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
+import top.iwesley.lyn.music.feature.library.TrackSortMode
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
@@ -294,6 +295,12 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     )
     private val mutableLibrarySourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_LIBRARY_SOURCE_FILTER))
     private val mutableFavoritesSourceFilter = MutableStateFlow(readLibrarySourceFilter(KEY_FAVORITES_SOURCE_FILTER))
+    private val mutableLibraryTrackSortMode = MutableStateFlow(
+        readTrackSortMode(KEY_LIBRARY_TRACK_SORT_MODE, TrackSortMode.TITLE),
+    )
+    private val mutableFavoritesTrackSortMode = MutableStateFlow(
+        readTrackSortMode(KEY_FAVORITES_TRACK_SORT_MODE, TrackSortMode.ADDED_AT),
+    )
     private val mutableSelectedTheme = MutableStateFlow(readSelectedTheme())
     private val mutableCustomThemeTokens = MutableStateFlow(readCustomThemeTokens())
     private val mutableTextPalettePreferences = MutableStateFlow(readTextPalettePreferences())
@@ -313,6 +320,8 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     override val selectedLyricsShareFontKey: StateFlow<String?> = mutableSelectedLyricsShareFontKey.asStateFlow()
     override val librarySourceFilter: StateFlow<LibrarySourceFilter> = mutableLibrarySourceFilter.asStateFlow()
     override val favoritesSourceFilter: StateFlow<LibrarySourceFilter> = mutableFavoritesSourceFilter.asStateFlow()
+    override val libraryTrackSortMode: StateFlow<TrackSortMode> = mutableLibraryTrackSortMode.asStateFlow()
+    override val favoritesTrackSortMode: StateFlow<TrackSortMode> = mutableFavoritesTrackSortMode.asStateFlow()
 
     override suspend fun setUseSambaCache(enabled: Boolean) {
         defaults.setBool(enabled, KEY_USE_SAMBA_CACHE)
@@ -365,6 +374,16 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
         mutableFavoritesSourceFilter.value = filter
     }
 
+    override suspend fun setLibraryTrackSortMode(mode: TrackSortMode) {
+        defaults.setObject(mode.name, KEY_LIBRARY_TRACK_SORT_MODE)
+        mutableLibraryTrackSortMode.value = mode
+    }
+
+    override suspend fun setFavoritesTrackSortMode(mode: TrackSortMode) {
+        defaults.setObject(mode.name, KEY_FAVORITES_TRACK_SORT_MODE)
+        mutableFavoritesTrackSortMode.value = mode
+    }
+
     override suspend fun setSelectedTheme(themeId: AppThemeId) {
         defaults.setObject(themeId.name, KEY_SELECTED_THEME)
         mutableSelectedTheme.value = themeId
@@ -385,6 +404,11 @@ private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePrefe
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = defaults.stringForKey(key)
         return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+    }
+
+    private fun readTrackSortMode(key: String, defaultMode: TrackSortMode): TrackSortMode {
+        val name = defaults.stringForKey(key)
+        return TrackSortMode.entries.firstOrNull { it.name == name } ?: defaultMode
     }
 
     private fun readPlaybackVolume(): Float {
@@ -563,6 +587,8 @@ private const val KEY_NAVIDROME_WIFI_AUDIO_QUALITY = "navidrome_wifi_audio_quali
 private const val KEY_NAVIDROME_MOBILE_AUDIO_QUALITY = "navidrome_mobile_audio_quality"
 private const val KEY_LIBRARY_SOURCE_FILTER = "library_source_filter"
 private const val KEY_FAVORITES_SOURCE_FILTER = "favorites_source_filter"
+private const val KEY_LIBRARY_TRACK_SORT_MODE = "library_track_sort_mode"
+private const val KEY_FAVORITES_TRACK_SORT_MODE = "favorites_track_sort_mode"
 private const val KEY_SELECTED_THEME = "selected_theme"
 private const val KEY_LYRICS_SHARE_FONT_KEY = "lyrics_share_font_key"
 private const val KEY_CUSTOM_THEME_BACKGROUND_ARGB = "custom_theme_background_argb"

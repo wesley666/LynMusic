@@ -60,6 +60,14 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
+    fun `mobile library hub track sort only applies to library and favorites`() {
+        assertTrue(mobileLibraryHubSupportsTrackSort(AppTab.Library))
+        assertTrue(mobileLibraryHubSupportsTrackSort(AppTab.Favorites))
+        assertFalse(mobileLibraryHubSupportsTrackSort(AppTab.Playlists))
+        assertFalse(mobileLibraryHubSupportsTrackSort(AppTab.My))
+    }
+
+    @Test
     fun `mobile library hub uses pull to refresh for remote-backed hub pages`() {
         assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Library))
         assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Favorites))
