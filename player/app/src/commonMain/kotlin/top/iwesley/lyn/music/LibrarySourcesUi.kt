@@ -161,6 +161,7 @@ internal fun FavoritesTab(
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
+    showRefreshActionButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -192,7 +193,7 @@ internal fun FavoritesTab(
         onSearchChanged = { onFavoritesIntent(FavoritesIntent.SearchChanged(it)) },
         onSourceFilterChanged = { onFavoritesIntent(FavoritesIntent.SourceFilterChanged(it)) },
         onToggleFavorite = { onFavoritesIntent(FavoritesIntent.ToggleFavorite(it)) },
-        actionButton = if (state.canRefreshRemote) {
+        actionButton = if (showRefreshActionButton && state.canRefreshRemote) {
             {
                 IconButton(
                     onClick = { onFavoritesIntent(FavoritesIntent.Refresh) },

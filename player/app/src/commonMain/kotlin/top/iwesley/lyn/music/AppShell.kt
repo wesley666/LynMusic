@@ -49,6 +49,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -72,6 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
@@ -146,6 +150,17 @@ internal fun mobileLibraryHubSearchPlaceholder(tab: AppTab): String {
 
 internal fun mobileLibraryHubShowsSourceMenu(tab: AppTab): Boolean {
     return tab == AppTab.Library || tab == AppTab.Favorites
+}
+
+internal fun mobileLibraryHubUsesPullToRefresh(tab: AppTab): Boolean {
+    return tab == AppTab.Favorites
+}
+
+internal fun mobileLibraryHubRefreshIndicatorVisible(
+    isRefreshing: Boolean,
+    isMinimumHoldActive: Boolean,
+): Boolean {
+    return isRefreshing || isMinimumHoldActive
 }
 
 private fun mobileLibraryHubSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
@@ -721,6 +736,9 @@ private fun MobileLibraryHubTab(
     val coroutineScope = rememberCoroutineScope()
     var isSearchMode by rememberSaveable { mutableStateOf(false) }
     var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
+    var favoritesRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
+    var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
+    val favoritesPullRefreshState = rememberPullToRefreshState()
     val activeSearchTab = mobileLibraryHubTabForPage(pagerState.currentPage)
     val activeSearchQuery = when (activeSearchTab) {
         AppTab.Library -> libraryState.query
@@ -747,6 +765,11 @@ private fun MobileLibraryHubTab(
         isSearchMode = false
     }
 
+    fun startFavoritesRefreshHold() {
+        favoritesRefreshHoldActive = true
+        favoritesRefreshHoldKey += 1
+    }
+
     LaunchedEffect(selectedTab) {
         val targetPage = mobileLibraryHubPageForTab(selectedTab)
         if (pagerState.currentPage != targetPage) {
@@ -759,6 +782,16 @@ private fun MobileLibraryHubTab(
             .collect { page ->
                 onTabSelected(mobileLibraryHubTabForPage(page))
             }
+    }
+    LaunchedEffect(favoritesRefreshHoldKey) {
+        if (favoritesRefreshHoldKey <= 0) return@LaunchedEffect
+        delay(2_000)
+        favoritesRefreshHoldActive = false
+    }
+    LaunchedEffect(favoritesState.isRefreshing) {
+        if (favoritesState.isRefreshing) {
+            startFavoritesRefreshHold()
+        }
     }
     Column(modifier = modifier.fillMaxSize()) {
         if (isSearchMode) {
@@ -831,14 +864,41 @@ private fun MobileLibraryHubTab(
                     modifier = Modifier.fillMaxSize(),
                 )
 
-                AppTab.Favorites -> FavoritesTab(
-                    state = favoritesState,
-                    onFavoritesIntent = onFavoritesIntent,
-                    onPlayerIntent = onPlayerIntent,
-                    showDuration = false,
-                    showSearchField = false,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                AppTab.Favorites -> {
+                    val isFavoritesRefreshing = mobileLibraryHubRefreshIndicatorVisible(
+                        isRefreshing = favoritesState.isRefreshing,
+                        isMinimumHoldActive = favoritesRefreshHoldActive,
+                    )
+                    PullToRefreshBox(
+                        isRefreshing = isFavoritesRefreshing,
+                        onRefresh = {
+                            startFavoritesRefreshHold()
+                            onFavoritesIntent(FavoritesIntent.Refresh)
+                        },
+                        enabled = favoritesState.canRefreshRemote,
+                        modifier = Modifier.fillMaxSize(),
+                        state = favoritesPullRefreshState,
+                        indicator = {
+                            PullToRefreshDefaults.Indicator(
+                                isRefreshing = isFavoritesRefreshing,
+                                state = favoritesPullRefreshState,
+                                modifier = Modifier.align(Alignment.TopCenter),
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    ) {
+                        FavoritesTab(
+                            state = favoritesState,
+                            onFavoritesIntent = onFavoritesIntent,
+                            onPlayerIntent = onPlayerIntent,
+                            showDuration = false,
+                            showSearchField = false,
+                            showRefreshActionButton = false,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
 
                 AppTab.Playlists -> PlaylistsTab(
                     state = playlistsState,

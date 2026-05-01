@@ -60,6 +60,42 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
+    fun `mobile library hub only uses pull to refresh for favorites`() {
+        assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Library))
+        assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Favorites))
+        assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Playlists))
+        assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.My))
+    }
+
+    @Test
+    fun `mobile library hub refresh indicator stays visible while refreshing or holding`() {
+        assertFalse(
+            mobileLibraryHubRefreshIndicatorVisible(
+                isRefreshing = false,
+                isMinimumHoldActive = false,
+            ),
+        )
+        assertTrue(
+            mobileLibraryHubRefreshIndicatorVisible(
+                isRefreshing = true,
+                isMinimumHoldActive = false,
+            ),
+        )
+        assertTrue(
+            mobileLibraryHubRefreshIndicatorVisible(
+                isRefreshing = false,
+                isMinimumHoldActive = true,
+            ),
+        )
+        assertTrue(
+            mobileLibraryHubRefreshIndicatorVisible(
+                isRefreshing = true,
+                isMinimumHoldActive = true,
+            ),
+        )
+    }
+
+    @Test
     fun `mobile library hub filters playlists by name only`() {
         val playlists = listOf(
             PlaylistSummary(id = "1", name = "Daily Mix"),
