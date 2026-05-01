@@ -98,6 +98,66 @@ class LibraryNavigationTest {
     }
 
     @Test
+    fun `derive track targets returns album and artist targets when metadata exists`() {
+        val result = deriveTrackLibraryNavigationTargets(
+            testTrack(albumTitle = "Parachutes", artistName = "Coldplay"),
+        )
+
+        assertEquals(
+            LibraryNavigationTarget.Album(libraryAlbumId("Coldplay", "Parachutes")),
+            result.albumTarget,
+        )
+        assertEquals(
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            result.artistTarget,
+        )
+    }
+
+    @Test
+    fun `derive track targets ignores blank values`() {
+        val result = deriveTrackLibraryNavigationTargets(
+            testTrack(albumTitle = " ", artistName = "\n"),
+        )
+
+        assertNull(result.albumTarget)
+        assertNull(result.artistTarget)
+    }
+
+    @Test
+    fun `track row targets require desktop metadata navigation`() {
+        val track = testTrack(albumTitle = "Parachutes", artistName = "Coldplay")
+
+        val desktopTargets = resolveTrackRowLibraryNavigationTargets(
+            track = track,
+            showDuration = true,
+            metadataNavigationEnabled = true,
+        )
+        val mobileTargets = resolveTrackRowLibraryNavigationTargets(
+            track = track,
+            showDuration = false,
+            metadataNavigationEnabled = true,
+        )
+        val disabledTargets = resolveTrackRowLibraryNavigationTargets(
+            track = track,
+            showDuration = true,
+            metadataNavigationEnabled = false,
+        )
+
+        assertEquals(
+            LibraryNavigationTarget.Album(libraryAlbumId("Coldplay", "Parachutes")),
+            desktopTargets.albumTarget,
+        )
+        assertEquals(
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            desktopTargets.artistTarget,
+        )
+        assertNull(mobileTargets.albumTarget)
+        assertNull(mobileTargets.artistTarget)
+        assertNull(disabledTargets.albumTarget)
+        assertNull(disabledTargets.artistTarget)
+    }
+
+    @Test
     fun `resolve command resets filters when query is active`() {
         val result = resolveLibraryNavigationCommand(
             target = LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),

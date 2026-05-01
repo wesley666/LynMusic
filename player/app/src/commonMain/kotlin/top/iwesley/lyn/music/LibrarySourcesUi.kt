@@ -113,6 +113,7 @@ internal fun LibraryTab(
     showSearchField: Boolean = true,
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -154,6 +155,7 @@ internal fun LibraryTab(
         showTrackSortActionButton = showSearchField,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
+        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
         modifier = modifier,
     )
 }
@@ -167,6 +169,7 @@ internal fun FavoritesTab(
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
     showRefreshActionButton: Boolean = true,
+    onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -221,6 +224,7 @@ internal fun FavoritesTab(
         showDuration = showDuration,
         showSearchField = showSearchField,
         showTrackSortActionButton = showSearchField,
+        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
         modifier = modifier,
     )
 }
@@ -259,6 +263,18 @@ internal enum class LibraryBrowserRootView {
     Artists,
 }
 
+internal fun resolveTrackRowLibraryNavigationTargets(
+    track: Track,
+    showDuration: Boolean,
+    metadataNavigationEnabled: Boolean,
+): PlaybackLibraryNavigationTargets {
+    return if (showDuration && metadataNavigationEnabled) {
+        deriveTrackLibraryNavigationTargets(track)
+    } else {
+        PlaybackLibraryNavigationTargets(albumTarget = null, artistTarget = null)
+    }
+}
+
 @Composable
 private fun LibraryBrowserTab(
     state: LibraryBrowserPageState,
@@ -276,6 +292,7 @@ private fun LibraryBrowserTab(
     onPlayTracks: (List<Track>, Int) -> Unit,
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tracksListState = rememberLazyListState()
@@ -410,6 +427,19 @@ private fun LibraryBrowserTab(
         rootView = view
         selectedArtistId = null
         selectedAlbumId = null
+    }
+    fun trackRowNavigationTargets(track: Track): PlaybackLibraryNavigationTargets {
+        return resolveTrackRowLibraryNavigationTargets(
+            track = track,
+            showDuration = showDuration,
+            metadataNavigationEnabled = onOpenLibraryNavigationTarget != null,
+        )
+    }
+    fun navigationTargetClick(target: LibraryNavigationTarget?): (() -> Unit)? {
+        val handler = onOpenLibraryNavigationTarget ?: return null
+        return target?.let { resolvedTarget ->
+            { handler(resolvedTarget) }
+        }
     }
 
     val shellColors = mainShellColors
@@ -582,6 +612,7 @@ private fun LibraryBrowserTab(
                         }
                     } else {
                         itemsIndexed(albumTracks, key = { _, item -> item.id }) { index, track ->
+                            val navigationTargets = trackRowNavigationTargets(track)
                             TrackRow(
                                 track = track,
                                 index = index,
@@ -589,6 +620,8 @@ private fun LibraryBrowserTab(
                                 onToggleFavorite = { onToggleFavorite(track) },
                                 showFavoriteButton = showFavoriteButton,
                                 showDuration = showDuration,
+                                onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
+                                onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                 onClick = {
                                     onPlayTracks(albumTracks, index)
                                 },
@@ -645,6 +678,7 @@ private fun LibraryBrowserTab(
                         }
                     } else {
                         itemsIndexed(artistTracks, key = { _, item -> item.id }) { index, track ->
+                            val navigationTargets = trackRowNavigationTargets(track)
                             TrackRow(
                                 track = track,
                                 index = index,
@@ -652,6 +686,8 @@ private fun LibraryBrowserTab(
                                 onToggleFavorite = { onToggleFavorite(track) },
                                 showFavoriteButton = showFavoriteButton,
                                 showDuration = showDuration,
+                                onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
+                                onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                 onClick = {
                                     onPlayTracks(artistTracks, index)
                                 },
@@ -715,6 +751,7 @@ private fun LibraryBrowserTab(
                                 itemsIndexed(
                                     state.filteredTracks,
                                     key = { _, item -> item.id }) { index, track ->
+                                    val navigationTargets = trackRowNavigationTargets(track)
                                     TrackRow(
                                         track = track,
                                         index = index,
@@ -722,6 +759,8 @@ private fun LibraryBrowserTab(
                                         onToggleFavorite = { onToggleFavorite(track) },
                                         showFavoriteButton = showFavoriteButton,
                                         showDuration = showDuration,
+                                        onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
+                                        onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                         onClick = {
                                             onPlayTracks(state.filteredTracks, index)
                                         },

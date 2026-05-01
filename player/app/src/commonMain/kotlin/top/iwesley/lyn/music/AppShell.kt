@@ -676,6 +676,7 @@ private fun TabContent(
             showDuration = !platform.isMobilePlatform(),
             navigationTarget = libraryNavigationTarget,
             onNavigationHandled = onLibraryNavigationHandled,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
             modifier = modifier,
         )
 
@@ -691,6 +692,7 @@ private fun TabContent(
             onFavoritesIntent = onFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
             showDuration = !platform.isMobilePlatform(),
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
             modifier = modifier,
         )
 

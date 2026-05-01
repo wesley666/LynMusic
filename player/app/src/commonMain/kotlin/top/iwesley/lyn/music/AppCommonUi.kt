@@ -287,9 +287,14 @@ internal fun TrackRow(
     onToggleFavorite: () -> Unit,
     showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
+    onArtistClick: (() -> Unit)? = null,
+    onAlbumClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val showAlbumTitle = showDuration
+    val artistClick = onArtistClick.takeIf { showDuration && !track.artistName.isNullOrBlank() }
+    val albumClick = onAlbumClick.takeIf { showAlbumTitle && !track.albumTitle.isNullOrBlank() }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -306,7 +311,7 @@ internal fun TrackRow(
                 fontWeight = FontWeight.Bold
             )
             TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(if (showAlbumTitle) 1.45f else 1f)) {
                 Text(
                     track.title,
                     maxLines = 1,
@@ -315,10 +320,22 @@ internal fun TrackRow(
                 )
                 Text(
                     track.artistName ?: "未知艺人",
+                    modifier = artistClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (showAlbumTitle) {
+                Box(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.albumTitle?.trim()?.takeIf { it.isNotEmpty() } ?: "未知专辑",
+                        modifier = albumClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Row(
                 modifier = Modifier.width(

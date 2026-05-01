@@ -39,6 +39,23 @@ internal fun derivePlaybackLibraryNavigationTargets(
         ?: normalizedLibraryNavigationValue(track.artistName)
     val albumTitle = normalizedLibraryNavigationValue(snapshot.currentDisplayAlbumTitle)
         ?: normalizedLibraryNavigationValue(track.albumTitle)
+    return deriveLibraryNavigationTargets(
+        artistName = artistName,
+        albumTitle = albumTitle,
+    )
+}
+
+internal fun deriveTrackLibraryNavigationTargets(track: Track): PlaybackLibraryNavigationTargets {
+    return deriveLibraryNavigationTargets(
+        artistName = normalizedLibraryNavigationValue(track.artistName),
+        albumTitle = normalizedLibraryNavigationValue(track.albumTitle),
+    )
+}
+
+private fun deriveLibraryNavigationTargets(
+    artistName: String?,
+    albumTitle: String?,
+): PlaybackLibraryNavigationTargets {
     return PlaybackLibraryNavigationTargets(
         albumTarget = albumTitle?.let { LibraryNavigationTarget.Album(libraryAlbumId(artistName, it)) },
         artistTarget = artistName?.let { LibraryNavigationTarget.Artist(libraryArtistId(it)) },
