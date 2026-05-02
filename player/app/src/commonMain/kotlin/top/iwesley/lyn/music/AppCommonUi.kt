@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
@@ -142,7 +143,7 @@ internal fun BatchOperationButton(
         onClick = onClick,
         enabled = enabled,
     ) {
-        Icon(Icons.Rounded.Tune, contentDescription = null)
+        Icon(Icons.Rounded.Checklist, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(
             text = "批量操作",

@@ -24,7 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -1172,7 +1174,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                         text = { Text("批量操作") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.Tune,
+                                imageVector = Icons.Rounded.Checklist,
                                 contentDescription = null,
                             )
                         },
@@ -1199,7 +1201,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                         text = { Text("排序") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Rounded.Tune,
+                                imageVector = Icons.AutoMirrored.Rounded.Sort,
                                 contentDescription = null,
                             )
                         },

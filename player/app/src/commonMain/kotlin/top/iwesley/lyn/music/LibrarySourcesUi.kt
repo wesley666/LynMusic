@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -42,7 +43,6 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1212,7 +1212,7 @@ private fun LibraryBrowserToolbarActions(
             Box {
                 IconButton(onClick = { onTrackSortMenuExpandedChange(true) }) {
                     Icon(
-                        imageVector = Icons.Rounded.Tune,
+                        imageVector = Icons.AutoMirrored.Rounded.Sort,
                         contentDescription = "歌曲排序",
                     )
                 }
