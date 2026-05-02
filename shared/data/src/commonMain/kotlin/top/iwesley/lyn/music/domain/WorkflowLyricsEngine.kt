@@ -344,9 +344,11 @@ fun scoreWorkflowSongCandidate(
     candidate: WorkflowSongCandidate,
     selection: WorkflowSelectionConfig,
 ): Double {
-    val titleScore = normalizedTextSimilarity(track.title, candidate.title)
-    val artistScore = normalizedTextSimilarity(track.artistName.orEmpty(), candidate.artists.joinToString(" / "))
-    val albumScore = normalizedTextSimilarity(track.albumTitle.orEmpty(), candidate.album.orEmpty())
+    val titleScore = normalizedTitleSimilarity(track.title, candidate.title)
+    val candidateArtists = candidate.artists.joinToString(" / ")
+    val artistScore = normalizedArtistSimilarity(track.artistName.orEmpty(), candidateArtists)
+    val albumScore = normalizedAlbumSimilarity(track.albumTitle.orEmpty(), candidate.album.orEmpty())
+    val albumBonus = albumMatchBonus(track.albumTitle.orEmpty(), candidate.album.orEmpty())
     val durationScore = normalizedDurationSimilarity(
         expectedSeconds = ((track.durationMs + 500L) / 1_000L).toInt(),
         candidateSeconds = candidate.durationSeconds,
@@ -355,7 +357,8 @@ fun scoreWorkflowSongCandidate(
     return titleScore * selection.titleWeight +
         artistScore * selection.artistWeight +
         albumScore * selection.albumWeight +
-        durationScore * selection.durationWeight
+        durationScore * selection.durationWeight +
+        albumBonus
 }
 
 fun selectBestWorkflowSongCandidate(
@@ -363,7 +366,11 @@ fun selectBestWorkflowSongCandidate(
     candidates: List<WorkflowSongCandidate>,
     selection: WorkflowSelectionConfig,
 ): WorkflowSongCandidate? {
-    return rankWorkflowSongCandidates(track, candidates, selection).firstOrNull()
+    return rankWorkflowSongCandidates(
+        track = track,
+        candidates = candidates,
+        selection = selection,
+    ).firstOrNull()
 }
 
 fun rankWorkflowSongCandidates(
@@ -373,7 +380,13 @@ fun rankWorkflowSongCandidates(
 ): List<WorkflowSongCandidate> {
     return candidates
         .take(selection.maxCandidates.coerceAtLeast(1))
-        .map { it to scoreWorkflowSongCandidate(track, it, selection) }
+        .map {
+            it to scoreWorkflowSongCandidate(
+                track = track,
+                candidate = it,
+                selection = selection,
+            )
+        }
         .filter { (_, score) -> score >= selection.minScore }
         .sortedByDescending { it.second }
         .map { it.first }

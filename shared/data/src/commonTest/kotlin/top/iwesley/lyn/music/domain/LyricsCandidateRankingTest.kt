@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.WorkflowSelectionConfig
 
 class LyricsCandidateRankingTest {
 
@@ -162,18 +163,168 @@ class LyricsCandidateRankingTest {
         assertTrue(fullyMatched > DEFAULT_DIRECT_LYRICS_SELECTION.minScore)
         assertEquals(0.0, metadataMissing)
     }
+
+    @Test
+    fun `title containment scores slightly below exact match`() {
+        assertEquals(1.0, normalizedTitleSimilarity("硬币", "硬币"))
+        assertEquals(LYRICS_TITLE_CONTAINMENT_SCORE, normalizedTitleSimilarity("硬币", "硬币 (Live)"))
+        assertEquals(LYRICS_TITLE_CONTAINMENT_SCORE, normalizedTitleSimilarity("硬币", "硬币 - Live"))
+    }
+
+    @Test
+    fun `single character title containment does not use near exact score`() {
+        val score = normalizedTitleSimilarity("爱", "爱你")
+
+        assertTrue(score < LYRICS_TITLE_CONTAINMENT_SCORE)
+    }
+
+    @Test
+    fun `direct candidate artist containment counts as full match`() {
+        val selection = artistOnlySelection()
+
+        val containingCandidateScore = scoreDirectLyricsCandidate(
+            track = sampleTrack(artistName = "周杰伦"),
+            candidate = parsedCandidate(artistName = "周杰伦 / 林迈可"),
+            selection = selection,
+        )
+        val containedCandidateScore = scoreDirectLyricsCandidate(
+            track = sampleTrack(artistName = "周杰伦 / 林迈可"),
+            candidate = parsedCandidate(artistName = "周杰伦"),
+            selection = selection,
+        )
+
+        assertEquals(1.0, containingCandidateScore)
+        assertEquals(1.0, containedCandidateScore)
+    }
+
+    @Test
+    fun `direct candidate artist containment does not match blank artist`() {
+        val score = scoreDirectLyricsCandidate(
+            track = sampleTrack(artistName = "周杰伦"),
+            candidate = parsedCandidate(artistName = ""),
+            selection = artistOnlySelection(),
+        )
+
+        assertEquals(0.0, score)
+    }
+
+    @Test
+    fun `direct candidate album containment counts as full match`() {
+        val selection = albumOnlySelection()
+
+        val containingCandidateScore = scoreDirectLyricsCandidate(
+            track = sampleTrack(albumTitle = "叶惠美"),
+            candidate = parsedCandidate(albumTitle = "叶惠美 2003"),
+            selection = selection,
+        )
+        val containedCandidateScore = scoreDirectLyricsCandidate(
+            track = sampleTrack(albumTitle = "叶惠美 2003"),
+            candidate = parsedCandidate(albumTitle = "叶惠美"),
+            selection = selection,
+        )
+
+        assertEquals(1.0 + LYRICS_ALBUM_MATCH_BONUS, containingCandidateScore)
+        assertEquals(1.0 + LYRICS_ALBUM_MATCH_BONUS, containedCandidateScore)
+    }
+
+    @Test
+    fun `direct candidate album containment does not match blank album`() {
+        val score = scoreDirectLyricsCandidate(
+            track = sampleTrack(albumTitle = "叶惠美"),
+            candidate = parsedCandidate(albumTitle = ""),
+            selection = albumOnlySelection(),
+        )
+
+        assertEquals(0.0, score)
+    }
+
+    @Test
+    fun `direct candidate unrelated album falls back to ordinary similarity`() {
+        val score = scoreDirectLyricsCandidate(
+            track = sampleTrack(albumTitle = "叶惠美"),
+            candidate = parsedCandidate(albumTitle = "十一月的萧邦"),
+            selection = albumOnlySelection(),
+        )
+
+        assertTrue(score < 1.0)
+    }
+
+    @Test
+    fun `direct candidate album match applies bonus`() {
+        val score = scoreDirectLyricsCandidate(
+            track = sampleTrack(albumTitle = "存在·超级巡回上海演唱会"),
+            candidate = parsedCandidate(albumTitle = "存在·超级巡回上海演唱会"),
+            selection = albumOnlySelection(),
+        )
+
+        assertEquals(1.0 + LYRICS_ALBUM_MATCH_BONUS, score)
+    }
+
+    @Test
+    fun `title version and album match outrank exact title with wrong metadata`() {
+        val ranked = rankDirectLyricsCandidates(
+            track = sampleTrack(
+                title = "硬币",
+                artistName = "汪峰",
+                albumTitle = "存在·超级巡回上海演唱会",
+            ),
+            candidates = listOf(
+                parsedCandidate(
+                    itemId = "wrong-metadata",
+                    title = "硬币",
+                    artistName = "安瑞兮",
+                    albumTitle = "硬币 - Single",
+                    durationSeconds = 231,
+                ),
+                parsedCandidate(
+                    itemId = "right-live",
+                    title = "硬币 (Live)",
+                    artistName = "汪峰",
+                    albumTitle = "存在·超级巡回上海演唱会",
+                    durationSeconds = 231,
+                ),
+            ),
+        )
+
+        assertEquals("right-live", ranked.first().candidate.itemId)
+        assertTrue(ranked.first().score > ranked[1].score)
+    }
 }
 
-private fun sampleTrack(): Track {
+private fun sampleTrack(
+    title: String = "Blue",
+    artistName: String? = "Artist A",
+    albumTitle: String? = "Album A",
+): Track {
     return Track(
         id = "track-1",
         sourceId = "source-1",
-        title = "Blue",
-        artistName = "Artist A",
-        albumTitle = "Album A",
+        title = title,
+        artistName = artistName,
+        albumTitle = albumTitle,
         durationMs = 215_000L,
         mediaLocator = "file:///music/blue.mp3",
         relativePath = "Artist A/Album A/Blue.mp3",
+    )
+}
+
+private fun artistOnlySelection(): WorkflowSelectionConfig {
+    return WorkflowSelectionConfig(
+        titleWeight = 0.0,
+        artistWeight = 1.0,
+        albumWeight = 0.0,
+        durationWeight = 0.0,
+        minScore = 0.0,
+    )
+}
+
+private fun albumOnlySelection(): WorkflowSelectionConfig {
+    return WorkflowSelectionConfig(
+        titleWeight = 0.0,
+        artistWeight = 0.0,
+        albumWeight = 1.0,
+        durationWeight = 0.0,
+        minScore = 0.0,
     )
 }
 

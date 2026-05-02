@@ -6,6 +6,8 @@ import top.iwesley.lyn.music.core.model.WorkflowSelectionConfig
 
 internal val DEFAULT_DIRECT_LYRICS_SELECTION = WorkflowSelectionConfig()
 internal const val AUTO_DIRECT_LYRICS_SYNCED_BONUS = 0.03
+internal const val LYRICS_TITLE_CONTAINMENT_SCORE = 0.98
+internal const val LYRICS_ALBUM_MATCH_BONUS = 0.06
 
 internal data class ScoredDirectLyricsCandidate(
     val candidate: ParsedLyricsPayload,
@@ -19,9 +21,10 @@ internal fun scoreDirectLyricsCandidate(
     selection: WorkflowSelectionConfig = DEFAULT_DIRECT_LYRICS_SELECTION,
     syncedBonus: Double = 0.0,
 ): Double {
-    val titleScore = normalizedTextSimilarity(track.title, candidate.title.orEmpty())
-    val artistScore = normalizedTextSimilarity(track.artistName.orEmpty(), candidate.artistName.orEmpty())
-    val albumScore = normalizedTextSimilarity(track.albumTitle.orEmpty(), candidate.albumTitle.orEmpty())
+    val titleScore = normalizedTitleSimilarity(track.title, candidate.title.orEmpty())
+    val artistScore = normalizedArtistSimilarity(track.artistName.orEmpty(), candidate.artistName.orEmpty())
+    val albumScore = normalizedAlbumSimilarity(track.albumTitle.orEmpty(), candidate.albumTitle.orEmpty())
+    val albumBonus = albumMatchBonus(track.albumTitle.orEmpty(), candidate.albumTitle.orEmpty()) //让“正确专辑”压过“时长不匹配”
     val durationScore = normalizedDurationSimilarity(
         expectedSeconds = ((track.durationMs + 500L) / 1_000L).toInt(),
         candidateSeconds = candidate.durationSeconds,
@@ -31,7 +34,7 @@ internal fun scoreDirectLyricsCandidate(
         artistScore * selection.artistWeight +
         albumScore * selection.albumWeight +
         durationScore * selection.durationWeight
-    return metadataScore + if (candidate.document.isSynced) syncedBonus else 0.0
+    return metadataScore + albumBonus + if (candidate.document.isSynced) syncedBonus else 0.0
 }
 
 internal fun rankDirectLyricsCandidates(
@@ -44,11 +47,50 @@ internal fun rankDirectLyricsCandidates(
         .mapIndexed { index, candidate ->
             ScoredDirectLyricsCandidate(
                 candidate = candidate,
-                score = scoreDirectLyricsCandidate(track, candidate, selection, syncedBonus),
+                score = scoreDirectLyricsCandidate(
+                    track = track,
+                    candidate = candidate,
+                    selection = selection,
+                    syncedBonus = syncedBonus,
+                ),
                 originalIndex = index,
             )
         }
         .sortedWith(compareByDescending<ScoredDirectLyricsCandidate> { it.score }.thenBy { it.originalIndex })
+}
+
+internal fun normalizedArtistSimilarity(expected: String, actual: String): Double {
+    return normalizedContainmentSimilarity(expected, actual)
+}
+
+internal fun normalizedAlbumSimilarity(expected: String, actual: String): Double {
+    return normalizedContainmentSimilarity(expected, actual)
+}
+
+internal fun normalizedTitleSimilarity(expected: String, actual: String): Double {
+    val left = normalizeComparableText(expected)
+    val right = normalizeComparableText(actual)
+    if (left.isBlank() || right.isBlank()) return 0.0
+    if (left == right) return 1.0
+    if (
+        (left.contains(right) || right.contains(left)) &&
+        minOf(left.length, right.length) >= LYRICS_TITLE_CONTAINMENT_MIN_LENGTH
+    ) {
+        return LYRICS_TITLE_CONTAINMENT_SCORE
+    }
+    return normalizedLevenshteinSimilarity(left, right)
+}
+
+internal fun albumMatchBonus(expected: String, actual: String): Double {
+    return if (normalizedAlbumSimilarity(expected, actual) == 1.0) LYRICS_ALBUM_MATCH_BONUS else 0.0
+}
+
+private fun normalizedContainmentSimilarity(expected: String, actual: String): Double {
+    val left = normalizeComparableText(expected)
+    val right = normalizeComparableText(actual)
+    if (left.isBlank() || right.isBlank()) return 0.0
+    if (left == right || left.contains(right) || right.contains(left)) return 1.0
+    return normalizedTextSimilarity(expected, actual)
 }
 
 internal fun normalizedTextSimilarity(expected: String, actual: String): Double {
@@ -61,6 +103,10 @@ internal fun normalizedTextSimilarity(expected: String, actual: String): Double 
         val maxLength = maxOf(left.length, right.length).toDouble()
         return minLength / maxLength
     }
+    return normalizedLevenshteinSimilarity(left, right)
+}
+
+private fun normalizedLevenshteinSimilarity(left: String, right: String): Double {
     val distance = levenshteinDistance(left, right)
     val maxLength = maxOf(left.length, right.length).coerceAtLeast(1)
     return (1.0 - distance.toDouble() / maxLength.toDouble()).coerceIn(0.0, 1.0)
@@ -83,6 +129,8 @@ private fun normalizeComparableText(value: String): String {
         .lowercase()
         .replace(Regex("""[\s\p{Punct}（）()【】\[\]·•]+"""), "")
 }
+
+private const val LYRICS_TITLE_CONTAINMENT_MIN_LENGTH = 2
 
 private fun levenshteinDistance(left: String, right: String): Int {
     if (left.isEmpty()) return right.length

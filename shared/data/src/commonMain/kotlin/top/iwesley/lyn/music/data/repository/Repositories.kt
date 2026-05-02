@@ -2032,7 +2032,11 @@ class DefaultLyricsRepository(
         requestType: String,
     ): ResolvedLyricsResult? {
         val candidates = searchWorkflowCandidates(track, config, requestType)
-        val rankedCandidates = rankWorkflowSongCandidates(track, candidates, config.selection)
+        val rankedCandidates = rankWorkflowSongCandidates(
+            track = track,
+            candidates = candidates,
+            selection = config.selection,
+        )
         if (rankedCandidates.isEmpty()) {
             logger.warn(LYRICS_LOG_TAG) {
                 "$requestType-workflow-select-miss track=${track.logIdentity()} source=${config.id} candidates=${candidates.size}"
