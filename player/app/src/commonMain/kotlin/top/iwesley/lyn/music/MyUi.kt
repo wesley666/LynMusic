@@ -217,7 +217,7 @@ private fun DailyRecommendationCard(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "根据你的口味生成 >",
+                    text = "查看全部 >",
                     color = mutedColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
