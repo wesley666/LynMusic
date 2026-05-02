@@ -92,6 +92,47 @@ class MyStoreTest {
         assertEquals(false, store.state.value.isGeneratingDailyRecommendation)
     }
 
+    @Test
+    fun `date key change triggers daily recommendation generation again`() = runTest {
+        val repository = FakeMyRepository()
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setDateKey("2026-05-02")
+        advanceUntilIdle()
+
+        assertEquals(2, repository.ensureDailyRecommendationCalls)
+    }
+
+    @Test
+    fun `same date key does not trigger duplicate daily recommendation generation`() = runTest {
+        val repository = FakeMyRepository()
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setDateKey("2026-05-01")
+        advanceUntilIdle()
+
+        assertEquals(1, repository.ensureDailyRecommendationCalls)
+    }
+
+    @Test
+    fun `re-entering my tab refreshes current date key after store already started`() = runTest {
+        val repository = FakeMyRepository()
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.currentDateKey = "2026-05-02"
+        store.ensureStarted()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.dateKeyRefreshCalls)
+        assertEquals(2, repository.ensureDailyRecommendationCalls)
+    }
+
     private fun createStore(
         repository: FakeMyRepository,
         scheduler: TestCoroutineScheduler,
@@ -116,15 +157,29 @@ private class FakeMyRepository(
 ) : MyRepository {
     private val mutableTracks = MutableStateFlow(tracks)
     private val mutableAlbums = MutableStateFlow(albums)
+    private val mutableDateKey = MutableStateFlow("2026-05-01")
     private val mutableDailyRecommendation = MutableStateFlow(dailyRecommendation)
+    var currentDateKey: String = "2026-05-01"
     var refreshCalls: Int = 0
         private set
     var ensureDailyRecommendationCalls: Int = 0
         private set
+    var dateKeyRefreshCalls: Int = 0
+        private set
 
     override val recentTracks: Flow<List<RecentTrack>> = mutableTracks.asStateFlow()
     override val recentAlbums: Flow<List<RecentAlbum>> = mutableAlbums.asStateFlow()
+    override val dailyRecommendationDateKey: Flow<String> = mutableDateKey.asStateFlow()
     override val dailyRecommendation: Flow<List<Track>> = mutableDailyRecommendation.asStateFlow()
+
+    fun setDateKey(dateKey: String) {
+        mutableDateKey.value = dateKey
+    }
+
+    override fun refreshDailyRecommendationDateKey() {
+        dateKeyRefreshCalls += 1
+        mutableDateKey.value = currentDateKey
+    }
 
     override suspend fun refreshNavidromeRecentPlays(): Result<Unit> {
         refreshCalls += 1

@@ -6,6 +6,7 @@ import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -36,8 +37,10 @@ import top.iwesley.lyn.music.domain.requestNavidromeJson
 interface MyRepository {
     val recentTracks: Flow<List<RecentTrack>>
     val recentAlbums: Flow<List<RecentAlbum>>
+    val dailyRecommendationDateKey: Flow<String>
     val dailyRecommendation: Flow<List<Track>>
 
+    fun refreshDailyRecommendationDateKey()
     suspend fun refreshNavidromeRecentPlays(): Result<Unit>
     suspend fun ensureDailyRecommendation(): Result<Unit>
 }
@@ -51,6 +54,8 @@ class RoomMyRepository(
     private val recentAlbumLimit: Int = DEFAULT_RECENT_ITEM_LIMIT,
     private val dailyRecommendationDateKeyProvider: DailyRecommendationDateKeyProvider =
         UtcDailyRecommendationDateKeyProvider,
+    private val dailyRecommendationDateChangeNotifier: DailyRecommendationDateChangeNotifier =
+        DefaultDailyRecommendationDateChangeNotifier(dailyRecommendationDateKeyProvider),
     private val dailyRecommendationLimit: Int = DEFAULT_DAILY_RECOMMENDATION_LIMIT,
 ) : MyRepository {
     override val recentTracks: Flow<List<RecentTrack>> = combine(
@@ -116,13 +121,20 @@ class RoomMyRepository(
             .take(recentAlbumLimit)
     }
 
+    override val dailyRecommendationDateKey: Flow<String> =
+        dailyRecommendationDateChangeNotifier.dateKeys.distinctUntilChanged()
+
+    override fun refreshDailyRecommendationDateKey() {
+        dailyRecommendationDateChangeNotifier.refreshCurrentDateKey()
+    }
+
     override val dailyRecommendation: Flow<List<Track>> = combine(
+        dailyRecommendationDateKey,
         database.dailyRecommendationDao().observeAll(),
         database.trackDao().observeAll(),
         database.importSourceDao().observeAll(),
         database.lyricsCacheDao().observeArtworkLocators(),
-    ) { recommendationRows, tracks, sources, artworkRows ->
-        val today = dailyRecommendationDateKeyProvider.currentDateKey()
+    ) { today, recommendationRows, tracks, sources, artworkRows ->
         val recommendation = recommendationRows.firstOrNull { it.dateKey == today }
             ?: return@combine emptyList()
         val enabledSourceIds = sources.enabledSourceIds()

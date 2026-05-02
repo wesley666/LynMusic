@@ -9,6 +9,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
@@ -197,6 +199,42 @@ class MyRepositoryTest {
             assertEquals(first?.trackIds, repeated?.trackIds)
             assertTrue(first?.trackIds.orEmpty().isNotBlank())
             assertTrue(next?.trackIds.orEmpty().isNotBlank())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation flow follows emitted date key changes`() = runTest {
+        val database = createMyTestDatabase()
+        val dateProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01")
+        val dateNotifier = FakeDailyRecommendationDateChangeNotifier("2026-05-01")
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = dateProvider,
+            dailyRecommendationDateChangeNotifier = dateNotifier,
+        )
+
+        try {
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-1", "local-1", "A Song", null, null),
+                    trackEntity("track-2", "local-1", "B Song", null, null),
+                ),
+            )
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            assertTrue(repository.dailyRecommendation.first().isNotEmpty())
+
+            dateProvider.dateKey = "2026-05-02"
+            dateNotifier.dateKey = "2026-05-02"
+            assertEquals(emptyList(), repository.dailyRecommendation.first().map { it.id })
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            assertTrue(repository.dailyRecommendation.first().isNotEmpty())
         } finally {
             database.close()
         }
@@ -499,6 +537,23 @@ private class FakeDailyRecommendationDateKeyProvider(
     var dateKey: String,
 ) : DailyRecommendationDateKeyProvider {
     override fun currentDateKey(): String = dateKey
+}
+
+private class FakeDailyRecommendationDateChangeNotifier(
+    dateKey: String,
+) : DailyRecommendationDateChangeNotifier {
+    private val mutableDateKey = MutableStateFlow(dateKey)
+    override val dateKeys = mutableDateKey.asStateFlow()
+
+    var dateKey: String
+        get() = mutableDateKey.value
+        set(value) {
+            mutableDateKey.value = value
+        }
+
+    override fun refreshCurrentDateKey() {
+        mutableDateKey.value = dateKey
+    }
 }
 
 private fun Int.daysMs(): Long = this.toLong() * 24L * 60L * 60L * 1_000L

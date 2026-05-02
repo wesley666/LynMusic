@@ -13,9 +13,13 @@ import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
 import java.time.LocalDate
+import java.time.ZonedDateTime
 import java.util.ArrayDeque
 import java.util.Properties
+import java.util.Timer
+import java.util.TimerTask
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.isRegularFile
@@ -26,6 +30,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -99,6 +104,7 @@ import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
@@ -194,6 +200,9 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             audioTagEditorPlatformService = JvmAudioTagEditorPlatformService(),
             vlcPathPickerPlatformService = JvmVlcPathPickerPlatformService(),
             dailyRecommendationDateKeyProvider = JvmDailyRecommendationDateKeyProvider,
+            dailyRecommendationDateChangeNotifier = JvmDailyRecommendationDateChangeNotifier(
+                JvmDailyRecommendationDateKeyProvider,
+            ),
             logger = logger,
         ),
     )
@@ -211,6 +220,44 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
 
 private object JvmDailyRecommendationDateKeyProvider : DailyRecommendationDateKeyProvider {
     override fun currentDateKey(): String = LocalDate.now().toString()
+}
+
+private class JvmDailyRecommendationDateChangeNotifier(
+    private val dateKeyProvider: DailyRecommendationDateKeyProvider,
+) : DailyRecommendationDateChangeNotifier {
+    private val mutableDateKeys = MutableStateFlow(dateKeyProvider.currentDateKey())
+    private val timer = Timer("daily-recommendation-date", true)
+
+    override val dateKeys: Flow<String> = mutableDateKeys.asStateFlow()
+
+    init {
+        scheduleNextMidnightRefresh()
+    }
+
+    override fun refreshCurrentDateKey() {
+        mutableDateKeys.value = dateKeyProvider.currentDateKey()
+    }
+
+    private fun scheduleNextMidnightRefresh() {
+        timer.schedule(
+            object : TimerTask() {
+                override fun run() {
+                    refreshCurrentDateKey()
+                    scheduleNextMidnightRefresh()
+                }
+            },
+            millisUntilNextLocalMidnight(),
+        )
+    }
+}
+
+private fun millisUntilNextLocalMidnight(): Long {
+    val now = ZonedDateTime.now()
+    val nextMidnight = now.toLocalDate()
+        .plusDays(1)
+        .atStartOfDay(now.zone)
+    return (Duration.between(now, nextMidnight).toMillis() + 1_000L)
+        .coerceAtLeast(1_000L)
 }
 
 private class JvmLyricsHttpClient : LyricsHttpClient {

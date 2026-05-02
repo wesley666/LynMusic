@@ -45,8 +45,10 @@ import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DefaultDailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DefaultLyricsRepository
 import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
@@ -89,6 +91,8 @@ data class SharedRuntimeServices(
     val lyricsHttpClient: LyricsHttpClient,
     val dailyRecommendationDateKeyProvider: DailyRecommendationDateKeyProvider =
         UtcDailyRecommendationDateKeyProvider,
+    val dailyRecommendationDateChangeNotifier: DailyRecommendationDateChangeNotifier =
+        DefaultDailyRecommendationDateChangeNotifier(dailyRecommendationDateKeyProvider),
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
@@ -214,6 +218,7 @@ fun buildSharedGraph(
         httpClient = runtimeServices.lyricsHttpClient,
         logger = runtimeServices.logger,
         dailyRecommendationDateKeyProvider = runtimeServices.dailyRecommendationDateKeyProvider,
+        dailyRecommendationDateChangeNotifier = runtimeServices.dailyRecommendationDateChangeNotifier,
     )
     scope.launch {
         settingsRepository.ensureDefaults()

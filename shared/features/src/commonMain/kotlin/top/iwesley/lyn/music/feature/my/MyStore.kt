@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.feature.my
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.RecentAlbum
 import top.iwesley.lyn.music.core.model.RecentTrack
@@ -38,6 +39,7 @@ class MyStore(
     private var hasStarted = false
     private var refreshJob: Job? = null
     private var dailyRecommendationJob: Job? = null
+    private var dailyRecommendationDateJob: Job? = null
 
     init {
         if (startImmediately) {
@@ -46,6 +48,7 @@ class MyStore(
     }
 
     fun ensureStarted() {
+        repository.refreshDailyRecommendationDateKey()
         if (hasStarted) return
         hasStarted = true
         storeScope.launch {
@@ -66,7 +69,15 @@ class MyStore(
                 }
             }
         }
-        ensureDailyRecommendation()
+        if (dailyRecommendationDateJob?.isActive != true) {
+            dailyRecommendationDateJob = storeScope.launch {
+                repository.dailyRecommendationDateKey
+                    .distinctUntilChanged()
+                    .collect {
+                        ensureDailyRecommendation()
+                    }
+            }
+        }
         refreshNavidromeRecentPlays()
     }
 

@@ -1,7 +1,10 @@
 package top.iwesley.lyn.music.platform
 
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
@@ -15,7 +18,10 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -27,6 +33,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -106,6 +113,7 @@ import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
@@ -220,6 +228,11 @@ fun createAndroidRuntimeGraph(
             ),
             audioTagEditorPlatformService = AndroidAudioTagEditorPlatformService(activity),
             dailyRecommendationDateKeyProvider = AndroidDailyRecommendationDateKeyProvider,
+            dailyRecommendationDateChangeNotifier = AndroidDailyRecommendationDateChangeNotifier(
+                context = activity.applicationContext,
+                activity = activity,
+                dateKeyProvider = AndroidDailyRecommendationDateKeyProvider,
+            ),
             logger = logger,
         ),
     )
@@ -247,6 +260,49 @@ fun createAndroidRuntimeGraph(
 private object AndroidDailyRecommendationDateKeyProvider : DailyRecommendationDateKeyProvider {
     override fun currentDateKey(): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
+}
+
+private class AndroidDailyRecommendationDateChangeNotifier(
+    private val context: Context,
+    private val activity: ComponentActivity,
+    private val dateKeyProvider: DailyRecommendationDateKeyProvider,
+) : DailyRecommendationDateChangeNotifier {
+    private val mutableDateKeys = MutableStateFlow(dateKeyProvider.currentDateKey())
+    override val dateKeys: Flow<String> = mutableDateKeys.asStateFlow()
+
+    init {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                refreshCurrentDateKey()
+            }
+        }
+        val lifecycleObserver = object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                refreshCurrentDateKey()
+            }
+
+            override fun onResume(owner: LifecycleOwner) {
+                refreshCurrentDateKey()
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        activity.lifecycle.addObserver(lifecycleObserver)
+    }
+
+    override fun refreshCurrentDateKey() {
+        mutableDateKeys.value = dateKeyProvider.currentDateKey()
     }
 }
 

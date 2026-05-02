@@ -16,6 +16,7 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +61,7 @@ import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
+import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.domain.scanNavidromeLibrary
@@ -82,6 +84,8 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSLocale
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUserDomainMask
@@ -158,6 +162,9 @@ fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             audioTagGateway = UnsupportedAudioTagGateway,
             audioTagEditorPlatformService = UnsupportedAudioTagEditorPlatformService,
             dailyRecommendationDateKeyProvider = IosDailyRecommendationDateKeyProvider,
+            dailyRecommendationDateChangeNotifier = IosDailyRecommendationDateChangeNotifier(
+                IosDailyRecommendationDateKeyProvider,
+            ),
             logger = ConsoleDiagnosticLogger(enabled = true, label = "iOS"),
         ),
     )
@@ -183,6 +190,45 @@ private object IosDailyRecommendationDateKeyProvider : DailyRecommendationDateKe
         formatter.locale = NSLocale(localeIdentifier = "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.stringFromDate(NSDate())
+    }
+}
+
+private class IosDailyRecommendationDateChangeNotifier(
+    private val dateKeyProvider: DailyRecommendationDateKeyProvider,
+) : DailyRecommendationDateChangeNotifier {
+    private val mutableDateKeys = MutableStateFlow(dateKeyProvider.currentDateKey())
+    @Suppress("unused")
+    private var observers: List<Any?> = emptyList()
+
+    override val dateKeys: Flow<String> = mutableDateKeys.asStateFlow()
+
+    init {
+        val dayChangedObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            name = "NSCalendarDayChangedNotification",
+            `object` = null,
+            queue = NSOperationQueue.mainQueue,
+        ) {
+            refreshCurrentDateKey()
+        }
+        val significantTimeObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            name = "UIApplicationSignificantTimeChangeNotification",
+            `object` = null,
+            queue = NSOperationQueue.mainQueue,
+        ) {
+            refreshCurrentDateKey()
+        }
+        val activeObserver = NSNotificationCenter.defaultCenter.addObserverForName(
+            name = "UIApplicationDidBecomeActiveNotification",
+            `object` = null,
+            queue = NSOperationQueue.mainQueue,
+        ) {
+            refreshCurrentDateKey()
+        }
+        observers = listOf(dayChangedObserver, significantTimeObserver, activeObserver)
+    }
+
+    override fun refreshCurrentDateKey() {
+        mutableDateKeys.value = dateKeyProvider.currentDateKey()
     }
 }
 
