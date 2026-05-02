@@ -46,6 +46,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -123,13 +124,17 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.OfflineDownload
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.supportsOfflineDownload
 import top.iwesley.lyn.music.automotive.AutomotiveLandscapePlayerOverlayContent
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.feature.player.SLEEP_TIMER_PRESET_MINUTES
@@ -1453,8 +1458,15 @@ private fun PlayerBottomControls(
             }
         }
         val artistNavigationTarget = navigationTargets.artistTarget
+        val offlineUiState = LocalOfflineDownloadUiState.current
+        val offlineDownload = offlineUiState.downloadsByTrackId[track.id]
+        val onOfflineDownloadIntent = offlineUiState.onIntent
+        val supportsOfflineDownloadEntry = currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME &&
+            supportsOfflineDownload(track)
+        val showOfflineDownloadEntry = supportsOfflineDownloadEntry && onOfflineDownloadIntent != null
         var isMoreSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
         var isSleepTimerSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
+        var isOfflineDownloadSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
         val mobileTopActionButtonSize = 58.dp
         val mobileTopActionIconSize = 30.dp
         val mobileBottomActionButtonSize = 62.dp
@@ -1616,10 +1628,29 @@ private fun PlayerBottomControls(
                     onOpenLibraryNavigationTarget(target)
                 },
                 sleepTimer = sleepTimer,
+                showOfflineDownload = showOfflineDownloadEntry,
+                offlineDownloadStatus = compactPlayerOfflineDownloadStatusLabel(offlineDownload),
+                onOpenOfflineDownload = {
+                    isMoreSheetVisible = false
+                    isOfflineDownloadSheetVisible = true
+                },
                 onOpenSleepTimer = {
                     isMoreSheetVisible = false
                     isSleepTimerSheetVisible = true
                 },
+            )
+        }
+        if (
+            mobilePlayback &&
+            isOfflineDownloadSheetVisible &&
+            supportsOfflineDownloadEntry &&
+            onOfflineDownloadIntent != null
+        ) {
+            TrackOfflineDownloadBottomSheet(
+                track = track,
+                download = offlineDownload,
+                onIntent = onOfflineDownloadIntent,
+                onDismiss = { isOfflineDownloadSheetVisible = false },
             )
         }
         if (mobilePlayback && isSleepTimerSheetVisible) {
@@ -1853,6 +1884,9 @@ private fun CompactPlayerMoreSheet(
     sleepTimer: SleepTimerState,
     onDismiss: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
+    showOfflineDownload: Boolean,
+    offlineDownloadStatus: String,
+    onOpenOfflineDownload: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
@@ -1934,6 +1968,15 @@ private fun CompactPlayerMoreSheet(
                         onClick = {},
                     )
                 }
+                if (showOfflineDownload) {
+                    CompactPlayerMoreSheetRow(
+                        icon = Icons.Rounded.Download,
+                        title = "离线下载",
+                        value = offlineDownloadStatus,
+                        enabled = true,
+                        onClick = onOpenOfflineDownload,
+                    )
+                }
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Person,
                     title = "歌手",
@@ -1963,6 +2006,40 @@ private fun CompactPlayerMoreSheet(
                     onClick = onOpenSleepTimer,
                 )
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrackOfflineDownloadBottomSheet(
+    track: Track,
+    download: OfflineDownload?,
+    onIntent: (OfflineDownloadIntent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = shellColors.navContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column(modifier = Modifier.padding(bottom = 20.dp)) {
+            Text(
+                text = track.title,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold,
+            )
+            TrackOfflineActionMenuItems(
+                track = track,
+                download = download,
+                onIntent = onIntent,
+                onDismiss = onDismiss,
+            )
         }
     }
 }
@@ -2320,6 +2397,16 @@ internal fun formatAndroidCurrentPlaybackAudioQuality(
         audioFormat?.bitRateBps?.takeIf { it > 0 }?.let(::formatPlaybackBitRate) ?: navidromeFallbackBitRate,
         audioFormat?.channelCount?.takeIf { it > 0 }?.let { "${it}ch" },
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+internal fun compactPlayerOfflineDownloadStatusLabel(download: OfflineDownload?): String {
+    return when (download?.status) {
+        OfflineDownloadStatus.Pending,
+        OfflineDownloadStatus.Downloading -> "正在下载"
+        OfflineDownloadStatus.Completed -> "已离线"
+        OfflineDownloadStatus.Failed -> "下载失败"
+        null -> "下载到本机"
+    }
 }
 
 private fun formatNavidromePlaybackBitRateFallback(quality: NavidromeAudioQuality): String {

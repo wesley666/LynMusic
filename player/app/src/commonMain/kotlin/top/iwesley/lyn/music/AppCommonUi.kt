@@ -514,7 +514,7 @@ internal fun TrackActionContainer(
 }
 
 @Composable
-private fun TrackOfflineActionMenuItems(
+internal fun TrackOfflineActionMenuItems(
     track: Track,
     download: OfflineDownload?,
     onIntent: (OfflineDownloadIntent) -> Unit,

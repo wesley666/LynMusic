@@ -35,9 +35,31 @@ class AppCommonUiLogicTest {
         assertEquals("下载 原始音质", navidromeDownloadMenuLabel(NavidromeAudioQuality.Original, null))
     }
 
+    @Test
+    fun `compact player offline download status labels download states`() {
+        assertEquals("下载到本机", compactPlayerOfflineDownloadStatusLabel(null))
+        assertEquals(
+            "正在下载",
+            compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Pending)),
+        )
+        assertEquals(
+            "正在下载",
+            compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Downloading)),
+        )
+        assertEquals(
+            "已离线",
+            compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Completed)),
+        )
+        assertEquals(
+            "下载失败",
+            compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Failed)),
+        )
+    }
+
     private fun completedDownload(
-        quality: NavidromeAudioQuality,
+        quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
         localMediaLocator: String? = "/tmp/offline/song.mp3",
+        status: OfflineDownloadStatus = OfflineDownloadStatus.Completed,
     ): OfflineDownload {
         return OfflineDownload(
             trackId = "song-1",
@@ -45,7 +67,7 @@ class AppCommonUiLogicTest {
             originalMediaLocator = "lynmusic-navidrome://source-1/song-1",
             localMediaLocator = localMediaLocator,
             quality = quality,
-            status = OfflineDownloadStatus.Completed,
+            status = status,
             downloadedBytes = 1_024L,
         )
     }
