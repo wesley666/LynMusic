@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -523,8 +524,9 @@ private fun TrackOfflineActionMenuItems(
     val status = download?.status
     if (status == OfflineDownloadStatus.Pending || status == OfflineDownloadStatus.Downloading) {
         DropdownMenuItem(
-            text = { Text(offlineDownloadProgressLabel(download)) },
+            text = { Text("取消下载") },
             leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
+            trailingIcon = { DownloadMenuTrailingSizeText(offlineDownloadProgressSizeLabel(download)) },
             onClick = {
                 onDismiss()
                 onIntent(OfflineDownloadIntent.Cancel(track.id))
@@ -536,7 +538,8 @@ private fun TrackOfflineActionMenuItems(
         NavidromeAudioQuality.entries.forEach { quality ->
             DropdownMenuItem(
                 text = { Text(navidromeDownloadMenuLabel(quality, download)) },
-                leadingIcon = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                trailingIcon = { DownloadMenuTrailingSizeText(downloadMenuTrailingSizeLabel(track, download, quality)) },
                 onClick = {
                     onDismiss()
                     onIntent(OfflineDownloadIntent.Download(track, quality))
@@ -548,14 +551,14 @@ private fun TrackOfflineActionMenuItems(
             text = {
                 Text(
                     when (status) {
-                        OfflineDownloadStatus.Completed ->
-                            "已离线 · ${formatOfflineDownloadSize(download.downloadedBytes)}"
+                        OfflineDownloadStatus.Completed -> "已离线"
                         OfflineDownloadStatus.Failed -> "重试下载离线音乐"
                         else -> "下载离线音乐"
                     },
                 )
             },
-            leadingIcon = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+            trailingIcon = { DownloadMenuTrailingSizeText(downloadMenuTrailingSizeLabel(track, download)) },
             enabled = status != OfflineDownloadStatus.Completed,
             onClick = {
                 onDismiss()
@@ -581,18 +584,22 @@ private fun TrackOfflineActionMenuItems(
     }
 }
 
+@Composable
+private fun DownloadMenuTrailingSizeText(label: String) {
+    Text(
+        text = label,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+    )
+}
+
 private fun navidromeDownloadMenuLabel(
     quality: NavidromeAudioQuality,
     download: OfflineDownload?,
 ): String {
     val prefix = if (download?.status == OfflineDownloadStatus.Completed) "重新下载" else "下载"
-    val suffix = download
-        ?.takeIf { it.status == OfflineDownloadStatus.Completed && it.quality == quality }
-        ?.downloadedBytes
-        ?.takeIf { it > 0L }
-        ?.let { " · 已离线 ${formatOfflineDownloadSize(it)}" }
-        .orEmpty()
-    return "$prefix${navidromeQualityLabel(quality)}$suffix"
+    return "$prefix${navidromeQualityLabel(quality)}"
 }
 
 private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String {
@@ -604,14 +611,42 @@ private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String {
     }
 }
 
-private fun offlineDownloadProgressLabel(download: OfflineDownload?): String {
-    val downloaded = download?.downloadedBytes?.takeIf { it > 0L }?.let(::formatOfflineDownloadSize)
-        ?: "准备中"
+private fun downloadMenuTrailingSizeLabel(
+    track: Track,
+    download: OfflineDownload?,
+    quality: NavidromeAudioQuality? = null,
+): String {
+    val completedSize = download
+        ?.takeIf { it.status == OfflineDownloadStatus.Completed && (quality == null || it.quality == quality) }
+        ?.downloadedBytes
+        ?.takeIf { it > 0L }
+    if (completedSize != null) {
+        return formatOfflineDownloadSize(completedSize)
+    }
+    if (quality != null && quality != NavidromeAudioQuality.Original) {
+        return estimatedNavidromeTranscodedSizeBytes(track, quality)
+            ?.let { "约 ${formatOfflineDownloadSize(it)}" }
+            ?: "未知"
+    }
+    return track.sizeBytes.takeIf { it > 0L }?.let(::formatOfflineDownloadSize) ?: "未知"
+}
+
+private fun estimatedNavidromeTranscodedSizeBytes(
+    track: Track,
+    quality: NavidromeAudioQuality,
+): Long? {
+    val maxBitRateKbps = quality.maxBitRateKbps?.takeIf { it > 0 } ?: return null
+    val durationMs = track.durationMs.takeIf { it > 0L } ?: return null
+    return maxBitRateKbps.toLong() * durationMs * 125L / 1_000L
+}
+
+private fun offlineDownloadProgressSizeLabel(download: OfflineDownload?): String {
+    val downloaded = formatOfflineDownloadSize(download?.downloadedBytes?.coerceAtLeast(0L) ?: 0L)
     val total = download?.totalBytes?.takeIf { it > 0L }?.let(::formatOfflineDownloadSize)
     return if (total == null) {
-        "取消下载 · $downloaded"
+        downloaded
     } else {
-        "取消下载 · $downloaded / $total"
+        "$downloaded / $total"
     }
 }
 

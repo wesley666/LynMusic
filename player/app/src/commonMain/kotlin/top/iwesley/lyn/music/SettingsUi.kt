@@ -1772,7 +1772,7 @@ private fun StorageSettingsPane(
         state.storageSnapshot?.paths.orEmpty().filter { it.isNotBlank() }
     }
     LaunchedEffect(Unit) {
-        onSettingsIntent(SettingsIntent.LoadStorageUsage())
+        onSettingsIntent(SettingsIntent.LoadStorageUsage(force = true))
     }
     Column(
         modifier = modifier
