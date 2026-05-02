@@ -451,6 +451,7 @@ internal fun DesktopShell(
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
 ) {
+    val shellColors = mainShellColors
     Row(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -458,7 +459,7 @@ internal fun DesktopShell(
             modifier = Modifier
                 .width(240.dp)
                 .fillMaxHeight()
-                .background(Color.White),
+                .background(shellColors.navContainer),
         ) {
             Column(
                 modifier = Modifier
@@ -477,7 +478,7 @@ internal fun DesktopShell(
                     .align(Alignment.CenterEnd)
                     .width(1.dp)
                     .fillMaxHeight()
-                    .background(Color(0xFFE3E3E3)),
+                    .background(shellColors.cardBorder.copy(alpha = 0.72f)),
             )
         }
 
@@ -542,8 +543,10 @@ private fun DesktopNav(
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shellColors = mainShellColors
     val primary = MaterialTheme.colorScheme.primary
-    val selectedBackground = primary.copy(alpha = 0.09f)
+    val inactiveContent = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f)
+    val selectedBackground = shellColors.selectedContainer.copy(alpha = 0.64f)
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -577,14 +580,14 @@ private fun DesktopNav(
                 Icon(
                     icon,
                     contentDescription = label,
-                    tint = if (selected) primary else Color(0xFF111111),
+                    tint = if (selected) primary else inactiveContent,
                     modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(18.dp))
                 Text(
                     label,
                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = Color(0xFF111111),
+                    color = if (selected) primary else inactiveContent,
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
@@ -602,7 +605,7 @@ private fun HeroHeader() {
         text = "LynMusic",
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.ExtraBold,
-        color = Color.Black,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 42.dp, top = topPadding),
