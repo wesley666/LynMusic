@@ -33,6 +33,10 @@ private class AndroidAppStorageGateway(
                     sizeBytes = androidPlaybackCacheSizeBytes(context.cacheDir, smbSourceIds),
                 ),
                 AppStorageCategoryUsage(
+                    category = AppStorageCategory.OfflineDownloads,
+                    sizeBytes = directorySizeBytes(File(context.filesDir, "offline")),
+                ),
+                AppStorageCategoryUsage(
                     category = AppStorageCategory.LyricsShareTemp,
                     sizeBytes = directorySizeBytes(File(context.cacheDir, "lyrics-share")),
                 ),
@@ -65,6 +69,14 @@ private class AndroidAppStorageGateway(
                     context.cacheDir.listFiles().orEmpty()
                         .filter { it.isFile && isAndroidPlaybackCacheFileName(it.name, smbSourceIds) }
                         .forEach(::deleteRecursively)
+                    Unit
+                }
+
+                AppStorageCategory.OfflineDownloads -> {
+                    val directory = File(context.filesDir, "offline")
+                    clearDirectory(directory)
+                    directory.mkdirs()
+                    database.offlineDownloadDao().deleteAll()
                     Unit
                 }
 

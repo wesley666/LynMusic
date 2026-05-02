@@ -7,13 +7,16 @@ import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppStorageCategoryUsage
 import top.iwesley.lyn.music.core.model.AppStorageGateway
 import top.iwesley.lyn.music.core.model.AppStorageSnapshot
+import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 fun createJvmAppStorageGateway(
     rootDirectory: File = File(File(System.getProperty("user.home")), ".lynmusic"),
-): AppStorageGateway = JvmAppStorageGateway(rootDirectory)
+    database: LynMusicDatabase? = null,
+): AppStorageGateway = JvmAppStorageGateway(rootDirectory, database)
 
 internal class JvmAppStorageGateway(
     private val rootDirectory: File,
+    private val database: LynMusicDatabase? = null,
 ) : AppStorageGateway {
     override suspend fun loadStorageSnapshot(): Result<AppStorageSnapshot> = withContext(Dispatchers.IO) {
         runCatching {
@@ -28,6 +31,10 @@ internal class JvmAppStorageGateway(
                 AppStorageCategoryUsage(
                     category = AppStorageCategory.PlaybackCache,
                     sizeBytes = directorySizeBytes(File(rootDirectory, "cache")),
+                ),
+                AppStorageCategoryUsage(
+                    category = AppStorageCategory.OfflineDownloads,
+                    sizeBytes = directorySizeBytes(File(rootDirectory, "offline")),
                 ),
             )
             AppStorageSnapshot(
@@ -56,6 +63,14 @@ internal class JvmAppStorageGateway(
                     val directory = File(rootDirectory, "cache")
                     clearDirectory(directory)
                     directory.mkdirs()
+                    Unit
+                }
+
+                AppStorageCategory.OfflineDownloads -> {
+                    val directory = File(rootDirectory, "offline")
+                    clearDirectory(directory)
+                    directory.mkdirs()
+                    database?.offlineDownloadDao()?.deleteAll()
                     Unit
                 }
 

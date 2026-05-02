@@ -185,7 +185,12 @@ fun createJvmAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
             lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createJvmArtworkCacheStore(),
-            appStorageGateway = createJvmAppStorageGateway(),
+            appStorageGateway = createJvmAppStorageGateway(database = database),
+            offlineDownloadGateway = createJvmOfflineDownloadGateway(
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
             deviceInfoGateway = createJvmDeviceInfoGateway(),
             audioTagGateway = JvmAudioTagGateway(
                 database = database,
@@ -1441,13 +1446,18 @@ private class JvmPlaybackGateway(
             currentPlaybackTarget = null
             currentSourceReference = null
             currentTrackForMetadata = track
-            val webDavTarget = resolveJvmWebDavPlaybackTarget(
+            val offlineTarget = resolveJvmOfflinePlaybackPath(database, track)
+            val webDavTarget = if (offlineTarget == null) resolveJvmWebDavPlaybackTarget(
                 database = database,
                 secureCredentialStore = secureCredentialStore,
                 locator = track.mediaLocator,
                 logger = logger,
-            )
-            val sambaTarget = if (webDavTarget == null && shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)) {
+            ) else null
+            val sambaTarget = if (
+                offlineTarget == null &&
+                webDavTarget == null &&
+                shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
+            ) {
                 resolveJvmSambaPlaybackTarget(
                     database = database,
                     secureCredentialStore = secureCredentialStore,
@@ -1458,17 +1468,19 @@ private class JvmPlaybackGateway(
                 null
             }
             val currentNavidromeAudioQuality =
-                if (webDavTarget == null && sambaTarget == null && parseNavidromeSongLocator(track.mediaLocator) != null) {
+                if (offlineTarget == null && webDavTarget == null && sambaTarget == null && parseNavidromeSongLocator(track.mediaLocator) != null) {
                     NavidromeAudioQuality.Original
                 } else {
                     null
                 }
             val actualPlaybackSource = when {
+                offlineTarget != null -> offlineTarget
                 sambaTarget != null -> sambaTarget.sourceReference
                 webDavTarget != null -> webDavTarget.requestUrl
                 else -> resolveLocator(track.mediaLocator)
             }
             val sourceReference = when {
+                offlineTarget != null -> track.mediaLocator
                 parseNavidromeSongLocator(track.mediaLocator) != null -> track.mediaLocator
                 else -> actualPlaybackSource
             }
@@ -1479,6 +1491,7 @@ private class JvmPlaybackGateway(
                 return
             }
             val playbackTarget = when {
+                offlineTarget != null -> offlineTarget
                 webDavTarget != null -> "webdav-callback://${track.id}"
                 sambaTarget != null -> buildJvmSambaPlaybackTarget(track.id)
                 else -> sourceReference

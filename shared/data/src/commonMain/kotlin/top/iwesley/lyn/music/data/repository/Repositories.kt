@@ -36,6 +36,7 @@ import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.OfflineDownloadGateway
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.RequestMethod
@@ -51,6 +52,7 @@ import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.ThemePreferencesStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagGateway
+import top.iwesley.lyn.music.core.model.UnsupportedOfflineDownloadGateway
 import top.iwesley.lyn.music.core.model.UnsupportedAppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedAutoPlayOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedCompactPlayerLyricsPreferencesStore
@@ -300,6 +302,7 @@ class RoomImportSourceRepository(
     private val database: LynMusicDatabase,
     private val gateway: ImportSourceGateway,
     private val secureCredentialStore: SecureCredentialStore,
+    private val offlineDownloadGateway: OfflineDownloadGateway = UnsupportedOfflineDownloadGateway,
 ) : ImportSourceRepository {
     override fun observeSources(): Flow<List<SourceWithStatus>> {
         return combine(
@@ -634,6 +637,10 @@ class RoomImportSourceRepository(
         return runCatching {
             val source = database.importSourceDao().getById(sourceId)?.toDomain()
                 ?: error("Source $sourceId does not exist.")
+            database.offlineDownloadDao().getBySourceId(source.id)
+                .mapNotNull { it.localMediaLocator }
+                .forEach { locator -> offlineDownloadGateway.delete(locator) }
+            database.offlineDownloadDao().deleteBySourceId(source.id)
             source.credentialKey?.let { secureCredentialStore.remove(it) }
             database.favoriteTrackDao().deleteBySourceId(source.id)
             database.trackPlaybackStatsDao().deleteBySourceId(source.id)

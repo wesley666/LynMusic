@@ -207,6 +207,25 @@ data class LyricsCacheEntity(
     val artworkLocator: String? = null,
 )
 
+@Entity(
+    tableName = "offline_download",
+    indices = [
+        Index(value = ["sourceId"]),
+    ],
+)
+data class OfflineDownloadEntity(
+    @PrimaryKey val trackId: String,
+    val sourceId: String,
+    val originalMediaLocator: String,
+    val localMediaLocator: String?,
+    val quality: String,
+    val status: String,
+    val downloadedBytes: Long,
+    val totalBytes: Long?,
+    val updatedAt: Long,
+    val errorMessage: String?,
+)
+
 @Dao
 interface ArtistDao {
     @Query("SELECT * FROM artist ORDER BY trackCount DESC, name ASC")
@@ -621,6 +640,53 @@ interface LyricsCacheDao {
     suspend fun upsert(item: LyricsCacheEntity)
 }
 
+@Dao
+interface OfflineDownloadDao {
+    @Query("SELECT * FROM offline_download ORDER BY updatedAt DESC, trackId ASC")
+    fun observeAll(): Flow<List<OfflineDownloadEntity>>
+
+    @Query("SELECT * FROM offline_download ORDER BY updatedAt DESC, trackId ASC")
+    suspend fun getAll(): List<OfflineDownloadEntity>
+
+    @Query("SELECT * FROM offline_download WHERE trackId = :trackId LIMIT 1")
+    suspend fun getByTrackId(trackId: String): OfflineDownloadEntity?
+
+    @Query("SELECT * FROM offline_download WHERE sourceId = :sourceId")
+    suspend fun getBySourceId(sourceId: String): List<OfflineDownloadEntity>
+
+    @Query(
+        """
+        UPDATE offline_download
+        SET status = :status,
+            downloadedBytes = :downloadedBytes,
+            totalBytes = :totalBytes,
+            updatedAt = :updatedAt,
+            errorMessage = :errorMessage
+        WHERE trackId = :trackId
+        """,
+    )
+    suspend fun updateProgress(
+        trackId: String,
+        status: String,
+        downloadedBytes: Long,
+        totalBytes: Long?,
+        updatedAt: Long,
+        errorMessage: String?,
+    )
+
+    @Query("DELETE FROM offline_download WHERE trackId = :trackId")
+    suspend fun deleteByTrackId(trackId: String)
+
+    @Query("DELETE FROM offline_download WHERE sourceId = :sourceId")
+    suspend fun deleteBySourceId(sourceId: String)
+
+    @Query("DELETE FROM offline_download")
+    suspend fun deleteAll()
+
+    @Upsert
+    suspend fun upsert(item: OfflineDownloadEntity)
+}
+
 @Database(
     entities = [
         ArtistEntity::class,
@@ -639,8 +705,9 @@ interface LyricsCacheDao {
         LyricsSourceConfigEntity::class,
         WorkflowLyricsSourceConfigEntity::class,
         LyricsCacheEntity::class,
+        OfflineDownloadEntity::class,
     ],
-    version = 13,
+    version = 14,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -660,6 +727,7 @@ abstract class LynMusicDatabase : RoomDatabase() {
     abstract fun lyricsSourceConfigDao(): LyricsSourceConfigDao
     abstract fun workflowLyricsSourceConfigDao(): WorkflowLyricsSourceConfigDao
     abstract fun lyricsCacheDao(): LyricsCacheDao
+    abstract fun offlineDownloadDao(): OfflineDownloadDao
 }
 
 @Suppress("KotlinNoActualForExpect")
@@ -683,6 +751,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_10_11)
         .addMigrations(MIGRATION_11_12)
         .addMigrations(MIGRATION_12_13)
+        .addMigrations(MIGRATION_13_14)
         .build()
 }
 
@@ -903,6 +972,33 @@ val MIGRATION_12_13: Migration = object : Migration(12, 13) {
                 generatedAt INTEGER NOT NULL,
                 trackIds TEXT NOT NULL
             )
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            CREATE TABLE IF NOT EXISTS offline_download (
+                trackId TEXT NOT NULL PRIMARY KEY,
+                sourceId TEXT NOT NULL,
+                originalMediaLocator TEXT NOT NULL,
+                localMediaLocator TEXT,
+                quality TEXT NOT NULL,
+                status TEXT NOT NULL,
+                downloadedBytes INTEGER NOT NULL,
+                totalBytes INTEGER,
+                updatedAt INTEGER NOT NULL,
+                errorMessage TEXT
+            )
+            """.trimIndent(),
+        )
+        connection.execSql(
+            """
+            CREATE INDEX IF NOT EXISTS index_offline_download_sourceId
+            ON offline_download(sourceId)
             """.trimIndent(),
         )
     }

@@ -57,6 +57,7 @@ private class IosAppStorageGateway : AppStorageGateway {
                 }
 
                 AppStorageCategory.PlaybackCache,
+                AppStorageCategory.OfflineDownloads,
                 AppStorageCategory.TagEditTemp,
                 -> Unit
             }

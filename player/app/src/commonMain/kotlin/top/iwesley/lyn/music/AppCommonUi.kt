@@ -6,15 +6,18 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +30,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -45,20 +50,27 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +81,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -78,20 +93,34 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ArtworkTintTheme
+import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.LyricsSourceConfig
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.OfflineDownload
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.deriveArtworkTintTheme
 import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
+import top.iwesley.lyn.music.core.model.offlineDownloadSourceType
+import top.iwesley.lyn.music.core.model.supportsOfflineDownload
 import top.iwesley.lyn.music.feature.importing.formatImportScanSummary
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+
+internal data class OfflineDownloadUiState(
+    val downloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
+    val onIntent: ((OfflineDownloadIntent) -> Unit)? = null,
+)
+
+internal val LocalOfflineDownloadUiState = staticCompositionLocalOf { OfflineDownloadUiState() }
 
 @Composable
 internal fun FavoriteToggleButton(
@@ -295,12 +324,16 @@ internal fun TrackRow(
     val showAlbumTitle = showDuration
     val artistClick = onArtistClick.takeIf { showDuration && !track.artistName.isNullOrBlank() }
     val albumClick = onAlbumClick.takeIf { showAlbumTitle && !track.albumTitle.isNullOrBlank() }
+    val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[track.id]
+    val showOfflineDownloadedIndicator = offlineDownload?.status == OfflineDownloadStatus.Completed &&
+        offlineDownload.hasLocalFileReference
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        TrackActionContainer(
+            track = track,
+            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -318,13 +351,28 @@ internal fun TrackRow(
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    track.artistName ?: "未知艺人",
-                    modifier = artistClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        track.artistName ?: "未知艺人",
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .then(artistClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (showOfflineDownloadedIndicator) {
+                        Icon(
+                            imageVector = Icons.Rounded.DownloadDone,
+                            contentDescription = "已下载离线音乐",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
             }
             if (showAlbumTitle) {
                 Box(modifier = Modifier.weight(1f)) {
@@ -372,6 +420,213 @@ internal fun TrackRow(
                 .height(1.dp)
                 .background(shellColors.cardBorder),
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+internal fun TrackActionContainer(
+    track: Track,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val offlineUiState = LocalOfflineDownloadUiState.current
+    val onOfflineIntent = offlineUiState.onIntent
+    val supportsOfflinePlatform = currentPlatformDescriptor.isPCPlatform() ||
+        currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME
+    val supportsActions = supportsOfflinePlatform && onOfflineIntent != null && supportsOfflineDownload(track)
+    val download = offlineUiState.downloadsByTrackId[track.id]
+    val mobilePlatform = currentPlatformDescriptor.isMobilePlatform()
+    var desktopMenuExpanded by remember(track.id) { mutableStateOf(false) }
+    var mobileSheetVisible by remember(track.id) { mutableStateOf(false) }
+    val interactionModifier = if (!supportsActions) {
+        Modifier.clickable(onClick = onClick)
+    } else if (mobilePlatform) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = { mobileSheetVisible = true },
+        )
+    } else {
+        Modifier
+            .pointerInput(track.id) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                            event.changes.forEach { it.consume() }
+                            desktopMenuExpanded = true
+                        }
+                    }
+                }
+            }
+            .clickable(onClick = onClick)
+    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = modifier.then(interactionModifier),
+            verticalAlignment = verticalAlignment,
+            horizontalArrangement = horizontalArrangement,
+            content = content,
+        )
+        if (supportsActions && !mobilePlatform) {
+            DropdownMenu(
+                expanded = desktopMenuExpanded,
+                onDismissRequest = { desktopMenuExpanded = false },
+                containerColor = mainShellColors.navContainer,
+            ) {
+                TrackOfflineActionMenuItems(
+                    track = track,
+                    download = download,
+                    onIntent = onOfflineIntent,
+                    onDismiss = { desktopMenuExpanded = false },
+                )
+            }
+        }
+    }
+    if (supportsActions && mobileSheetVisible) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { mobileSheetVisible = false },
+            sheetState = sheetState,
+            containerColor = mainShellColors.navContainer,
+        ) {
+            Column(modifier = Modifier.padding(bottom = 20.dp)) {
+                Text(
+                    text = track.title,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold,
+                )
+                TrackOfflineActionMenuItems(
+                    track = track,
+                    download = download,
+                    onIntent = onOfflineIntent,
+                    onDismiss = { mobileSheetVisible = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackOfflineActionMenuItems(
+    track: Track,
+    download: OfflineDownload?,
+    onIntent: (OfflineDownloadIntent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sourceType = offlineDownloadSourceType(track)
+    val status = download?.status
+    if (status == OfflineDownloadStatus.Pending || status == OfflineDownloadStatus.Downloading) {
+        DropdownMenuItem(
+            text = { Text(offlineDownloadProgressLabel(download)) },
+            leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
+            onClick = {
+                onDismiss()
+                onIntent(OfflineDownloadIntent.Cancel(track.id))
+            },
+        )
+        return
+    }
+    if (sourceType == ImportSourceType.NAVIDROME) {
+        NavidromeAudioQuality.entries.forEach { quality ->
+            DropdownMenuItem(
+                text = { Text(navidromeDownloadMenuLabel(quality, download)) },
+                leadingIcon = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+                onClick = {
+                    onDismiss()
+                    onIntent(OfflineDownloadIntent.Download(track, quality))
+                },
+            )
+        }
+    } else {
+        DropdownMenuItem(
+            text = {
+                Text(
+                    when (status) {
+                        OfflineDownloadStatus.Completed ->
+                            "已离线 · ${formatOfflineDownloadSize(download.downloadedBytes)}"
+                        OfflineDownloadStatus.Failed -> "重试下载离线音乐"
+                        else -> "下载离线音乐"
+                    },
+                )
+            },
+            leadingIcon = { Icon(Icons.Rounded.CloudSync, contentDescription = null) },
+            enabled = status != OfflineDownloadStatus.Completed,
+            onClick = {
+                onDismiss()
+                onIntent(OfflineDownloadIntent.Download(track))
+            },
+        )
+    }
+    if (download?.hasLocalFileReference == true || status == OfflineDownloadStatus.Completed) {
+        DropdownMenuItem(
+            text = { Text("删除离线音乐", color = MaterialTheme.colorScheme.error) },
+            leadingIcon = {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            onClick = {
+                onDismiss()
+                onIntent(OfflineDownloadIntent.Delete(track.id))
+            },
+        )
+    }
+}
+
+private fun navidromeDownloadMenuLabel(
+    quality: NavidromeAudioQuality,
+    download: OfflineDownload?,
+): String {
+    val prefix = if (download?.status == OfflineDownloadStatus.Completed) "重新下载" else "下载"
+    val suffix = download
+        ?.takeIf { it.status == OfflineDownloadStatus.Completed && it.quality == quality }
+        ?.downloadedBytes
+        ?.takeIf { it > 0L }
+        ?.let { " · 已离线 ${formatOfflineDownloadSize(it)}" }
+        .orEmpty()
+    return "$prefix${navidromeQualityLabel(quality)}$suffix"
+}
+
+private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String {
+    return when (quality) {
+        NavidromeAudioQuality.Original -> "原始音质"
+        NavidromeAudioQuality.Kbps320 -> "320 kbps"
+        NavidromeAudioQuality.Kbps192 -> "192 kbps"
+        NavidromeAudioQuality.Kbps128 -> "128 kbps"
+    }
+}
+
+private fun offlineDownloadProgressLabel(download: OfflineDownload?): String {
+    val downloaded = download?.downloadedBytes?.takeIf { it > 0L }?.let(::formatOfflineDownloadSize)
+        ?: "准备中"
+    val total = download?.totalBytes?.takeIf { it > 0L }?.let(::formatOfflineDownloadSize)
+    return if (total == null) {
+        "取消下载 · $downloaded"
+    } else {
+        "取消下载 · $downloaded / $total"
+    }
+}
+
+private fun formatOfflineDownloadSize(sizeBytes: Long): String {
+    val units = listOf("B", "KB", "MB", "GB")
+    var value = sizeBytes.toDouble().coerceAtLeast(0.0)
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex += 1
+    }
+    return if (unitIndex == 0) {
+        "${value.roundToInt()} ${units[unitIndex]}"
+    } else {
+        "${(value * 10).roundToInt() / 10.0} ${units[unitIndex]}"
     }
 }
 

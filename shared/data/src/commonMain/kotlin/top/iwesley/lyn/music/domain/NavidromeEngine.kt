@@ -126,6 +126,22 @@ fun buildNavidromeStreamUrl(
     )
 }
 
+fun buildNavidromeDownloadUrl(
+    baseUrl: String,
+    username: String,
+    password: String,
+    songId: String,
+): String {
+    return buildNavidromeRestUrl(
+        baseUrl = baseUrl,
+        username = username,
+        password = password,
+        endpoint = "download",
+        parameters = mapOf("id" to songId),
+        includeJsonFormat = false,
+    )
+}
+
 fun buildNavidromeCoverArtUrl(
     baseUrl: String,
     username: String,
@@ -341,6 +357,21 @@ suspend fun resolveNavidromeStreamUrl(
         password = source.password,
         songId = songId,
         audioQuality = audioQuality,
+    )
+}
+
+suspend fun resolveNavidromeDownloadUrl(
+    database: LynMusicDatabase,
+    secureCredentialStore: SecureCredentialStore,
+    locator: String,
+): String? {
+    val (_, songId) = parseNavidromeSongLocator(locator) ?: return null
+    val source = resolveNavidromeSource(database, secureCredentialStore, locator) ?: return null
+    return buildNavidromeDownloadUrl(
+        baseUrl = source.baseUrl,
+        username = source.username,
+        password = source.password,
+        songId = songId,
     )
 }
 

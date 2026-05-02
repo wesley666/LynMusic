@@ -1269,11 +1269,12 @@ private fun PlaylistTrackRow(
 ) {
     val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        TrackActionContainer(
+            track = entry.track,
+            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),

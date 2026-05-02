@@ -213,6 +213,12 @@ fun createAndroidRuntimeGraph(
             lyricsHttpClient = navidromeHttpClient,
             artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
             appStorageGateway = createAndroidAppStorageGateway(activity.applicationContext, database),
+            offlineDownloadGateway = createAndroidOfflineDownloadGateway(
+                context = activity.applicationContext,
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
             deviceInfoGateway = createAndroidDeviceInfoGateway(activity),
             audioTagGateway = AndroidAudioTagGateway(
                 context = activity.applicationContext,
@@ -1618,13 +1624,15 @@ internal class AndroidPlaybackGateway(
             return
         }
         stopAndResetForTrackSwitch(loadToken)
-        val webDavTarget = resolveAndroidWebDavPlaybackTarget(
+        val offlineFile = resolveAndroidOfflinePlaybackFile(database, track)
+        val webDavTarget = if (offlineFile == null) resolveAndroidWebDavPlaybackTarget(
             database = database,
             secureCredentialStore = secureCredentialStore,
             locator = track.mediaLocator,
             logger = logger,
-        )
+        ) else null
         val sambaTarget = if (
+            offlineFile == null &&
             webDavTarget == null &&
             shouldUseAndroidSambaDirectPlayback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
         ) {
@@ -1637,7 +1645,7 @@ internal class AndroidPlaybackGateway(
         } else {
             null
         }
-        val navidrome = if (webDavTarget == null && sambaTarget == null) {
+        val navidrome = if (offlineFile == null && webDavTarget == null && sambaTarget == null) {
             parseNavidromeSongLocator(track.mediaLocator)
         } else {
             null
@@ -1648,7 +1656,9 @@ internal class AndroidPlaybackGateway(
                 networkConnectionTypeProvider = networkConnectionTypeProvider,
             )
         }
-        val resolvedUri = if (webDavTarget == null && sambaTarget == null) {
+        val resolvedUri = if (offlineFile != null) {
+            Uri.fromFile(offlineFile)
+        } else if (webDavTarget == null && sambaTarget == null) {
             resolveLocator(track.mediaLocator, navidromeAudioQuality)
         } else {
             null

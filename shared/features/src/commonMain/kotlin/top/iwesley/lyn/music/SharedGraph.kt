@@ -24,6 +24,7 @@ import top.iwesley.lyn.music.core.model.MobileNetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
+import top.iwesley.lyn.music.core.model.OfflineDownloadGateway
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.SambaCachePreferencesStore
@@ -41,6 +42,7 @@ import top.iwesley.lyn.music.core.model.UnsupportedDeviceInfoGateway
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontPreferencesStore
 import top.iwesley.lyn.music.core.model.UnsupportedNavidromeAudioQualityPreferencesStore
+import top.iwesley.lyn.music.core.model.UnsupportedOfflineDownloadGateway
 import top.iwesley.lyn.music.core.model.UnsupportedSameNameLyricsFileGateway
 import top.iwesley.lyn.music.core.model.UnsupportedVlcPathPickerPlatformService
 import top.iwesley.lyn.music.core.model.VlcPathPickerPlatformService
@@ -53,6 +55,7 @@ import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
+import top.iwesley.lyn.music.data.repository.DefaultOfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.RoomMyRepository
 import top.iwesley.lyn.music.data.repository.RoomMusicTagsRepository
 import top.iwesley.lyn.music.data.repository.RoomFavoritesRepository
@@ -68,6 +71,7 @@ import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.my.MyStore
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadStore
 import top.iwesley.lyn.music.feature.playlists.PlaylistsStore
 import top.iwesley.lyn.music.feature.settings.SettingsStore
 import top.iwesley.lyn.music.feature.tags.MusicTagsStore
@@ -97,6 +101,7 @@ data class SharedRuntimeServices(
         override suspend fun cache(locator: String, cacheKey: String): String? = locator
     },
     val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
+    val offlineDownloadGateway: OfflineDownloadGateway = UnsupportedOfflineDownloadGateway,
     val deviceInfoGateway: DeviceInfoGateway = UnsupportedDeviceInfoGateway,
     val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
@@ -118,6 +123,7 @@ class SharedGraph(
     val favoritesStore: FavoritesStore,
     val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
+    val offlineDownloadStore: OfflineDownloadStore,
     val settingsStore: SettingsStore,
     val lyricsRepository: LyricsRepository,
     val playbackStatsReporter: PlaybackStatsReporter,
@@ -135,10 +141,15 @@ fun buildSharedGraph(
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val libraryRepository = RoomLibraryRepository(database)
     val trackPlaybackStatsRepository = RoomTrackPlaybackStatsRepository(database)
+    val offlineDownloadRepository = DefaultOfflineDownloadRepository(
+        database = database,
+        gateway = runtimeServices.offlineDownloadGateway,
+    )
     val importSourceRepository = RoomImportSourceRepository(
         database = database,
         gateway = runtimeServices.importSourceGateway,
         secureCredentialStore = runtimeServices.secureCredentialStore,
+        offlineDownloadGateway = runtimeServices.offlineDownloadGateway,
     )
     val settingsRepository = DefaultSettingsRepository(
         database = database,
@@ -261,6 +272,10 @@ fun buildSharedGraph(
             startImmediately = false,
         ),
         importStore = ImportStore(importSourceRepository, platform.capabilities, scope),
+        offlineDownloadStore = OfflineDownloadStore(
+            repository = offlineDownloadRepository,
+            storeScope = scope,
+        ),
         settingsStore = SettingsStore(
             repository = settingsRepository,
             scope = scope,

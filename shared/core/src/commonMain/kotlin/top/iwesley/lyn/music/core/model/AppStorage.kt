@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.core.model
 enum class AppStorageCategory {
     Artwork,
     PlaybackCache,
+    OfflineDownloads,
     LyricsShareTemp,
     TagEditTemp,
 }

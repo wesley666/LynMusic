@@ -1759,6 +1759,7 @@ private fun StorageSettingsPane(
         listOf(
             AppStorageCategory.Artwork,
             AppStorageCategory.PlaybackCache,
+            AppStorageCategory.OfflineDownloads,
             AppStorageCategory.LyricsShareTemp,
             AppStorageCategory.TagEditTemp,
         )
@@ -1783,7 +1784,7 @@ private fun StorageSettingsPane(
         if (showHeading) {
             SectionTitle(
                 title = "空间管理",
-                subtitle = "查看当前可清理缓存，并按分类手动清除。",
+                subtitle = "查看当前可管理空间，并按分类手动清除。",
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -1800,10 +1801,10 @@ private fun StorageSettingsPane(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text("当前可清理缓存", fontWeight = FontWeight.Bold)
+                        Text("当前可管理空间", fontWeight = FontWeight.Bold)
                         Text(
                             text = state.storageSnapshot?.let { formatStorageSize(it.totalSizeBytes) }
-                                ?: if (state.storageLoading) "正在统计缓存..." else "暂未读取",
+                                ?: if (state.storageLoading) "正在统计空间..." else "暂未读取",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                         )
@@ -1839,11 +1840,11 @@ private fun StorageSettingsPane(
         }
         if (categories.isEmpty()) {
             EmptyStateCard(
-                title = if (state.storageLoading) "正在统计缓存" else "没有可管理缓存",
+                title = if (state.storageLoading) "正在统计空间" else "没有可管理空间",
                 body = if (state.storageLoading) {
-                    "正在读取当前平台支持的缓存目录。"
+                    "正在读取当前平台支持的存储目录。"
                 } else {
-                    "当前平台还没有暴露可清理的缓存分类。"
+                    "当前平台还没有暴露可清理的空间分类。"
                 },
             )
         } else {
@@ -2044,6 +2045,7 @@ private fun storageCategoryTitle(category: AppStorageCategory): String {
     return when (category) {
         AppStorageCategory.Artwork -> "封面缓存"
         AppStorageCategory.PlaybackCache -> "播放缓存"
+        AppStorageCategory.OfflineDownloads -> "离线音乐"
         AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
         AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
     }
@@ -2053,6 +2055,7 @@ private fun storageCategoryDescription(category: AppStorageCategory): String {
     return when (category) {
         AppStorageCategory.Artwork -> "包含下载封面，以及扫描或标签编辑时生成的本地封面文件。"
         AppStorageCategory.PlaybackCache -> "包含 SMB 播放时落到本地的临时音频缓存。"
+        AppStorageCategory.OfflineDownloads -> "包含手动下载到本机的非本地音乐文件。"
         AppStorageCategory.LyricsShareTemp -> "包含生成歌词分享图时写入的临时图片。"
         AppStorageCategory.TagEditTemp -> "包含编辑标签封面时写入的临时中转文件。"
     }

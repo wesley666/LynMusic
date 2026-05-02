@@ -16,6 +16,7 @@ import top.iwesley.lyn.music.data.db.MIGRATION_9_10
 import top.iwesley.lyn.music.data.db.MIGRATION_10_11
 import top.iwesley.lyn.music.data.db.MIGRATION_11_12
 import top.iwesley.lyn.music.data.db.MIGRATION_12_13
+import top.iwesley.lyn.music.data.db.MIGRATION_13_14
 
 class DatabaseMigrationTest {
 
@@ -340,6 +341,28 @@ class DatabaseMigrationTest {
             assertTrue(connection.hasColumn("daily_recommendation", "generatedAt"))
             assertTrue(connection.hasColumn("daily_recommendation", "trackIds"))
             assertEquals(listOf("dateKey"), connection.primaryKeyColumns("daily_recommendation"))
+        }
+    }
+
+    @Test
+    fun `migration 13 to 14 creates offline download table`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            MIGRATION_13_14.migrate(connection)
+
+            assertTrue(connection.hasColumn("offline_download", "trackId"))
+            assertTrue(connection.hasColumn("offline_download", "sourceId"))
+            assertTrue(connection.hasColumn("offline_download", "originalMediaLocator"))
+            assertTrue(connection.hasColumn("offline_download", "localMediaLocator"))
+            assertTrue(connection.hasColumn("offline_download", "quality"))
+            assertTrue(connection.hasColumn("offline_download", "status"))
+            assertTrue(connection.hasColumn("offline_download", "downloadedBytes"))
+            assertTrue(connection.hasColumn("offline_download", "totalBytes"))
+            assertTrue(connection.hasColumn("offline_download", "updatedAt"))
+            assertTrue(connection.hasColumn("offline_download", "errorMessage"))
+            assertEquals(listOf("trackId"), connection.primaryKeyColumns("offline_download"))
         }
     }
 

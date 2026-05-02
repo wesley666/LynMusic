@@ -41,6 +41,8 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesStore
 import top.iwesley.lyn.music.feature.importing.ImportStore
 import top.iwesley.lyn.music.feature.library.LibraryStore
 import top.iwesley.lyn.music.feature.my.MyStore
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadStore
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
@@ -62,6 +64,7 @@ class LynMusicAppComponent(
     val favoritesStore: FavoritesStore,
     val musicTagsStore: MusicTagsStore,
     val importStore: ImportStore,
+    val offlineDownloadStore: OfflineDownloadStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>,
@@ -103,6 +106,7 @@ fun buildPlayerAppComponent(
         favoritesStore = sharedGraph.favoritesStore,
         musicTagsStore = sharedGraph.musicTagsStore,
         importStore = sharedGraph.importStore,
+        offlineDownloadStore = sharedGraph.offlineDownloadStore,
         playerStore = PlayerStore(
             playbackRepository = playbackRepository,
             lyricsRepository = sharedGraph.lyricsRepository,
@@ -136,6 +140,7 @@ fun App(
     val favoritesState by component.favoritesStore.state.collectAsState()
     val musicTagsState by component.musicTagsStore.state.collectAsState()
     val importState by component.importStore.state.collectAsState()
+    val offlineDownloadState by component.offlineDownloadStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
     val settingsState by component.settingsStore.state.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(defaultSelectedAppTab) }
@@ -160,6 +165,10 @@ fun App(
     CompositionLocalProvider(
         LocalPlatformDescriptor provides component.platform,
         LocalDesktopWindowChrome provides desktopWindowChrome,
+        LocalOfflineDownloadUiState provides OfflineDownloadUiState(
+            downloadsByTrackId = offlineDownloadState.downloadsByTrackId,
+            onIntent = component.offlineDownloadStore::dispatch,
+        ),
     ) {
         LaunchedEffect(component) {
             withFrameNanos { }
@@ -205,6 +214,12 @@ fun App(
                     LaunchedEffect(message) {
                         kotlinx.coroutines.delay(2_500)
                         component.playlistsStore.dispatch(PlaylistsIntent.ClearMessage)
+                    }
+                }
+                offlineDownloadState.message?.let { message ->
+                    LaunchedEffect(message) {
+                        kotlinx.coroutines.delay(2_500)
+                        component.offlineDownloadStore.dispatch(OfflineDownloadIntent.ClearMessage)
                     }
                 }
                 val layoutProfile = buildLayoutProfile(
@@ -398,6 +413,15 @@ fun App(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(horizontal = 20.dp, vertical = 84.dp)
+                                .navigationBarsPadding(),
+                        )
+                    }
+                    offlineDownloadState.message?.let { message ->
+                        ToastCard(
+                            message = message,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(horizontal = 20.dp, vertical = 144.dp)
                                 .navigationBarsPadding(),
                         )
                     }

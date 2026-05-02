@@ -437,7 +437,9 @@ private fun DailyRecommendationPreviewTrackRow(
     accentColor: Color,
     onPlay: () -> Unit,
 ) {
-    Row(
+    TrackActionContainer(
+        track = track,
+        onClick = onPlay,
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -910,11 +912,12 @@ private fun RecentTrackRow(
     val shellColors = mainShellColors
     val track = recentTrack.track
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        TrackActionContainer(
+            track = track,
+            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -972,11 +975,12 @@ private fun DailyRecommendationTrackRow(
 ) {
     val shellColors = mainShellColors
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        TrackActionContainer(
+            track = track,
+            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),

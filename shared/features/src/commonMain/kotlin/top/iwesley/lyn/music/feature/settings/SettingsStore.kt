@@ -968,6 +968,7 @@ class SettingsStore(
         return when (this) {
             AppStorageCategory.Artwork -> "封面缓存"
             AppStorageCategory.PlaybackCache -> "播放缓存"
+            AppStorageCategory.OfflineDownloads -> "离线音乐"
             AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
             AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
         }
