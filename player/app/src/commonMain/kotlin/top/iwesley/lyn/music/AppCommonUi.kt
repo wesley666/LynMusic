@@ -329,6 +329,18 @@ internal fun hasNavidromeTracks(tracks: List<Track>): Boolean {
     return tracks.any { offlineDownloadSourceType(it) == ImportSourceType.NAVIDROME }
 }
 
+internal fun shouldHandleBatchSelectionRequest(
+    requestKey: Int,
+    lastHandledRequestKey: Int,
+    supportsBatchDownload: Boolean,
+    hasVisibleTracks: Boolean,
+): Boolean {
+    return requestKey > 0 &&
+        requestKey > lastHandledRequestKey &&
+        supportsBatchDownload &&
+        hasVisibleTracks
+}
+
 @Composable
 @ReadOnlyComposable
 internal fun supportsBatchOfflineDownloadActions(): Boolean {

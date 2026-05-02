@@ -1131,6 +1131,7 @@ private fun PlaylistDetailPane(
     var selectionMode by rememberSaveable(detail?.id) { mutableStateOf(false) }
     var selectedTrackIds by rememberSaveable(detail?.id) { mutableStateOf(emptyList<String>()) }
     var batchQualitySheetVisible by rememberSaveable(detail?.id) { mutableStateOf(false) }
+    var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
     val visibleTracks = detail?.tracks?.map { it.track }.orEmpty()
     val selectedBatchTracks = remember(visibleTracks, selectedTrackIds) {
@@ -1203,8 +1204,18 @@ private fun PlaylistDetailPane(
             exitSelectionMode()
         }
     }
-    LaunchedEffect(batchSelectionRequestKey) {
-        if (batchSelectionRequestKey > 0 && supportsBatchDownload && visibleTracks.isNotEmpty()) {
+    LaunchedEffect(batchSelectionRequestKey, supportsBatchDownload, visibleTracks) {
+        if (batchSelectionRequestKey <= lastHandledBatchSelectionRequestKey) {
+            return@LaunchedEffect
+        }
+        val shouldEnterSelectionMode = shouldHandleBatchSelectionRequest(
+            requestKey = batchSelectionRequestKey,
+            lastHandledRequestKey = lastHandledBatchSelectionRequestKey,
+            supportsBatchDownload = supportsBatchDownload,
+            hasVisibleTracks = visibleTracks.isNotEmpty(),
+        )
+        lastHandledBatchSelectionRequestKey = batchSelectionRequestKey
+        if (shouldEnterSelectionMode) {
             selectionMode = true
         }
     }

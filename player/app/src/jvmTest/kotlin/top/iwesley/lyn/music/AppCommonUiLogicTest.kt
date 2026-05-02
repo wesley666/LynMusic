@@ -99,6 +99,50 @@ class AppCommonUiLogicTest {
     }
 
     @Test
+    fun `batch selection request only handles new usable keys`() {
+        assertFalse(
+            shouldHandleBatchSelectionRequest(
+                requestKey = 0,
+                lastHandledRequestKey = 0,
+                supportsBatchDownload = true,
+                hasVisibleTracks = true,
+            ),
+        )
+        assertFalse(
+            shouldHandleBatchSelectionRequest(
+                requestKey = 1,
+                lastHandledRequestKey = 1,
+                supportsBatchDownload = true,
+                hasVisibleTracks = true,
+            ),
+        )
+        assertTrue(
+            shouldHandleBatchSelectionRequest(
+                requestKey = 2,
+                lastHandledRequestKey = 1,
+                supportsBatchDownload = true,
+                hasVisibleTracks = true,
+            ),
+        )
+        assertFalse(
+            shouldHandleBatchSelectionRequest(
+                requestKey = 2,
+                lastHandledRequestKey = 1,
+                supportsBatchDownload = false,
+                hasVisibleTracks = true,
+            ),
+        )
+        assertFalse(
+            shouldHandleBatchSelectionRequest(
+                requestKey = 2,
+                lastHandledRequestKey = 1,
+                supportsBatchDownload = true,
+                hasVisibleTracks = false,
+            ),
+        )
+    }
+
+    @Test
     fun `batch download size estimate sums non navidrome source sizes`() {
         val tracks = listOf(
             sampleWebDavTrack("first", sizeBytes = 1L * 1024L * 1024L),

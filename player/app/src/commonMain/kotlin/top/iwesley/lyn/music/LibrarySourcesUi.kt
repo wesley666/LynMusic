@@ -378,6 +378,7 @@ private fun LibraryBrowserTab(
     var selectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedTrackIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var batchQualitySheetVisible by rememberSaveable { mutableStateOf(false) }
+    var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
     val batchVisibleTracks = if (
         rootView == LibraryBrowserRootView.Tracks &&
@@ -459,8 +460,18 @@ private fun LibraryBrowserTab(
             exitSelectionMode()
         }
     }
-    LaunchedEffect(batchSelectionRequestKey) {
-        if (batchSelectionRequestKey > 0 && supportsBatchDownload && batchVisibleTracks.isNotEmpty()) {
+    LaunchedEffect(batchSelectionRequestKey, supportsBatchDownload, batchVisibleTracks) {
+        if (batchSelectionRequestKey <= lastHandledBatchSelectionRequestKey) {
+            return@LaunchedEffect
+        }
+        val shouldEnterSelectionMode = shouldHandleBatchSelectionRequest(
+            requestKey = batchSelectionRequestKey,
+            lastHandledRequestKey = lastHandledBatchSelectionRequestKey,
+            supportsBatchDownload = supportsBatchDownload,
+            hasVisibleTracks = batchVisibleTracks.isNotEmpty(),
+        )
+        lastHandledBatchSelectionRequestKey = batchSelectionRequestKey
+        if (shouldEnterSelectionMode) {
             selectionMode = true
         }
     }
