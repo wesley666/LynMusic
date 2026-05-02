@@ -1421,6 +1421,8 @@ private fun PlaylistTrackRow(
     onRemove: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[entry.track.id]
+    val offlineRowIndicatorState = offlineDownloadRowIndicatorState(offlineDownload)
     val rowClick = if (selectionMode) {
         onSelectionToggle ?: {}
     } else {
@@ -1455,18 +1457,25 @@ private fun PlaylistTrackRow(
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
-                    buildString {
-                        append(entry.track.artistName ?: "未知艺人")
-                        entry.sourceLabel?.takeIf { it.isNotBlank() }?.let {
-                            append(" · ")
-                            append(it)
-                        }
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        buildString {
+                            append(entry.track.artistName ?: "未知艺人")
+                            entry.sourceLabel?.takeIf { it.isNotBlank() }?.let {
+                                append(" · ")
+                                append(it)
+                            }
+                        },
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    offlineRowIndicatorState?.let { OfflineDownloadRowIndicator(it) }
+                }
             }
             if (!selectionMode) {
                 IconButton(onClick = onRemove) {

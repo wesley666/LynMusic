@@ -63,6 +63,36 @@ class AppCommonUiLogicTest {
     }
 
     @Test
+    fun `offline download row indicator maps download states`() {
+        assertEquals(
+            OfflineDownloadRowIndicatorState.Downloading,
+            offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Pending)),
+        )
+        assertEquals(
+            OfflineDownloadRowIndicatorState.Downloading,
+            offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Downloading)),
+        )
+        assertEquals(
+            OfflineDownloadRowIndicatorState.Downloaded,
+            offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Completed)),
+        )
+        assertEquals(
+            null,
+            offlineDownloadRowIndicatorState(
+                completedDownload(
+                    status = OfflineDownloadStatus.Completed,
+                    localMediaLocator = null,
+                ),
+            ),
+        )
+        assertEquals(
+            null,
+            offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Failed)),
+        )
+        assertEquals(null, offlineDownloadRowIndicatorState(null))
+    }
+
+    @Test
     fun `offline available space labels loading unknown and gigabytes`() {
         assertEquals("计算中", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = true))
         assertEquals("未知", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = false))

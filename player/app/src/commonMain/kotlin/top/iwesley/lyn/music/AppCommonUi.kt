@@ -134,6 +134,51 @@ internal data class OfflineDownloadUiState(
 
 internal val LocalOfflineDownloadUiState = staticCompositionLocalOf { OfflineDownloadUiState() }
 
+internal enum class OfflineDownloadRowIndicatorState {
+    Downloading,
+    Downloaded,
+}
+
+internal fun offlineDownloadRowIndicatorState(download: OfflineDownload?): OfflineDownloadRowIndicatorState? {
+    return when (download?.status) {
+        OfflineDownloadStatus.Pending,
+        OfflineDownloadStatus.Downloading -> OfflineDownloadRowIndicatorState.Downloading
+
+        OfflineDownloadStatus.Completed -> {
+            if (download.hasLocalFileReference) {
+                OfflineDownloadRowIndicatorState.Downloaded
+            } else {
+                null
+            }
+        }
+
+        OfflineDownloadStatus.Failed,
+        null -> null
+    }
+}
+
+@Composable
+internal fun OfflineDownloadRowIndicator(state: OfflineDownloadRowIndicatorState) {
+    when (state) {
+        OfflineDownloadRowIndicatorState.Downloading -> {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 1.6.dp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        OfflineDownloadRowIndicatorState.Downloaded -> {
+            Icon(
+                imageVector = Icons.Rounded.DownloadDone,
+                contentDescription = "已下载离线音乐",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
 @Composable
 internal fun BatchOperationButton(
     onClick: () -> Unit,
@@ -554,8 +599,7 @@ internal fun TrackRow(
     val artistClick = onArtistClick.takeIf { !selectionMode && showDuration && !track.artistName.isNullOrBlank() }
     val albumClick = onAlbumClick.takeIf { !selectionMode && showAlbumTitle && !track.albumTitle.isNullOrBlank() }
     val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[track.id]
-    val showOfflineDownloadedIndicator = offlineDownload?.status == OfflineDownloadStatus.Completed &&
-        offlineDownload.hasLocalFileReference
+    val offlineRowIndicatorState = offlineDownloadRowIndicatorState(offlineDownload)
     val rowClick = if (selectionMode) {
         onSelectionToggle ?: {}
     } else {
@@ -608,14 +652,7 @@ internal fun TrackRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (showOfflineDownloadedIndicator) {
-                        Icon(
-                            imageVector = Icons.Rounded.DownloadDone,
-                            contentDescription = "已下载离线音乐",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
+                    offlineRowIndicatorState?.let { OfflineDownloadRowIndicator(it) }
                 }
             }
             if (showAlbumTitle) {
