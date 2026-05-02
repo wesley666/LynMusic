@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
@@ -577,7 +578,12 @@ private fun LibraryBrowserTab(
         batchVisibleTracks.isNotEmpty()
     ) {
         {
-            BatchOperationButton(onClick = { selectionMode = true })
+            IconButton(onClick = { selectionMode = true }) {
+                Icon(
+                    imageVector = Icons.Rounded.Checklist,
+                    contentDescription = "批量操作",
+                )
+            }
         }
     } else {
         null
