@@ -81,6 +81,55 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
+    fun `mobile library hub batch operation availability follows active page`() {
+        assertTrue(
+            mobileLibraryHubCanBatchOperate(
+                tab = AppTab.Library,
+                libraryVisibleTrackCount = 1,
+                favoritesVisibleTrackCount = 0,
+                playlistDetailVisibleTrackCount = 0,
+                selectedPlaylistId = null,
+            ),
+        )
+        assertTrue(
+            mobileLibraryHubCanBatchOperate(
+                tab = AppTab.Favorites,
+                libraryVisibleTrackCount = 0,
+                favoritesVisibleTrackCount = 1,
+                playlistDetailVisibleTrackCount = 0,
+                selectedPlaylistId = null,
+            ),
+        )
+        assertTrue(
+            mobileLibraryHubCanBatchOperate(
+                tab = AppTab.Playlists,
+                libraryVisibleTrackCount = 0,
+                favoritesVisibleTrackCount = 0,
+                playlistDetailVisibleTrackCount = 1,
+                selectedPlaylistId = "playlist-1",
+            ),
+        )
+        assertFalse(
+            mobileLibraryHubCanBatchOperate(
+                tab = AppTab.Playlists,
+                libraryVisibleTrackCount = 0,
+                favoritesVisibleTrackCount = 0,
+                playlistDetailVisibleTrackCount = 1,
+                selectedPlaylistId = null,
+            ),
+        )
+        assertFalse(
+            mobileLibraryHubCanBatchOperate(
+                tab = AppTab.My,
+                libraryVisibleTrackCount = 1,
+                favoritesVisibleTrackCount = 1,
+                playlistDetailVisibleTrackCount = 1,
+                selectedPlaylistId = "playlist-1",
+            ),
+        )
+    }
+
+    @Test
     fun `mobile library hub refresh indicator stays visible while refreshing or holding`() {
         assertFalse(
             mobileLibraryHubRefreshIndicatorVisible(

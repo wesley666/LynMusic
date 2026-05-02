@@ -43,6 +43,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -80,6 +81,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.OfflineDownload
 import top.iwesley.lyn.music.core.model.PlaylistAddTarget
 import top.iwesley.lyn.music.core.model.PlaylistDetail
@@ -89,6 +91,7 @@ import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
@@ -613,6 +616,7 @@ internal fun PlaylistsTab(
     playlistSearchQuery: String = "",
     showRefreshActionButton: Boolean = true,
     showSourceFilterActionButton: Boolean = true,
+    batchSelectionRequestKey: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -723,6 +727,7 @@ internal fun PlaylistsTab(
                     },
                     modifier = Modifier.weight(0.64f).fillMaxHeight(),
                     showBackButton = false,
+                    batchSelectionRequestKey = batchSelectionRequestKey,
                 )
             }
         } else if (!filteredDetailPresentation.shouldShowDetailPane) {
@@ -767,6 +772,7 @@ internal fun PlaylistsTab(
                 },
                 modifier = Modifier.fillMaxSize(),
                 showBackButton = true,
+                batchSelectionRequestKey = batchSelectionRequestKey,
             )
         }
     }
@@ -1117,7 +1123,67 @@ private fun PlaylistDetailPane(
     onRemoveTrack: (String) -> Unit,
     modifier: Modifier = Modifier,
     showBackButton: Boolean,
+    batchSelectionRequestKey: Int = 0,
 ) {
+    var selectionMode by rememberSaveable(detail?.id) { mutableStateOf(false) }
+    var selectedTrackIds by rememberSaveable(detail?.id) { mutableStateOf(emptyList<String>()) }
+    var batchQualitySheetVisible by rememberSaveable(detail?.id) { mutableStateOf(false) }
+    var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
+    val visibleTracks = detail?.tracks?.map { it.track }.orEmpty()
+    val selectedBatchTracks = remember(visibleTracks, selectedTrackIds) {
+        selectedTracksInVisibleOrder(visibleTracks, selectedTrackIds)
+    }
+    val allVisibleTracksSelected = visibleTracks.isNotEmpty() && visibleTracks.all { it.id in selectedTrackIds }
+    val offlineUiState = LocalOfflineDownloadUiState.current
+    val onOfflineDownloadIntent = offlineUiState.onIntent
+    val selectedBatchDownloadSizeEstimate = remember(
+        selectedBatchTracks,
+        offlineUiState.downloadsByTrackId,
+    ) {
+        estimateBatchDownloadSize(
+            tracks = selectedBatchTracks,
+            downloadsByTrackId = offlineUiState.downloadsByTrackId,
+        )
+    }
+    val supportsBatchDownload = supportsBatchOfflineDownloadActions() && onOfflineDownloadIntent != null
+    val showInlineBatchOperationButton = !currentPlatformDescriptor.isMobilePlatform()
+    fun exitSelectionMode() {
+        selectionMode = false
+        selectedTrackIds = emptyList()
+        batchQualitySheetVisible = false
+        pendingBatchDownloadTracks = emptyList()
+    }
+    fun startBatchDownload(tracks: List<Track>, quality: NavidromeAudioQuality) {
+        onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.DownloadMany(tracks, quality))
+        exitSelectionMode()
+    }
+    fun requestBatchDownload() {
+        val tracks = selectedBatchTracks
+        if (tracks.isEmpty()) return
+        if (hasNavidromeTracks(tracks)) {
+            pendingBatchDownloadTracks = tracks
+            batchQualitySheetVisible = true
+        } else {
+            startBatchDownload(tracks, NavidromeAudioQuality.Original)
+        }
+    }
+    PlatformBackHandler(enabled = selectionMode) {
+        exitSelectionMode()
+    }
+    LaunchedEffect(visibleTracks) {
+        val pruned = pruneSelectedTrackIds(selectedTrackIds, visibleTracks)
+        if (pruned != selectedTrackIds) {
+            selectedTrackIds = pruned
+        }
+        if (selectionMode && visibleTracks.isEmpty()) {
+            exitSelectionMode()
+        }
+    }
+    LaunchedEffect(batchSelectionRequestKey) {
+        if (batchSelectionRequestKey > 0 && supportsBatchDownload && visibleTracks.isNotEmpty()) {
+            selectionMode = true
+        }
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -1162,6 +1228,27 @@ private fun PlaylistDetailPane(
                             Spacer(Modifier.width(8.dp))
                             Text("播放全部")
                         }
+                        if (
+                            supportsBatchDownload &&
+                            showInlineBatchOperationButton &&
+                            !selectionMode &&
+                            detail.tracks.isNotEmpty()
+                        ) {
+                            BatchOperationButton(onClick = { selectionMode = true })
+                        }
+                    }
+                    if (selectionMode) {
+                        TrackSelectionActionBar(
+                            selectedCount = selectedBatchTracks.size,
+                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate),
+                            allVisibleSelected = allVisibleTracksSelected,
+                            hasVisibleTracks = visibleTracks.isNotEmpty(),
+                            onToggleSelectAll = {
+                                selectedTrackIds = toggleAllVisibleTrackSelection(selectedTrackIds, visibleTracks)
+                            },
+                            onDownloadSelected = ::requestBatchDownload,
+                            onCancelSelection = ::exitSelectionMode,
+                        )
                     }
                 }
             }
@@ -1187,11 +1274,30 @@ private fun PlaylistDetailPane(
                 PlaylistTrackRow(
                     entry = item,
                     index = index,
+                    selectionMode = selectionMode,
+                    selected = item.track.id in selectedTrackIds,
+                    onSelectionToggle = {
+                        selectedTrackIds = toggleTrackSelection(selectedTrackIds, item.track.id)
+                    },
                     onClick = { onPlayTrack(detail.tracks.map { it.track }, index) },
                     onRemove = { onRemoveTrack(item.track.id) },
                 )
             }
         }
+    }
+    if (batchQualitySheetVisible) {
+        BatchDownloadQualityBottomSheet(
+            selectedCount = pendingBatchDownloadTracks.size,
+            tracks = pendingBatchDownloadTracks,
+            downloadsByTrackId = offlineUiState.downloadsByTrackId,
+            onQualitySelected = { quality ->
+                startBatchDownload(pendingBatchDownloadTracks, quality)
+            },
+            onDismiss = {
+                batchQualitySheetVisible = false
+                pendingBatchDownloadTracks = emptyList()
+            },
+        )
     }
 }
 
@@ -1273,14 +1379,23 @@ private fun playlistSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
 private fun PlaylistTrackRow(
     entry: top.iwesley.lyn.music.core.model.PlaylistTrackEntry,
     index: Int,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onSelectionToggle: (() -> Unit)? = null,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val rowClick = if (selectionMode) {
+        onSelectionToggle ?: {}
+    } else {
+        onClick
+    }
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
             track = entry.track,
-            onClick = onClick,
+            onClick = rowClick,
+            enableOfflineActions = !selectionMode,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
@@ -1288,7 +1403,15 @@ private fun PlaylistTrackRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold)
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onSelectionToggle?.invoke() },
+                    modifier = Modifier.size(32.dp),
+                )
+            } else {
+                Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold)
+            }
             PlaylistArtworkThumbnail(artworkLocator = entry.track.artworkLocator)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1310,8 +1433,10 @@ private fun PlaylistTrackRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Rounded.Delete, contentDescription = "移出歌单")
+            if (!selectionMode) {
+                IconButton(onClick = onRemove) {
+                    Icon(Icons.Rounded.Delete, contentDescription = "移出歌单")
+                }
             }
             Text(formatDuration(entry.track.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

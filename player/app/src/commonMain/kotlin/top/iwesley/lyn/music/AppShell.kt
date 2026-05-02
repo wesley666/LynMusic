@@ -90,6 +90,7 @@ import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.TrackSortMode
+import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
 import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -159,6 +160,21 @@ internal fun mobileLibraryHubShowsSourceMenu(tab: AppTab): Boolean {
 
 internal fun mobileLibraryHubUsesPullToRefresh(tab: AppTab): Boolean {
     return tab == AppTab.Favorites || tab == AppTab.Playlists
+}
+
+internal fun mobileLibraryHubCanBatchOperate(
+    tab: AppTab,
+    libraryVisibleTrackCount: Int,
+    favoritesVisibleTrackCount: Int,
+    playlistDetailVisibleTrackCount: Int,
+    selectedPlaylistId: String?,
+): Boolean {
+    return when (tab) {
+        AppTab.Library -> libraryVisibleTrackCount > 0
+        AppTab.Favorites -> favoritesVisibleTrackCount > 0
+        AppTab.Playlists -> selectedPlaylistId != null && playlistDetailVisibleTrackCount > 0
+        else -> false
+    }
 }
 
 internal fun mobileLibraryHubRefreshIndicatorVisible(
@@ -751,6 +767,9 @@ private fun MobileLibraryHubTab(
     var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
     var playlistsRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
     var playlistsRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
+    var libraryBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
+    var favoritesBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
+    var playlistsBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     val favoritesPullRefreshState = rememberPullToRefreshState()
     val playlistsPullRefreshState = rememberPullToRefreshState()
     val activeSearchTab = mobileLibraryHubTabForPage(pagerState.currentPage)
@@ -760,6 +779,33 @@ private fun MobileLibraryHubTab(
         AppTab.Playlists -> playlistSearchQuery
         else -> ""
     }
+    val playlistDetailVisibleTrackCount = remember(
+        playlistsState.selectedPlaylist,
+        playlistsState.selectedPlaylistId,
+        playlistsState.selectedSourceFilter,
+        playlistsState.sourceTypesById,
+        playlistsState.offlineDownloadsByTrackId,
+    ) {
+        playlistsState.selectedPlaylist
+            ?.takeIf { it.id == playlistsState.selectedPlaylistId }
+            ?.tracks
+            .orEmpty()
+            .count { entry ->
+                matchesLibrarySourceFilter(
+                    track = entry.track,
+                    selectedSourceFilter = playlistsState.selectedSourceFilter,
+                    sourceTypesById = playlistsState.sourceTypesById,
+                    offlineDownloadsByTrackId = playlistsState.offlineDownloadsByTrackId,
+                )
+            }
+    }
+    val batchOperationAvailable = mobileLibraryHubCanBatchOperate(
+        tab = activeSearchTab,
+        libraryVisibleTrackCount = libraryState.filteredTracks.size,
+        favoritesVisibleTrackCount = favoritesState.filteredTracks.size,
+        playlistDetailVisibleTrackCount = playlistDetailVisibleTrackCount,
+        selectedPlaylistId = playlistsState.selectedPlaylistId,
+    )
 
     fun updateActiveSearchQuery(query: String) {
         when (activeSearchTab) {
@@ -787,6 +833,15 @@ private fun MobileLibraryHubTab(
     fun startPlaylistsRefreshHold() {
         playlistsRefreshHoldActive = true
         playlistsRefreshHoldKey += 1
+    }
+
+    fun requestBatchSelection() {
+        when (activeSearchTab) {
+            AppTab.Library -> libraryBatchSelectionRequestKey += 1
+            AppTab.Favorites -> favoritesBatchSelectionRequestKey += 1
+            AppTab.Playlists -> playlistsBatchSelectionRequestKey += 1
+            else -> Unit
+        }
     }
 
     LaunchedEffect(selectedTab) {
@@ -840,6 +895,11 @@ private fun MobileLibraryHubTab(
         } else {
             MobileLibraryHubTabStrip(
                 selectedPage = pagerState.currentPage,
+                batchAction = if (batchOperationAvailable) {
+                    MobileLibraryHubBatchAction(onClick = ::requestBatchSelection)
+                } else {
+                    null
+                },
                 sourceMenu = when (activeSearchTab) {
                     AppTab.Library -> MobileLibraryHubSourceMenu(
                         selectedSourceFilter = libraryState.selectedSourceFilter,
@@ -913,6 +973,7 @@ private fun MobileLibraryHubTab(
                     onPlayerIntent = onPlayerIntent,
                     showDuration = false,
                     showSearchField = false,
+                    batchSelectionRequestKey = libraryBatchSelectionRequestKey,
                     navigationTarget = libraryNavigationTarget,
                     onNavigationHandled = onLibraryNavigationHandled,
                     modifier = Modifier.fillMaxSize(),
@@ -949,6 +1010,7 @@ private fun MobileLibraryHubTab(
                             showDuration = false,
                             showSearchField = false,
                             showRefreshActionButton = false,
+                            batchSelectionRequestKey = favoritesBatchSelectionRequestKey,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -984,6 +1046,7 @@ private fun MobileLibraryHubTab(
                             playlistSearchQuery = playlistSearchQuery,
                             showRefreshActionButton = false,
                             showSourceFilterActionButton = false,
+                            batchSelectionRequestKey = playlistsBatchSelectionRequestKey,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -1006,6 +1069,10 @@ private data class MobileLibraryHubSortMenu(
     val onTrackSortChanged: (TrackSortMode) -> Unit,
 )
 
+private data class MobileLibraryHubBatchAction(
+    val onClick: () -> Unit,
+)
+
 private enum class MobileLibraryHubMenuLayer {
     Root,
     Source,
@@ -1015,6 +1082,7 @@ private enum class MobileLibraryHubMenuLayer {
 @Composable
 private fun MobileLibraryHubTabStrip(
     selectedPage: Int,
+    batchAction: MobileLibraryHubBatchAction?,
     sourceMenu: MobileLibraryHubSourceMenu?,
     sortMenu: MobileLibraryHubSortMenu?,
     onSearchClick: () -> Unit,
@@ -1039,7 +1107,7 @@ private fun MobileLibraryHubTabStrip(
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        if (sourceMenu != null || sortMenu != null) {
+        if (batchAction != null || sourceMenu != null || sortMenu != null) {
             Box {
                 IconButton(
                     onClick = {
@@ -1055,6 +1123,7 @@ private fun MobileLibraryHubTabStrip(
                 MobileLibraryHubActionsDropdownMenu(
                     expanded = menuExpanded,
                     layer = menuLayer,
+                    batchAction = batchAction,
                     sourceMenu = sourceMenu,
                     sortMenu = sortMenu,
                     onLayerChanged = { menuLayer = it },
@@ -1083,6 +1152,7 @@ private fun MobileLibraryHubTabStrip(
 private fun MobileLibraryHubActionsDropdownMenu(
     expanded: Boolean,
     layer: MobileLibraryHubMenuLayer,
+    batchAction: MobileLibraryHubBatchAction?,
     sourceMenu: MobileLibraryHubSourceMenu?,
     sortMenu: MobileLibraryHubSortMenu?,
     onLayerChanged: (MobileLibraryHubMenuLayer) -> Unit,
@@ -1097,6 +1167,21 @@ private fun MobileLibraryHubActionsDropdownMenu(
     ) {
         when (layer) {
             MobileLibraryHubMenuLayer.Root -> {
+                if (batchAction != null) {
+                    DropdownMenuItem(
+                        text = { Text("批量操作") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            onDismiss()
+                            batchAction.onClick()
+                        },
+                    )
+                }
                 if (sourceMenu != null) {
                     DropdownMenuItem(
                         text = { Text("来源") },

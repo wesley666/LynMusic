@@ -50,6 +50,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -124,6 +126,281 @@ internal data class OfflineDownloadUiState(
 )
 
 internal val LocalOfflineDownloadUiState = staticCompositionLocalOf { OfflineDownloadUiState() }
+
+@Composable
+internal fun BatchOperationButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+    ) {
+        Icon(Icons.Rounded.Tune, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "批量操作",
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+internal fun TrackSelectionActionBar(
+    selectedCount: Int,
+    downloadSizeEstimateLabel: String,
+    allVisibleSelected: Boolean,
+    hasVisibleTracks: Boolean,
+    onToggleSelectAll: () -> Unit,
+    onDownloadSelected: () -> Unit,
+    onCancelSelection: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(shellColors.cardContainer)
+            .border(BorderStroke(1.dp, shellColors.cardBorder), RoundedCornerShape(18.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "已选择 $selectedCount 首",
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(onClick = onCancelSelection) {
+                Text("取消")
+            }
+        }
+        Text(
+            text = "预计下载大小：$downloadSizeEstimateLabel",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = onToggleSelectAll,
+                enabled = hasVisibleTracks,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = if (allVisibleSelected) "取消全选" else "全选",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            OutlinedButton(
+                onClick = onDownloadSelected,
+                enabled = selectedCount > 0,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Rounded.Download, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "下载选中歌曲",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun BatchDownloadQualityBottomSheet(
+    selectedCount: Int,
+    tracks: List<Track>,
+    downloadsByTrackId: Map<String, OfflineDownload>,
+    onQualitySelected: (NavidromeAudioQuality) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = mainShellColors.navContainer,
+    ) {
+        Column(modifier = Modifier.padding(bottom = 20.dp)) {
+            Text(
+                text = "选择下载音质",
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "将下载 $selectedCount 首歌曲",
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            NavidromeAudioQuality.entries.forEach { quality ->
+                DropdownMenuItem(
+                    text = { Text(navidromeQualityLabel(quality)) },
+                    leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                    trailingIcon = {
+                        DownloadMenuTrailingSizeText(
+                            batchDownloadSizeEstimateLabel(
+                                estimateBatchDownloadSize(
+                                    tracks = tracks,
+                                    downloadsByTrackId = downloadsByTrackId,
+                                    quality = quality,
+                                ),
+                            ),
+                        )
+                    },
+                    onClick = { onQualitySelected(quality) },
+                )
+            }
+        }
+    }
+}
+
+internal data class BatchDownloadSizeEstimate(
+    val totalBytes: Long = 0L,
+    val unknownCount: Int = 0,
+    val skippedCount: Int = 0,
+    val approximate: Boolean = false,
+)
+
+internal fun estimateBatchDownloadSize(
+    tracks: List<Track>,
+    downloadsByTrackId: Map<String, OfflineDownload>,
+    quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+): BatchDownloadSizeEstimate {
+    var totalBytes = 0L
+    var unknownCount = 0
+    var skippedCount = 0
+    var approximate = false
+    tracks.distinctBy { it.id }.forEach { track ->
+        val sourceType = offlineDownloadSourceType(track)
+        val download = downloadsByTrackId[track.id]
+        if (shouldSkipBatchDownloadEstimate(track, download, sourceType, quality)) {
+            skippedCount += 1
+            return@forEach
+        }
+        val sizeBytes = when {
+            sourceType == ImportSourceType.NAVIDROME && quality != NavidromeAudioQuality.Original -> {
+                approximate = true
+                estimatedNavidromeTranscodedSizeBytes(track, quality)
+            }
+
+            else -> track.sizeBytes.takeIf { it > 0L }
+        }
+        if (sizeBytes == null) {
+            unknownCount += 1
+        } else {
+            totalBytes += sizeBytes
+        }
+    }
+    return BatchDownloadSizeEstimate(
+        totalBytes = totalBytes,
+        unknownCount = unknownCount,
+        skippedCount = skippedCount,
+        approximate = approximate,
+    )
+}
+
+private fun shouldSkipBatchDownloadEstimate(
+    track: Track,
+    download: OfflineDownload?,
+    sourceType: ImportSourceType?,
+    quality: NavidromeAudioQuality,
+): Boolean {
+    if (sourceType == null || sourceType == ImportSourceType.LOCAL_FOLDER) return true
+    if (download?.status != OfflineDownloadStatus.Completed || !download.hasLocalFileReference) {
+        return false
+    }
+    return sourceType != ImportSourceType.NAVIDROME || download.quality == quality
+}
+
+internal fun batchDownloadSizeEstimateLabel(estimate: BatchDownloadSizeEstimate): String {
+    val sizeLabel = estimate.totalBytes
+        .takeIf { it > 0L }
+        ?.let(::formatOfflineDownloadSize)
+    return when {
+        sizeLabel == null && estimate.unknownCount <= 0 -> "无需下载"
+        sizeLabel == null && estimate.unknownCount == 1 -> "未知"
+        sizeLabel == null -> "${estimate.unknownCount} 首未知"
+        estimate.unknownCount > 0 -> {
+            val prefix = if (estimate.approximate) "约 " else ""
+            "$prefix$sizeLabel + ${estimate.unknownCount} 首未知"
+        }
+
+        estimate.approximate -> "约 $sizeLabel"
+        else -> sizeLabel
+    }
+}
+
+internal fun toggleTrackSelection(
+    selectedTrackIds: List<String>,
+    trackId: String,
+): List<String> {
+    return if (trackId in selectedTrackIds) {
+        selectedTrackIds.filterNot { it == trackId }
+    } else {
+        selectedTrackIds + trackId
+    }
+}
+
+internal fun pruneSelectedTrackIds(
+    selectedTrackIds: List<String>,
+    visibleTracks: List<Track>,
+): List<String> {
+    val visibleTrackIds = visibleTracks.mapTo(mutableSetOf()) { it.id }
+    return selectedTrackIds.filter { it in visibleTrackIds }
+}
+
+internal fun toggleAllVisibleTrackSelection(
+    selectedTrackIds: List<String>,
+    visibleTracks: List<Track>,
+): List<String> {
+    val visibleTrackIds = visibleTracks.map { it.id }
+    if (visibleTrackIds.isEmpty()) return selectedTrackIds
+    val visibleTrackIdSet = visibleTrackIds.toSet()
+    val allVisibleSelected = visibleTrackIds.all { it in selectedTrackIds }
+    return if (allVisibleSelected) {
+        selectedTrackIds.filterNot { it in visibleTrackIdSet }
+    } else {
+        (selectedTrackIds + visibleTrackIds).distinct()
+    }
+}
+
+internal fun selectedTracksInVisibleOrder(
+    visibleTracks: List<Track>,
+    selectedTrackIds: Collection<String>,
+): List<Track> {
+    val selectedTrackIdSet = selectedTrackIds.toSet()
+    return visibleTracks.filter { it.id in selectedTrackIdSet }
+}
+
+internal fun hasNavidromeTracks(tracks: List<Track>): Boolean {
+    return tracks.any { offlineDownloadSourceType(it) == ImportSourceType.NAVIDROME }
+}
+
+@Composable
+@ReadOnlyComposable
+internal fun supportsBatchOfflineDownloadActions(): Boolean {
+    return currentPlatformDescriptor.isPCPlatform() || currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME
+}
 
 @Composable
 internal fun FavoriteToggleButton(
@@ -321,19 +598,29 @@ internal fun TrackRow(
     showDuration: Boolean = true,
     onArtistClick: (() -> Unit)? = null,
     onAlbumClick: (() -> Unit)? = null,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onSelectionToggle: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
     val showAlbumTitle = showDuration
-    val artistClick = onArtistClick.takeIf { showDuration && !track.artistName.isNullOrBlank() }
-    val albumClick = onAlbumClick.takeIf { showAlbumTitle && !track.albumTitle.isNullOrBlank() }
+    val artistClick = onArtistClick.takeIf { !selectionMode && showDuration && !track.artistName.isNullOrBlank() }
+    val albumClick = onAlbumClick.takeIf { !selectionMode && showAlbumTitle && !track.albumTitle.isNullOrBlank() }
     val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[track.id]
     val showOfflineDownloadedIndicator = offlineDownload?.status == OfflineDownloadStatus.Completed &&
         offlineDownload.hasLocalFileReference
+    val rowClick = if (selectionMode) {
+        onSelectionToggle ?: {}
+    } else {
+        onClick
+    }
+    val effectiveShowFavoriteButton = showFavoriteButton && !selectionMode
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
             track = track,
-            onClick = onClick,
+            onClick = rowClick,
+            enableOfflineActions = !selectionMode,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
@@ -341,11 +628,19 @@ internal fun TrackRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                (index + 1).toString().padStart(2, '0'),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
-            )
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onSelectionToggle?.invoke() },
+                    modifier = Modifier.size(32.dp),
+                )
+            } else {
+                Text(
+                    (index + 1).toString().padStart(2, '0'),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
             Column(modifier = Modifier.weight(if (showAlbumTitle) 1.45f else 1f)) {
                 Text(
@@ -391,15 +686,15 @@ internal fun TrackRow(
             Row(
                 modifier = Modifier.width(
                     when {
-                        showFavoriteButton && showDuration -> 112.dp
-                        showFavoriteButton || showDuration -> 56.dp
+                        effectiveShowFavoriteButton && showDuration -> 112.dp
+                        effectiveShowFavoriteButton || showDuration -> 56.dp
                         else -> 0.dp
                     },
                 ),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (showFavoriteButton) {
+                if (effectiveShowFavoriteButton) {
                     FavoriteToggleButton(
                         isFavorite = isFavorite,
                         onClick = onToggleFavorite,
@@ -432,6 +727,7 @@ internal fun TrackActionContainer(
     track: Track,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enableOfflineActions: Boolean = true,
     verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
     content: @Composable RowScope.() -> Unit,
@@ -440,7 +736,8 @@ internal fun TrackActionContainer(
     val onOfflineIntent = offlineUiState.onIntent
     val supportsOfflinePlatform = currentPlatformDescriptor.isPCPlatform() ||
         currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME
-    val supportsActions = supportsOfflinePlatform && onOfflineIntent != null && supportsOfflineDownload(track)
+    val supportsActions = enableOfflineActions && supportsOfflinePlatform && onOfflineIntent != null &&
+        supportsOfflineDownload(track)
     val download = offlineUiState.downloadsByTrackId[track.id]
     val mobilePlatform = currentPlatformDescriptor.isMobilePlatform()
     var desktopMenuExpanded by remember(track.id) { mutableStateOf(false) }

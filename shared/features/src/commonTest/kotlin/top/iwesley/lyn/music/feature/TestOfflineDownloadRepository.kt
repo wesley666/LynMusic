@@ -15,6 +15,8 @@ internal class TestOfflineDownloadRepository(
 ) : OfflineDownloadRepository {
     private val mutableDownloads = MutableStateFlow(initialDownloads)
     var availableSpaceCalls = 0
+    val downloadRequests = mutableListOf<Pair<String, NavidromeAudioQuality>>()
+    var failingTrackIds: Set<String> = emptySet()
 
     override val downloads: Flow<Map<String, OfflineDownload>> = mutableDownloads.asStateFlow()
 
@@ -25,6 +27,10 @@ internal class TestOfflineDownloadRepository(
     override suspend fun restoreIncompleteDownloads() = Unit
 
     override suspend fun download(track: Track, quality: NavidromeAudioQuality): Result<Unit> {
+        downloadRequests += track.id to quality
+        if (track.id in failingTrackIds) {
+            return Result.failure(IllegalStateException("下载失败：${track.title}"))
+        }
         return Result.success(Unit)
     }
 

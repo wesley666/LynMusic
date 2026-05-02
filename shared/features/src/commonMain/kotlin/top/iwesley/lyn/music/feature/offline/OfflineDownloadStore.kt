@@ -2,13 +2,18 @@ package top.iwesley.lyn.music.feature.offline
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.OfflineDownload
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
+import top.iwesley.lyn.music.core.model.offlineDownloadSourceType
 
 data class OfflineDownloadState(
     val downloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
@@ -20,6 +25,11 @@ data class OfflineDownloadState(
 sealed interface OfflineDownloadIntent {
     data class Download(val track: Track, val quality: NavidromeAudioQuality = NavidromeAudioQuality.Original) :
         OfflineDownloadIntent
+
+    data class DownloadMany(
+        val tracks: List<Track>,
+        val quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+    ) : OfflineDownloadIntent
 
     data class Cancel(val trackId: String) : OfflineDownloadIntent
     data class Delete(val trackId: String) : OfflineDownloadIntent
@@ -37,6 +47,7 @@ class OfflineDownloadStore(
     scope = storeScope,
 ) {
     private val jobsByTrackId = mutableMapOf<String, Job>()
+    private var batchDownloadJob: Job? = null
 
     init {
         storeScope.launch {
@@ -50,10 +61,62 @@ class OfflineDownloadStore(
     override suspend fun handleIntent(intent: OfflineDownloadIntent) {
         when (intent) {
             is OfflineDownloadIntent.Download -> startDownload(intent.track, intent.quality)
+            is OfflineDownloadIntent.DownloadMany -> startBatchDownload(intent.tracks, intent.quality)
             is OfflineDownloadIntent.Cancel -> cancelDownload(intent.trackId)
             is OfflineDownloadIntent.Delete -> deleteDownload(intent.trackId)
             OfflineDownloadIntent.RefreshAvailableSpace -> refreshAvailableSpace()
             OfflineDownloadIntent.ClearMessage -> updateState { it.copy(message = null) }
+        }
+    }
+
+    private fun startBatchDownload(
+        tracks: List<Track>,
+        quality: NavidromeAudioQuality,
+    ) {
+        if (batchDownloadJob?.isActive == true) {
+            updateState { state -> state.copy(message = "批量下载正在进行。") }
+            return
+        }
+        val uniqueTracks = tracks.distinctBy { it.id }
+        if (uniqueTracks.isEmpty()) {
+            updateState { state -> state.copy(message = "请选择要下载的歌曲。") }
+            return
+        }
+        batchDownloadJob = storeScope.launch {
+            var successCount = 0
+            var failureCount = 0
+            var skippedCount = 0
+            uniqueTracks.forEach { track ->
+                if (!isActive) return@launch
+                val download = state.value.downloadsByTrackId[track.id]
+                if (shouldSkipBatchDownload(track, download, quality) || jobsByTrackId[track.id]?.isActive == true) {
+                    skippedCount += 1
+                    return@forEach
+                }
+                val deferred = async {
+                    repository.download(track, quality)
+                }
+                jobsByTrackId[track.id] = deferred
+                val result = try {
+                    deferred.await()
+                } catch (throwable: CancellationException) {
+                    if (!isActive) throw throwable
+                    null
+                } finally {
+                    if (jobsByTrackId[track.id] == deferred) {
+                        jobsByTrackId.remove(track.id)
+                    }
+                }
+                when {
+                    result == null -> skippedCount += 1
+                    result.isSuccess -> successCount += 1
+                    else -> failureCount += 1
+                }
+            }
+            updateState { state ->
+                state.copy(message = batchDownloadSummaryMessage(successCount, failureCount, skippedCount))
+            }
+            batchDownloadJob = null
         }
     }
 
@@ -100,5 +163,35 @@ class OfflineDownloadStore(
                 availableSpaceLoading = false,
             )
         }
+    }
+}
+
+internal fun shouldSkipBatchDownload(
+    track: Track,
+    download: OfflineDownload?,
+    quality: NavidromeAudioQuality,
+): Boolean {
+    val sourceType = offlineDownloadSourceType(track) ?: return true
+    if (sourceType == ImportSourceType.LOCAL_FOLDER) return true
+    if (download?.status != OfflineDownloadStatus.Completed || !download.hasLocalFileReference) {
+        return false
+    }
+    return sourceType != ImportSourceType.NAVIDROME || download.quality == quality
+}
+
+internal fun batchDownloadSummaryMessage(
+    successCount: Int,
+    failureCount: Int,
+    skippedCount: Int,
+): String {
+    val parts = buildList {
+        if (successCount > 0) add("成功 $successCount 首")
+        if (failureCount > 0) add("失败 $failureCount 首")
+        if (skippedCount > 0) add("跳过 $skippedCount 首")
+    }
+    return if (parts.isEmpty()) {
+        "没有需要下载的歌曲。"
+    } else {
+        "批量下载完成：${parts.joinToString("，")}。"
     }
 }

@@ -91,6 +91,7 @@ import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
@@ -105,6 +106,7 @@ import top.iwesley.lyn.music.feature.library.TrackSortMode
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.libraryAlbumId
 import top.iwesley.lyn.music.feature.library.libraryArtistId
+import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.mainShellColors
@@ -123,6 +125,7 @@ internal fun LibraryTab(
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
+    batchSelectionRequestKey: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -165,6 +168,7 @@ internal fun LibraryTab(
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+        batchSelectionRequestKey = batchSelectionRequestKey,
         modifier = modifier,
     )
 }
@@ -179,6 +183,7 @@ internal fun FavoritesTab(
     showSearchField: Boolean = true,
     showRefreshActionButton: Boolean = true,
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
+    batchSelectionRequestKey: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -234,6 +239,7 @@ internal fun FavoritesTab(
         showSearchField = showSearchField,
         showTrackSortActionButton = showSearchField,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+        batchSelectionRequestKey = batchSelectionRequestKey,
         modifier = modifier,
     )
 }
@@ -302,6 +308,7 @@ private fun LibraryBrowserTab(
     navigationTarget: LibraryNavigationTarget? = null,
     onNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
+    batchSelectionRequestKey: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     val tracksListState = rememberLazyListState()
@@ -364,6 +371,74 @@ private fun LibraryBrowserTab(
             selectedArtistId != null -> artistTracks.filter { it.albumLibraryIdOrNull() == selectedAlbumId }
             else -> tracksByAlbumId[selectedAlbumId].orEmpty()
         }.sortedWith(ALBUM_DETAIL_TRACK_COMPARATOR)
+    }
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedTrackIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var batchQualitySheetVisible by rememberSaveable { mutableStateOf(false) }
+    var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
+    val batchVisibleTracks = if (
+        rootView == LibraryBrowserRootView.Tracks &&
+        selectedArtistId == null &&
+        selectedAlbumId == null
+    ) {
+        state.filteredTracks
+    } else {
+        emptyList()
+    }
+    val selectedBatchTracks = remember(batchVisibleTracks, selectedTrackIds) {
+        selectedTracksInVisibleOrder(batchVisibleTracks, selectedTrackIds)
+    }
+    val allVisibleBatchTracksSelected = batchVisibleTracks.isNotEmpty() &&
+        batchVisibleTracks.all { it.id in selectedTrackIds }
+    val offlineUiState = LocalOfflineDownloadUiState.current
+    val onOfflineDownloadIntent = offlineUiState.onIntent
+    val selectedBatchDownloadSizeEstimate = remember(
+        selectedBatchTracks,
+        offlineUiState.downloadsByTrackId,
+    ) {
+        estimateBatchDownloadSize(
+            tracks = selectedBatchTracks,
+            downloadsByTrackId = offlineUiState.downloadsByTrackId,
+        )
+    }
+    val supportsBatchDownload = supportsBatchOfflineDownloadActions() && onOfflineDownloadIntent != null
+    val showInlineBatchOperationButton = !currentPlatformDescriptor.isMobilePlatform()
+    fun exitSelectionMode() {
+        selectionMode = false
+        selectedTrackIds = emptyList()
+        batchQualitySheetVisible = false
+        pendingBatchDownloadTracks = emptyList()
+    }
+    fun startBatchDownload(tracks: List<Track>, quality: NavidromeAudioQuality) {
+        onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.DownloadMany(tracks, quality))
+        exitSelectionMode()
+    }
+    fun requestBatchDownload() {
+        val tracks = selectedBatchTracks
+        if (tracks.isEmpty()) return
+        if (hasNavidromeTracks(tracks)) {
+            pendingBatchDownloadTracks = tracks
+            batchQualitySheetVisible = true
+        } else {
+            startBatchDownload(tracks, NavidromeAudioQuality.Original)
+        }
+    }
+    PlatformBackHandler(enabled = selectionMode) {
+        exitSelectionMode()
+    }
+    LaunchedEffect(batchVisibleTracks) {
+        val pruned = pruneSelectedTrackIds(selectedTrackIds, batchVisibleTracks)
+        if (pruned != selectedTrackIds) {
+            selectedTrackIds = pruned
+        }
+        if (selectionMode && batchVisibleTracks.isEmpty()) {
+            exitSelectionMode()
+        }
+    }
+    LaunchedEffect(batchSelectionRequestKey) {
+        if (batchSelectionRequestKey > 0 && supportsBatchDownload && batchVisibleTracks.isNotEmpty()) {
+            selectionMode = true
+        }
     }
     LaunchedEffect(
         navigationTarget,
@@ -433,6 +508,9 @@ private fun LibraryBrowserTab(
     }
 
     fun selectRootView(view: LibraryBrowserRootView) {
+        if (selectionMode) {
+            exitSelectionMode()
+        }
         rootView = view
         selectedArtistId = null
         selectedAlbumId = null
@@ -457,6 +535,34 @@ private fun LibraryBrowserTab(
         rootView == LibraryBrowserRootView.Tracks &&
         selectedArtistId == null &&
         selectedAlbumId == null
+    val batchOperationButton: (@Composable () -> Unit)? = if (
+        supportsBatchDownload &&
+        showInlineBatchOperationButton &&
+        !selectionMode &&
+        batchVisibleTracks.isNotEmpty()
+    ) {
+        {
+            BatchOperationButton(onClick = { selectionMode = true })
+        }
+    } else {
+        null
+    }
+    val combinedActionButton: (@Composable () -> Unit)? = when {
+        batchOperationButton != null && actionButton != null -> {
+            {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    batchOperationButton()
+                    actionButton()
+                }
+            }
+        }
+
+        batchOperationButton != null -> batchOperationButton
+        else -> actionButton
+    }
     val searchFieldColors = OutlinedTextFieldDefaults.colors(
         focusedContainerColor = searchFieldContainerColor,
         unfocusedContainerColor = searchFieldContainerColor,
@@ -485,7 +591,7 @@ private fun LibraryBrowserTab(
             contentPadding = PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (showSearchField || actionButton != null) {
+            if (showSearchField || combinedActionButton != null) {
                 item {
                     if (showSearchField) {
                         Row(
@@ -522,7 +628,7 @@ private fun LibraryBrowserTab(
                                             trackSortMenuExpanded = trackSortMenuExpanded,
                                             onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
                                             onTrackSortChanged = onTrackSortChanged,
-                                            actionButton = actionButton,
+                                            actionButton = combinedActionButton,
                                         )
                                     }
                                 },
@@ -540,7 +646,7 @@ private fun LibraryBrowserTab(
                                     trackSortMenuExpanded = trackSortMenuExpanded,
                                     onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
                                     onTrackSortChanged = onTrackSortChanged,
-                                    actionButton = actionButton,
+                                    actionButton = combinedActionButton,
                                 )
                             }
                         }
@@ -551,9 +657,24 @@ private fun LibraryBrowserTab(
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            actionButton?.invoke()
+                            combinedActionButton?.invoke()
                         }
                     }
+                }
+            }
+            if (selectionMode) {
+                item {
+                    TrackSelectionActionBar(
+                        selectedCount = selectedBatchTracks.size,
+                        downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate),
+                        allVisibleSelected = allVisibleBatchTracksSelected,
+                        hasVisibleTracks = batchVisibleTracks.isNotEmpty(),
+                        onToggleSelectAll = {
+                            selectedTrackIds = toggleAllVisibleTrackSelection(selectedTrackIds, batchVisibleTracks)
+                        },
+                        onDownloadSelected = ::requestBatchDownload,
+                        onCancelSelection = ::exitSelectionMode,
+                    )
                 }
             }
             item {
@@ -766,6 +887,11 @@ private fun LibraryBrowserTab(
                                         showDuration = showDuration,
                                         onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                         onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
+                                        selectionMode = selectionMode,
+                                        selected = track.id in selectedTrackIds,
+                                        onSelectionToggle = {
+                                            selectedTrackIds = toggleTrackSelection(selectedTrackIds, track.id)
+                                        },
                                         onClick = {
                                             onPlayTracks(state.filteredTracks, index)
                                         },
@@ -807,6 +933,20 @@ private fun LibraryBrowserTab(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .padding(end = 8.dp, top = 20.dp, bottom = 20.dp),
+        )
+    }
+    if (batchQualitySheetVisible) {
+        BatchDownloadQualityBottomSheet(
+            selectedCount = pendingBatchDownloadTracks.size,
+            tracks = pendingBatchDownloadTracks,
+            downloadsByTrackId = offlineUiState.downloadsByTrackId,
+            onQualitySelected = { quality ->
+                startBatchDownload(pendingBatchDownloadTracks, quality)
+            },
+            onDismiss = {
+                batchQualitySheetVisible = false
+                pendingBatchDownloadTracks = emptyList()
+            },
         )
     }
 }
