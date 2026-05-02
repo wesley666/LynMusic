@@ -72,6 +72,13 @@ class MyUiTest {
     }
 
     @Test
+    fun `daily recommendation carousel preview is capped at ten tracks`() {
+        val tracks = (1..12).map { sampleTrack("track-$it") }
+
+        assertEquals(tracks.take(10), dailyRecommendationCarouselItems(tracks))
+    }
+
+    @Test
     fun `daily recommendation play intent returns null for empty or invalid index`() {
         val tracks = listOf(sampleTrack("track-1"))
 

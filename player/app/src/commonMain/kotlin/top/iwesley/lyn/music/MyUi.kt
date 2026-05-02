@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -69,6 +72,7 @@ internal fun MyTab(
     val isMobile = platform.isMobilePlatform()
     var detailPage by rememberSaveable { mutableStateOf<MyDetailPage?>(null) }
     val mainListState = rememberLazyListState()
+    val dailyRecommendationCarouselState = rememberLazyListState()
     PlatformBackHandler(enabled = detailPage != null) {
         detailPage = null
     }
@@ -137,6 +141,7 @@ internal fun MyTab(
                 tracks = state.dailyRecommendationTracks,
                 isLoading = state.isGeneratingDailyRecommendation,
                 compact = isMobile,
+                carouselState = dailyRecommendationCarouselState,
                 onOpen = { detailPage = MyDetailPage.DailyRecommendation },
                 onPlayAll = {
                     buildDailyRecommendationPlayIntent(state.dailyRecommendationTracks, 0)?.let(onPlayerIntent)
@@ -181,6 +186,7 @@ private fun DailyRecommendationCard(
     tracks: List<Track>,
     isLoading: Boolean,
     compact: Boolean,
+    carouselState: LazyListState,
     onOpen: () -> Unit,
     onPlayAll: () -> Unit,
     onPlayTrack: (Int) -> Unit,
@@ -224,6 +230,13 @@ private fun DailyRecommendationCard(
                     title = "暂无每日推荐",
                     body = "曲库有歌曲后会生成今日推荐。",
                 )
+                compact -> DailyRecommendationMobileCarousel(
+                    tracks = tracks,
+                    state = carouselState,
+                    accentColor = accentColor,
+                    onOpen = onOpen,
+                    onPlayTrack = onPlayTrack,
+                )
                 else -> DailyRecommendationPreview(
                     tracks = tracks,
                     compact = compact,
@@ -234,6 +247,108 @@ private fun DailyRecommendationCard(
                     onPlayTrack = onPlayTrack,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DailyRecommendationMobileCarousel(
+    tracks: List<Track>,
+    state: LazyListState,
+    accentColor: Color,
+    onOpen: () -> Unit,
+    onPlayTrack: (Int) -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val cardWidth = (maxWidth * 0.68f)
+            .coerceAtLeast(218.dp)
+            .coerceAtMost(300.dp)
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            state = state,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            itemsIndexed(
+                items = dailyRecommendationCarouselItems(tracks),
+                key = { _, track -> track.id },
+            ) { index, track ->
+                DailyRecommendationCarouselCard(
+                    track = track,
+                    modifier = Modifier
+                        .width(cardWidth)
+                        .height(156.dp),
+                    accentColor = accentColor,
+                    onOpen = onOpen,
+                    onPlay = { onPlayTrack(index) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyRecommendationCarouselCard(
+    track: Track,
+    modifier: Modifier,
+    accentColor: Color,
+    onOpen: () -> Unit,
+    onPlay: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(accentColor.copy(alpha = 0.18f))
+            .clickable(onClick = onOpen),
+    ) {
+        DailyRecommendationArtwork(
+            artworkLocator = track.artworkLocator,
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(18.dp),
+            accentColor = accentColor,
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.28f)),
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 20.dp, end = 76.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = track.title,
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = track.artistName ?: "未知艺人",
+                color = Color.White.copy(alpha = 0.82f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.92f))
+                .clickable(onClick = onPlay),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 }
@@ -1119,6 +1234,10 @@ internal fun buildDailyRecommendationPlayIntent(
     )
 }
 
+internal fun dailyRecommendationCarouselItems(
+    tracks: List<Track>,
+): List<Track> = tracks.take(DAILY_RECOMMENDATION_CAROUSEL_LIMIT)
+
 private fun buildRecentAlbumSubtitle(recentAlbum: RecentAlbum): String {
     return formatRecentStats(recentAlbum.playCount, recentAlbum.lastPlayedAt)
 }
@@ -1140,3 +1259,5 @@ private fun formatRecentPlayedAt(lastPlayedAt: Long): String {
             .take(16)
     }.getOrDefault("")
 }
+
+private const val DAILY_RECOMMENDATION_CAROUSEL_LIMIT = 10
