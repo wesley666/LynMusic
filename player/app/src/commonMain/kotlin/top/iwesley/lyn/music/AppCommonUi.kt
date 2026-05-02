@@ -536,10 +536,24 @@ private fun TrackOfflineActionMenuItems(
     }
     if (sourceType == ImportSourceType.NAVIDROME) {
         NavidromeAudioQuality.entries.forEach { quality ->
+            val isCurrentOfflineQuality = isCurrentOfflineDownloadQuality(download, quality)
+            val currentOfflineQualityColor = MaterialTheme.colorScheme.primary
             DropdownMenuItem(
-                text = { Text(navidromeDownloadMenuLabel(quality, download)) },
-                leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                text = {
+                    Text(
+                        navidromeDownloadMenuLabel(quality, download),
+                        color = if (isCurrentOfflineQuality) currentOfflineQualityColor else Color.Unspecified,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        if (isCurrentOfflineQuality) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                        contentDescription = null,
+                        tint = if (isCurrentOfflineQuality) currentOfflineQualityColor else LocalContentColor.current,
+                    )
+                },
                 trailingIcon = { DownloadMenuTrailingSizeText(downloadMenuTrailingSizeLabel(track, download, quality)) },
+                enabled = !isCurrentOfflineQuality,
                 onClick = {
                     onDismiss()
                     onIntent(OfflineDownloadIntent.Download(track, quality))
@@ -594,12 +608,25 @@ private fun DownloadMenuTrailingSizeText(label: String) {
     )
 }
 
-private fun navidromeDownloadMenuLabel(
+internal fun navidromeDownloadMenuLabel(
     quality: NavidromeAudioQuality,
     download: OfflineDownload?,
 ): String {
-    val prefix = if (download?.status == OfflineDownloadStatus.Completed) "重新下载" else "下载"
-    return "$prefix${navidromeQualityLabel(quality)}"
+    val prefix = when {
+        isCurrentOfflineDownloadQuality(download, quality) -> "已下载"
+        download?.status == OfflineDownloadStatus.Completed -> "重新下载"
+        else -> "下载"
+    }
+    return "$prefix ${navidromeQualityLabel(quality)}"
+}
+
+internal fun isCurrentOfflineDownloadQuality(
+    download: OfflineDownload?,
+    quality: NavidromeAudioQuality,
+): Boolean {
+    return download?.status == OfflineDownloadStatus.Completed &&
+        download.hasLocalFileReference &&
+        download.quality == quality
 }
 
 private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String {
