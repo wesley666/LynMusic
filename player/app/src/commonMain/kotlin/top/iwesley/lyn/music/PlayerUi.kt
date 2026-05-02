@@ -2020,26 +2020,29 @@ private fun TrackOfflineDownloadBottomSheet(
 ) {
     val shellColors = mainShellColors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = shellColors.navContainer,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Column(modifier = Modifier.padding(bottom = 20.dp)) {
-            Text(
-                text = track.title,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Bold,
-            )
-            TrackOfflineActionMenuItems(
-                track = track,
-                download = download,
-                onIntent = onIntent,
-                onDismiss = onDismiss,
-            )
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            Column(modifier = Modifier.padding(bottom = 20.dp)) {
+                Text(
+                    text = track.title,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold,
+                )
+                TrackOfflineActionMenuItems(
+                    track = track,
+                    download = download,
+                    onIntent = onIntent,
+                    onDismiss = onDismiss,
+                )
+            }
         }
     }
 }

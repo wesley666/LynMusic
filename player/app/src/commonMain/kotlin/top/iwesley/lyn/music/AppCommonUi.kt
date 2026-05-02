@@ -67,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
@@ -88,6 +89,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -236,43 +238,46 @@ internal fun BatchDownloadQualityBottomSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = mainShellColors.navContainer,
     ) {
-        Column(modifier = Modifier.padding(bottom = 20.dp)) {
-            Text(
-                text = "选择下载音质",
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "将下载 $selectedCount 首歌曲",
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            NavidromeAudioQuality.entries.forEach { quality ->
-                DropdownMenuItem(
-                    text = { Text(navidromeQualityLabel(quality)) },
-                    leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
-                    trailingIcon = {
-                        DownloadMenuTrailingSizeText(
-                            batchDownloadSizeEstimateLabel(
-                                estimateBatchDownloadSize(
-                                    tracks = tracks,
-                                    downloadsByTrackId = downloadsByTrackId,
-                                    quality = quality,
-                                ),
-                            ),
-                        )
-                    },
-                    onClick = { onQualitySelected(quality) },
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            Column(modifier = Modifier.padding(bottom = 20.dp)) {
+                Text(
+                    text = "选择下载音质",
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold,
                 )
+                Text(
+                    text = "将下载 $selectedCount 首歌曲",
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                NavidromeAudioQuality.entries.forEach { quality ->
+                    DropdownMenuItem(
+                        text = { Text(navidromeQualityLabel(quality)) },
+                        leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                        trailingIcon = {
+                            DownloadMenuTrailingSizeText(
+                                batchDownloadSizeEstimateLabel(
+                                    estimateBatchDownloadSize(
+                                        tracks = tracks,
+                                        downloadsByTrackId = downloadsByTrackId,
+                                        quality = quality,
+                                    ),
+                                ),
+                            )
+                        },
+                        onClick = { onQualitySelected(quality) },
+                    )
+                }
             }
         }
     }
@@ -716,25 +721,28 @@ internal fun TrackActionContainer(
     }
     if (supportsActions && mobileSheetVisible) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val appDensity = LocalDensity.current
         ModalBottomSheet(
             onDismissRequest = { mobileSheetVisible = false },
             sheetState = sheetState,
             containerColor = mainShellColors.navContainer,
         ) {
-            Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                Text(
-                    text = track.title,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Bold,
-                )
-                TrackOfflineActionMenuItems(
-                    track = track,
-                    download = download,
-                    onIntent = onOfflineIntent,
-                    onDismiss = { mobileSheetVisible = false },
-                )
+            CompositionLocalProvider(LocalDensity provides appDensity) {
+                Column(modifier = Modifier.padding(bottom = 20.dp)) {
+                    Text(
+                        text = track.title,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TrackOfflineActionMenuItems(
+                        track = track,
+                        download = download,
+                        onIntent = onOfflineIntent,
+                        onDismiss = { mobileSheetVisible = false },
+                    )
+                }
             }
         }
     }
