@@ -33,6 +33,7 @@ sealed interface OfflineDownloadIntent {
 
     data class Cancel(val trackId: String) : OfflineDownloadIntent
     data class Delete(val trackId: String) : OfflineDownloadIntent
+    data class ShowMessage(val message: String) : OfflineDownloadIntent
     data object RefreshAvailableSpace : OfflineDownloadIntent
     data object ClearMessage : OfflineDownloadIntent
 }
@@ -64,12 +65,13 @@ class OfflineDownloadStore(
             is OfflineDownloadIntent.DownloadMany -> startBatchDownload(intent.tracks, intent.quality)
             is OfflineDownloadIntent.Cancel -> cancelDownload(intent.trackId)
             is OfflineDownloadIntent.Delete -> deleteDownload(intent.trackId)
+            is OfflineDownloadIntent.ShowMessage -> updateState { it.copy(message = intent.message) }
             OfflineDownloadIntent.RefreshAvailableSpace -> refreshAvailableSpace()
             OfflineDownloadIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
     }
 
-    private fun startBatchDownload(
+    private suspend fun startBatchDownload(
         tracks: List<Track>,
         quality: NavidromeAudioQuality,
     ) {
@@ -81,6 +83,23 @@ class OfflineDownloadStore(
         if (uniqueTracks.isEmpty()) {
             updateState { state -> state.copy(message = "请选择要下载的歌曲。") }
             return
+        }
+        val estimate = estimateBatchDownloadSize(
+            tracks = uniqueTracks,
+            downloadsByTrackId = state.value.downloadsByTrackId,
+            quality = quality,
+        )
+        if (estimate.totalBytes > 0L || estimate.unknownCount > 0) {
+            val availableSpaceResult = repository.availableSpaceBytes()
+            val availableSpaceBytes = availableSpaceResult.getOrNull()
+            if (availableSpaceResult.isSuccess) {
+                updateState { state -> state.copy(availableSpaceBytes = availableSpaceBytes) }
+            }
+            val insufficientSpaceMessage = batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes)
+            if (insufficientSpaceMessage != null) {
+                updateState { state -> state.copy(message = insufficientSpaceMessage) }
+                return
+            }
         }
         batchDownloadJob = storeScope.launch {
             var successCount = 0

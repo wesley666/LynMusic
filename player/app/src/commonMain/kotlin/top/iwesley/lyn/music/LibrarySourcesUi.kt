@@ -107,6 +107,9 @@ import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.libraryAlbumId
 import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
+import top.iwesley.lyn.music.feature.offline.batchDownloadInsufficientSpaceMessage
+import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
+import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.mainShellColors
@@ -410,6 +413,22 @@ private fun LibraryBrowserTab(
         pendingBatchDownloadTracks = emptyList()
     }
     fun startBatchDownload(tracks: List<Track>, quality: NavidromeAudioQuality) {
+        val insufficientSpaceMessage = batchDownloadInsufficientSpaceMessage(
+            estimate = estimateBatchDownloadSize(
+                tracks = tracks,
+                downloadsByTrackId = offlineUiState.downloadsByTrackId,
+                quality = quality,
+            ),
+            availableSpaceBytes = offlineUiState.availableSpaceBytes,
+        )
+        if (insufficientSpaceMessage != null) {
+            if (batchQualitySheetVisible) {
+                batchQualitySheetVisible = false
+                pendingBatchDownloadTracks = emptyList()
+            }
+            onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.ShowMessage(insufficientSpaceMessage))
+            return
+        }
         onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.DownloadMany(tracks, quality))
         exitSelectionMode()
     }
@@ -425,6 +444,11 @@ private fun LibraryBrowserTab(
     }
     PlatformBackHandler(enabled = selectionMode) {
         exitSelectionMode()
+    }
+    LaunchedEffect(selectionMode, supportsBatchDownload) {
+        if (selectionMode && supportsBatchDownload) {
+            onOfflineDownloadIntent(OfflineDownloadIntent.RefreshAvailableSpace)
+        }
     }
     LaunchedEffect(batchVisibleTracks) {
         val pruned = pruneSelectedTrackIds(selectedTrackIds, batchVisibleTracks)

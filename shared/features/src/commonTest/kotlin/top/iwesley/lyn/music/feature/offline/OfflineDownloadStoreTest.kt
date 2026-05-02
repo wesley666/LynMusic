@@ -54,6 +54,49 @@ class OfflineDownloadStoreTest {
     }
 
     @Test
+    fun `batch download stops when estimated size plus reserve exceeds available space`() = runTest {
+        val track = sampleWebDavTrack(
+            id = "first",
+            sizeBytes = 512L * 1024L * 1024L,
+        )
+        val repository = TestOfflineDownloadRepository(nextAvailableSpaceBytes = 1L * 1024L * 1024L * 1024L)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(track)))
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), repository.downloadRequests)
+        assertEquals(
+            "存储空间不足：预计下载 512.0 MB，需预留 1.0 GB，可用 1.0 GB。",
+            store.state.value.message,
+        )
+        assertEquals(1, repository.availableSpaceCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `batch download continues when available space is unknown`() = runTest {
+        val track = sampleWebDavTrack(
+            id = "first",
+            sizeBytes = 512L * 1024L * 1024L,
+        )
+        val repository = TestOfflineDownloadRepository(nextAvailableSpaceBytes = null)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(track)))
+        advanceUntilIdle()
+
+        assertEquals(listOf(track.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+        assertEquals("批量下载完成：成功 1 首。", store.state.value.message)
+        assertEquals(1, repository.availableSpaceCalls)
+        scope.cancel()
+    }
+
+    @Test
     fun `batch download skips unsupported and completed matching quality tracks`() = runTest {
         val completedNavidrome = sampleNavidromeTrack(id = "nav-completed")
         val pendingNavidrome = sampleNavidromeTrack(id = "nav-pending")
@@ -119,11 +162,15 @@ private fun sampleNavidromeTrack(id: String): Track {
     )
 }
 
-private fun sampleWebDavTrack(id: String): Track {
+private fun sampleWebDavTrack(
+    id: String,
+    sizeBytes: Long = 0L,
+): Track {
     return sampleTrack(
         id = id,
         sourceId = "webdav-source",
         mediaLocator = buildWebDavLocator("webdav-source", "$id.mp3"),
+        sizeBytes = sizeBytes,
     )
 }
 
@@ -139,6 +186,7 @@ private fun sampleTrack(
     id: String,
     sourceId: String,
     mediaLocator: String,
+    sizeBytes: Long = 0L,
 ): Track {
     return Track(
         id = id,
@@ -146,5 +194,6 @@ private fun sampleTrack(
         title = id,
         mediaLocator = mediaLocator,
         relativePath = "$id.mp3",
+        sizeBytes = sizeBytes,
     )
 }

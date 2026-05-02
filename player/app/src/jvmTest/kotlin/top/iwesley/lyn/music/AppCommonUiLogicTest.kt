@@ -10,6 +10,9 @@ import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
+import top.iwesley.lyn.music.feature.offline.batchDownloadInsufficientSpaceMessage
+import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
+import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 
 class AppCommonUiLogicTest {
 
@@ -164,6 +167,24 @@ class AppCommonUiLogicTest {
 
         assertEquals("未知", batchDownloadSizeEstimateLabel(unknownOnly))
         assertEquals("1.0 MB + 1 首未知", batchDownloadSizeEstimateLabel(mixedEstimate))
+    }
+
+    @Test
+    fun `batch download space check requires one gigabyte reserve`() {
+        val estimate = estimateBatchDownloadSize(
+            tracks = listOf(sampleWebDavTrack("first", sizeBytes = 512L * 1024L * 1024L)),
+            downloadsByTrackId = emptyMap(),
+        )
+
+        assertEquals(
+            "存储空间不足：预计下载 512.0 MB，需预留 1.0 GB，可用 1.0 GB。",
+            batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = 1L * 1024L * 1024L * 1024L),
+        )
+        assertEquals(
+            null,
+            batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = 1536L * 1024L * 1024L),
+        )
+        assertEquals(null, batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = null))
     }
 
     private fun completedDownload(

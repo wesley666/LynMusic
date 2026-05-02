@@ -111,6 +111,10 @@ import top.iwesley.lyn.music.core.model.offlineDownloadSourceType
 import top.iwesley.lyn.music.core.model.supportsOfflineDownload
 import top.iwesley.lyn.music.feature.importing.formatImportScanSummary
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
+import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
+import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
+import top.iwesley.lyn.music.feature.offline.estimatedNavidromeTranscodedSizeBytes
+import top.iwesley.lyn.music.feature.offline.formatOfflineDownloadSizeLabel
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlin.math.max
@@ -271,82 +275,6 @@ internal fun BatchDownloadQualityBottomSheet(
                 )
             }
         }
-    }
-}
-
-internal data class BatchDownloadSizeEstimate(
-    val totalBytes: Long = 0L,
-    val unknownCount: Int = 0,
-    val skippedCount: Int = 0,
-    val approximate: Boolean = false,
-)
-
-internal fun estimateBatchDownloadSize(
-    tracks: List<Track>,
-    downloadsByTrackId: Map<String, OfflineDownload>,
-    quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
-): BatchDownloadSizeEstimate {
-    var totalBytes = 0L
-    var unknownCount = 0
-    var skippedCount = 0
-    var approximate = false
-    tracks.distinctBy { it.id }.forEach { track ->
-        val sourceType = offlineDownloadSourceType(track)
-        val download = downloadsByTrackId[track.id]
-        if (shouldSkipBatchDownloadEstimate(track, download, sourceType, quality)) {
-            skippedCount += 1
-            return@forEach
-        }
-        val sizeBytes = when {
-            sourceType == ImportSourceType.NAVIDROME && quality != NavidromeAudioQuality.Original -> {
-                approximate = true
-                estimatedNavidromeTranscodedSizeBytes(track, quality)
-            }
-
-            else -> track.sizeBytes.takeIf { it > 0L }
-        }
-        if (sizeBytes == null) {
-            unknownCount += 1
-        } else {
-            totalBytes += sizeBytes
-        }
-    }
-    return BatchDownloadSizeEstimate(
-        totalBytes = totalBytes,
-        unknownCount = unknownCount,
-        skippedCount = skippedCount,
-        approximate = approximate,
-    )
-}
-
-private fun shouldSkipBatchDownloadEstimate(
-    track: Track,
-    download: OfflineDownload?,
-    sourceType: ImportSourceType?,
-    quality: NavidromeAudioQuality,
-): Boolean {
-    if (sourceType == null || sourceType == ImportSourceType.LOCAL_FOLDER) return true
-    if (download?.status != OfflineDownloadStatus.Completed || !download.hasLocalFileReference) {
-        return false
-    }
-    return sourceType != ImportSourceType.NAVIDROME || download.quality == quality
-}
-
-internal fun batchDownloadSizeEstimateLabel(estimate: BatchDownloadSizeEstimate): String {
-    val sizeLabel = estimate.totalBytes
-        .takeIf { it > 0L }
-        ?.let(::formatOfflineDownloadSize)
-    return when {
-        sizeLabel == null && estimate.unknownCount <= 0 -> "无需下载"
-        sizeLabel == null && estimate.unknownCount == 1 -> "未知"
-        sizeLabel == null -> "${estimate.unknownCount} 首未知"
-        estimate.unknownCount > 0 -> {
-            val prefix = if (estimate.approximate) "约 " else ""
-            "$prefix$sizeLabel + ${estimate.unknownCount} 首未知"
-        }
-
-        estimate.approximate -> "约 $sizeLabel"
-        else -> sizeLabel
     }
 }
 
@@ -983,15 +911,6 @@ private fun downloadMenuTrailingSizeLabel(
     return track.sizeBytes.takeIf { it > 0L }?.let(::formatOfflineDownloadSize) ?: "未知"
 }
 
-private fun estimatedNavidromeTranscodedSizeBytes(
-    track: Track,
-    quality: NavidromeAudioQuality,
-): Long? {
-    val maxBitRateKbps = quality.maxBitRateKbps?.takeIf { it > 0 } ?: return null
-    val durationMs = track.durationMs.takeIf { it > 0L } ?: return null
-    return maxBitRateKbps.toLong() * durationMs * 125L / 1_000L
-}
-
 private fun offlineDownloadProgressSizeLabel(download: OfflineDownload?): String {
     val downloaded = formatOfflineDownloadSize(download?.downloadedBytes?.coerceAtLeast(0L) ?: 0L)
     val total = download?.totalBytes?.takeIf { it > 0L }?.let(::formatOfflineDownloadSize)
@@ -1018,20 +937,7 @@ internal fun formatOfflineAvailableSpaceGb(sizeBytes: Long): String {
     return "${(gigabytes * 10).roundToInt() / 10.0} GB"
 }
 
-private fun formatOfflineDownloadSize(sizeBytes: Long): String {
-    val units = listOf("B", "KB", "MB", "GB")
-    var value = sizeBytes.toDouble().coerceAtLeast(0.0)
-    var unitIndex = 0
-    while (value >= 1024.0 && unitIndex < units.lastIndex) {
-        value /= 1024.0
-        unitIndex += 1
-    }
-    return if (unitIndex == 0) {
-        "${value.roundToInt()} ${units[unitIndex]}"
-    } else {
-        "${(value * 10).roundToInt() / 10.0} ${units[unitIndex]}"
-    }
-}
+private fun formatOfflineDownloadSize(sizeBytes: Long): String = formatOfflineDownloadSizeLabel(sizeBytes)
 
 @Composable
 internal fun TrackArtworkThumbnail(
