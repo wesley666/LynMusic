@@ -27,6 +27,7 @@ interface OfflineDownloadRepository {
     suspend fun deleteDownloadsBySource(sourceId: String): Result<Unit>
     suspend fun deleteAllDownloads(): Result<Unit>
     suspend fun resolveOfflineMediaLocator(trackId: String): String?
+    suspend fun availableSpaceBytes(): Result<Long?>
 }
 
 object NoopOfflineDownloadRepository : OfflineDownloadRepository {
@@ -43,6 +44,7 @@ object NoopOfflineDownloadRepository : OfflineDownloadRepository {
     override suspend fun deleteDownloadsBySource(sourceId: String): Result<Unit> = Result.success(Unit)
     override suspend fun deleteAllDownloads(): Result<Unit> = Result.success(Unit)
     override suspend fun resolveOfflineMediaLocator(trackId: String): String? = null
+    override suspend fun availableSpaceBytes(): Result<Long?> = Result.success(null)
 }
 
 class DefaultOfflineDownloadRepository(
@@ -175,6 +177,10 @@ class DefaultOfflineDownloadRepository(
             ),
         )
         return null
+    }
+
+    override suspend fun availableSpaceBytes(): Result<Long?> {
+        return runCatching { gateway.availableSpaceBytes()?.takeIf { it >= 0L } }
     }
 
     private suspend fun updateProgress(trackId: String, progress: OfflineDownloadProgress) {

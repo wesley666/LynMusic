@@ -45,6 +45,7 @@ interface OfflineDownloadGateway {
     suspend fun exists(localMediaLocator: String): Boolean
     suspend fun clearAll(): Result<Unit>
     suspend fun sizeBytes(): Long
+    suspend fun availableSpaceBytes(): Long?
     suspend fun cleanupPartialFiles(): Result<Unit>
 }
 
@@ -63,6 +64,7 @@ object UnsupportedOfflineDownloadGateway : OfflineDownloadGateway {
     override suspend fun exists(localMediaLocator: String): Boolean = false
     override suspend fun clearAll(): Result<Unit> = Result.failure(error)
     override suspend fun sizeBytes(): Long = 0L
+    override suspend fun availableSpaceBytes(): Long? = null
     override suspend fun cleanupPartialFiles(): Result<Unit> = Result.failure(error)
 }
 

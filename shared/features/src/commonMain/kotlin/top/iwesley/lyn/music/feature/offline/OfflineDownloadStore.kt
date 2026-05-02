@@ -12,6 +12,8 @@ import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 
 data class OfflineDownloadState(
     val downloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
+    val availableSpaceBytes: Long? = null,
+    val availableSpaceLoading: Boolean = false,
     val message: String? = null,
 )
 
@@ -21,6 +23,7 @@ sealed interface OfflineDownloadIntent {
 
     data class Cancel(val trackId: String) : OfflineDownloadIntent
     data class Delete(val trackId: String) : OfflineDownloadIntent
+    data object RefreshAvailableSpace : OfflineDownloadIntent
     data object ClearMessage : OfflineDownloadIntent
 }
 
@@ -49,6 +52,7 @@ class OfflineDownloadStore(
             is OfflineDownloadIntent.Download -> startDownload(intent.track, intent.quality)
             is OfflineDownloadIntent.Cancel -> cancelDownload(intent.trackId)
             is OfflineDownloadIntent.Delete -> deleteDownload(intent.trackId)
+            OfflineDownloadIntent.RefreshAvailableSpace -> refreshAvailableSpace()
             OfflineDownloadIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
     }
@@ -84,5 +88,17 @@ class OfflineDownloadStore(
             .onFailure { throwable ->
                 updateState { state -> state.copy(message = throwable.message ?: "离线音乐删除失败。") }
             }
+    }
+
+    private suspend fun refreshAvailableSpace() {
+        if (state.value.availableSpaceLoading) return
+        updateState { it.copy(availableSpaceLoading = true) }
+        val result = repository.availableSpaceBytes()
+        updateState { state ->
+            state.copy(
+                availableSpaceBytes = result.getOrNull(),
+                availableSpaceLoading = false,
+            )
+        }
     }
 }

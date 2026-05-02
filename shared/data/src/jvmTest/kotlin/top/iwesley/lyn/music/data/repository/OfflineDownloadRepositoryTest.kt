@@ -207,6 +207,31 @@ class OfflineDownloadRepositoryTest {
         assertEquals("offline://two.mp3", database.offlineDownloadDao().getByTrackId("track-2")?.localMediaLocator)
         assertEquals(listOf("offline://one.mp3"), gateway.deletedLocators)
     }
+
+    @Test
+    fun `available space delegates to gateway`() = runTest {
+        val database = createOfflineTestDatabase()
+        val gateway = RecordingOfflineDownloadGateway(nextAvailableSpaceBytes = 12_345L)
+        val repository = DefaultOfflineDownloadRepository(database, gateway)
+
+        val result = repository.availableSpaceBytes()
+
+        assertTrue(result.isSuccess)
+        assertEquals(12_345L, result.getOrThrow())
+        assertEquals(1, gateway.availableSpaceCalls)
+    }
+
+    @Test
+    fun `available space may be unknown`() = runTest {
+        val database = createOfflineTestDatabase()
+        val gateway = RecordingOfflineDownloadGateway(nextAvailableSpaceBytes = null)
+        val repository = DefaultOfflineDownloadRepository(database, gateway)
+
+        val result = repository.availableSpaceBytes()
+
+        assertTrue(result.isSuccess)
+        assertNull(result.getOrThrow())
+    }
 }
 
 private fun createOfflineTestDatabase(): LynMusicDatabase {
@@ -296,10 +321,12 @@ private class RecordingOfflineDownloadGateway(
     private val failure: Throwable? = null,
     private val progressEvents: List<OfflineDownloadProgress> = emptyList(),
     private val existingLocators: MutableSet<String> = mutableSetOf(),
+    private val nextAvailableSpaceBytes: Long? = null,
 ) : OfflineDownloadGateway {
     val downloadRequests = mutableListOf<Pair<Track, NavidromeAudioQuality>>()
     val deletedLocators = mutableListOf<String>()
     var cleanupPartialCalls = 0
+    var availableSpaceCalls = 0
 
     override suspend fun download(
         track: Track,
@@ -330,6 +357,11 @@ private class RecordingOfflineDownloadGateway(
 
     override suspend fun sizeBytes(): Long {
         return existingLocators.size.toLong()
+    }
+
+    override suspend fun availableSpaceBytes(): Long? {
+        availableSpaceCalls += 1
+        return nextAvailableSpaceBytes
     }
 
     override suspend fun cleanupPartialFiles(): Result<Unit> {

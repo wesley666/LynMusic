@@ -56,6 +56,16 @@ class AppCommonUiLogicTest {
         )
     }
 
+    @Test
+    fun `offline available space labels loading unknown and gigabytes`() {
+        assertEquals("计算中", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = true))
+        assertEquals("未知", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = false))
+        assertEquals("0.0 GB", formatOfflineAvailableSpaceGb(0L))
+        assertEquals("0.5 GB", formatOfflineAvailableSpaceGb(512L * 1024L * 1024L))
+        assertEquals("2.0 GB", formatOfflineAvailableSpaceGb(2L * 1024L * 1024L * 1024L))
+        assertEquals("1.2 GB", formatOfflineAvailableSpaceGb(1_288_490_188L))
+    }
+
     private fun completedDownload(
         quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
         localMediaLocator: String? = "/tmp/offline/song.mp3",

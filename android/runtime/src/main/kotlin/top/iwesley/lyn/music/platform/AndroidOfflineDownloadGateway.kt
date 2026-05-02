@@ -140,6 +140,11 @@ private class AndroidOfflineDownloadGateway(
         directorySizeBytes(rootDirectory)
     }
 
+    override suspend fun availableSpaceBytes(): Long? = withContext(Dispatchers.IO) {
+        rootDirectory.mkdirs()
+        rootDirectory.usableSpace.takeIf { it >= 0L }
+    }
+
     override suspend fun cleanupPartialFiles(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             rootDirectory.listFiles().orEmpty()

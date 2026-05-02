@@ -167,6 +167,8 @@ fun App(
         LocalDesktopWindowChrome provides desktopWindowChrome,
         LocalOfflineDownloadUiState provides OfflineDownloadUiState(
             downloadsByTrackId = offlineDownloadState.downloadsByTrackId,
+            availableSpaceBytes = offlineDownloadState.availableSpaceBytes,
+            availableSpaceLoading = offlineDownloadState.availableSpaceLoading,
             onIntent = component.offlineDownloadStore::dispatch,
         ),
     ) {

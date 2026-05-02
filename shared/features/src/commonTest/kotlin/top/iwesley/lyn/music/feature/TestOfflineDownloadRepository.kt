@@ -11,8 +11,10 @@ import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 
 internal class TestOfflineDownloadRepository(
     initialDownloads: Map<String, OfflineDownload> = emptyMap(),
+    var nextAvailableSpaceBytes: Long? = null,
 ) : OfflineDownloadRepository {
     private val mutableDownloads = MutableStateFlow(initialDownloads)
+    var availableSpaceCalls = 0
 
     override val downloads: Flow<Map<String, OfflineDownload>> = mutableDownloads.asStateFlow()
 
@@ -31,6 +33,10 @@ internal class TestOfflineDownloadRepository(
     override suspend fun deleteDownloadsBySource(sourceId: String): Result<Unit> = Result.success(Unit)
     override suspend fun deleteAllDownloads(): Result<Unit> = Result.success(Unit)
     override suspend fun resolveOfflineMediaLocator(trackId: String): String? = null
+    override suspend fun availableSpaceBytes(): Result<Long?> {
+        availableSpaceCalls += 1
+        return Result.success(nextAvailableSpaceBytes)
+    }
 }
 
 internal fun testOfflineDownload(

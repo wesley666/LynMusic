@@ -118,6 +118,8 @@ import kotlin.math.roundToInt
 
 internal data class OfflineDownloadUiState(
     val downloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
+    val availableSpaceBytes: Long? = null,
+    val availableSpaceLoading: Boolean = false,
     val onIntent: ((OfflineDownloadIntent) -> Unit)? = null,
 )
 
@@ -472,9 +474,9 @@ internal fun TrackActionContainer(
             horizontalArrangement = horizontalArrangement,
             content = content,
         )
-        if (supportsActions && !mobilePlatform) {
+        if (supportsActions && !mobilePlatform && desktopMenuExpanded) {
             DropdownMenu(
-                expanded = desktopMenuExpanded,
+                expanded = true,
                 onDismissRequest = { desktopMenuExpanded = false },
                 containerColor = mainShellColors.navContainer,
             ) {
@@ -520,6 +522,16 @@ internal fun TrackOfflineActionMenuItems(
     onIntent: (OfflineDownloadIntent) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val offlineUiState = LocalOfflineDownloadUiState.current
+    LaunchedEffect(track.id) {
+        onIntent(OfflineDownloadIntent.RefreshAvailableSpace)
+    }
+    DownloadMenuAvailableSpaceItem(
+        label = offlineAvailableSpaceLabel(
+            availableSpaceBytes = offlineUiState.availableSpaceBytes,
+            loading = offlineUiState.availableSpaceLoading,
+        ),
+    )
     val sourceType = offlineDownloadSourceType(track)
     val status = download?.status
     if (status == OfflineDownloadStatus.Pending || status == OfflineDownloadStatus.Downloading) {
@@ -599,6 +611,22 @@ internal fun TrackOfflineActionMenuItems(
 }
 
 @Composable
+private fun DownloadMenuAvailableSpaceItem(label: String) {
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = "下载路径可用空间",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        },
+        trailingIcon = { DownloadMenuTrailingSizeText(label) },
+        enabled = false,
+        onClick = {},
+    )
+}
+
+@Composable
 private fun DownloadMenuTrailingSizeText(label: String) {
     Text(
         text = label,
@@ -675,6 +703,22 @@ private fun offlineDownloadProgressSizeLabel(download: OfflineDownload?): String
     } else {
         "$downloaded / $total"
     }
+}
+
+internal fun offlineAvailableSpaceLabel(
+    availableSpaceBytes: Long?,
+    loading: Boolean,
+): String {
+    return when {
+        loading -> "计算中"
+        availableSpaceBytes == null -> "未知"
+        else -> formatOfflineAvailableSpaceGb(availableSpaceBytes)
+    }
+}
+
+internal fun formatOfflineAvailableSpaceGb(sizeBytes: Long): String {
+    val gigabytes = sizeBytes.coerceAtLeast(0L).toDouble() / 1024.0 / 1024.0 / 1024.0
+    return "${(gigabytes * 10).roundToInt() / 10.0} GB"
 }
 
 private fun formatOfflineDownloadSize(sizeBytes: Long): String {
