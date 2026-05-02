@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.DEFAULT_PLAYBACK_VOLUME
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
@@ -69,6 +70,39 @@ class PlaybackRepositoriesTest {
             advanceUntilIdle()
 
             assertEquals(NavidromeAudioQuality.Kbps192, repository.snapshot.value.currentNavidromeAudioQuality)
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback snapshot records current audio format from gateway`() = runTest {
+        val database = createTestDatabase()
+        val audioFormat = PlaybackAudioFormat(
+            bitRateBps = 320_000,
+            samplingRateHz = 44_100,
+            channelCount = 2,
+        )
+        val gateway = FakePlaybackGateway().apply {
+            nextPlaybackAudioFormat = audioFormat
+        }
+        val playbackPreferencesStore = FakePlaybackPreferencesStore()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database = database,
+            gateway = gateway,
+            playbackPreferencesStore = playbackPreferencesStore,
+            scope = scope,
+            hydrateImmediately = false,
+        )
+
+        try {
+            repository.playTracks(listOf(sampleTrack("track-1", "First Song")), startIndex = 0)
+            advanceUntilIdle()
+
+            assertEquals(audioFormat, repository.snapshot.value.currentPlaybackAudioFormat)
         } finally {
             repository.close()
             scope.cancel()
@@ -1816,6 +1850,7 @@ private class FakePlaybackGateway(
     val seekCalls = mutableListOf<Long>()
     val volumeCalls = mutableListOf<Float>()
     var nextNavidromeAudioQuality: NavidromeAudioQuality? = null
+    var nextPlaybackAudioFormat: PlaybackAudioFormat? = null
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
@@ -1847,6 +1882,7 @@ private class FakePlaybackGateway(
             durationMs = track.durationMs,
             canSeek = true,
             currentNavidromeAudioQuality = nextNavidromeAudioQuality,
+            currentPlaybackAudioFormat = nextPlaybackAudioFormat,
             errorMessage = null,
         )
     }

@@ -22,8 +22,11 @@ import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.room.Room
 import io.ktor.client.HttpClient
@@ -70,6 +73,7 @@ import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
@@ -1601,6 +1605,12 @@ internal class AndroidPlaybackGateway(
                 publishPlayerState()
             }
 
+            override fun onTracksChanged(tracks: Tracks) {
+                mutableState.update {
+                    it.copy(currentPlaybackAudioFormat = tracks.selectedAudioFormat())
+                }
+            }
+
             override fun onEvents(player: Player, events: Player.Events) {
                 publishPlayerState()
             }
@@ -1624,15 +1634,16 @@ internal class AndroidPlaybackGateway(
             return
         }
         stopAndResetForTrackSwitch(loadToken)
-        val offlineFile = resolveAndroidOfflinePlaybackFile(database, track)
-        val webDavTarget = if (offlineFile == null) resolveAndroidWebDavPlaybackTarget(
+        val offlineTarget = resolveAndroidOfflinePlaybackTarget(database, track)
+        val isNavidromeTrack = parseNavidromeSongLocator(track.mediaLocator) != null
+        val webDavTarget = if (offlineTarget == null) resolveAndroidWebDavPlaybackTarget(
             database = database,
             secureCredentialStore = secureCredentialStore,
             locator = track.mediaLocator,
             logger = logger,
         ) else null
         val sambaTarget = if (
-            offlineFile == null &&
+            offlineTarget == null &&
             webDavTarget == null &&
             shouldUseAndroidSambaDirectPlayback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
         ) {
@@ -1645,19 +1656,21 @@ internal class AndroidPlaybackGateway(
         } else {
             null
         }
-        val navidrome = if (offlineFile == null && webDavTarget == null && sambaTarget == null) {
+        val navidrome = if (offlineTarget == null && webDavTarget == null && sambaTarget == null) {
             parseNavidromeSongLocator(track.mediaLocator)
         } else {
             null
         }
-        val navidromeAudioQuality = navidrome?.let {
-            resolveNavidromeAudioQualityForCurrentNetwork(
+        val navidromeAudioQuality = when {
+            offlineTarget != null && isNavidromeTrack -> offlineTarget.quality
+            navidrome != null -> resolveNavidromeAudioQualityForCurrentNetwork(
                 preferencesStore = navidromeAudioQualityPreferencesStore,
                 networkConnectionTypeProvider = networkConnectionTypeProvider,
             )
+            else -> null
         }
-        val resolvedUri = if (offlineFile != null) {
-            Uri.fromFile(offlineFile)
+        val resolvedUri = if (offlineTarget != null) {
+            Uri.fromFile(offlineTarget.file)
         } else if (webDavTarget == null && sambaTarget == null) {
             resolveLocator(track.mediaLocator, navidromeAudioQuality)
         } else {
@@ -1874,6 +1887,29 @@ internal class AndroidPlaybackGateway(
     private fun shouldKeepTickerRunning(): Boolean {
         return player.isPlaying || player.playbackState == Player.STATE_BUFFERING
     }
+}
+
+private fun Tracks.selectedAudioFormat(): PlaybackAudioFormat? {
+    groups.forEach { group ->
+        if (group.type != C.TRACK_TYPE_AUDIO) return@forEach
+        for (index in 0 until group.length) {
+            if (!group.isTrackSelected(index)) continue
+            return group.getTrackFormat(index).toPlaybackAudioFormat()
+        }
+    }
+    return null
+}
+
+private fun Format.toPlaybackAudioFormat(): PlaybackAudioFormat? {
+    val bitRateBps = bitrate.takeIf { it != Format.NO_VALUE && it > 0 }
+    val samplingRateHz = sampleRate.takeIf { it != Format.NO_VALUE && it > 0 }
+    val channelCount = channelCount.takeIf { it != Format.NO_VALUE && it > 0 }
+    if (bitRateBps == null && samplingRateHz == null && channelCount == null) return null
+    return PlaybackAudioFormat(
+        bitRateBps = bitRateBps,
+        samplingRateHz = samplingRateHz,
+        channelCount = channelCount,
+    )
 }
 
 private object IntentFlags {

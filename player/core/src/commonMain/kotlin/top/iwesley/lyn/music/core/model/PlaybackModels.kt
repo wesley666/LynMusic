@@ -24,6 +24,7 @@ data class PlaybackSnapshot(
     val metadataAlbumTitle: String? = null,
     val metadataArtworkLocator: String? = null,
     val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
+    val currentPlaybackAudioFormat: PlaybackAudioFormat? = null,
     val errorMessage: String? = null,
 ) {
     val currentTrack: Track?
@@ -64,6 +65,12 @@ private val INTERNAL_PLAYBACK_TITLE_PREFIXES = listOf(
     "fd://",
 )
 
+data class PlaybackAudioFormat(
+    val bitRateBps: Int? = null,
+    val samplingRateHz: Int? = null,
+    val channelCount: Int? = null,
+)
+
 data class PlaybackGatewayState(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
@@ -74,6 +81,7 @@ data class PlaybackGatewayState(
     val metadataArtistName: String? = null,
     val metadataAlbumTitle: String? = null,
     val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
+    val currentPlaybackAudioFormat: PlaybackAudioFormat? = null,
     val completionCount: Long = 0L,
     val errorMessage: String? = null,
     val errorRevision: Long = 0L,

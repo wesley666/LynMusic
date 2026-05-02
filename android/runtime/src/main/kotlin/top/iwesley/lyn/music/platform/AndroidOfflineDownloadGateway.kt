@@ -258,14 +258,20 @@ private class AndroidOfflineDownloadGateway(
     }
 }
 
-internal suspend fun resolveAndroidOfflinePlaybackFile(
+internal suspend fun resolveAndroidOfflinePlaybackTarget(
     database: LynMusicDatabase,
     track: Track,
-): File? {
+): AndroidOfflinePlaybackTarget? {
     val row = database.offlineDownloadDao().getByTrackId(track.id) ?: return null
     val path = row.localMediaLocator?.takeIf { it.isNotBlank() } ?: return null
     val file = File(path)
-    if (file.isFile) return file
+    if (file.isFile) {
+        return AndroidOfflinePlaybackTarget(
+            file = file,
+            quality = NavidromeAudioQuality.entries.firstOrNull { it.name == row.quality }
+                ?: NavidromeAudioQuality.Original,
+        )
+    }
     database.offlineDownloadDao().upsert(
         row.copy(
             localMediaLocator = null,
@@ -276,6 +282,11 @@ internal suspend fun resolveAndroidOfflinePlaybackFile(
     )
     return null
 }
+
+internal data class AndroidOfflinePlaybackTarget(
+    val file: File,
+    val quality: NavidromeAudioQuality,
+)
 
 private fun offlineFileName(track: Track, quality: NavidromeAudioQuality): String {
     val extension = when {

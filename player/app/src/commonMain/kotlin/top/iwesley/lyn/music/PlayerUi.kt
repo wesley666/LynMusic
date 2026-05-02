@@ -124,6 +124,7 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
+import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
@@ -1861,10 +1862,18 @@ private fun CompactPlayerMoreSheet(
     val artistTarget = navigationTargets.artistTarget
     val albumTarget = navigationTargets.albumTarget
     val technicalSummary = formatTrackTechnicalSummary(track)
-    val currentNavidromeAudioQuality = formatCurrentNavidromePlaybackAudioQuality(
-        track = track,
-        audioQuality = snapshot.currentNavidromeAudioQuality,
-    )
+    val currentPlaybackAudioQuality = if (currentPlatformDescriptor.isAndroidPlatform()) {
+        formatAndroidCurrentPlaybackAudioQuality(
+            track = track,
+            audioFormat = snapshot.currentPlaybackAudioFormat,
+            navidromeQuality = snapshot.currentNavidromeAudioQuality,
+        )
+    } else {
+        formatCurrentNavidromePlaybackAudioQuality(
+            track = track,
+            audioQuality = snapshot.currentNavidromeAudioQuality,
+        )
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1915,7 +1924,7 @@ private fun CompactPlayerMoreSheet(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                currentNavidromeAudioQuality?.let { qualityText ->
+                currentPlaybackAudioQuality?.let { qualityText ->
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.GraphicEq,
                         title = "当前播放音质",
@@ -2287,6 +2296,44 @@ internal fun formatCurrentNavidromePlaybackAudioQuality(
 ): String? {
     if (parseNavidromeSongLocator(track.mediaLocator) == null) return null
     return audioQuality?.let(::navidromeAudioQualityLabel)
+}
+
+internal fun formatCurrentPlaybackAudioFormat(audioFormat: PlaybackAudioFormat?): String? {
+    audioFormat ?: return null
+    return listOfNotNull(
+        audioFormat.samplingRateHz?.takeIf { it > 0 }?.let(::formatPlaybackSamplingRate),
+        audioFormat.bitRateBps?.takeIf { it > 0 }?.let(::formatPlaybackBitRate),
+        audioFormat.channelCount?.takeIf { it > 0 }?.let { "${it}ch" },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+internal fun formatAndroidCurrentPlaybackAudioQuality(
+    track: Track,
+    audioFormat: PlaybackAudioFormat?,
+    navidromeQuality: NavidromeAudioQuality?,
+): String? {
+    val navidromeFallbackBitRate = navidromeQuality
+        ?.takeIf { parseNavidromeSongLocator(track.mediaLocator) != null }
+        ?.let(::formatNavidromePlaybackBitRateFallback)
+    return listOfNotNull(
+        audioFormat?.samplingRateHz?.takeIf { it > 0 }?.let(::formatPlaybackSamplingRate),
+        audioFormat?.bitRateBps?.takeIf { it > 0 }?.let(::formatPlaybackBitRate) ?: navidromeFallbackBitRate,
+        audioFormat?.channelCount?.takeIf { it > 0 }?.let { "${it}ch" },
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+private fun formatNavidromePlaybackBitRateFallback(quality: NavidromeAudioQuality): String {
+    return quality.maxBitRateKbps?.let { "${it}kbps" } ?: "原始"
+}
+
+private fun formatPlaybackSamplingRate(samplingRateHz: Int): String {
+    if (samplingRateHz % 1_000 == 0) return "${samplingRateHz / 1_000}kHz"
+    val rounded = (samplingRateHz / 100.0).roundToInt() / 10.0
+    return "${rounded}kHz"
+}
+
+private fun formatPlaybackBitRate(bitRateBps: Int): String {
+    return "${(bitRateBps / 1_000.0).roundToInt()}kbps"
 }
 
 internal fun parseSleepTimerCustomMinutes(input: String): Int? {

@@ -178,6 +178,7 @@ class DefaultPlaybackRepository(
                         metadataAlbumTitle = gatewayState.metadataAlbumTitle,
                         metadataArtworkLocator = it.metadataArtworkLocator,
                         currentNavidromeAudioQuality = gatewayState.currentNavidromeAudioQuality,
+                        currentPlaybackAudioFormat = gatewayState.currentPlaybackAudioFormat,
                         errorMessage = gatewayState.errorMessage,
                     )
                 }

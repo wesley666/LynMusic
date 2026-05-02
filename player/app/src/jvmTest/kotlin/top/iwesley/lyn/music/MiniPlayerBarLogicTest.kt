@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -209,6 +210,128 @@ class MiniPlayerBarLogicTest {
             formatCurrentNavidromePlaybackAudioQuality(
                 track = sampleQualityTrack(),
                 audioQuality = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `current playback audio format formats all fields`() {
+        assertEquals(
+            "44.1kHz · 320kbps · 2ch",
+            formatCurrentPlaybackAudioFormat(
+                PlaybackAudioFormat(
+                    bitRateBps = 320_000,
+                    samplingRateHz = 44_100,
+                    channelCount = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `current playback audio format omits missing bitrate`() {
+        assertEquals(
+            "48kHz · 2ch",
+            formatCurrentPlaybackAudioFormat(
+                PlaybackAudioFormat(
+                    samplingRateHz = 48_000,
+                    channelCount = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `current playback audio format omits missing sampling rate`() {
+        assertEquals(
+            "192kbps · 1ch",
+            formatCurrentPlaybackAudioFormat(
+                PlaybackAudioFormat(
+                    bitRateBps = 192_000,
+                    channelCount = 1,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `current playback audio format returns null without fields`() {
+        assertNull(formatCurrentPlaybackAudioFormat(PlaybackAudioFormat()))
+        assertNull(formatCurrentPlaybackAudioFormat(null))
+    }
+
+    @Test
+    fun `android current playback audio quality prefers exoplayer bitrate`() {
+        assertEquals(
+            "44.1kHz · 256kbps · 2ch",
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioFormat = PlaybackAudioFormat(
+                    bitRateBps = 256_000,
+                    samplingRateHz = 44_100,
+                    channelCount = 2,
+                ),
+                navidromeQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+    }
+
+    @Test
+    fun `android current playback audio quality falls back to navidrome bitrate`() {
+        assertEquals(
+            "44.1kHz · 192kbps · 2ch",
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioFormat = PlaybackAudioFormat(
+                    samplingRateHz = 44_100,
+                    channelCount = 2,
+                ),
+                navidromeQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+        assertEquals(
+            "192kbps",
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioFormat = null,
+                navidromeQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+    }
+
+    @Test
+    fun `android current playback audio quality falls back to original navidrome quality`() {
+        assertEquals(
+            "44.1kHz · 原始 · 2ch",
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(),
+                audioFormat = PlaybackAudioFormat(
+                    samplingRateHz = 44_100,
+                    channelCount = 2,
+                ),
+                navidromeQuality = NavidromeAudioQuality.Original,
+            ),
+        )
+    }
+
+    @Test
+    fun `android current playback audio quality does not fallback for non navidrome tracks`() {
+        assertEquals(
+            "48kHz · 2ch",
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(mediaLocator = "file:///music/blue.flac"),
+                audioFormat = PlaybackAudioFormat(
+                    samplingRateHz = 48_000,
+                    channelCount = 2,
+                ),
+                navidromeQuality = NavidromeAudioQuality.Kbps192,
+            ),
+        )
+        assertNull(
+            formatAndroidCurrentPlaybackAudioQuality(
+                track = sampleQualityTrack(mediaLocator = "file:///music/blue.flac"),
+                audioFormat = null,
+                navidromeQuality = NavidromeAudioQuality.Kbps192,
             ),
         )
     }
