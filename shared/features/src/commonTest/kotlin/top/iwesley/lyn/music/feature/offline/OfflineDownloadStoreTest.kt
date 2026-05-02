@@ -3,13 +3,16 @@ package top.iwesley.lyn.music.feature.offline
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.Track
@@ -72,7 +75,143 @@ class OfflineDownloadStoreTest {
             "存储空间不足：预计下载 512.0 MB，需预留 1.0 GB，可用 1.0 GB。",
             store.state.value.message,
         )
+        assertNull(store.state.value.activeBatchDownload)
         assertEquals(1, repository.availableSpaceCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `batch download exposes active progress while running and clears when finished`() = runTest {
+        val first = sampleWebDavTrack(id = "first", sizeBytes = 1L * 1024L * 1024L)
+        val second = sampleWebDavTrack(id = "second", sizeBytes = 2L * 1024L * 1024L)
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        val repository = TestOfflineDownloadRepository().apply {
+            downloadGatesByTrackId[first.id] = firstGate
+            downloadGatesByTrackId[second.id] = secondGate
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(first, second)))
+        runCurrent()
+
+        val started = assertNotNull(store.state.value.activeBatchDownload)
+        assertEquals(listOf(first.id, second.id), started.trackIds)
+        assertEquals(0, started.processedCount)
+        assertEquals(0, started.successCount)
+        assertEquals(0, started.failureCount)
+        assertEquals(3L * 1024L * 1024L, started.estimatedTotalBytes)
+        assertEquals(0, started.unknownCount)
+
+        firstGate.complete(Unit)
+        runCurrent()
+
+        val afterFirst = assertNotNull(store.state.value.activeBatchDownload)
+        assertEquals(1, afterFirst.processedCount)
+        assertEquals(1, afterFirst.successCount)
+        assertEquals(0, afterFirst.failureCount)
+
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeBatchDownload)
+        assertEquals("批量下载完成：成功 2 首。", store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `single download does not expose active batch download`() = runTest {
+        val track = sampleWebDavTrack(id = "single")
+        val gate = CompletableDeferred<Unit>()
+        val repository = TestOfflineDownloadRepository(downloadGate = gate)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.Download(track))
+        runCurrent()
+
+        assertNull(store.state.value.activeBatchDownload)
+        store.dispatch(OfflineDownloadIntent.CancelActiveBatchDownload)
+        runCurrent()
+        assertEquals(emptyList(), repository.cancelRequests)
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertNull(store.state.value.activeBatchDownload)
+        scope.cancel()
+    }
+
+    @Test
+    fun `cancel active batch download cancels current track and does not start remaining tracks`() = runTest {
+        val first = sampleWebDavTrack(id = "first")
+        val second = sampleWebDavTrack(id = "second")
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        val repository = TestOfflineDownloadRepository().apply {
+            downloadGatesByTrackId[first.id] = firstGate
+            downloadGatesByTrackId[second.id] = secondGate
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(first, second)))
+        runCurrent()
+        assertNotNull(store.state.value.activeBatchDownload)
+        assertEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+
+        store.dispatch(OfflineDownloadIntent.CancelActiveBatchDownload)
+        runCurrent()
+
+        assertNull(store.state.value.activeBatchDownload)
+        assertEquals("已取消批量下载。", store.state.value.message)
+        assertEquals(listOf(first.id), repository.cancelRequests)
+        assertEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+        scope.cancel()
+    }
+
+    @Test
+    fun `cancel active batch download without active batch has no side effects`() = runTest {
+        val repository = TestOfflineDownloadRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.CancelActiveBatchDownload)
+        advanceUntilIdle()
+
+        assertNull(store.state.value.activeBatchDownload)
+        assertNull(store.state.value.message)
+        assertEquals(emptyList(), repository.cancelRequests)
+        scope.cancel()
+    }
+
+    @Test
+    fun `batch download with only skipped tracks does not expose active progress`() = runTest {
+        val completed = sampleWebDavTrack(id = "completed")
+        val local = sampleLocalTrack(id = "local")
+        val repository = TestOfflineDownloadRepository(
+            initialDownloads = mapOf(
+                completed.id to testOfflineDownload(
+                    trackId = completed.id,
+                    sourceId = completed.sourceId,
+                ),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = OfflineDownloadStore(repository, scope)
+        advanceUntilIdle()
+
+        store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(completed, local)))
+        advanceUntilIdle()
+
+        assertEquals(emptyList(), repository.downloadRequests)
+        assertNull(store.state.value.activeBatchDownload)
+        assertEquals("批量下载完成：跳过 2 首。", store.state.value.message)
         scope.cancel()
     }
 

@@ -257,6 +257,7 @@ internal fun MobileShell(
             Column(
                 modifier = Modifier.navigationBarsPadding(),
             ) {
+                OfflineBatchDownloadStatusBar()
                 LynMusicTheme(
                     themeTokens = CLASSIC_APP_THEME_TOKENS,
                     textPalette = AppThemeTextPalette.White,
@@ -532,6 +533,7 @@ internal fun DesktopShell(
                 onTabSelected = onTabSelected,
                 modifier = Modifier.weight(1f),
             )
+            OfflineBatchDownloadStatusBar()
             LynMusicTheme(
                 themeTokens = CLASSIC_APP_THEME_TOKENS,
                 textPalette = AppThemeTextPalette.White,

@@ -169,6 +169,7 @@ fun App(
             downloadsByTrackId = offlineDownloadState.downloadsByTrackId,
             availableSpaceBytes = offlineDownloadState.availableSpaceBytes,
             availableSpaceLoading = offlineDownloadState.availableSpaceLoading,
+            activeBatchDownload = offlineDownloadState.activeBatchDownload,
             onIntent = component.offlineDownloadStore::dispatch,
         ),
     ) {

@@ -19,8 +19,22 @@ data class OfflineDownloadState(
     val downloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
     val availableSpaceBytes: Long? = null,
     val availableSpaceLoading: Boolean = false,
+    val activeBatchDownload: ActiveBatchDownloadState? = null,
     val message: String? = null,
 )
+
+data class ActiveBatchDownloadState(
+    val trackIds: List<String>,
+    val processedCount: Int = 0,
+    val successCount: Int = 0,
+    val failureCount: Int = 0,
+    val estimatedTotalBytes: Long = 0L,
+    val unknownCount: Int = 0,
+    val approximate: Boolean = false,
+) {
+    val totalCount: Int
+        get() = trackIds.size
+}
 
 sealed interface OfflineDownloadIntent {
     data class Download(val track: Track, val quality: NavidromeAudioQuality = NavidromeAudioQuality.Original) :
@@ -34,6 +48,7 @@ sealed interface OfflineDownloadIntent {
     data class Cancel(val trackId: String) : OfflineDownloadIntent
     data class Delete(val trackId: String) : OfflineDownloadIntent
     data class ShowMessage(val message: String) : OfflineDownloadIntent
+    data object CancelActiveBatchDownload : OfflineDownloadIntent
     data object RefreshAvailableSpace : OfflineDownloadIntent
     data object ClearMessage : OfflineDownloadIntent
 }
@@ -66,6 +81,7 @@ class OfflineDownloadStore(
             is OfflineDownloadIntent.Cancel -> cancelDownload(intent.trackId)
             is OfflineDownloadIntent.Delete -> deleteDownload(intent.trackId)
             is OfflineDownloadIntent.ShowMessage -> updateState { it.copy(message = intent.message) }
+            OfflineDownloadIntent.CancelActiveBatchDownload -> cancelActiveBatchDownload()
             OfflineDownloadIntent.RefreshAvailableSpace -> refreshAvailableSpace()
             OfflineDownloadIntent.ClearMessage -> updateState { it.copy(message = null) }
         }
@@ -84,9 +100,21 @@ class OfflineDownloadStore(
             updateState { state -> state.copy(message = "请选择要下载的歌曲。") }
             return
         }
+        val currentDownloads = state.value.downloadsByTrackId
+        val tracksToDownload = uniqueTracks.filter { track ->
+            !shouldSkipBatchDownload(track, currentDownloads[track.id], quality) &&
+                jobsByTrackId[track.id]?.isActive != true
+        }
+        val skippedCountAtStart = uniqueTracks.size - tracksToDownload.size
+        if (tracksToDownload.isEmpty()) {
+            updateState { state ->
+                state.copy(message = batchDownloadSummaryMessage(0, 0, skippedCountAtStart))
+            }
+            return
+        }
         val estimate = estimateBatchDownloadSize(
-            tracks = uniqueTracks,
-            downloadsByTrackId = state.value.downloadsByTrackId,
+            tracks = tracksToDownload,
+            downloadsByTrackId = currentDownloads,
             quality = quality,
         )
         if (estimate.totalBytes > 0L || estimate.unknownCount > 0) {
@@ -104,14 +132,21 @@ class OfflineDownloadStore(
         batchDownloadJob = storeScope.launch {
             var successCount = 0
             var failureCount = 0
-            var skippedCount = 0
-            uniqueTracks.forEach { track ->
+            var skippedCount = skippedCountAtStart
+            var processedCount = 0
+            val activeTrackIds = tracksToDownload.map { it.id }
+            updateState { state ->
+                state.copy(
+                    activeBatchDownload = ActiveBatchDownloadState(
+                        trackIds = activeTrackIds,
+                        estimatedTotalBytes = estimate.totalBytes,
+                        unknownCount = estimate.unknownCount,
+                        approximate = estimate.approximate,
+                    ),
+                )
+            }
+            tracksToDownload.forEach { track ->
                 if (!isActive) return@launch
-                val download = state.value.downloadsByTrackId[track.id]
-                if (shouldSkipBatchDownload(track, download, quality) || jobsByTrackId[track.id]?.isActive == true) {
-                    skippedCount += 1
-                    return@forEach
-                }
                 val deferred = async {
                     repository.download(track, quality)
                 }
@@ -121,6 +156,8 @@ class OfflineDownloadStore(
                 } catch (throwable: CancellationException) {
                     if (!isActive) throw throwable
                     null
+                } catch (throwable: Throwable) {
+                    Result.failure(throwable)
                 } finally {
                     if (jobsByTrackId[track.id] == deferred) {
                         jobsByTrackId.remove(track.id)
@@ -131,9 +168,22 @@ class OfflineDownloadStore(
                     result.isSuccess -> successCount += 1
                     else -> failureCount += 1
                 }
+                processedCount += 1
+                updateState { state ->
+                    state.copy(
+                        activeBatchDownload = state.activeBatchDownload?.copy(
+                            processedCount = processedCount,
+                            successCount = successCount,
+                            failureCount = failureCount,
+                        ),
+                    )
+                }
             }
             updateState { state ->
-                state.copy(message = batchDownloadSummaryMessage(successCount, failureCount, skippedCount))
+                state.copy(
+                    activeBatchDownload = null,
+                    message = batchDownloadSummaryMessage(successCount, failureCount, skippedCount),
+                )
             }
             batchDownloadJob = null
         }
@@ -160,6 +210,28 @@ class OfflineDownloadStore(
         jobsByTrackId.remove(trackId)?.cancel()
         repository.cancelDownload(trackId)
         updateState { it.copy(message = "已取消离线下载。") }
+    }
+
+    private suspend fun cancelActiveBatchDownload() {
+        val activeBatchDownload = state.value.activeBatchDownload ?: return
+        val remainingTrackIds = activeBatchDownload.trackIds.drop(
+            activeBatchDownload.processedCount.coerceIn(0, activeBatchDownload.totalCount),
+        )
+        val runningTrackIds = remainingTrackIds.filter { trackId ->
+            jobsByTrackId[trackId]?.isActive == true
+        }
+        batchDownloadJob?.cancel()
+        batchDownloadJob = null
+        runningTrackIds.forEach { trackId ->
+            jobsByTrackId.remove(trackId)?.cancel()
+            repository.cancelDownload(trackId)
+        }
+        updateState {
+            it.copy(
+                activeBatchDownload = null,
+                message = "已取消批量下载。",
+            )
+        }
     }
 
     private suspend fun deleteDownload(trackId: String) {

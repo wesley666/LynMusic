@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.OfflineDownload
@@ -13,6 +14,7 @@ import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.feature.offline.batchDownloadInsufficientSpaceMessage
 import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
 import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
+import top.iwesley.lyn.music.feature.offline.ActiveBatchDownloadState
 
 class AppCommonUiLogicTest {
 
@@ -100,6 +102,53 @@ class AppCommonUiLogicTest {
         assertEquals("0.5 GB", formatOfflineAvailableSpaceGb(512L * 1024L * 1024L))
         assertEquals("2.0 GB", formatOfflineAvailableSpaceGb(2L * 1024L * 1024L * 1024L))
         assertEquals("1.2 GB", formatOfflineAvailableSpaceGb(1_288_490_188L))
+    }
+
+    @Test
+    fun `offline batch download status summary shows determinate total size`() {
+        val summary = offlineBatchDownloadStatusSummary(
+            activeBatchDownload = ActiveBatchDownloadState(
+                trackIds = listOf("first", "second"),
+                processedCount = 1,
+                estimatedTotalBytes = 3L * 1024L * 1024L,
+            ),
+            downloadsByTrackId = mapOf(
+                "first" to completedDownload(trackId = "first", downloadedBytes = 1L * 1024L * 1024L),
+                "second" to completedDownload(trackId = "second", downloadedBytes = 0L),
+            ),
+        )
+
+        assertEquals("正在批量下载 1/2 首 · 1.0 MB / 3.0 MB", summary?.label)
+        assertEquals(0.33333334f, summary?.progress)
+    }
+
+    @Test
+    fun `offline batch download status summary shows approximate and unknown sizes`() {
+        val approximate = offlineBatchDownloadStatusSummary(
+            activeBatchDownload = ActiveBatchDownloadState(
+                trackIds = listOf("nav"),
+                processedCount = 0,
+                estimatedTotalBytes = 2_400_000L,
+                approximate = true,
+            ),
+            downloadsByTrackId = emptyMap(),
+        )
+        val unknown = offlineBatchDownloadStatusSummary(
+            activeBatchDownload = ActiveBatchDownloadState(
+                trackIds = listOf("first", "second"),
+                processedCount = 0,
+                unknownCount = 1,
+            ),
+            downloadsByTrackId = mapOf(
+                "first" to completedDownload(trackId = "first", downloadedBytes = 512L * 1024L),
+            ),
+        )
+
+        assertEquals("正在批量下载 0/1 首 · 0 B / 约 2.3 MB", approximate?.label)
+        assertEquals(0f, approximate?.progress)
+        assertEquals("正在批量下载 0/2 首 · 已下载 512.0 KB · 1 首未知", unknown?.label)
+        assertNull(unknown?.progress)
+        assertNull(offlineBatchDownloadStatusSummary(null, emptyMap()))
     }
 
     @Test
@@ -266,6 +315,7 @@ class AppCommonUiLogicTest {
         quality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
         localMediaLocator: String? = "/tmp/offline/song.mp3",
         status: OfflineDownloadStatus = OfflineDownloadStatus.Completed,
+        downloadedBytes: Long = 1_024L,
     ): OfflineDownload {
         return OfflineDownload(
             trackId = trackId,
@@ -274,7 +324,7 @@ class AppCommonUiLogicTest {
             localMediaLocator = localMediaLocator,
             quality = quality,
             status = status,
-            downloadedBytes = 1_024L,
+            downloadedBytes = downloadedBytes,
         )
     }
 
