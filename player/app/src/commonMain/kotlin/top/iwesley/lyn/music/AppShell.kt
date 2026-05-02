@@ -175,6 +175,7 @@ private fun mobileLibraryHubSourceFilterButtonLabel(filter: LibrarySourceFilter)
         LibrarySourceFilter.SAMBA -> "Samba"
         LibrarySourceFilter.WEBDAV -> "WebDAV"
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
+        LibrarySourceFilter.DOWNLOADED -> "已下载"
     }
 }
 

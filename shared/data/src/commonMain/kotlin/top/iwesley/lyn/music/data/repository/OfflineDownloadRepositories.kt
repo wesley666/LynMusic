@@ -2,6 +2,7 @@ package top.iwesley.lyn.music.data.repository
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.ImportSourceType
@@ -26,6 +27,22 @@ interface OfflineDownloadRepository {
     suspend fun deleteDownloadsBySource(sourceId: String): Result<Unit>
     suspend fun deleteAllDownloads(): Result<Unit>
     suspend fun resolveOfflineMediaLocator(trackId: String): String?
+}
+
+object NoopOfflineDownloadRepository : OfflineDownloadRepository {
+    override val downloads: Flow<Map<String, OfflineDownload>> = flowOf(emptyMap())
+
+    override suspend fun restoreIncompleteDownloads() = Unit
+
+    override suspend fun download(track: Track, quality: NavidromeAudioQuality): Result<Unit> {
+        return Result.failure(IllegalStateException("当前未配置离线下载仓库。"))
+    }
+
+    override suspend fun cancelDownload(trackId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteDownload(trackId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteDownloadsBySource(sourceId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteAllDownloads(): Result<Unit> = Result.success(Unit)
+    override suspend fun resolveOfflineMediaLocator(trackId: String): String? = null
 }
 
 class DefaultOfflineDownloadRepository(

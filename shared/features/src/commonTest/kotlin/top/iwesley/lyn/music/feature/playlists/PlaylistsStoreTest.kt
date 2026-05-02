@@ -19,6 +19,7 @@ import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistKind
 import top.iwesley.lyn.music.core.model.PlaylistSummary
@@ -29,7 +30,9 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
+import top.iwesley.lyn.music.feature.TestOfflineDownloadRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistsStoreTest {
@@ -181,6 +184,7 @@ class PlaylistsStoreTest {
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
                 LibrarySourceFilter.NAVIDROME,
+                LibrarySourceFilter.DOWNLOADED,
             ),
             store.state.value.availableSourceFilters,
         )
@@ -199,8 +203,53 @@ class PlaylistsStoreTest {
             listOf(
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
+                LibrarySourceFilter.DOWNLOADED,
             ),
             store.state.value.availableSourceFilters,
+        )
+        scope.cancel()
+    }
+
+    @Test
+    fun `offline downloads are exposed for downloaded playlist detail filter`() = runTest {
+        val repository = FakePlaylistRepository()
+        val importSources = FakePlaylistsImportSourceRepository(
+            listOf(
+                source("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录"),
+                source("nav-1", ImportSourceType.NAVIDROME, "Navidrome"),
+            ),
+        )
+        val offlineDownloadRepository = TestOfflineDownloadRepository(
+            mapOf("track-nav-1" to testOfflineDownload("track-nav-1", "nav-1")),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(
+            playlistRepository = repository,
+            importSourceRepository = importSources,
+            storeScope = scope,
+            offlineDownloadRepository = offlineDownloadRepository,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(
+            OfflineDownloadStatus.Completed,
+            store.state.value.offlineDownloadsByTrackId["track-nav-1"]?.status,
+        )
+        offlineDownloadRepository.updateDownloads(
+            mapOf(
+                "track-nav-1" to testOfflineDownload(
+                    trackId = "track-nav-1",
+                    sourceId = "nav-1",
+                    status = OfflineDownloadStatus.Failed,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            OfflineDownloadStatus.Failed,
+            store.state.value.offlineDownloadsByTrackId["track-nav-1"]?.status,
         )
         scope.cancel()
     }

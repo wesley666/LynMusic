@@ -5,14 +5,18 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.OfflineDownload
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
+import top.iwesley.lyn.music.data.repository.NoopOfflineDownloadRepository
+import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.toLibrarySourceFilter
 
 data class PlaylistsState(
     val isLoadingContent: Boolean = true,
@@ -20,8 +24,12 @@ data class PlaylistsState(
     val selectedPlaylistId: String? = null,
     val selectedPlaylist: PlaylistDetail? = null,
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
+    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
+        LibrarySourceFilter.ALL,
+        LibrarySourceFilter.DOWNLOADED,
+    ),
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
+    val offlineDownloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
     val isRefreshing: Boolean = false,
     val message: String? = null,
 )
@@ -45,6 +53,7 @@ class PlaylistsStore(
     private val playlistRepository: PlaylistRepository,
     private val importSourceRepository: ImportSourceRepository,
     private val storeScope: CoroutineScope,
+    private val offlineDownloadRepository: OfflineDownloadRepository = NoopOfflineDownloadRepository,
     startImmediately: Boolean = true,
 ) : BaseStore<PlaylistsState, PlaylistsIntent, PlaylistsEffect>(
     initialState = PlaylistsState(),
@@ -67,10 +76,12 @@ class PlaylistsStore(
             combine(
                 playlistRepository.playlists,
                 importSourceRepository.observeSources(),
-            ) { playlists, sources ->
+                offlineDownloadRepository.downloads,
+            ) { playlists, sources, offlineDownloads ->
                 Snapshot(
                     playlists = playlists,
                     sources = sources,
+                    offlineDownloadsByTrackId = offlineDownloads,
                     navidromeSourceIds = sources
                         .map(SourceWithStatus::source)
                         .filter { it.type == ImportSourceType.NAVIDROME }
@@ -98,6 +109,7 @@ class PlaylistsStore(
                         sourceTypesById = snapshot.sources.associate { sourceWithStatus ->
                             sourceWithStatus.source.id to sourceWithStatus.source.type
                         },
+                        offlineDownloadsByTrackId = snapshot.offlineDownloadsByTrackId,
                     )
                 }
                 if (nextSelectedId != previousSelectedId) {
@@ -242,6 +254,7 @@ class PlaylistsStore(
     private data class Snapshot(
         val playlists: List<PlaylistSummary>,
         val sources: List<SourceWithStatus>,
+        val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val navidromeSourceIds: Set<String>,
     )
 
@@ -250,15 +263,7 @@ class PlaylistsStore(
         return buildList {
             add(LibrarySourceFilter.ALL)
             FILTER_ORDER.filter { it in presentFilters }.forEach(::add)
-        }
-    }
-
-    private fun ImportSourceType.toLibrarySourceFilter(): LibrarySourceFilter {
-        return when (this) {
-            ImportSourceType.LOCAL_FOLDER -> LibrarySourceFilter.LOCAL_FOLDER
-            ImportSourceType.SAMBA -> LibrarySourceFilter.SAMBA
-            ImportSourceType.WEBDAV -> LibrarySourceFilter.WEBDAV
-            ImportSourceType.NAVIDROME -> LibrarySourceFilter.NAVIDROME
+            add(LibrarySourceFilter.DOWNLOADED)
         }
     }
 

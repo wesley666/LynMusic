@@ -16,6 +16,7 @@ import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
@@ -27,6 +28,8 @@ import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.TrackSortMode
+import top.iwesley.lyn.music.feature.TestOfflineDownloadRepository
+import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesStoreTest {
@@ -129,10 +132,64 @@ class FavoritesStoreTest {
         val state = store.state.value
         assertEquals(LibrarySourceFilter.ALL, state.selectedSourceFilter)
         assertEquals(
-            listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.LOCAL_FOLDER),
+            listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.LOCAL_FOLDER, LibrarySourceFilter.DOWNLOADED),
             state.availableSourceFilters,
         )
         assertEquals(listOf("track-local-1"), state.filteredTracks.map { it.id })
+        scope.cancel()
+    }
+
+    @Test
+    fun `downloaded source filter keeps local and completed offline favorites`() = runTest {
+        val tracks = sampleFavoriteTracks() + listOf(
+            sampleFavoriteTracks().last().copy(id = "track-nav-pending", title = "Pending Night"),
+            sampleFavoriteTracks().last().copy(id = "track-nav-failed", title = "Failed Night"),
+            sampleFavoriteTracks().last().copy(id = "track-nav-missing-local", title = "Missing Local Night"),
+        )
+        val favoritesRepository = FakeFavoritesRepository(
+            tracks = tracks,
+            favoriteTrackIds = tracks.mapTo(linkedSetOf()) { it.id },
+        )
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
+        val offlineDownloadRepository = TestOfflineDownloadRepository(
+            mapOf(
+                "track-nav-1" to testOfflineDownload("track-nav-1", "nav-1"),
+                "track-nav-pending" to testOfflineDownload(
+                    trackId = "track-nav-pending",
+                    sourceId = "nav-1",
+                    status = OfflineDownloadStatus.Pending,
+                ),
+                "track-nav-failed" to testOfflineDownload(
+                    trackId = "track-nav-failed",
+                    sourceId = "nav-1",
+                    status = OfflineDownloadStatus.Failed,
+                ),
+                "track-nav-missing-local" to testOfflineDownload(
+                    trackId = "track-nav-missing-local",
+                    sourceId = "nav-1",
+                    localMediaLocator = null,
+                ),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(
+            favoritesRepository = favoritesRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = preferencesStore,
+            storeScope = scope,
+            offlineDownloadRepository = offlineDownloadRepository,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.DOWNLOADED))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LibrarySourceFilter.DOWNLOADED, state.selectedSourceFilter)
+        assertEquals(listOf("track-nav-1", "track-local-1"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist A", "Artist B"), state.filteredArtists.map { it.name })
         scope.cancel()
     }
 

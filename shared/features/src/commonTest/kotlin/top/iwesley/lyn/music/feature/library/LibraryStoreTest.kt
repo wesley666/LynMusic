@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
@@ -26,6 +27,8 @@ import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.LibraryRepository
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
+import top.iwesley.lyn.music.feature.TestOfflineDownloadRepository
+import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryStoreTest {
@@ -42,7 +45,7 @@ class LibraryStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(listOf(LibrarySourceFilter.ALL), state.availableSourceFilters)
+        assertEquals(listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.DOWNLOADED), state.availableSourceFilters)
         assertEquals(LibrarySourceFilter.ALL, state.selectedSourceFilter)
         assertEquals(listOf("track-local-2", "track-webdav-1", "track-local-1"), state.filteredTracks.map { it.id })
         assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
@@ -74,6 +77,7 @@ class LibraryStoreTest {
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
                 LibrarySourceFilter.WEBDAV,
+                LibrarySourceFilter.DOWNLOADED,
             ),
             store.state.value.availableSourceFilters,
         )
@@ -97,6 +101,57 @@ class LibraryStoreTest {
         assertEquals(listOf("track-local-2", "track-local-1"), state.filteredTracks.map { it.id })
         assertEquals(listOf("Album One"), state.filteredAlbums.map { it.title })
         assertEquals(listOf("Artist A"), state.filteredArtists.map { it.name })
+        scope.cancel()
+    }
+
+    @Test
+    fun `downloaded source filter keeps local and completed offline tracks`() = runTest {
+        val tracks = sampleTracks() + listOf(
+            sampleTracks().last().copy(id = "track-webdav-pending", title = "Pending Cloud"),
+            sampleTracks().last().copy(id = "track-webdav-failed", title = "Failed Cloud"),
+            sampleTracks().last().copy(id = "track-webdav-missing-local", title = "Missing Local Cloud"),
+        )
+        val libraryRepository = FakeLibraryRepository(tracks)
+        val importSourceRepository = FakeImportSourceRepository(sampleSources())
+        val preferencesStore = FakeLibrarySourceFilterPreferencesStore()
+        val offlineDownloadRepository = TestOfflineDownloadRepository(
+            mapOf(
+                "track-webdav-1" to testOfflineDownload("track-webdav-1", "dav-1"),
+                "track-webdav-pending" to testOfflineDownload(
+                    trackId = "track-webdav-pending",
+                    sourceId = "dav-1",
+                    status = OfflineDownloadStatus.Pending,
+                ),
+                "track-webdav-failed" to testOfflineDownload(
+                    trackId = "track-webdav-failed",
+                    sourceId = "dav-1",
+                    status = OfflineDownloadStatus.Failed,
+                ),
+                "track-webdav-missing-local" to testOfflineDownload(
+                    trackId = "track-webdav-missing-local",
+                    sourceId = "dav-1",
+                    localMediaLocator = null,
+                ),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = LibraryStore(
+            repository = libraryRepository,
+            importSourceRepository = importSourceRepository,
+            preferencesStore = preferencesStore,
+            storeScope = scope,
+            offlineDownloadRepository = offlineDownloadRepository,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(LibraryIntent.SourceFilterChanged(LibrarySourceFilter.DOWNLOADED))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        assertEquals(LibrarySourceFilter.DOWNLOADED, state.selectedSourceFilter)
+        assertEquals(listOf("track-local-2", "track-webdav-1", "track-local-1"), state.filteredTracks.map { it.id })
+        assertEquals(listOf("Album One", "Album Two"), state.filteredAlbums.map { it.title })
+        assertEquals(listOf("Artist A", "Artist B"), state.filteredArtists.map { it.name })
         scope.cancel()
     }
 
@@ -175,7 +230,7 @@ class LibraryStoreTest {
         val state = store.state.value
         assertEquals(LibrarySourceFilter.ALL, state.selectedSourceFilter)
         assertEquals(
-            listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.WEBDAV),
+            listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.WEBDAV, LibrarySourceFilter.DOWNLOADED),
             state.availableSourceFilters,
         )
         assertEquals(listOf("track-webdav-1"), state.filteredTracks.map { it.id })

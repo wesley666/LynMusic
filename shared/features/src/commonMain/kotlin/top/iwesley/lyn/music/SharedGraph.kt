@@ -248,12 +248,14 @@ fun buildSharedGraph(
             preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
             storeScope = scope,
             trackPlaybackStatsRepository = trackPlaybackStatsRepository,
+            offlineDownloadRepository = offlineDownloadRepository,
             startImmediately = false,
         ),
         playlistsStore = PlaylistsStore(
             playlistRepository = playlistRepository,
             importSourceRepository = importSourceRepository,
             storeScope = scope,
+            offlineDownloadRepository = offlineDownloadRepository,
             startImmediately = false,
         ),
         favoritesStore = FavoritesStore(
@@ -262,6 +264,7 @@ fun buildSharedGraph(
             preferencesStore = runtimeServices.librarySourceFilterPreferencesStore,
             storeScope = scope,
             trackPlaybackStatsRepository = trackPlaybackStatsRepository,
+            offlineDownloadRepository = offlineDownloadRepository,
             startImmediately = false,
         ),
         musicTagsStore = MusicTagsStore(

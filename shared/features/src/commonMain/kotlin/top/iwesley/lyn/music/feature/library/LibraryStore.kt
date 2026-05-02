@@ -7,10 +7,14 @@ import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.OfflineDownload
+import top.iwesley.lyn.music.core.model.OfflineDownloadStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.LibraryRepository
+import top.iwesley.lyn.music.data.repository.NoopOfflineDownloadRepository
+import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 
@@ -20,6 +24,7 @@ enum class LibrarySourceFilter {
     SAMBA,
     WEBDAV,
     NAVIDROME,
+    DOWNLOADED,
 }
 
 enum class TrackSortMode {
@@ -40,9 +45,13 @@ data class LibraryState(
     val filteredAlbums: List<Album> = emptyList(),
     val filteredArtists: List<Artist> = emptyList(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(LibrarySourceFilter.ALL),
+    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
+        LibrarySourceFilter.ALL,
+        LibrarySourceFilter.DOWNLOADED,
+    ),
     val selectedTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
     val trackPlaybackStats: Map<String, TrackPlaybackStat> = emptyMap(),
+    val offlineDownloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
     val visibleAlbumCount: Int = 0,
     val visibleArtistCount: Int = 0,
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
@@ -62,6 +71,7 @@ class LibraryStore(
     private val preferencesStore: LibrarySourceFilterPreferencesStore,
     private val storeScope: CoroutineScope,
     private val trackPlaybackStatsRepository: TrackPlaybackStatsRepository = EmptyTrackPlaybackStatsRepository,
+    private val offlineDownloadRepository: OfflineDownloadRepository = NoopOfflineDownloadRepository,
     startImmediately: Boolean = true,
 ) : BaseStore<LibraryState, LibraryIntent, LibraryEffect>(
     initialState = LibraryState(),
@@ -102,7 +112,8 @@ class LibraryStore(
                 contentFlow,
                 preferencesFlow,
                 trackPlaybackStatsRepository.trackStats,
-            ) { content, preferences, trackPlaybackStats ->
+                offlineDownloadRepository.downloads,
+            ) { content, preferences, trackPlaybackStats, offlineDownloads ->
                 val enabledSources = content.sources.map { it.source }.filter { it.enabled }
                 LibrarySnapshot(
                     tracks = content.tracks,
@@ -111,6 +122,7 @@ class LibraryStore(
                     selectedSourceFilter = preferences.first,
                     selectedTrackSortMode = preferences.second,
                     trackPlaybackStats = trackPlaybackStats,
+                    offlineDownloadsByTrackId = offlineDownloads,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
                     availableSourceFilters = buildAvailableSourceFilters(enabledSources.map { it.type }),
                 )
@@ -125,6 +137,7 @@ class LibraryStore(
                             selectedSourceFilter = snapshot.selectedSourceFilter,
                             selectedTrackSortMode = snapshot.selectedTrackSortMode,
                             trackPlaybackStats = snapshot.trackPlaybackStats,
+                            offlineDownloadsByTrackId = snapshot.offlineDownloadsByTrackId,
                             sourceTypesById = snapshot.sourceTypesById,
                             availableSourceFilters = snapshot.availableSourceFilters,
                         ),
@@ -156,6 +169,7 @@ class LibraryStore(
                 query = state.query,
                 selectedSourceFilter = selectedSourceFilter,
                 sourceTypesById = state.sourceTypesById,
+                offlineDownloadsByTrackId = state.offlineDownloadsByTrackId,
             ),
             sortMode = state.selectedTrackSortMode,
             trackPlaybackStats = state.trackPlaybackStats,
@@ -177,10 +191,11 @@ class LibraryStore(
         query: String,
         selectedSourceFilter: LibrarySourceFilter,
         sourceTypesById: Map<String, ImportSourceType>,
+        offlineDownloadsByTrackId: Map<String, OfflineDownload>,
     ): List<Track> {
         val normalized = query.trim().lowercase()
         return tracks.filter { track ->
-            matchesSourceFilter(track, selectedSourceFilter, sourceTypesById) &&
+            matchesLibrarySourceFilter(track, selectedSourceFilter, sourceTypesById, offlineDownloadsByTrackId) &&
                 (
                     normalized.isBlank() ||
                         track.title.lowercase().contains(normalized) ||
@@ -190,29 +205,12 @@ class LibraryStore(
         }
     }
 
-    private fun matchesSourceFilter(
-        track: Track,
-        selectedSourceFilter: LibrarySourceFilter,
-        sourceTypesById: Map<String, ImportSourceType>,
-    ): Boolean {
-        if (selectedSourceFilter == LibrarySourceFilter.ALL) return true
-        return sourceTypesById[track.sourceId]?.toLibrarySourceFilter() == selectedSourceFilter
-    }
-
     private fun buildAvailableSourceFilters(types: List<ImportSourceType>): List<LibrarySourceFilter> {
         val presentFilters = types.map { it.toLibrarySourceFilter() }.toSet()
         return buildList {
             add(LibrarySourceFilter.ALL)
             FILTER_ORDER.filter { it in presentFilters }.forEach(::add)
-        }
-    }
-
-    private fun ImportSourceType.toLibrarySourceFilter(): LibrarySourceFilter {
-        return when (this) {
-            ImportSourceType.LOCAL_FOLDER -> LibrarySourceFilter.LOCAL_FOLDER
-            ImportSourceType.SAMBA -> LibrarySourceFilter.SAMBA
-            ImportSourceType.WEBDAV -> LibrarySourceFilter.WEBDAV
-            ImportSourceType.NAVIDROME -> LibrarySourceFilter.NAVIDROME
+            add(LibrarySourceFilter.DOWNLOADED)
         }
     }
 
@@ -223,6 +221,7 @@ class LibraryStore(
         val selectedSourceFilter: LibrarySourceFilter,
         val selectedTrackSortMode: TrackSortMode,
         val trackPlaybackStats: Map<String, TrackPlaybackStat>,
+        val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val sourceTypesById: Map<String, ImportSourceType>,
         val availableSourceFilters: List<LibrarySourceFilter>,
     )
@@ -241,6 +240,42 @@ class LibraryStore(
             LibrarySourceFilter.WEBDAV,
             LibrarySourceFilter.NAVIDROME,
         )
+    }
+}
+
+fun matchesLibrarySourceFilter(
+    track: Track,
+    selectedSourceFilter: LibrarySourceFilter,
+    sourceTypesById: Map<String, ImportSourceType>,
+    offlineDownloadsByTrackId: Map<String, OfflineDownload>,
+): Boolean {
+    return when (selectedSourceFilter) {
+        LibrarySourceFilter.ALL -> true
+        LibrarySourceFilter.DOWNLOADED -> isTrackAvailableOffline(
+            track = track,
+            sourceTypesById = sourceTypesById,
+            offlineDownloadsByTrackId = offlineDownloadsByTrackId,
+        )
+        else -> sourceTypesById[track.sourceId]?.toLibrarySourceFilter() == selectedSourceFilter
+    }
+}
+
+fun isTrackAvailableOffline(
+    track: Track,
+    sourceTypesById: Map<String, ImportSourceType>,
+    offlineDownloadsByTrackId: Map<String, OfflineDownload>,
+): Boolean {
+    if (sourceTypesById[track.sourceId] == ImportSourceType.LOCAL_FOLDER) return true
+    val download = offlineDownloadsByTrackId[track.id] ?: return false
+    return download.status == OfflineDownloadStatus.Completed && download.hasLocalFileReference
+}
+
+fun ImportSourceType.toLibrarySourceFilter(): LibrarySourceFilter {
+    return when (this) {
+        ImportSourceType.LOCAL_FOLDER -> LibrarySourceFilter.LOCAL_FOLDER
+        ImportSourceType.SAMBA -> LibrarySourceFilter.SAMBA
+        ImportSourceType.WEBDAV -> LibrarySourceFilter.WEBDAV
+        ImportSourceType.NAVIDROME -> LibrarySourceFilter.NAVIDROME
     }
 }
 

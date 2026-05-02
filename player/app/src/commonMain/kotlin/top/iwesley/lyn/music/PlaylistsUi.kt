@@ -79,14 +79,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.OfflineDownload
 import top.iwesley.lyn.music.core.model.PlaylistAddTarget
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistKind
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
+import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
@@ -623,13 +626,19 @@ internal fun PlaylistsTab(
         enabled = canNavigateBackFromPlaylistDetail(requestedPlaylistId),
         onBack = { onPlaylistsIntent(PlaylistsIntent.BackToList) },
     )
-    val filteredDetail = remember(detail, state.selectedSourceFilter, state.sourceTypesById) {
+    val filteredDetail = remember(
+        detail,
+        state.selectedSourceFilter,
+        state.sourceTypesById,
+        state.offlineDownloadsByTrackId,
+    ) {
         detail?.let { playlistDetail ->
             val filteredTracks = playlistDetail.tracks.filter { entry ->
                 matchesPlaylistSourceFilter(
                     track = entry.track,
                     selectedSourceFilter = state.selectedSourceFilter,
                     sourceTypesById = state.sourceTypesById,
+                    offlineDownloadsByTrackId = state.offlineDownloadsByTrackId,
                 )
             }
             playlistDetail.copy(tracks = filteredTracks)
@@ -1231,16 +1240,15 @@ private fun PlaylistDetailLoadingContent(
 private fun matchesPlaylistSourceFilter(
     track: Track,
     selectedSourceFilter: LibrarySourceFilter,
-    sourceTypesById: Map<String, top.iwesley.lyn.music.core.model.ImportSourceType>,
+    sourceTypesById: Map<String, ImportSourceType>,
+    offlineDownloadsByTrackId: Map<String, OfflineDownload>,
 ): Boolean {
-    if (selectedSourceFilter == LibrarySourceFilter.ALL) return true
-    return when (sourceTypesById[track.sourceId]) {
-        top.iwesley.lyn.music.core.model.ImportSourceType.LOCAL_FOLDER -> selectedSourceFilter == LibrarySourceFilter.LOCAL_FOLDER
-        top.iwesley.lyn.music.core.model.ImportSourceType.SAMBA -> selectedSourceFilter == LibrarySourceFilter.SAMBA
-        top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV -> selectedSourceFilter == LibrarySourceFilter.WEBDAV
-        top.iwesley.lyn.music.core.model.ImportSourceType.NAVIDROME -> selectedSourceFilter == LibrarySourceFilter.NAVIDROME
-        null -> false
-    }
+    return matchesLibrarySourceFilter(
+        track = track,
+        selectedSourceFilter = selectedSourceFilter,
+        sourceTypesById = sourceTypesById,
+        offlineDownloadsByTrackId = offlineDownloadsByTrackId,
+    )
 }
 
 private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
@@ -1250,6 +1258,7 @@ private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String
         LibrarySourceFilter.SAMBA -> "Samba"
         LibrarySourceFilter.WEBDAV -> "WebDAV"
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
+        LibrarySourceFilter.DOWNLOADED -> "已下载"
     }
 }
 
