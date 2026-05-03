@@ -56,6 +56,9 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
             implementation(libs.compose.uiToolingPreview)
+            implementation(libs.coil.core)
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor3)
             implementation(compose.materialIconsExtended)
         }
         commonTest.dependencies {
@@ -63,9 +66,14 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
+            implementation(libs.ktor.client.okhttp)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
+            implementation(libs.ktor.client.okhttp)
+        }
+        nativeMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         jvmTest.dependencies {
             implementation(libs.kotlin.testJunit)
