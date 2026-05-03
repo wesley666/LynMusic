@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.automotive
 
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -7,6 +8,38 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 
 class AutomotivePlayerUiLogicTest {
+    @Test
+    fun `track and progress layout caps normal artwork at larger car size`() {
+        val layout = resolveAutomotiveTrackAndProgressLayout(
+            maxWidth = 900.dp,
+            maxHeight = 800.dp,
+        )
+
+        assertEquals(false, layout.compactVertical)
+        assertEquals(360.dp, layout.artworkSize)
+        assertEquals(360.dp, layout.artworkMaximumSize)
+        assertEquals(20.dp, layout.artworkTitleGap)
+        assertEquals(44.dp, layout.progressTopGap)
+        assertEquals(6.dp, layout.bottomPadding)
+        assertEquals(0.86f, layout.progressWidthFraction)
+    }
+
+    @Test
+    fun `track and progress layout keeps compact car height conservative`() {
+        val layout = resolveAutomotiveTrackAndProgressLayout(
+            maxWidth = 500.dp,
+            maxHeight = 400.dp,
+        )
+
+        assertEquals(true, layout.compactVertical)
+        assertEquals(192.dp, layout.artworkSize)
+        assertEquals(250.dp, layout.artworkMaximumSize)
+        assertEquals(12.dp, layout.artworkTitleGap)
+        assertEquals(26.dp, layout.progressTopGap)
+        assertEquals(8.dp, layout.bottomPadding)
+        assertEquals(0.9f, layout.progressWidthFraction)
+    }
+
     @Test
     fun `progress fraction clamps to playback bounds`() {
         assertEquals(

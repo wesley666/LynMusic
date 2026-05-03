@@ -193,36 +193,33 @@ private fun AutomotiveTrackAndProgress(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
-        val compactVertical = maxHeight < 420.dp
-        val artworkSize = minOf(
-            maxWidth * if (compactVertical) 0.52f else 0.62f,
-            maxHeight * if (compactVertical) 0.42f else 0.48f,
-        ).coerceIn(
-            minimumValue = if (compactVertical) 140.dp else 170.dp,
-            maximumValue = if (compactVertical) 230.dp else 320.dp,
+        val layout = resolveAutomotiveTrackAndProgressLayout(
+            maxWidth = maxWidth,
+            maxHeight = maxHeight,
         )
+        val compactVertical = layout.compactVertical
         val titleStyle =
             if (compactVertical) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
         val inlineActionButtonSize = if (compactVertical) 44.dp else 52.dp
         val inlineActionIconSize = if (compactVertical) 24.dp else 28.dp
-        val progressWidthFraction = if (compactVertical) 0.9f else 0.86f
-        val progressTopGap = if (compactVertical) 18.dp else 30.dp
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = layout.bottomPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Bottom,
         ) {
             AutomotiveSwipeableArtwork(
                 snapshot = snapshot,
                 artworkBitmap = artworkBitmap,
-                artworkSize = artworkSize,
+                artworkSize = layout.artworkSize,
                 onPlayerIntent = onPlayerIntent,
             )
-            Spacer(Modifier.height(if (compactVertical) 10.dp else 18.dp))
+            Spacer(Modifier.height(layout.artworkTitleGap))
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(if (compactVertical) 4.dp else 8.dp),
+                verticalArrangement = Arrangement.spacedBy(layout.metadataGap),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -256,11 +253,11 @@ private fun AutomotiveTrackAndProgress(
                     onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 )
             }
-            Spacer(Modifier.height(progressTopGap))
+            Spacer(Modifier.height(layout.progressTopGap))
             AutomotivePlaybackProgress(
                 snapshot = snapshot,
                 onPlayerIntent = onPlayerIntent,
-                modifier = Modifier.fillMaxWidth(progressWidthFraction),
+                modifier = Modifier.fillMaxWidth(layout.progressWidthFraction),
             )
         }
     }
@@ -319,7 +316,7 @@ private fun AutomotiveSwipeableArtwork(
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
             spinning = snapshot.isPlaying,
-            enableArtworkTint = true,
+            enableArtworkTint = false,
             artworkDiameterFraction = 0.76f,
             innerGlowDiameterFraction = 0.72f,
             maxArtworkDecodeSizePx = ArtworkDecodeSize.Player,
@@ -657,6 +654,42 @@ private fun AutomotiveRoundIconButton(
             modifier = Modifier.size(iconSize),
         )
     }
+}
+
+internal data class AutomotiveTrackAndProgressLayout(
+    val compactVertical: Boolean,
+    val artworkSize: Dp,
+    val artworkMaximumSize: Dp,
+    val artworkTitleGap: Dp,
+    val metadataGap: Dp,
+    val progressTopGap: Dp,
+    val bottomPadding: Dp,
+    val progressWidthFraction: Float,
+)
+
+internal fun resolveAutomotiveTrackAndProgressLayout(
+    maxWidth: Dp,
+    maxHeight: Dp,
+): AutomotiveTrackAndProgressLayout {
+    val compactVertical = maxHeight < 420.dp
+    val artworkMaximumSize = if (compactVertical) 250.dp else 360.dp
+    val artworkSize = minOf(
+        maxWidth * if (compactVertical) 0.56f else 0.66f,
+        maxHeight * if (compactVertical) 0.48f else 0.56f,
+    ).coerceIn(
+        minimumValue = if (compactVertical) 150.dp else 190.dp,
+        maximumValue = artworkMaximumSize,
+    )
+    return AutomotiveTrackAndProgressLayout(
+        compactVertical = compactVertical,
+        artworkSize = artworkSize,
+        artworkMaximumSize = artworkMaximumSize,
+        artworkTitleGap = if (compactVertical) 12.dp else 20.dp,
+        metadataGap = if (compactVertical) 4.dp else 8.dp,
+        progressTopGap = if (compactVertical) 26.dp else 44.dp,
+        bottomPadding = if (compactVertical) 8.dp else 6.dp,
+        progressWidthFraction = if (compactVertical) 0.9f else 0.86f,
+    )
 }
 
 internal fun resolveAutomotivePlayerProgressFraction(snapshot: PlaybackSnapshot): Float {
