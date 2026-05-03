@@ -568,7 +568,7 @@ internal fun shouldHandleBatchSelectionRequest(
 @Composable
 @ReadOnlyComposable
 internal fun supportsBatchOfflineDownloadActions(): Boolean {
-    return currentPlatformDescriptor.isPCPlatform() || currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME
+    return currentPlatformDescriptor.supportsOfflineDownloadUiActions()
 }
 
 @Composable
@@ -904,17 +904,16 @@ internal fun TrackActionContainer(
 ) {
     val offlineUiState = LocalOfflineDownloadUiState.current
     val onOfflineIntent = offlineUiState.onIntent
-    val supportsOfflinePlatform = currentPlatformDescriptor.isPCPlatform() ||
-        currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME
+    val supportsOfflinePlatform = currentPlatformDescriptor.supportsOfflineDownloadUiActions()
     val supportsActions = enableOfflineActions && supportsOfflinePlatform && onOfflineIntent != null &&
         supportsOfflineDownload(track)
     val download = offlineUiState.downloadsByTrackId[track.id]
-    val mobilePlatform = currentPlatformDescriptor.isMobilePlatform()
+    val touchOfflineUi = currentPlatformDescriptor.usesTouchOfflineDownloadUi()
     var desktopMenuExpanded by remember(track.id) { mutableStateOf(false) }
     var mobileSheetVisible by remember(track.id) { mutableStateOf(false) }
     val interactionModifier = if (!supportsActions) {
         Modifier.clickable(onClick = onClick)
-    } else if (mobilePlatform) {
+    } else if (touchOfflineUi) {
         Modifier.combinedClickable(
             onClick = onClick,
             onLongClick = { mobileSheetVisible = true },
@@ -941,7 +940,7 @@ internal fun TrackActionContainer(
             horizontalArrangement = horizontalArrangement,
             content = content,
         )
-        if (supportsActions && !mobilePlatform && desktopMenuExpanded) {
+        if (supportsActions && !touchOfflineUi && desktopMenuExpanded) {
             DropdownMenu(
                 expanded = true,
                 onDismissRequest = { desktopMenuExpanded = false },
@@ -956,7 +955,7 @@ internal fun TrackActionContainer(
             }
         }
     }
-    if (supportsActions && mobileSheetVisible) {
+    if (supportsActions && touchOfflineUi && mobileSheetVisible) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val appDensity = LocalDensity.current
         ModalBottomSheet(

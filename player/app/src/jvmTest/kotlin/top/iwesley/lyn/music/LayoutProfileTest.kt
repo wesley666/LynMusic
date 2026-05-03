@@ -74,6 +74,14 @@ class LayoutProfileTest {
         assertFalse(shouldUseAutomotiveLandscapePlayerOverlay(profile))
     }
 
+    @Test
+    fun `automotive supports offline download ui actions with touch menus`() {
+        val platform = automotivePlatform()
+
+        assertTrue(platform.supportsOfflineDownloadUiActions())
+        assertTrue(platform.usesTouchOfflineDownloadUi())
+    }
+
     private fun androidPlatform(): PlatformDescriptor = PlatformDescriptor(
         name = "Android",
         capabilities = emptyCapabilities(),

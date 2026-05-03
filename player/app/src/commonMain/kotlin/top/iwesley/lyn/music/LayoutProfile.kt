@@ -119,6 +119,14 @@ internal fun PlatformDescriptor.isAndroidAutomotivePlatform(): Boolean {
     return name == ANDROID_AUTOMOTIVE_PLATFORM_NAME
 }
 
+internal fun PlatformDescriptor.supportsOfflineDownloadUiActions(): Boolean {
+    return isPCPlatform() || name == ANDROID_PLATFORM_NAME || isAndroidAutomotivePlatform()
+}
+
+internal fun PlatformDescriptor.usesTouchOfflineDownloadUi(): Boolean {
+    return isMobilePlatform() || isAndroidAutomotivePlatform()
+}
+
 private val COMPACT_SHELL_MIN_WIDTH = 900.dp
 private val WIDE_LAYOUT_MIN_WIDTH = 980.dp
 private val NARROW_ACTIONS_MAX_WIDTH = 760.dp

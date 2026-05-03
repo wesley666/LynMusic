@@ -1484,7 +1484,7 @@ private fun PlayerBottomControls(
         val offlineUiState = LocalOfflineDownloadUiState.current
         val offlineDownload = offlineUiState.downloadsByTrackId[track.id]
         val onOfflineDownloadIntent = offlineUiState.onIntent
-        val supportsOfflineDownloadEntry = currentPlatformDescriptor.name == ANDROID_PLATFORM_NAME &&
+        val supportsOfflineDownloadEntry = currentPlatformDescriptor.supportsOfflineDownloadUiActions() &&
             supportsOfflineDownload(track)
         val showOfflineDownloadEntry = supportsOfflineDownloadEntry && onOfflineDownloadIntent != null
         var isMoreSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
