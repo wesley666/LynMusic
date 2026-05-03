@@ -204,6 +204,26 @@ class JvmArtworkCacheStoreTest {
     }
 
     @Test
+    fun `replaceable navidrome placeholder check rejects unrelated small webp cache`() {
+        synchronized(USER_HOME_LOCK) {
+            val originalUserHome = System.getProperty("user.home")
+            val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-placeholder-home")
+            try {
+                System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                val store = createJvmArtworkCacheStore()
+                val albumKey = "album:nav-source:album-1"
+                val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache").apply { mkdirs() }
+                File(cacheDirectory, "${albumKey.stableArtworkCacheHash()}.webp").writeBytes(completeWebpPayload())
+
+                assertTrue(runBlocking { store.hasCached(albumKey) })
+                assertEquals(false, runBlocking { store.hasReplaceableNavidromePlaceholderCached(albumKey) })
+            } finally {
+                System.setProperty("user.home", originalUserHome)
+            }
+        }
+    }
+
+    @Test
     fun `cache ignores temporary and damaged files for same locator`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
@@ -283,5 +303,22 @@ private fun truncatedPngPayload(): ByteArray {
         0x1A,
         0x0A,
         0x01,
+    )
+}
+
+private fun completeWebpPayload(): ByteArray {
+    return byteArrayOf(
+        0x52,
+        0x49,
+        0x46,
+        0x46,
+        0x04,
+        0x00,
+        0x00,
+        0x00,
+        0x57,
+        0x45,
+        0x42,
+        0x50,
     )
 }

@@ -29,6 +29,7 @@ import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
+import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
@@ -870,6 +871,7 @@ class PlayerStore(
             title = snapshot.currentDisplayTitle.ifBlank { snapshot.currentTrack?.title.orEmpty() },
             artistName = snapshot.currentDisplayArtistName ?: snapshot.currentTrack?.artistName,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
             template = template,
             lyricsLines = selectedLines,
             fontKey = fontKey,
@@ -1026,7 +1028,15 @@ class PlayerStore(
                 val hasAlbumArtworkCache = cacheKey?.let { key ->
                     runCatching { artworkCacheStore.hasCached(key) }.getOrDefault(false)
                 } == true
-                if (hasAlbumArtworkCache) {
+                val hasReplaceablePlaceholderCache =
+                    if (hasAlbumArtworkCache && parseNavidromeSongLocator(track.mediaLocator) != null) {
+                        runCatching {
+                            artworkCacheStore.hasReplaceableNavidromePlaceholderCached(cacheKey.orEmpty())
+                        }.getOrDefault(false)
+                    } else {
+                        false
+                    }
+                if (hasAlbumArtworkCache && !hasReplaceablePlaceholderCache) {
                     logger.debug(PLAYER_LOG_TAG) {
                         "playback-artwork-override-skip source=auto-lyrics track=${track.id} key=$cacheKey locator=$artworkLocator"
                     }

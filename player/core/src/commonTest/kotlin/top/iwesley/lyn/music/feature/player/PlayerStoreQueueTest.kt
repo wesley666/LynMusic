@@ -25,6 +25,7 @@ import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -355,6 +356,39 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `automatic lyrics artwork overrides playback artwork when navidrome album cache is replaceable placeholder`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleNavidromeSnapshot())
+        val lyricsRepository = DeferredQueueLyricsRepository()
+        val artworkCacheStore = FakePlayerArtworkCacheStore(
+            cachedKeys = setOf("album:nav-source:artist a:album a"),
+            replaceablePlaceholderKeys = setOf("album:nav-source:artist a:album a"),
+        )
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = lyricsRepository,
+            storeScope = scope,
+            artworkCacheStore = artworkCacheStore,
+        )
+
+        advanceUntilIdle()
+        lyricsRepository.complete(
+            trackId = "track-1",
+            result = resolvedLyricsResult(
+                sourceId = "source-track-1",
+                line = "lyrics for track-1",
+                artworkLocator = "/tmp/track-1-auto.jpg",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
+        assertEquals(listOf("album:nav-source:artist a:album a"), artworkCacheStore.checkedPlaceholderKeys)
+        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -365,6 +399,16 @@ class PlayerStoreQueueTest {
             currentIndex = 0,
             mode = PlaybackMode.ORDER,
             durationMs = 180_000L,
+        )
+    }
+
+    private fun sampleNavidromeSnapshot(): PlaybackSnapshot {
+        return sampleSnapshot().copy(
+            queue = listOf(
+                sampleNavidromeTrack("track-1", "First Song"),
+                sampleNavidromeTrack("track-2", "Second Song"),
+                sampleNavidromeTrack("track-3", "Third Song"),
+            ),
         )
     }
 
@@ -380,18 +424,38 @@ class PlayerStoreQueueTest {
             relativePath = "$title.mp3",
         )
     }
+
+    private fun sampleNavidromeTrack(id: String, title: String): Track {
+        return Track(
+            id = id,
+            sourceId = "nav-source",
+            title = title,
+            artistName = "Artist A",
+            albumTitle = "Album A",
+            durationMs = 180_000L,
+            mediaLocator = buildNavidromeSongLocator("nav-source", id),
+            relativePath = "$title.flac",
+        )
+    }
 }
 
 private class FakePlayerArtworkCacheStore(
     private val cachedKeys: Set<String>,
+    private val replaceablePlaceholderKeys: Set<String> = emptySet(),
 ) : ArtworkCacheStore {
     val checkedKeys = mutableListOf<String>()
+    val checkedPlaceholderKeys = mutableListOf<String>()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
 
     override suspend fun hasCached(cacheKey: String): Boolean {
         checkedKeys += cacheKey
         return cacheKey in cachedKeys
+    }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
+        checkedPlaceholderKeys += cacheKey
+        return cacheKey in replaceablePlaceholderKeys
     }
 }
 

@@ -1,6 +1,9 @@
 package top.iwesley.lyn.music.platform
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.system.Os
 import java.io.File
 import java.net.URI
@@ -12,6 +15,8 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
+import top.iwesley.lyn.music.core.model.isReplaceableNavidromePlaceholderArtwork
+import top.iwesley.lyn.music.core.model.navidromeArtworkDifferenceHash
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
@@ -92,6 +97,17 @@ private class AndroidArtworkCacheStore(
         val file = findValidArtworkCacheFile(cachePrefix) ?: return false
         rememberArtworkTarget(cacheKey, file)
         return true
+    }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
+        val cachePrefix = cacheKey.ifBlank { return false }.stableArtworkCacheHash()
+        val file = findValidArtworkCacheFile(cachePrefix) ?: return false
+        rememberArtworkTarget(cacheKey, file)
+        val payload = runCatching { file.readBytes() }.getOrNull() ?: return false
+        return isReplaceableNavidromePlaceholderArtwork(
+            bytes = payload,
+            differenceHash = decodeAndroidArtworkDifferenceHash(payload),
+        )
     }
 
     override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)
@@ -258,5 +274,34 @@ private data class ArtworkCacheFileResult(
     val file: File,
     val changed: Boolean,
 )
+
+private fun decodeAndroidArtworkDifferenceHash(bytes: ByteArray): ULong? {
+    return runCatching {
+        val source = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+        val scaled = if (source.width == 9 && source.height == 8) {
+            source
+        } else {
+            Bitmap.createScaledBitmap(source, 9, 8, true)
+        }
+        try {
+            navidromeArtworkDifferenceHash(
+                IntArray(9 * 8) { index ->
+                    val x = index % 9
+                    val y = index / 9
+                    scaled.getPixel(x, y).androidColorLuminance()
+                },
+            )
+        } finally {
+            if (scaled !== source) {
+                scaled.recycle()
+            }
+            source.recycle()
+        }
+    }.getOrNull()
+}
+
+private fun Int.androidColorLuminance(): Int {
+    return (Color.red(this) * 299 + Color.green(this) * 587 + Color.blue(this) * 114) / 1000
+}
 
 private const val ARTWORK_CACHE_TEMP_MARKER = ".tmp-"

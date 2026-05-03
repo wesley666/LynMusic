@@ -28,6 +28,8 @@ fun isCompleteArtworkPayload(bytes: ByteArray): Boolean {
     }
 }
 
+fun isWebpArtworkPayload(bytes: ByteArray): Boolean = hasWebpSignature(bytes)
+
 private fun detectArtworkExtensionFromBytes(bytes: ByteArray?): String? {
     if (bytes == null || bytes.isEmpty()) return null
     if (hasJpegSignature(bytes)) {

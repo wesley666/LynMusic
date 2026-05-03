@@ -21,6 +21,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCachedTargetRegistry
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
+import top.iwesley.lyn.music.core.model.isReplaceableNavidromePlaceholderArtwork
 
 fun createIosArtworkCacheStore(): ArtworkCacheStore = IosArtworkCacheStore()
 
@@ -97,6 +98,18 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
         rememberIosArtworkTarget(cacheKey, path)
         true
     }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean =
+        withContext(Dispatchers.Default) {
+            val cachePrefix = cacheKey.ifBlank { return@withContext false }.stableArtworkCacheHash()
+            val path = findIosArtworkCacheFile(directory, cachePrefix) ?: return@withContext false
+            rememberIosArtworkTarget(cacheKey, path)
+            val payload = readIosLocalBytes(path) ?: return@withContext false
+            isReplaceableNavidromePlaceholderArtwork(
+                bytes = payload,
+                differenceHash = decodeSkiaArtworkDifferenceHash(payload),
+            )
+        }
 
     override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)
 

@@ -6,12 +6,17 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
 import java.io.ByteArrayInputStream
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Paths
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Image
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
+import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontKind
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
@@ -19,14 +24,18 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
+import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 
 class JvmLyricsSharePlatformService(
     private val fontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
+    private val artworkCacheStore: ArtworkCacheStore = createJvmArtworkCacheStore(),
 ) : LyricsSharePlatformService {
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
-            val artwork = loadArtworkImage(model.artworkLocator)
+            val artwork = loadArtworkImage(model.artworkLocator, model.artworkCacheKey)
             val importedFontPath = fontLibraryPlatformService.resolveImportedFontPath(model.fontKey.orEmpty()).getOrNull()
             SkiaLyricsShareRenderer.render(model, artwork, importedFontPath)
         }
@@ -76,10 +85,50 @@ class JvmLyricsSharePlatformService(
         }
     }
 
-    private suspend fun loadArtworkImage(locator: String?): Image? {
-        val artworkBytes = loadJvmArtworkBytes(locator)
+    private suspend fun loadArtworkImage(locator: String?, artworkCacheKey: String?): Image? {
+        val artworkBytes = loadLyricsShareArtworkBytes(locator, artworkCacheKey)
+            ?: loadBundledDefaultCoverBytes()
         return artworkBytes?.let(Image::makeFromEncoded)
     }
+
+    private suspend fun loadLyricsShareArtworkBytes(locator: String?, artworkCacheKey: String?): ByteArray? {
+        val normalized = normalizedArtworkCacheLocator(locator) ?: return null
+        val target = resolveJvmLyricsShareArtworkTarget(normalized, artworkCacheKey) ?: return null
+        return readJvmLyricsShareArtworkTargetBytes(target)
+    }
+
+    private suspend fun resolveJvmLyricsShareArtworkTarget(
+        normalizedLocator: String,
+        artworkCacheKey: String?,
+    ): String? {
+        if (shouldCacheLyricsShareArtwork(normalizedLocator)) {
+            val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalizedLocator
+            return artworkCacheStore.cache(normalizedLocator, cacheKey)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        }
+        return resolveArtworkCacheTarget(normalizedLocator)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+}
+
+private suspend fun readJvmLyricsShareArtworkTargetBytes(target: String): ByteArray? {
+    return runCatching {
+        when {
+            target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
+                URI(target).toURL().openStream().use { it.readBytes() }
+
+            target.startsWith("file://", ignoreCase = true) -> Files.readAllBytes(Paths.get(URI(target)))
+            else -> Files.readAllBytes(Paths.get(target))
+        }
+    }.getOrNull()?.takeIf(::isCompleteArtworkPayload)
+}
+
+private fun shouldCacheLyricsShareArtwork(normalizedLocator: String): Boolean {
+    return parseNavidromeCoverLocator(normalizedLocator) != null ||
+        normalizedLocator.startsWith("http://", ignoreCase = true) ||
+        normalizedLocator.startsWith("https://", ignoreCase = true)
 }
 
 internal fun prioritizeJvmLyricsShareFontFamilyNames(

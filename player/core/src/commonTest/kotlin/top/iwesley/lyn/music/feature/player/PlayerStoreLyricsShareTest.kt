@@ -34,6 +34,7 @@ import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -72,6 +73,8 @@ class PlayerStoreLyricsShareTest {
         assertFalse(state.supportsLyricsShareFontSelection)
         assertEquals(setOf(0), state.selectedLyricsLineIndices)
         assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertEquals(trackArtworkCacheKey(track), state.shareCardModel?.artworkCacheKey)
+        assertEquals(trackArtworkCacheKey(track), shareService.lastPreviewModel?.artworkCacheKey)
         assertEquals(1, shareService.buildPreviewCalls)
         assertEquals(FakeLyricsSharePlatformService.previewBytes.toList(), state.sharePreviewBytes?.toList())
         assertEquals(setOf(0), state.sharePreviewSelection)

@@ -48,6 +48,9 @@ import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatfor
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
+import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import kotlin.coroutines.resume
 
 class AndroidLyricsSharePlatformService(
@@ -67,7 +70,7 @@ class AndroidLyricsSharePlatformService(
 
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
-            val artwork = loadArtworkBitmap(model.artworkLocator)
+            val artwork = loadArtworkBitmap(model.artworkLocator, model.artworkCacheKey)
             val importedTypeface = resolveAndroidLyricsShareTypeface(fontLibraryPlatformService, model.fontKey)
             renderLyricsShareBitmap(model, artwork, importedTypeface)
         }
@@ -241,11 +244,10 @@ class AndroidLyricsSharePlatformService(
         )
     }
 
-    private suspend fun loadArtworkBitmap(locator: String?): Bitmap? {
+    private suspend fun loadArtworkBitmap(locator: String?, artworkCacheKey: String?): Bitmap? {
         val artworkBitmap = runCatching {
-            val normalized = locator?.trim().orEmpty()
-            if (normalized.isBlank()) return@runCatching null
-            val target = artworkCacheStore.cache(normalized, normalized).orEmpty()
+            val normalized = normalizedArtworkCacheLocator(locator) ?: return@runCatching null
+            val target = resolveAndroidLyricsShareArtworkTarget(normalized, artworkCacheKey).orEmpty()
             if (target.isBlank()) return@runCatching null
             when {
                 target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
@@ -258,6 +260,27 @@ class AndroidLyricsSharePlatformService(
             }
         }.getOrNull()
         return artworkBitmap ?: BitmapFactory.decodeResource(context.resources, android.R.drawable.ic_menu_gallery)
+    }
+
+    private suspend fun resolveAndroidLyricsShareArtworkTarget(
+        normalizedLocator: String,
+        artworkCacheKey: String?,
+    ): String? {
+        if (shouldCacheLyricsShareArtwork(normalizedLocator)) {
+            val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalizedLocator
+            return artworkCacheStore.cache(normalizedLocator, cacheKey)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+        }
+        return resolveArtworkCacheTarget(normalizedLocator)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun shouldCacheLyricsShareArtwork(normalizedLocator: String): Boolean {
+        return parseNavidromeCoverLocator(normalizedLocator) != null ||
+            normalizedLocator.startsWith("http://", ignoreCase = true) ||
+            normalizedLocator.startsWith("https://", ignoreCase = true)
     }
 
     private fun renderLyricsShareBitmap(

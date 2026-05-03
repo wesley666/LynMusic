@@ -18,6 +18,7 @@ import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
@@ -220,6 +221,275 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertNull(cachedRow.artworkLocator)
         assertEquals(emptyList(), artworkCacheStore.requests)
         assertTrue("album:local-1:jay:album 1" in artworkCacheStore.hasCachedRequests)
+    }
+
+    @Test
+    fun `auto workflow artwork replaces navidrome placeholder album cache`() = runTest {
+        val database = createTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-oiapi",
+                name = "Workflow OIAPI",
+                priority = 80,
+                enabled = true,
+                rawJson = WORKFLOW_JSON,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = SEARCH_JSON),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = LYRICS_JSON),
+                ),
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.test/rain.jpg" to "/tmp/lynmusic-artwork-cache/rain.jpg"),
+            cachedKeys = setOf("album:nav-source:jay:album 1"),
+            replaceablePlaceholderKeys = setOf("album:nav-source:jay:album 1"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-1",
+            sourceId = "nav-source",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
+            relativePath = "rain.flac",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrack(track.id).single()
+
+        assertNotNull(resolved)
+        assertEquals("workflow-oiapi", resolved.document.sourceId)
+        assertEquals("https://img.test/rain.jpg", resolved.artworkLocator)
+        assertEquals("https://img.test/rain.jpg", cachedRow.artworkLocator)
+        assertEquals(listOf("https://img.test/rain.jpg" to "album:nav-source:jay:album 1"), artworkCacheStore.requests)
+        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(
+            listOf("album:nav-source:jay:album 1", "album:nav-source:jay:album 1"),
+            artworkCacheStore.replaceablePlaceholderRequests,
+        )
+    }
+
+    @Test
+    fun `auto direct artwork replaces navidrome placeholder album cache`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            LyricsSourceConfigEntity(
+                id = "direct-lrcapi",
+                name = "Direct LrcAPI",
+                method = "GET",
+                urlTemplate = "https://lyrics.example/direct",
+                headersTemplate = "",
+                queryTemplate = "",
+                bodyTemplate = "",
+                responseFormat = LyricsResponseFormat.JSON.name,
+                extractor = "json-map:[0]|lyrics=lyrics,title=title,artist=artist,album=album,id=id,coverUrl=cover",
+                priority = 100,
+                enabled = true,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://lyrics.example/direct" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            [
+                              {
+                                "id": "song-1",
+                                "title": "Rain",
+                                "artist": "Jay",
+                                "album": "Album 1",
+                                "cover": "https://img.test/direct-rain.jpg",
+                                "lyrics": "[00:01.00]direct line"
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.test/direct-rain.jpg" to "/tmp/lynmusic-artwork-cache/direct-rain.jpg"),
+            cachedKeys = setOf("album:nav-source:jay:album 1"),
+            replaceablePlaceholderKeys = setOf("album:nav-source:jay:album 1"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-1",
+            sourceId = "nav-source",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = buildNavidromeSongLocator("nav-source", "song-1"),
+            relativePath = "rain.flac",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrack(track.id).single()
+
+        assertNotNull(resolved)
+        assertEquals("direct-lrcapi", resolved.document.sourceId)
+        assertEquals("https://img.test/direct-rain.jpg", resolved.artworkLocator)
+        assertEquals("https://img.test/direct-rain.jpg", cachedRow.artworkLocator)
+        assertEquals(listOf("https://img.test/direct-rain.jpg" to "album:nav-source:jay:album 1"), artworkCacheStore.requests)
+        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(listOf("album:nav-source:jay:album 1"), artworkCacheStore.replaceablePlaceholderRequests)
+    }
+
+    @Test
+    fun `auto direct artwork does not cache or display when real album cache exists`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            LyricsSourceConfigEntity(
+                id = "direct-lrcapi",
+                name = "Direct LrcAPI",
+                method = "GET",
+                urlTemplate = "https://lyrics.example/direct",
+                headersTemplate = "",
+                queryTemplate = "",
+                bodyTemplate = "",
+                responseFormat = LyricsResponseFormat.JSON.name,
+                extractor = "json-map:[0]|lyrics=lyrics,title=title,artist=artist,album=album,id=id,coverUrl=cover",
+                priority = 100,
+                enabled = true,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://lyrics.example/direct" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            [
+                              {
+                                "id": "song-1",
+                                "title": "Rain",
+                                "artist": "Jay",
+                                "album": "Album 1",
+                                "cover": "https://img.test/direct-rain.jpg",
+                                "lyrics": "[00:01.00]direct line"
+                              }
+                            ]
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.test/direct-rain.jpg" to "/tmp/lynmusic-artwork-cache/direct-rain.jpg"),
+            cachedKeys = setOf("album:local-1:jay:album 1"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = "file:///music/rain.mp3",
+            relativePath = "rain.mp3",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrack(track.id).single()
+
+        assertNotNull(resolved)
+        assertEquals("direct-lrcapi", resolved.document.sourceId)
+        assertNull(resolved.artworkLocator)
+        assertNull(cachedRow.artworkLocator)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
     }
 
     @Test
@@ -604,18 +874,27 @@ class DefaultLyricsRepositoryWorkflowTest {
 private class FakeArtworkCacheStore(
     private val cached: Map<String, String>,
     private val cachedKeys: Set<String> = emptySet(),
+    private val replaceablePlaceholderKeys: Set<String> = emptySet(),
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
+    val replaceExistingRequests = mutableListOf<Boolean>()
     val hasCachedRequests = mutableListOf<String>()
+    val replaceablePlaceholderRequests = mutableListOf<String>()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
+        replaceExistingRequests += replaceExisting
         return cached[locator] ?: locator
     }
 
     override suspend fun hasCached(cacheKey: String): Boolean {
         hasCachedRequests += cacheKey
         return cacheKey in cachedKeys
+    }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
+        replaceablePlaceholderRequests += cacheKey
+        return cacheKey in replaceablePlaceholderKeys
     }
 }
 

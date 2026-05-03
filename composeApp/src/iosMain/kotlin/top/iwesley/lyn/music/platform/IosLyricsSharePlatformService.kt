@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSURL
 import platform.Photos.PHAccessLevelAddOnly
 import platform.Photos.PHAssetChangeRequest
 import platform.Photos.PHAuthorizationStatusAuthorized
@@ -16,6 +17,9 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
+import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import org.jetbrains.skia.FontMgr
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -26,7 +30,7 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
 
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = withContext(Dispatchers.Default) {
         runCatching {
-            val artworkImage = loadArtworkImage(model.artworkLocator, artworkCacheStore)
+            val artworkImage = loadArtworkImage(model.artworkLocator, model.artworkCacheKey, artworkCacheStore)
             SkiaLyricsShareRenderer.render(model, artworkImage = artworkImage)
         }
     }
@@ -96,16 +100,48 @@ private fun loadUiImageFromPngBytes(pngBytes: ByteArray): UIImage? {
 
 private suspend fun loadArtworkImage(
     locator: String?,
+    artworkCacheKey: String?,
     artworkCacheStore: ArtworkCacheStore,
 ): Image? {
-    val normalized = locator?.trim().orEmpty()
-    val artworkBytes = if (normalized.isBlank()) {
-        null
-    } else {
-        val localPath = artworkCacheStore.cache(normalized, normalized).orEmpty()
-        if (localPath.isBlank()) null else readIosLocalBytes(localPath)
-    }
+    val normalized = normalizedArtworkCacheLocator(locator)
+    val artworkBytes = normalized
+        ?.let { resolveIosLyricsShareArtworkTarget(it, artworkCacheKey, artworkCacheStore) }
+        ?.let { readIosLyricsShareArtworkTargetBytes(it) }
     return (artworkBytes ?: loadBundledDefaultCoverBytes())?.let(Image::makeFromEncoded)
+}
+
+private suspend fun resolveIosLyricsShareArtworkTarget(
+    normalizedLocator: String,
+    artworkCacheKey: String?,
+    artworkCacheStore: ArtworkCacheStore,
+): String? {
+    if (shouldCacheLyricsShareArtwork(normalizedLocator)) {
+        val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalizedLocator
+        return artworkCacheStore.cache(normalizedLocator, cacheKey)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+    return resolveArtworkCacheTarget(normalizedLocator)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+}
+
+private suspend fun readIosLyricsShareArtworkTargetBytes(target: String): ByteArray? {
+    return when {
+        target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true) ->
+            readIosRemoteBytes(target)
+
+        target.startsWith("file://", ignoreCase = true) ->
+            readIosLocalBytes(NSURL.URLWithString(target)?.path ?: target.removePrefix("file://"))
+
+        else -> readIosLocalBytes(target)
+    }
+}
+
+private fun shouldCacheLyricsShareArtwork(normalizedLocator: String): Boolean {
+    return parseNavidromeCoverLocator(normalizedLocator) != null ||
+        normalizedLocator.startsWith("http://", ignoreCase = true) ||
+        normalizedLocator.startsWith("https://", ignoreCase = true)
 }
 
 private fun writeTempPng(pngBytes: ByteArray): String {

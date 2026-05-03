@@ -23,6 +23,7 @@ data class LyricsShareCardModel(
     val title: String,
     val artistName: String? = null,
     val artworkLocator: String? = null,
+    val artworkCacheKey: String? = null,
     val template: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     val artworkTintTheme: ArtworkTintTheme? = null,
     val artworkBackgroundPalette: PlaybackArtworkBackgroundPalette? = null,

@@ -13,6 +13,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
+import top.iwesley.lyn.music.core.model.isReplaceableNavidromePlaceholderArtwork
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
@@ -93,6 +94,17 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
         val file = findValidArtworkCacheFile(cachePrefix) ?: return false
         rememberArtworkTarget(cacheKey, file)
         return true
+    }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
+        val cachePrefix = cacheKey.ifBlank { return false }.stableArtworkCacheHash()
+        val file = findValidArtworkCacheFile(cachePrefix) ?: return false
+        rememberArtworkTarget(cacheKey, file)
+        val payload = runCatching { Files.readAllBytes(file.toPath()) }.getOrNull() ?: return false
+        return isReplaceableNavidromePlaceholderArtwork(
+            bytes = payload,
+            differenceHash = decodeSkiaArtworkDifferenceHash(payload),
+        )
     }
 
     override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)

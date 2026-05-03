@@ -36,6 +36,7 @@ import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -934,6 +935,139 @@ class LyricsRepositoryManualOverrideTest {
     }
 
     @Test
+    fun `cached automatic artwork replaces navidrome placeholder album cache`() = runTest {
+        val database = createTestDatabase()
+        val track = navidromeTrack()
+            .copy(albumId = albumIdForLibraryMetadata("Artist A", "Album A"))
+        val cacheKey = assertNotNull(trackArtworkCacheKey(track))
+        val artworkUrl = "https://img.example.com/cached-auto.jpg"
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "managed-lrcapi",
+                rawPayload = "[00:01.00]cached line",
+                updatedAt = 1L,
+                artworkLocator = artworkUrl,
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf(artworkUrl to "/tmp/cache/cached-auto.jpg"),
+            cachedKeys = setOf(cacheKey),
+            replaceablePlaceholderKeys = setOf(cacheKey),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals("managed-lrcapi", resolved.document.sourceId)
+        assertEquals("cached line", resolved.document.lines.single().text)
+        assertEquals(artworkUrl, resolved.artworkLocator)
+        assertEquals(listOf(artworkUrl to cacheKey), artworkCacheStore.requests)
+        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+    }
+
+    @Test
+    fun `cached automatic artwork does not replace real navidrome album cache`() = runTest {
+        val database = createTestDatabase()
+        val track = navidromeTrack()
+            .copy(albumId = albumIdForLibraryMetadata("Artist A", "Album A"))
+        val cacheKey = assertNotNull(trackArtworkCacheKey(track))
+        val artworkUrl = "https://img.example.com/cached-auto.jpg"
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsCacheDao().upsert(
+            LyricsCacheEntity(
+                trackId = track.id,
+                sourceId = "managed-lrcapi",
+                rawPayload = "[00:01.00]cached line",
+                updatedAt = 1L,
+                artworkLocator = artworkUrl,
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf(artworkUrl to "/tmp/cache/cached-auto.jpg"),
+            cachedKeys = setOf(cacheKey),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(),
+            secureCredentialStore = MapCredentialStore(),
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+
+        assertNotNull(resolved)
+        assertEquals("managed-lrcapi", resolved.document.sourceId)
+        assertEquals("cached line", resolved.document.lines.single().text)
+        assertNull(resolved.artworkLocator)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
+    }
+
+    @Test
+    fun `auto direct artwork rechecks album cache and replaces placeholder written during request`() = runTest {
+        val database = createTestDatabase()
+        val track = navidromeTrack()
+            .copy(albumId = albumIdForLibraryMetadata("Artist A", "Album A"))
+        val cacheKey = assertNotNull(trackArtworkCacheKey(track))
+        val artworkUrl = "https://img.example.com/auto.jpg"
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-auto",
+                urlTemplate = "https://lyrics.example/direct-auto",
+                priority = 100,
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf(artworkUrl to "/tmp/cache/auto.jpg"),
+            hasCachedResponses = listOf(false, true),
+            replaceablePlaceholderResponses = listOf(true),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = RecordingLyricsHttpClient(
+                responses = mapOf(
+                    "https://lyrics.example/direct-auto" to Result.success(
+                        LyricsHttpResponse(
+                            statusCode = 200,
+                            body = """
+                                {"data":[
+                                  {"id":"auto","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"auto line","cover":"$artworkUrl"}
+                                ]}
+                            """.trimIndent(),
+                        ),
+                    ),
+                ),
+            ),
+            secureCredentialStore = MapCredentialStore(),
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, "direct-auto")
+
+        assertNotNull(resolved)
+        assertEquals("direct-auto", resolved.document.sourceId)
+        assertEquals("auto line", resolved.document.lines.single().text)
+        assertEquals(artworkUrl, resolved.artworkLocator)
+        assertNotNull(cachedRow)
+        assertEquals(artworkUrl, cachedRow.artworkLocator)
+        assertEquals(listOf(artworkUrl to cacheKey), artworkCacheStore.requests)
+        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+    }
+
+    @Test
     fun `manual direct apply persists override lyrics and artwork for library and favorites`() = runTest {
         val database = createTestDatabase()
         seedNavidromeSource(database)
@@ -1757,13 +1891,35 @@ private class RecordingSameNameLyricsFileGateway(
 }
 
 private class FakeArtworkCacheStore(
-    private val cached: Map<String, String>,
+    private val cached: Map<String, String> = emptyMap(),
+    private val cachedKeys: Set<String> = emptySet(),
+    private val replaceablePlaceholderKeys: Set<String> = emptySet(),
+    hasCachedResponses: List<Boolean> = emptyList(),
+    replaceablePlaceholderResponses: List<Boolean> = emptyList(),
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
+    val replaceExistingRequests = mutableListOf<Boolean>()
+    private val pendingHasCachedResponses = hasCachedResponses.toMutableList()
+    private val pendingReplaceablePlaceholderResponses = replaceablePlaceholderResponses.toMutableList()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
+        replaceExistingRequests += replaceExisting
         return cached[locator] ?: locator
+    }
+
+    override suspend fun hasCached(cacheKey: String): Boolean {
+        if (pendingHasCachedResponses.isNotEmpty()) {
+            return pendingHasCachedResponses.removeAt(0)
+        }
+        return cacheKey in cachedKeys
+    }
+
+    override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
+        if (pendingReplaceablePlaceholderResponses.isNotEmpty()) {
+            return pendingReplaceablePlaceholderResponses.removeAt(0)
+        }
+        return cacheKey in replaceablePlaceholderKeys
     }
 }
 
