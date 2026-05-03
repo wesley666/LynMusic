@@ -8,6 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
@@ -154,17 +155,92 @@ class ArtworkImageTargetTest {
         assertEquals("5:1700000020000", resolved.version)
         assertTrue(resolved.isLocalFile)
     }
+
+    @Test
+    fun `initial target uses cached album target before async resolve`() {
+        val store = FakeArtworkCacheStore(
+            cachedTarget = ArtworkCachedTarget(
+                target = "/cache/artwork/album.png",
+                version = "99:1700000030000",
+                isLocalFile = true,
+            ),
+        )
+
+        val initial = requireNotNull(
+            initialLynArtworkTarget(
+                normalized = "https://img.example.com/cover.png",
+                requestCacheKey = "album:source:album-1",
+                cacheRemote = true,
+                artworkCacheStore = store,
+            ),
+        )
+
+        assertEquals("https://img.example.com/cover.png", initial.locator)
+        assertEquals("/cache/artwork/album.png", initial.target)
+        assertEquals("99:1700000030000", initial.version)
+        assertTrue(initial.isLocalFile)
+        assertEquals(listOf("album:source:album-1"), store.peekRequests)
+        assertEquals(emptyList(), store.requests)
+    }
+
+    @Test
+    fun `initial target falls back to non remote locator when cache target is missing`() {
+        val store = FakeArtworkCacheStore()
+
+        val initial = requireNotNull(
+            initialLynArtworkTarget(
+                normalized = "/local/cover.png",
+                requestCacheKey = "/local/cover.png",
+                cacheRemote = false,
+                artworkCacheStore = store,
+            ),
+        )
+
+        assertEquals("/local/cover.png", initial.target)
+        assertFalse(initial.isLocalFile)
+    }
+
+    @Test
+    fun `initial target ignores project cached target when remote cache is disabled`() {
+        val store = FakeArtworkCacheStore(
+            cachedTarget = ArtworkCachedTarget(
+                target = "/cache/artwork/album.png",
+                version = "99:1700000030000",
+                isLocalFile = true,
+            ),
+        )
+
+        val initial = requireNotNull(
+            initialLynArtworkTarget(
+                normalized = "https://img.example.com/preview.png",
+                requestCacheKey = "https://img.example.com/preview.png",
+                cacheRemote = false,
+                artworkCacheStore = store,
+            ),
+        )
+
+        assertEquals("https://img.example.com/preview.png", initial.target)
+        assertFalse(initial.isLocalFile)
+        assertEquals(emptyList(), store.peekRequests)
+    }
 }
 
 private class FakeArtworkCacheStore(
     private val target: String? = null,
     private val error: Throwable? = null,
+    private val cachedTarget: ArtworkCachedTarget? = null,
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
+    val peekRequests = mutableListOf<String>()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
         error?.let { throw it }
         return target ?: locator
+    }
+
+    override fun peekCachedTarget(cacheKey: String): ArtworkCachedTarget? {
+        peekRequests += cacheKey
+        return cachedTarget
     }
 }

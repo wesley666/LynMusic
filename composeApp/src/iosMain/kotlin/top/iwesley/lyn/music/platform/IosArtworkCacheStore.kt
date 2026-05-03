@@ -16,6 +16,8 @@ import platform.posix.opendir
 import platform.posix.readdir
 import platform.posix.remove
 import platform.posix.rename
+import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
+import top.iwesley.lyn.music.core.model.ArtworkCachedTargetRegistry
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
@@ -25,6 +27,7 @@ fun createIosArtworkCacheStore(): ArtworkCacheStore = IosArtworkCacheStore()
 private class IosArtworkCacheStore : ArtworkCacheStore {
     private val directory: String by lazy { iosArtworkCacheDirectory() }
     private val versionRegistry = ArtworkCacheVersionRegistry()
+    private val targetRegistry = ArtworkCachedTargetRegistry()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? =
         withContext(Dispatchers.Default) {
@@ -41,8 +44,9 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
                     locator = target,
                     replaceExisting = replaceExisting,
                 )
+                val result = rememberIosArtworkTarget(effectiveCacheKey, promoted?.path ?: path)
                 promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                return@runCatching promoted?.path ?: path
+                return@runCatching result
             }
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 val promoted = promoteIosLocalArtworkFile(
@@ -51,11 +55,13 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
                     locator = target,
                     replaceExisting = replaceExisting,
                 )
+                val result = rememberIosArtworkTarget(effectiveCacheKey, promoted?.path ?: target)
                 promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                return@runCatching promoted?.path ?: target
+                return@runCatching result
             }
             if (!replaceExisting) {
-                findIosArtworkCacheFile(directory, primaryPrefix)?.let { return@runCatching it }
+                findIosArtworkCacheFile(directory, primaryPrefix)
+                    ?.let { return@runCatching rememberIosArtworkTarget(effectiveCacheKey, it) }
                 legacyPrefix
                     ?.let { findIosArtworkCacheFile(directory, it) }
                     ?.let { legacy ->
@@ -64,8 +70,9 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
                             cachePrefix = primaryPrefix,
                             replaceExisting = false,
                         )
+                        val result = rememberIosArtworkTarget(effectiveCacheKey, promoted?.path ?: legacy)
                         promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                        return@runCatching promoted?.path ?: legacy
+                        return@runCatching result
                     }
             }
             val payload = readIosRemoteBytes(target) ?: return@runCatching null
@@ -78,17 +85,43 @@ private class IosArtworkCacheStore : ArtworkCacheStore {
                 cachePrefix = primaryPrefix,
                 replaceExisting = replaceExisting,
             )
+            val result = written?.path?.let { rememberIosArtworkTarget(effectiveCacheKey, it) }
             written?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-            written?.path
+            result
         }.getOrNull()
     }
 
     override suspend fun hasCached(cacheKey: String): Boolean = withContext(Dispatchers.Default) {
         val cachePrefix = cacheKey.ifBlank { return@withContext false }.stableArtworkCacheHash()
-        findIosArtworkCacheFile(directory, cachePrefix) != null
+        val path = findIosArtworkCacheFile(directory, cachePrefix) ?: return@withContext false
+        rememberIosArtworkTarget(cacheKey, path)
+        true
     }
 
     override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)
+
+    override fun peekCachedTarget(cacheKey: String): ArtworkCachedTarget? {
+        val cached = targetRegistry.peek(cacheKey) ?: return null
+        return cached.takeIf { target ->
+            !target.isLocalFile || NSFileManager.defaultManager.fileExistsAtPath(target.target)
+        }
+    }
+
+    private fun rememberIosArtworkTarget(cacheKey: String, path: String): String {
+        iosArtworkCachedTarget(path)?.let { target ->
+            targetRegistry.put(cacheKey, target)
+        }
+        return path
+    }
+}
+
+private fun iosArtworkCachedTarget(path: String): ArtworkCachedTarget? {
+    val payload = readIosLocalBytes(path)?.takeIf(::isCompleteArtworkPayload) ?: return null
+    return ArtworkCachedTarget(
+        target = path,
+        version = "${payload.size}:0",
+        isLocalFile = true,
+    )
 }
 
 @OptIn(ExperimentalForeignApi::class)

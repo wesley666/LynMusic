@@ -45,6 +45,10 @@ class JvmArtworkCacheStoreTest {
                 assertTrue(firstPath.endsWith(".png"))
                 assertEquals(1, requestCount.get())
                 assertEquals(1L, runBlocking { store.observeVersion(locator).first() })
+                assertEquals(
+                    firstPath,
+                    store.peekCachedTarget(locator)?.target,
+                )
 
                 File(firstPath).delete()
 
@@ -82,6 +86,7 @@ class JvmArtworkCacheStoreTest {
                 val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache")
 
                 assertNull(result)
+                assertNull(store.peekCachedTarget(locator))
                 assertTrue(cacheDirectory.listFiles().isNullOrEmpty())
                 assertEquals(0L, runBlocking { store.observeVersion(locator).first() })
             } finally {
@@ -122,6 +127,10 @@ class JvmArtworkCacheStoreTest {
                 assertTrue(runBlocking { store.hasCached(albumKey) })
                 assertEquals(payload.toList(), File(promoted).readBytes().toList())
                 assertEquals(1L, runBlocking { store.observeVersion(albumKey).first() })
+                assertEquals(
+                    promoted,
+                    store.peekCachedTarget(albumKey)?.target,
+                )
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)
@@ -170,6 +179,10 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(secondPayload.toList(), File(second).readBytes().toList())
                 assertTrue(runBlocking { store.hasCached(albumKey) })
                 assertEquals(2L, runBlocking { store.observeVersion(albumKey).first() })
+                assertEquals(
+                    "${secondPayload.size}:${File(second).lastModified()}",
+                    store.peekCachedTarget(albumKey)?.version,
+                )
 
                 val samePath = assertNotNull(
                     runBlocking {

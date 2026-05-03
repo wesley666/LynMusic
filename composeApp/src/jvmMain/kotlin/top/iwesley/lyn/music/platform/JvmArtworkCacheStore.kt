@@ -7,6 +7,8 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.flow.Flow
+import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
+import top.iwesley.lyn.music.core.model.ArtworkCachedTargetRegistry
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
@@ -21,6 +23,7 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
         mkdirs()
     }
     private val versionRegistry = ArtworkCacheVersionRegistry()
+    private val targetRegistry = ArtworkCachedTargetRegistry()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         return runCatching {
@@ -38,8 +41,9 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
                     locator = target,
                     replaceExisting = replaceExisting,
                 )
+                val result = rememberArtworkTarget(effectiveCacheKey, promoted?.file ?: file)
                 promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                return@runCatching promoted?.file?.absolutePath ?: file.absolutePath
+                return@runCatching result
             }
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 val file = File(target)
@@ -49,11 +53,13 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
                     locator = target,
                     replaceExisting = replaceExisting,
                 )
+                val result = rememberArtworkTarget(effectiveCacheKey, promoted?.file ?: file)
                 promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                return@runCatching promoted?.file?.absolutePath ?: target
+                return@runCatching result
             }
             if (!replaceExisting) {
-                findValidArtworkCacheFile(primaryPrefix)?.let { return@runCatching it.absolutePath }
+                findValidArtworkCacheFile(primaryPrefix)
+                    ?.let { return@runCatching rememberArtworkTarget(effectiveCacheKey, it) }
                 legacyPrefix
                     ?.let(::findValidArtworkCacheFile)
                     ?.let { legacy ->
@@ -62,8 +68,9 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
                             cachePrefix = primaryPrefix,
                             replaceExisting = false,
                         )
+                        val result = rememberArtworkTarget(effectiveCacheKey, promoted?.file ?: legacy)
                         promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-                        return@runCatching promoted?.file?.absolutePath ?: legacy.absolutePath
+                        return@runCatching result
                     }
             }
             val payload = URL(target).openStream().use { it.readBytes() }
@@ -75,17 +82,27 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
                 cachePrefix = primaryPrefix,
                 replaceExisting = replaceExisting,
             )
+            val result = written?.file?.let { rememberArtworkTarget(effectiveCacheKey, it) }
             written?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
-            written?.file?.absolutePath
+            result
         }.getOrNull()
     }
 
     override suspend fun hasCached(cacheKey: String): Boolean {
         val cachePrefix = cacheKey.ifBlank { return false }.stableArtworkCacheHash()
-        return findValidArtworkCacheFile(cachePrefix) != null
+        val file = findValidArtworkCacheFile(cachePrefix) ?: return false
+        rememberArtworkTarget(cacheKey, file)
+        return true
     }
 
     override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)
+
+    override fun peekCachedTarget(cacheKey: String): ArtworkCachedTarget? {
+        val cached = targetRegistry.peek(cacheKey) ?: return null
+        return cached.takeIf { target ->
+            !target.isLocalFile || File(target.target).isFile
+        }
+    }
 
     private fun findValidArtworkCacheFile(cachePrefix: String): File? {
         return directory.listFiles()
@@ -223,6 +240,22 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
             ?.forEach { file ->
                 runCatching { Files.deleteIfExists(file.toPath()) }
             }
+    }
+
+    private fun rememberArtworkTarget(cacheKey: String, file: File): String {
+        file.toArtworkCachedTarget()?.let { target ->
+            targetRegistry.put(cacheKey, target)
+        }
+        return file.absolutePath
+    }
+
+    private fun File.toArtworkCachedTarget(): ArtworkCachedTarget? {
+        if (!isFile || length() <= 0L) return null
+        return ArtworkCachedTarget(
+            target = absolutePath,
+            version = "${length()}:${lastModified()}",
+            isLocalFile = true,
+        )
     }
 }
 

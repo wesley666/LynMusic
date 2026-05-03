@@ -26,3 +26,26 @@ class ArtworkCacheVersionRegistry {
 
     private fun String.normalizedVersionKey(): String? = trim().takeIf { it.isNotEmpty() }
 }
+
+data class ArtworkCachedTarget(
+    val target: String,
+    val version: String?,
+    val isLocalFile: Boolean,
+)
+
+class ArtworkCachedTargetRegistry {
+    private val targets = MutableStateFlow<Map<String, ArtworkCachedTarget>>(emptyMap())
+
+    fun peek(cacheKey: String): ArtworkCachedTarget? {
+        val normalized = cacheKey.normalizedTargetKey() ?: return null
+        return targets.value[normalized]
+    }
+
+    fun put(cacheKey: String, target: ArtworkCachedTarget) {
+        val normalized = cacheKey.normalizedTargetKey() ?: return
+        if (target.target.isBlank()) return
+        targets.update { values -> values + (normalized to target) }
+    }
+
+    private fun String.normalizedTargetKey(): String? = trim().takeIf { it.isNotEmpty() }
+}

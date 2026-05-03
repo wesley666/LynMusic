@@ -444,6 +444,7 @@ interface ArtworkCacheStore {
     suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean = false): String?
     suspend fun hasCached(cacheKey: String): Boolean = false
     fun observeVersion(cacheKey: String): Flow<Long> = flowOf(0L)
+    fun peekCachedTarget(cacheKey: String): ArtworkCachedTarget? = null
 }
 
 interface AudioTagGateway {

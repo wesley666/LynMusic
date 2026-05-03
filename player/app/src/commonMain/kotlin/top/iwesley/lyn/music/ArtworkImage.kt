@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.flowOf
 import lynmusic.player.app.generated.resources.Res
 import lynmusic.player.app.generated.resources.default_cover
 import org.jetbrains.compose.resources.painterResource
+import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
@@ -256,17 +257,13 @@ private fun rememberLynArtworkModel(
     cacheVersion: Long,
     artworkCacheStore: ArtworkCacheStore,
 ): LynArtworkModel {
-    val initialTarget = remember(normalized, cacheRemote) {
-        normalized
-            ?.takeIf { shouldUseInitialArtworkTarget(it, cacheRemote) }
-            ?.let { target ->
-                LynResolvedArtworkTarget(
-                    locator = target,
-                    target = target,
-                    version = null,
-                    isLocalFile = false,
-                )
-            }
+    val initialTarget = remember(normalized, requestCacheKey, cacheRemote, artworkCacheStore) {
+        initialLynArtworkTarget(
+            normalized = normalized,
+            requestCacheKey = requestCacheKey,
+            cacheRemote = cacheRemote,
+            artworkCacheStore = artworkCacheStore,
+        )
     }
     val resolvedTarget by produceState<LynResolvedArtworkTarget?>(
         initialValue = initialTarget,
@@ -295,6 +292,42 @@ private fun rememberLynArtworkModel(
             cacheVersion = cacheVersion,
         )
     }
+}
+
+internal fun initialLynArtworkTarget(
+    normalized: String?,
+    requestCacheKey: String?,
+    cacheRemote: Boolean,
+    artworkCacheStore: ArtworkCacheStore,
+): LynResolvedArtworkTarget? {
+    if (cacheRemote) {
+        requestCacheKey
+            ?.let(artworkCacheStore::peekCachedTarget)
+            ?.let { cachedTarget ->
+                return cachedTarget.toLynResolvedArtworkTarget(locator = normalized ?: cachedTarget.target)
+            }
+    }
+    return normalized
+        ?.takeIf { shouldUseInitialArtworkTarget(it, cacheRemote) }
+        ?.let { target ->
+            LynResolvedArtworkTarget(
+                locator = target,
+                target = target,
+                version = null,
+                isLocalFile = false,
+            )
+        }
+}
+
+private fun ArtworkCachedTarget.toLynResolvedArtworkTarget(
+    locator: String,
+): LynResolvedArtworkTarget {
+    return LynResolvedArtworkTarget(
+        locator = locator,
+        target = target,
+        version = version,
+        isLocalFile = isLocalFile,
+    )
 }
 
 private fun shouldUseInitialArtworkTarget(
