@@ -47,6 +47,7 @@ import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -578,9 +579,7 @@ private fun storeAndroidWebDavArtwork(
     if (bytes.isEmpty()) return null
     artworkDirectory.mkdirs()
     val fileName = buildString {
-        append(relativePath.hashCode().toUInt().toString(16))
-        append('-')
-        append(bytes.contentHashCode().toUInt().toString(16))
+        append(bytes.stableArtworkBytesHash())
         append(inferArtworkFileExtension(bytes = bytes))
     }
     val target = File(artworkDirectory, fileName)

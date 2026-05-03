@@ -98,7 +98,7 @@ data class SharedRuntimeServices(
     val dailyRecommendationDateChangeNotifier: DailyRecommendationDateChangeNotifier =
         DefaultDailyRecommendationDateChangeNotifier(dailyRecommendationDateKeyProvider),
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
-        override suspend fun cache(locator: String, cacheKey: String): String? = locator
+        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
     },
     val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     val offlineDownloadGateway: OfflineDownloadGateway = UnsupportedOfflineDownloadGateway,
@@ -223,6 +223,7 @@ fun buildSharedGraph(
     val musicTagsRepository = RoomMusicTagsRepository(
         database = database,
         audioTagGateway = runtimeServices.audioTagGateway,
+        artworkCacheStore = runtimeServices.artworkCacheStore,
     )
     val myRepository = RoomMyRepository(
         database = database,

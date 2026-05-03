@@ -81,6 +81,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsDraft
 import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
@@ -571,6 +572,7 @@ private fun MusicTagsEditorPane(
                                 !state.draft.clearArtwork && state.draft.artworkLocator != null -> LynArtworkImage(
                                     artworkLocator = state.draft.artworkLocator,
                                     contentDescription = "歌曲封面",
+                                    artworkCacheKey = trackArtworkCacheKey(selectedTrack),
                                     modifier = Modifier.fillMaxSize(),
                                     maxDecodeSizePx = ArtworkDecodeSize.Preview,
                                     contentScale = ContentScale.Fit,
@@ -801,6 +803,7 @@ private fun MusicTagsTrackFileCell(
                 LynArtworkImage(
                     artworkLocator = track.artworkLocator,
                     contentDescription = "歌曲封面",
+                    artworkCacheKey = trackArtworkCacheKey(track),
                     modifier = Modifier.fillMaxSize(),
                     maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
                     contentScale = ContentScale.Crop,

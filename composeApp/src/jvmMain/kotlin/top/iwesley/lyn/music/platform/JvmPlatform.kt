@@ -78,6 +78,7 @@ import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -1882,9 +1883,7 @@ private fun RemoteAudioMetadata.toAudioTagSnapshot(
 private fun storeJvmRemoteArtwork(relativePath: String, bytes: ByteArray): String? {
     if (bytes.isEmpty()) return null
     val fileName = buildString {
-        append(relativePath.hashCode().toUInt().toString(16))
-        append('-')
-        append(bytes.contentHashCode().toUInt().toString(16))
+        append(bytes.stableArtworkBytesHash())
         append(inferArtworkFileExtension(bytes = bytes))
     }
     val target = File(jvmRemoteArtworkDirectory, fileName)

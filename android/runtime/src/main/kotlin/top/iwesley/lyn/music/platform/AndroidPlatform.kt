@@ -95,6 +95,7 @@ import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.navidromeAudioQualityOrDefault
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.resolveNavidromeAudioQualityForCurrentNetwork
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
@@ -1229,7 +1230,7 @@ private class AndroidImportSourceGateway(
             mkdirs()
         }
         val fileName = buildString {
-            append(relativePath.hashCode().toUInt().toString(16))
+            append(bytes.stableArtworkBytesHash())
             append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)
@@ -2045,9 +2046,7 @@ private fun storeAndroidRemoteArtwork(
         mkdirs()
     }
     val fileName = buildString {
-        append(relativePath.hashCode().toUInt().toString(16))
-        append('-')
-        append(bytes.contentHashCode().toUInt().toString(16))
+        append(bytes.stableArtworkBytesHash())
         append(inferArtworkFileExtension(bytes = bytes))
     }
     val target = File(artworkDirectory, fileName)

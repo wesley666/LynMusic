@@ -133,6 +133,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.supportsOfflineDownload
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.automotive.AutomotiveLandscapePlayerOverlayContent
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -410,6 +411,7 @@ private fun MiniPlayerBar(
         VinylPlaceholder(
             vinylSize = 50.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
             spinning = snapshot.isPlaying,
             retainPreviousArtworkWhileLoading = true,
         )
@@ -615,6 +617,7 @@ private fun MobileMiniPlayerBar(
             VinylPlaceholder(
                 vinylSize = 46.dp,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
+                artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
                 spinning = snapshot.isPlaying,
                 retainPreviousArtworkWhileLoading = true,
             )
@@ -921,6 +924,7 @@ private fun PlayerOverlay(
                 LynArtworkImage(
                     artworkLocator = artworkLocator,
                     contentDescription = null,
+                    artworkCacheKey = trackArtworkCacheKey(track),
                     contentScale = ContentScale.Crop,
                     maxDecodeSizePx = ArtworkDecodeSize.Player,
                     retainPreviousWhileLoading = true,
@@ -1340,6 +1344,7 @@ private fun PlayerInfoPane(
                 vinylSize = vinylSize,
                 artworkBitmap = artworkBitmap,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
+                artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
                 spinning = snapshot.isPlaying,
                 artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
                 innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
@@ -1425,6 +1430,7 @@ private fun SwipeablePlayerArtwork(
             vinylSize = vinylSize,
             artworkBitmap = artworkBitmap,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
             spinning = snapshot.isPlaying,
             artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
             innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,

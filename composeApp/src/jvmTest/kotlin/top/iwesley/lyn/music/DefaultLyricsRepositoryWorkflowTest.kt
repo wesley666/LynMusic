@@ -8,6 +8,7 @@ import kotlin.io.path.exists
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
@@ -138,11 +139,87 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals(null, storedTrack.artworkLocator)
         assertEquals(
             listOf(
-                "https://img.test/rain.jpg" to "https://img.test/rain.jpg",
-                "https://img.test/rain.jpg" to "https://img.test/rain.jpg",
+                "https://img.test/rain.jpg" to "album:local-1:jay:album 1",
+                "https://img.test/rain.jpg" to "album:local-1:jay:album 1",
             ),
             artworkCacheStore.requests,
         )
+    }
+
+    @Test
+    fun `auto workflow artwork does not cache or display when album cache exists`() = runTest {
+        val database = createTestDatabase()
+        database.workflowLyricsSourceConfigDao().upsert(
+            WorkflowLyricsSourceConfigEntity(
+                id = "workflow-oiapi",
+                name = "Workflow OIAPI",
+                priority = 80,
+                enabled = true,
+                rawJson = WORKFLOW_JSON,
+            ),
+        )
+        val httpClient = WorkflowHttpClient(
+            mapOf(
+                "https://oiapi.net/api/QQMusicLyric?keyword=Rain&page=1&limit=10&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = SEARCH_JSON),
+                ),
+                "https://oiapi.net/api/QQMusicLyric?id=11&format=lrc&type=json" to Result.success(
+                    LyricsHttpResponse(statusCode = 200, body = LYRICS_JSON),
+                ),
+            ),
+        )
+        val artworkCacheStore = FakeArtworkCacheStore(
+            cached = mapOf("https://img.test/rain.jpg" to "/tmp/lynmusic-artwork-cache/rain.jpg"),
+            cachedKeys = setOf("album:local-1:jay:album 1"),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = EmptySecureCredentialStore,
+            artworkCacheStore = artworkCacheStore,
+            logger = NoopDiagnosticLogger,
+        )
+        val track = Track(
+            id = "track-1",
+            sourceId = "local-1",
+            title = "Rain",
+            artistName = "Jay",
+            albumTitle = "Album 1",
+            durationMs = 181_000L,
+            mediaLocator = "file:///music/rain.mp3",
+            relativePath = "rain.mp3",
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                top.iwesley.lyn.music.data.db.TrackEntity(
+                    id = track.id,
+                    sourceId = track.sourceId,
+                    title = track.title,
+                    artistId = null,
+                    artistName = track.artistName,
+                    albumId = null,
+                    albumTitle = track.albumTitle,
+                    durationMs = track.durationMs,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = track.mediaLocator,
+                    relativePath = track.relativePath,
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+
+        val resolved = repository.getLyrics(track)
+        val cachedRow = database.lyricsCacheDao().getByTrack(track.id).single()
+
+        assertNotNull(resolved)
+        assertEquals("workflow-oiapi", resolved.document.sourceId)
+        assertNull(resolved.artworkLocator)
+        assertNull(cachedRow.artworkLocator)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertTrue("album:local-1:jay:album 1" in artworkCacheStore.hasCachedRequests)
     }
 
     @Test
@@ -526,12 +603,19 @@ class DefaultLyricsRepositoryWorkflowTest {
 
 private class FakeArtworkCacheStore(
     private val cached: Map<String, String>,
+    private val cachedKeys: Set<String> = emptySet(),
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
+    val hasCachedRequests = mutableListOf<String>()
 
-    override suspend fun cache(locator: String, cacheKey: String): String? {
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
         return cached[locator] ?: locator
+    }
+
+    override suspend fun hasCached(cacheKey: String): Boolean {
+        hasCachedRequests += cacheKey
+        return cacheKey in cachedKeys
     }
 }
 

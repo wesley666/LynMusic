@@ -3,11 +3,13 @@ package top.iwesley.lyn.music.data.repository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlin.time.Clock
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.ArtistEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -32,6 +34,9 @@ interface MusicTagsRepository {
 class RoomMusicTagsRepository(
     private val database: LynMusicDatabase,
     private val audioTagGateway: AudioTagGateway,
+    private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
+        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+    },
 ) : MusicTagsRepository {
     override val localTracks: Flow<List<Track>> = combine(
         database.trackDao().observeAll(),
@@ -67,6 +72,16 @@ class RoomMusicTagsRepository(
             }
             val snapshot = audioTagGateway.write(track, patch).getOrThrow()
             val updatedTrack = persistTrackSnapshot(track, snapshot)
+            val updatedArtworkLocator = updatedTrack.artworkLocator?.takeIf { it.isNotBlank() }
+            if (patch.artworkBytes != null && updatedArtworkLocator != null) {
+                runCatching {
+                    artworkCacheStore.cache(
+                        locator = updatedArtworkLocator,
+                        cacheKey = trackArtworkCacheKey(updatedTrack) ?: updatedArtworkLocator,
+                        replaceExisting = true,
+                    )
+                }
+            }
             MusicTagSaveResult(track = updatedTrack, snapshot = snapshot)
         }
     }
@@ -101,6 +116,7 @@ class RoomMusicTagsRepository(
                 discNumber = snapshot.discNumber,
                 artworkLocator = snapshot.artworkLocator,
                 modifiedAt = updatedAt,
+                albumId = albumTitle?.let { albumIdForLibraryMetadata(artistName, it) },
             )
     }
 

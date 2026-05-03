@@ -89,6 +89,7 @@ import top.iwesley.lyn.music.core.model.PlaylistKind
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
@@ -1448,7 +1449,10 @@ private fun PlaylistTrackRow(
             } else {
                 Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold)
             }
-            PlaylistArtworkThumbnail(artworkLocator = entry.track.artworkLocator)
+            PlaylistArtworkThumbnail(
+                artworkLocator = entry.track.artworkLocator,
+                artworkCacheKey = trackArtworkCacheKey(entry.track),
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     entry.track.title,
@@ -1569,6 +1573,7 @@ private fun PlaylistSectionTitle(
 @Composable
 private fun PlaylistArtworkThumbnail(
     artworkLocator: String?,
+    artworkCacheKey: String? = null,
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 1.dp,
     containerColor: Color? = null,
@@ -1586,6 +1591,7 @@ private fun PlaylistArtworkThumbnail(
         LynArtworkImage(
             artworkLocator = artworkLocator,
             contentDescription = null,
+            artworkCacheKey = artworkCacheKey,
             maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
             modifier = Modifier.fillMaxSize(),
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,

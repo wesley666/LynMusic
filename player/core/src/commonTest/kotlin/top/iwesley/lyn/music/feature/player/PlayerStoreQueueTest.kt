@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
@@ -322,6 +323,38 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `automatic lyrics artwork does not override playback artwork when album cache exists`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val lyricsRepository = DeferredQueueLyricsRepository()
+        val artworkCacheStore = FakePlayerArtworkCacheStore(
+            cachedKeys = setOf("album:local-1:artist a:album a"),
+        )
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = lyricsRepository,
+            storeScope = scope,
+            artworkCacheStore = artworkCacheStore,
+        )
+
+        advanceUntilIdle()
+        lyricsRepository.complete(
+            trackId = "track-1",
+            result = resolvedLyricsResult(
+                sourceId = "source-track-1",
+                line = "lyrics for track-1",
+                artworkLocator = "/tmp/track-1-auto.jpg",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(null, playbackRepository.lastArtworkOverride)
+        assertEquals(listOf("album:local-1:artist a:album a"), artworkCacheStore.checkedKeys)
+        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -346,6 +379,19 @@ class PlayerStoreQueueTest {
             mediaLocator = "file:///music/$id.mp3",
             relativePath = "$title.mp3",
         )
+    }
+}
+
+private class FakePlayerArtworkCacheStore(
+    private val cachedKeys: Set<String>,
+) : ArtworkCacheStore {
+    val checkedKeys = mutableListOf<String>()
+
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+
+    override suspend fun hasCached(cacheKey: String): Boolean {
+        checkedKeys += cacheKey
+        return cacheKey in cachedKeys
     }
 }
 

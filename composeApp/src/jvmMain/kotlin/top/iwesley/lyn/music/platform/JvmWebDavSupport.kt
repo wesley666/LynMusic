@@ -43,6 +43,7 @@ import top.iwesley.lyn.music.core.model.NonNavidromeAudioScanResult
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.ImportSourceType
@@ -817,9 +818,7 @@ private fun readJvmWebDavBytes(inputStream: InputStream, length: Int): ByteArray
 private fun storeJvmWebDavArtwork(relativePath: String, bytes: ByteArray): String? {
     if (bytes.isEmpty()) return null
     val fileName = buildString {
-        append(relativePath.hashCode().toUInt().toString(16))
-        append('-')
-        append(bytes.contentHashCode().toUInt().toString(16))
+        append(bytes.stableArtworkBytesHash())
         append(inferArtworkFileExtension(bytes = bytes))
     }
     val target = File(jvmWebDavArtworkDirectory, fileName)

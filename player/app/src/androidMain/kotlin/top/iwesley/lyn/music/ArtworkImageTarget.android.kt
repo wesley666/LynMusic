@@ -11,12 +11,13 @@ import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 
 internal actual suspend fun resolveLynArtworkTarget(
     locator: String?,
+    cacheKey: String?,
     cacheRemote: Boolean,
     artworkCacheStore: ArtworkCacheStore,
 ): LynResolvedArtworkTarget? = withContext(Dispatchers.IO) {
     val normalized = normalizedArtworkCacheLocator(locator) ?: return@withContext null
     val cachedTarget = if (cacheRemote) {
-        runCatching { artworkCacheStore.cache(normalized, normalized) }
+        runCatching { artworkCacheStore.cache(normalized, cacheKey ?: normalized) }
             .getOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }

@@ -993,7 +993,7 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("https://img.example.com/manual.jpg", libraryTrack.artworkLocator)
         assertEquals("https://img.example.com/manual.jpg", favoriteTrack.artworkLocator)
         assertEquals(
-            listOf("https://img.example.com/manual.jpg" to "https://img.example.com/manual.jpg"),
+            listOf("https://img.example.com/manual.jpg" to "album:nav-source:album:artist a:album a"),
             artworkCacheStore.requests,
         )
     }
@@ -1062,7 +1062,7 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("https://img.example.com/workflow.jpg", resolved.artworkLocator)
         assertEquals("https://img.example.com/workflow.jpg", libraryTrack.artworkLocator)
         assertEquals(
-            listOf("https://img.example.com/workflow.jpg" to "https://img.example.com/workflow.jpg"),
+            listOf("https://img.example.com/workflow.jpg" to "album:nav-source:album:artist a:album a"),
             artworkCacheStore.requests,
         )
     }
@@ -1339,7 +1339,7 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("https://img.example.com/art-only.jpg", libraryTrack.artworkLocator)
         assertEquals("https://img.example.com/art-only.jpg", favoriteTrack.artworkLocator)
         assertEquals(
-            listOf("https://img.example.com/art-only.jpg" to "https://img.example.com/art-only.jpg"),
+            listOf("https://img.example.com/art-only.jpg" to "album:nav-source:album:artist a:album a"),
             artworkCacheStore.requests,
         )
     }
@@ -1437,7 +1437,7 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals(normalizedArtworkLocator, applied.artworkLocator)
         assertEquals(normalizedArtworkLocator, libraryTrack.artworkLocator)
         assertEquals(
-            listOf(normalizedArtworkLocator to normalizedArtworkLocator),
+            listOf(normalizedArtworkLocator to "album:nav-source:album:artist a:album a"),
             artworkCacheStore.requests,
         )
     }
@@ -1761,7 +1761,7 @@ private class FakeArtworkCacheStore(
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
 
-    override suspend fun cache(locator: String, cacheKey: String): String? {
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
         return cached[locator] ?: locator
     }

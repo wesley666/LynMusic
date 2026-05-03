@@ -70,6 +70,7 @@ data class Track(
     val samplingRate: Int? = null,
     val bitRate: Int? = null,
     val channelCount: Int? = null,
+    val albumId: String? = null,
 )
 
 data class RecentTrack(
@@ -438,7 +439,8 @@ interface ArtworkLoader {
 }
 
 interface ArtworkCacheStore {
-    suspend fun cache(locator: String, cacheKey: String): String?
+    suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean = false): String?
+    suspend fun hasCached(cacheKey: String): Boolean = false
 }
 
 interface AudioTagGateway {

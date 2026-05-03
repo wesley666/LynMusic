@@ -26,12 +26,14 @@ class ArtworkImageTargetTest {
         val resolved = requireNotNull(
             resolveLynArtworkTarget(
                 locator = "https://img.example.com/cover.png",
+                cacheKey = "album:source:album-1",
                 cacheRemote = true,
                 artworkCacheStore = store,
             ),
         )
         val model = LynArtworkModel(
             locator = resolved.locator,
+            cacheKey = "album:source:album-1",
             target = resolved.target,
             targetVersion = resolved.version,
             isLocalFileTarget = resolved.isLocalFile,
@@ -42,8 +44,9 @@ class ArtworkImageTargetTest {
         assertEquals(cachedFile.absolutePath, resolved.target)
         assertEquals("3:1700000000000", resolved.version)
         assertTrue(resolved.isLocalFile)
+        assertEquals(listOf("https://img.example.com/cover.png" to "album:source:album-1"), store.requests)
         assertEquals(
-            "lyn-artwork:https://img.example.com/cover.png:256:3:1700000000000",
+            "lyn-artwork:album:source:album-1:256:3:1700000000000",
             lynArtworkMemoryCacheKey(model),
         )
     }
@@ -55,10 +58,10 @@ class ArtworkImageTargetTest {
         cachedFile.setLastModified(1_700_000_000_000L)
         val store = FakeArtworkCacheStore(cachedFile.absolutePath)
 
-        val first = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", true, store))
+        val first = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", null, true, store))
         cachedFile.writeBytes(byteArrayOf(1, 2, 3, 4))
         cachedFile.setLastModified(1_700_000_010_000L)
-        val second = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", true, store))
+        val second = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", null, true, store))
 
         assertNotEquals(first.version, second.version)
         assertEquals("4:1700000010000", second.version)
@@ -71,6 +74,7 @@ class ArtworkImageTargetTest {
         val resolved = requireNotNull(
             resolveLynArtworkTarget(
                 locator = "https://img.example.com/cover.png",
+                cacheKey = null,
                 cacheRemote = true,
                 artworkCacheStore = store,
             ),
@@ -87,6 +91,7 @@ class ArtworkImageTargetTest {
         val resolved = requireNotNull(
             resolveLynArtworkTarget(
                 locator = "https://img.example.com/preview.png",
+                cacheKey = null,
                 cacheRemote = false,
                 artworkCacheStore = store,
             ),
@@ -114,6 +119,7 @@ class ArtworkImageTargetTest {
         val resolved = requireNotNull(
             resolveLynArtworkTarget(
                 locator = locator,
+                cacheKey = null,
                 cacheRemote = true,
                 artworkCacheStore = FakeArtworkCacheStore(target = locator),
             ),
@@ -133,6 +139,7 @@ class ArtworkImageTargetTest {
         val resolved = requireNotNull(
             resolveLynArtworkTarget(
                 locator = file.toPath().absolutePathString(),
+                cacheKey = null,
                 cacheRemote = false,
                 artworkCacheStore = FakeArtworkCacheStore(),
             ),
@@ -150,7 +157,7 @@ private class FakeArtworkCacheStore(
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
 
-    override suspend fun cache(locator: String, cacheKey: String): String? {
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         requests += locator to cacheKey
         error?.let { throw it }
         return target ?: locator

@@ -6,6 +6,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
 import top.iwesley.lyn.music.core.model.LyricsDocument
@@ -28,6 +29,7 @@ import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
@@ -149,6 +151,9 @@ class PlayerStore(
     private val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
     private val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore = UnsupportedLyricsShareFontPreferencesStore,
+    private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
+        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+    },
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
     initialState = PlayerState(
@@ -1017,10 +1022,20 @@ class PlayerStore(
             val lyrics = result?.document
             val artworkLocator = result?.artworkLocator
             if (!artworkLocator.isNullOrBlank() && isLatestLyricsRequest(requestId, track.id, requestKey)) {
-                logger.debug(PLAYER_LOG_TAG) {
-                    "playback-artwork-override source=auto-lyrics track=${track.id} locator=$artworkLocator"
+                val cacheKey = trackArtworkCacheKey(track)
+                val hasAlbumArtworkCache = cacheKey?.let { key ->
+                    runCatching { artworkCacheStore.hasCached(key) }.getOrDefault(false)
+                } == true
+                if (hasAlbumArtworkCache) {
+                    logger.debug(PLAYER_LOG_TAG) {
+                        "playback-artwork-override-skip source=auto-lyrics track=${track.id} key=$cacheKey locator=$artworkLocator"
+                    }
+                } else {
+                    logger.debug(PLAYER_LOG_TAG) {
+                        "playback-artwork-override source=auto-lyrics track=${track.id} key=${cacheKey.orEmpty()} locator=$artworkLocator"
+                    }
+                    playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
                 }
-                playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
             }
             updateState { latest ->
                 if (!isLatestLyricsRequest(requestId, track.id, requestKey)) {

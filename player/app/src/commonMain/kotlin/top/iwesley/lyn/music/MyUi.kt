@@ -52,6 +52,7 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.RecentAlbum
 import top.iwesley.lyn.music.core.model.RecentTrack
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -300,6 +301,7 @@ private fun DailyRecommendationCarouselCard(
     ) {
         DailyRecommendationArtwork(
             artworkLocator = track.artworkLocator,
+            artworkCacheKey = trackArtworkCacheKey(track),
             modifier = Modifier.fillMaxSize(),
             shape = RoundedCornerShape(18.dp),
             accentColor = accentColor,
@@ -369,6 +371,7 @@ private fun DailyRecommendationPreview(
     ) {
         DailyRecommendationHeroArtwork(
             artworkLocator = tracks.firstOrNull()?.artworkLocator,
+            artworkCacheKey = tracks.firstOrNull()?.let(::trackArtworkCacheKey),
             modifier = Modifier.size(heroSize),
             accentColor = accentColor,
             onPlayAll = onPlayAll,
@@ -393,6 +396,7 @@ private fun DailyRecommendationPreview(
 @Composable
 private fun DailyRecommendationHeroArtwork(
     artworkLocator: String?,
+    artworkCacheKey: String?,
     modifier: Modifier,
     accentColor: Color,
     onPlayAll: () -> Unit,
@@ -403,6 +407,7 @@ private fun DailyRecommendationHeroArtwork(
     ) {
         DailyRecommendationArtwork(
             artworkLocator = artworkLocator,
+            artworkCacheKey = artworkCacheKey,
             modifier = Modifier.fillMaxSize(),
             shape = RoundedCornerShape(14.dp),
             accentColor = accentColor,
@@ -444,6 +449,7 @@ private fun DailyRecommendationPreviewTrackRow(
     ) {
         DailyRecommendationArtwork(
             artworkLocator = track.artworkLocator,
+            artworkCacheKey = trackArtworkCacheKey(track),
             modifier = Modifier.size(38.dp),
             shape = RoundedCornerShape(9.dp),
             accentColor = accentColor,
@@ -488,6 +494,7 @@ private fun DailyRecommendationPreviewTrackRow(
 @Composable
 private fun DailyRecommendationArtwork(
     artworkLocator: String?,
+    artworkCacheKey: String? = null,
     modifier: Modifier,
     shape: RoundedCornerShape,
     accentColor: Color,
@@ -500,6 +507,7 @@ private fun DailyRecommendationArtwork(
         LynArtworkImage(
             artworkLocator = artworkLocator,
             contentDescription = null,
+            artworkCacheKey = artworkCacheKey,
             maxDecodeSizePx = ArtworkDecodeSize.Card,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -788,6 +796,7 @@ private fun RecentTrackPreviewCard(
         ) {
             DailyRecommendationArtwork(
                 artworkLocator = track.artworkLocator,
+                artworkCacheKey = trackArtworkCacheKey(track),
                 modifier = Modifier.fillMaxSize(),
                 shape = RoundedCornerShape(12.dp),
                 accentColor = accentColor,
@@ -923,7 +932,10 @@ private fun RecentTrackRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
             )
-            TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
+            TrackArtworkThumbnail(
+                artworkLocator = track.artworkLocator,
+                artworkCacheKey = trackArtworkCacheKey(track),
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -986,7 +998,10 @@ private fun DailyRecommendationTrackRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
             )
-            TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
+            TrackArtworkThumbnail(
+                artworkLocator = track.artworkLocator,
+                artworkCacheKey = trackArtworkCacheKey(track),
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),

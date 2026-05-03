@@ -9,6 +9,8 @@ import java.nio.file.StandardCopyOption
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
+import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
+import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 
 fun createJvmArtworkCacheStore(): ArtworkCacheStore = JvmArtworkCacheStore()
 
@@ -17,24 +19,58 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
         mkdirs()
     }
 
-    override suspend fun cache(locator: String, cacheKey: String): String? {
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         return runCatching {
             val target = resolveArtworkCacheTarget(locator) ?: return@runCatching null
             if (target.isBlank()) return@runCatching null
+            val primaryPrefix = cacheKey.ifBlank { locator }.stableArtworkCacheHash()
+            val legacyPrefix = locator.stableArtworkCacheHash().takeIf { it != primaryPrefix }
             if (target.startsWith("file://", ignoreCase = true)) {
-                return@runCatching runCatching { Paths.get(URI(target)).toAbsolutePath().normalize().toString() }.getOrNull()
+                val file = runCatching { Paths.get(URI(target)).toFile() }.getOrNull()
+                    ?: return@runCatching target
+                return@runCatching promoteLocalArtworkFile(
+                    source = file,
+                    cachePrefix = primaryPrefix,
+                    locator = target,
+                    replaceExisting = replaceExisting,
+                )?.absolutePath ?: file.absolutePath
             }
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
-                return@runCatching target
+                val file = File(target)
+                return@runCatching promoteLocalArtworkFile(
+                    source = file,
+                    cachePrefix = primaryPrefix,
+                    locator = target,
+                    replaceExisting = replaceExisting,
+                )?.absolutePath ?: target
             }
-            val cachePrefix = cacheKey.stableArtworkCacheHash()
-            findValidArtworkCacheFile(cachePrefix)?.let { return@runCatching it.absolutePath }
+            if (!replaceExisting) {
+                findValidArtworkCacheFile(primaryPrefix)?.let { return@runCatching it.absolutePath }
+                legacyPrefix
+                    ?.let(::findValidArtworkCacheFile)
+                    ?.let { legacy ->
+                        return@runCatching promoteArtworkCacheFile(
+                            source = legacy,
+                            cachePrefix = primaryPrefix,
+                            replaceExisting = false,
+                        )?.absolutePath ?: legacy.absolutePath
+                    }
+            }
             val payload = URL(target).openStream().use { it.readBytes() }
             if (!isCompleteArtworkPayload(payload)) return@runCatching null
-            val extension = inferArtworkFileExtension(locator = target, bytes = payload)
-            val fileName = "$cachePrefix$extension"
-            writeArtworkCacheFileAtomically(fileName, payload)?.absolutePath
+            val fileName = "$primaryPrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
+            writeArtworkCacheFileAtomically(
+                fileName = fileName,
+                payload = payload,
+                cachePrefix = primaryPrefix,
+                replaceExisting = replaceExisting,
+            )?.absolutePath
         }.getOrNull()
+    }
+
+    override suspend fun hasCached(cacheKey: String): Boolean {
+        val cachePrefix = cacheKey.ifBlank { return false }.stableArtworkCacheHash()
+        return findValidArtworkCacheFile(cachePrefix) != null
     }
 
     private fun findValidArtworkCacheFile(cachePrefix: String): File? {
@@ -55,10 +91,72 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
             }
     }
 
-    private fun writeArtworkCacheFileAtomically(fileName: String, payload: ByteArray): File? {
+    private fun promoteLocalArtworkFile(
+        source: File,
+        cachePrefix: String,
+        locator: String,
+        replaceExisting: Boolean,
+    ): File? {
+        if (!source.isFile || source.length() <= 0L) return null
+        val payload = runCatching { Files.readAllBytes(source.toPath()) }.getOrNull()
+            ?.takeIf(::isCompleteArtworkPayload)
+            ?: return null
+        val fileName = "$cachePrefix${inferArtworkFileExtension(locator = locator, bytes = payload)}"
+        return promoteArtworkCacheFile(source, cachePrefix, fileName, replaceExisting)
+    }
+
+    private fun promoteArtworkCacheFile(
+        source: File,
+        cachePrefix: String,
+        replaceExisting: Boolean,
+    ): File? {
+        val extension = source.name.substringAfter(cachePrefix, source.name.substringAfterLast('.', ""))
+            .takeIf { it.startsWith(".") }
+            ?: source.extension.takeIf { it.isNotBlank() }?.let { ".$it" }
+            ?: ".img"
+        return promoteArtworkCacheFile(source, cachePrefix, "$cachePrefix$extension", replaceExisting)
+    }
+
+    private fun promoteArtworkCacheFile(
+        source: File,
+        cachePrefix: String,
+        fileName: String,
+        replaceExisting: Boolean,
+    ): File? {
+        if (!source.isFile || source.length() <= 0L) return null
+        val output = File(directory, fileName)
+        if (!replaceExisting) {
+            findValidArtworkCacheFile(cachePrefix)?.let { return it }
+        }
+        return runCatching {
+            if (replaceExisting) {
+                deleteArtworkCacheFiles(cachePrefix)
+            }
+            if (source.canonicalPath == output.canonicalPath) {
+                return@runCatching output
+            }
+            runCatching {
+                Files.createLink(output.toPath(), source.toPath())
+            }.getOrElse {
+                Files.copy(source.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            output.takeIf {
+                it.exists() &&
+                    it.length() > 0L &&
+                    runCatching { isCompleteArtworkPayload(Files.readAllBytes(it.toPath())) }.getOrDefault(false)
+            }
+        }.getOrNull()
+    }
+
+    private fun writeArtworkCacheFileAtomically(
+        fileName: String,
+        payload: ByteArray,
+        cachePrefix: String,
+        replaceExisting: Boolean,
+    ): File? {
         if (!isCompleteArtworkPayload(payload)) return null
         val output = File(directory, fileName)
-        if (output.exists() && output.length() > 0L) {
+        if (!replaceExisting && output.exists() && output.length() > 0L) {
             if (runCatching { isCompleteArtworkPayload(Files.readAllBytes(output.toPath())) }.getOrDefault(false)) {
                 return output
             }
@@ -70,10 +168,17 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
             if (Files.size(temporary.toPath()) != payload.size.toLong()) {
                 return@runCatching null
             }
-            if (output.exists() && runCatching { isCompleteArtworkPayload(Files.readAllBytes(output.toPath())) }.getOrDefault(false)) {
+            if (!replaceExisting &&
+                output.exists() &&
+                runCatching { isCompleteArtworkPayload(Files.readAllBytes(output.toPath())) }.getOrDefault(false)
+            ) {
                 return@runCatching output
             }
-            runCatching { Files.deleteIfExists(output.toPath()) }
+            if (replaceExisting) {
+                deleteArtworkCacheFiles(cachePrefix)
+            } else {
+                runCatching { Files.deleteIfExists(output.toPath()) }
+            }
             runCatching {
                 Files.move(
                     temporary.toPath(),
@@ -92,6 +197,18 @@ private class JvmArtworkCacheStore : ArtworkCacheStore {
         }.also {
             runCatching { Files.deleteIfExists(temporary.toPath()) }
         }.getOrNull()
+    }
+
+    private fun deleteArtworkCacheFiles(cachePrefix: String) {
+        directory.listFiles()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith(cachePrefix) &&
+                    !file.name.contains(ARTWORK_CACHE_TEMP_MARKER)
+            }
+            ?.forEach { file ->
+                runCatching { Files.deleteIfExists(file.toPath()) }
+            }
     }
 }
 

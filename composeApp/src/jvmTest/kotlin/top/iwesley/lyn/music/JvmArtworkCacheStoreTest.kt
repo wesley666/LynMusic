@@ -88,6 +88,88 @@ class JvmArtworkCacheStoreTest {
     }
 
     @Test
+    fun `cache promotes old locator keyed file to album key without redownloading`() {
+        synchronized(USER_HOME_LOCK) {
+            val originalUserHome = System.getProperty("user.home")
+            val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-album-home")
+            val requestCount = AtomicInteger(0)
+            val payload = completePngPayload(0x04)
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+                createContext("/cover") { exchange ->
+                    requestCount.incrementAndGet()
+                    exchange.sendResponseHeaders(200, payload.size.toLong())
+                    exchange.responseBody.use { it.write(payload) }
+                }
+                start()
+            }
+            try {
+                System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                val store = createJvmArtworkCacheStore()
+                val locator = "http://127.0.0.1:${server.address.port}/cover"
+                val albumKey = "album:source-1:album-1"
+
+                val legacy = assertNotNull(runBlocking { store.cache(locator, locator) })
+                val promoted = assertNotNull(runBlocking { store.cache(locator, albumKey) })
+
+                assertEquals(1, requestCount.get())
+                assertTrue(File(legacy).isFile)
+                assertTrue(File(promoted).isFile)
+                assertTrue(runBlocking { store.hasCached(albumKey) })
+                assertEquals(payload.toList(), File(promoted).readBytes().toList())
+            } finally {
+                System.setProperty("user.home", originalUserHome)
+                server.stop(0)
+            }
+        }
+    }
+
+    @Test
+    fun `replace existing album cache swaps valid file after new payload succeeds`() {
+        synchronized(USER_HOME_LOCK) {
+            val originalUserHome = System.getProperty("user.home")
+            val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-replace-home")
+            val firstPayload = completePngPayload(0x05)
+            val secondPayload = completePngPayload(0x06)
+            val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+                createContext("/first") { exchange ->
+                    exchange.sendResponseHeaders(200, firstPayload.size.toLong())
+                    exchange.responseBody.use { it.write(firstPayload) }
+                }
+                createContext("/second") { exchange ->
+                    exchange.sendResponseHeaders(200, secondPayload.size.toLong())
+                    exchange.responseBody.use { it.write(secondPayload) }
+                }
+                start()
+            }
+            try {
+                System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                val store = createJvmArtworkCacheStore()
+                val firstLocator = "http://127.0.0.1:${server.address.port}/first"
+                val secondLocator = "http://127.0.0.1:${server.address.port}/second"
+                val albumKey = "album:source-1:album-1"
+
+                val first = assertNotNull(runBlocking { store.cache(firstLocator, albumKey) })
+                val second = assertNotNull(
+                    runBlocking {
+                        store.cache(
+                            locator = secondLocator,
+                            cacheKey = albumKey,
+                            replaceExisting = true,
+                        )
+                    },
+                )
+
+                assertEquals(first, second)
+                assertEquals(secondPayload.toList(), File(second).readBytes().toList())
+                assertTrue(runBlocking { store.hasCached(albumKey) })
+            } finally {
+                System.setProperty("user.home", originalUserHome)
+                server.stop(0)
+            }
+        }
+    }
+
+    @Test
     fun `cache ignores temporary and damaged files for same locator`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")

@@ -9,6 +9,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
@@ -99,6 +100,52 @@ class MusicTagsRepositoryTest {
         val albums = database.albumDao().observeAll().first()
         assertEquals(listOf("新艺人"), artists.map { it.name })
         assertEquals(listOf("新专辑"), albums.map { it.title })
+    }
+
+    @Test
+    fun `save tags replaces album artwork cache when artwork bytes changed`() = runTest {
+        val database = createMusicTagsTestDatabase()
+        seedSource(database, id = "local-1", type = "LOCAL_FOLDER")
+        seedTrack(
+            database = database,
+            id = "track-1",
+            sourceId = "local-1",
+            title = "旧标题",
+            artistName = "旧艺人",
+            albumTitle = "旧专辑",
+        )
+        val artworkCacheStore = FakeMusicTagsArtworkCacheStore()
+        val repository = RoomMusicTagsRepository(
+            database = database,
+            audioTagGateway = FakeAudioTagGateway(
+                writeSnapshots = mapOf(
+                    "track-1" to sampleTagSnapshot(
+                        title = "旧标题",
+                        artistName = "新艺人",
+                        albumTitle = "新专辑",
+                        artworkLocator = "/tmp/new-artwork.png",
+                    ),
+                ),
+            ),
+            artworkCacheStore = artworkCacheStore,
+        )
+        val original = database.trackDao().getByIds(listOf("track-1")).first().toDomain()
+
+        repository.saveTags(
+            track = original,
+            patch = AudioTagPatch(artworkBytes = byteArrayOf(1, 2, 3)),
+        ).getOrThrow()
+
+        assertEquals(
+            listOf(
+                ArtworkCacheRequest(
+                    locator = "/tmp/new-artwork.png",
+                    cacheKey = "album:local-1:album:新艺人:新专辑",
+                    replaceExisting = true,
+                ),
+            ),
+            artworkCacheStore.requests,
+        )
     }
 
     @Test
@@ -283,6 +330,21 @@ class MusicTagsRepositoryTest {
     }
 }
 
+private data class ArtworkCacheRequest(
+    val locator: String,
+    val cacheKey: String,
+    val replaceExisting: Boolean,
+)
+
+private class FakeMusicTagsArtworkCacheStore : ArtworkCacheStore {
+    val requests = mutableListOf<ArtworkCacheRequest>()
+
+    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+        requests += ArtworkCacheRequest(locator, cacheKey, replaceExisting)
+        return locator
+    }
+}
+
 private class FakeAudioTagGateway(
     private val readSnapshots: Map<String, AudioTagSnapshot> = emptyMap(),
     private val writeSnapshots: Map<String, AudioTagSnapshot> = readSnapshots,
@@ -384,6 +446,7 @@ private fun sampleTagSnapshot(
     artistName: String? = "旧艺人",
     albumTitle: String? = "旧专辑",
     embeddedLyrics: String? = null,
+    artworkLocator: String? = "/tmp/art.png",
 ): AudioTagSnapshot {
     return AudioTagSnapshot(
         title = title,
@@ -399,6 +462,6 @@ private fun sampleTagSnapshot(
         trackNumber = 1,
         discNumber = 1,
         embeddedLyrics = embeddedLyrics,
-        artworkLocator = "/tmp/art.png",
+        artworkLocator = artworkLocator,
     )
 }

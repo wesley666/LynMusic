@@ -11,6 +11,7 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 import top.iwesley.lyn.music.core.model.warn
 
 object AndroidAudioTagReader {
@@ -181,9 +182,7 @@ object AndroidAudioTagReader {
     private fun storeArtwork(relativePath: String, artworkDirectory: File, bytes: ByteArray): String {
         artworkDirectory.mkdirs()
         val fileName = buildString {
-            append(relativePath.hashCode().toUInt().toString(16))
-            append('-')
-            append(bytes.size)
+            append(bytes.stableArtworkBytesHash())
             append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)

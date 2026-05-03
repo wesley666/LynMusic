@@ -95,6 +95,7 @@ import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportIntent
@@ -765,6 +766,7 @@ private fun LibraryBrowserTab(
                             subtitle = selectedAlbum.artistName ?: "未知艺人",
                             supportingText = "${albumTracks.size} 首歌曲",
                             artworkLocator = albumTracks.firstOrNull()?.artworkLocator,
+                            artworkCacheKey = albumTracks.firstOrNull()?.let(::trackArtworkCacheKey),
                         )
                     }
                     item {
@@ -812,6 +814,7 @@ private fun LibraryBrowserTab(
                             subtitle = "${artistTracks.size} 首歌曲 · ${artistAlbums.size} 张专辑",
                             supportingText = "当前筛选结果中的艺人详情",
                             artworkLocator = artistTracks.firstOrNull()?.artworkLocator,
+                            artworkCacheKey = artistTracks.firstOrNull()?.let(::trackArtworkCacheKey),
                         )
                     }
                     item {
@@ -829,6 +832,8 @@ private fun LibraryBrowserTab(
                             AlbumRow(
                                 album = album,
                                 artworkLocator = artistTracks.firstOrNull { it.albumLibraryIdOrNull() == album.id }?.artworkLocator,
+                                artworkCacheKey = artistTracks.firstOrNull { it.albumLibraryIdOrNull() == album.id }
+                                    ?.let(::trackArtworkCacheKey),
                                 onClick = { selectedAlbumId = album.id },
                             )
                         }
@@ -946,6 +951,8 @@ private fun LibraryBrowserTab(
                                         album = album,
                                         artworkLocator = tracksByAlbumId[album.id].orEmpty()
                                             .firstOrNull()?.artworkLocator,
+                                        artworkCacheKey = tracksByAlbumId[album.id].orEmpty()
+                                            .firstOrNull()?.let(::trackArtworkCacheKey),
                                         onClick = { selectedAlbumId = album.id },
                                     )
                                 }

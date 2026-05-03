@@ -12,6 +12,7 @@ import org.jaudiotagger.tag.images.ArtworkFactory
 import top.iwesley.lyn.music.core.model.AudioTagPatch
 import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
+import top.iwesley.lyn.music.core.model.stableArtworkBytesHash
 
 object AndroidAudioTagFileSupport {
     fun readSnapshot(
@@ -131,9 +132,7 @@ object AndroidAudioTagFileSupport {
     private fun storeArtwork(file: File, bytes: ByteArray, artworkDirectory: File): String {
         artworkDirectory.mkdirs()
         val fileName = buildString {
-            append(file.absolutePath.hashCode().toUInt().toString(16))
-            append('-')
-            append(file.lastModified())
+            append(bytes.stableArtworkBytesHash())
             append(inferArtworkFileExtension(bytes = bytes))
         }
         val target = File(artworkDirectory, fileName)

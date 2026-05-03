@@ -102,6 +102,7 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
 import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
@@ -1231,6 +1232,7 @@ internal fun LyricsShareOverlay(
         artworkBitmap = artworkPaletteBitmap,
         enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
     )
+    val artworkCacheKey = state.snapshot.currentTrack?.let(::trackArtworkCacheKey)
     val visibleShareLyricsLines = remember(lyrics) {
         buildVisiblePlayerLyricsLines(lyrics)
     }
@@ -1399,6 +1401,7 @@ internal fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBytes = previewBytes,
+                                artworkCacheKey = artworkCacheKey,
                                 artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
@@ -1417,6 +1420,7 @@ internal fun LyricsShareOverlay(
                             LyricsSharePreviewPane(
                                 state = state,
                                 previewBytes = previewBytes,
+                                artworkCacheKey = artworkCacheKey,
                                 artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
@@ -1588,6 +1592,7 @@ internal fun LyricsShareOverlay(
             LyricsShareFullscreenPreviewOverlay(
                 state = state,
                 previewBytes = previewBytes,
+                artworkCacheKey = artworkCacheKey,
                 artworkBackgroundPalette = artworkBackgroundPalette,
                 onDismiss = { isFullscreenPreviewVisible = false },
                 modifier = Modifier.fillMaxSize(),
@@ -2316,6 +2321,7 @@ private fun LyricsShareSelectableLine(
 private fun LyricsSharePreviewPane(
     state: PlayerState,
     previewBytes: ByteArray?,
+    artworkCacheKey: String?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     fullscreenEnabled: Boolean,
     onOpenFullscreen: () -> Unit,
@@ -2362,6 +2368,7 @@ private fun LyricsSharePreviewPane(
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
                     previewBytes = previewBytes,
+                    artworkCacheKey = artworkCacheKey,
                     artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = previewModifier,
                 )
@@ -2381,6 +2388,7 @@ private fun LyricsSharePreviewPane(
 private fun LyricsSharePreviewContent(
     shareCardModel: LyricsShareCardModel?,
     previewBytes: ByteArray?,
+    artworkCacheKey: String?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
@@ -2413,11 +2421,13 @@ private fun LyricsSharePreviewContent(
                 when (shareCardModel.template) {
                     LyricsShareTemplate.NOTE -> LyricsShareNoteCard(
                         model = shareCardModel,
+                        artworkCacheKey = artworkCacheKey,
                         modifier = Modifier.fillMaxWidth(),
                     )
 
                     LyricsShareTemplate.ARTWORK_TINT -> LyricsShareArtworkTintCard(
                         model = shareCardModel,
+                        artworkCacheKey = artworkCacheKey,
                         artworkBackgroundPalette = artworkBackgroundPalette
                             ?: shareCardModel.artworkBackgroundPalette?.toPlaybackArtworkBackgroundColors(),
                         modifier = Modifier.fillMaxWidth(),
@@ -2432,6 +2442,7 @@ private fun LyricsSharePreviewContent(
 private fun LyricsShareFullscreenPreviewOverlay(
     state: PlayerState,
     previewBytes: ByteArray?,
+    artworkCacheKey: String?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -2461,6 +2472,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
                     previewBytes = previewBytes,
+                    artworkCacheKey = artworkCacheKey,
                     artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = Modifier
                         .fillMaxSize()
@@ -2478,6 +2490,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
                     LyricsSharePreviewContent(
                         shareCardModel = shareCardModel,
                         previewBytes = null,
+                        artworkCacheKey = artworkCacheKey,
                         artworkBackgroundPalette = artworkBackgroundPalette,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2528,6 +2541,7 @@ private fun LyricsShareRenderingBadge(
 @Composable
 private fun LyricsShareNoteCard(
     model: LyricsShareCardModel,
+    artworkCacheKey: String?,
     modifier: Modifier = Modifier,
 ) {
     val previewFontFamily = lyricsSharePreviewFontFamily(
@@ -2561,6 +2575,7 @@ private fun LyricsShareNoteCard(
             ) {
                 LyricsShareArtworkBlock(
                     artworkLocator = model.artworkLocator,
+                    artworkCacheKey = artworkCacheKey,
                     modifier = Modifier.size(92.dp),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(LyricsShareCardSpec.LYRICS_PREVIEW_LINE_GAP_DP.dp)) {
@@ -2602,6 +2617,7 @@ private fun LyricsShareNoteCard(
 @Composable
 private fun LyricsShareArtworkTintCard(
     model: LyricsShareCardModel,
+    artworkCacheKey: String?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
@@ -2695,6 +2711,7 @@ private fun LyricsShareArtworkTintCard(
                     LynArtworkImage(
                         artworkLocator = model.artworkLocator,
                         contentDescription = null,
+                        artworkCacheKey = artworkCacheKey,
                         modifier = Modifier.fillMaxSize(),
                         maxDecodeSizePx = ArtworkDecodeSize.Preview,
                         retainPreviousWhileLoading = true,
@@ -2751,6 +2768,7 @@ private fun PlaybackArtworkBackgroundPalette.toPlaybackArtworkBackgroundColors()
 @Composable
 private fun LyricsShareArtworkBlock(
     artworkLocator: String?,
+    artworkCacheKey: String?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -2762,6 +2780,7 @@ private fun LyricsShareArtworkBlock(
         LynArtworkImage(
             artworkLocator = artworkLocator,
             contentDescription = null,
+            artworkCacheKey = artworkCacheKey,
             modifier = Modifier.fillMaxSize(),
             maxDecodeSizePx = ArtworkDecodeSize.Preview,
             retainPreviousWhileLoading = true,

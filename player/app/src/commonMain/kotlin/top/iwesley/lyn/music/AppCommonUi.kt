@@ -114,6 +114,7 @@ import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.core.model.offlineDownloadSourceType
 import top.iwesley.lyn.music.core.model.supportsOfflineDownload
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.importing.formatImportScanSummary
 import top.iwesley.lyn.music.feature.offline.ActiveBatchDownloadState
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
@@ -603,6 +604,7 @@ internal fun DetailSummaryCard(
     subtitle: String,
     supportingText: String,
     artworkLocator: String?,
+    artworkCacheKey: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
@@ -621,6 +623,7 @@ internal fun DetailSummaryCard(
         ) {
             TrackArtworkThumbnail(
                 artworkLocator = artworkLocator,
+                artworkCacheKey = artworkCacheKey,
                 modifier = Modifier.size(68.dp),
             )
             Column(
@@ -654,6 +657,7 @@ internal fun DetailSummaryCard(
 internal fun AlbumRow(
     album: Album,
     artworkLocator: String?,
+    artworkCacheKey: String? = null,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -667,7 +671,10 @@ internal fun AlbumRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            TrackArtworkThumbnail(artworkLocator = artworkLocator)
+            TrackArtworkThumbnail(
+                artworkLocator = artworkLocator,
+                artworkCacheKey = artworkCacheKey,
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = album.title,
@@ -808,7 +815,10 @@ internal fun TrackRow(
                     fontWeight = FontWeight.Bold
                 )
             }
-            TrackArtworkThumbnail(artworkLocator = track.artworkLocator)
+            TrackArtworkThumbnail(
+                artworkLocator = track.artworkLocator,
+                artworkCacheKey = trackArtworkCacheKey(track),
+            )
             Column(modifier = Modifier.weight(if (showAlbumTitle) 1.45f else 1f)) {
                 Text(
                     track.title,
@@ -1177,6 +1187,7 @@ private fun formatOfflineDownloadSize(sizeBytes: Long): String = formatOfflineDo
 @Composable
 internal fun TrackArtworkThumbnail(
     artworkLocator: String?,
+    artworkCacheKey: String? = null,
     modifier: Modifier = Modifier.size(52.dp),
 ) {
     val shellColors = mainShellColors
@@ -1193,6 +1204,7 @@ internal fun TrackArtworkThumbnail(
         LynArtworkImage(
             artworkLocator = artworkLocator,
             contentDescription = null,
+            artworkCacheKey = artworkCacheKey,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
             maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
@@ -1667,6 +1679,7 @@ internal fun VinylPlaceholder(
     vinylSize: Dp,
     artworkBitmap: ImageBitmap? = null,
     artworkLocator: String? = null,
+    artworkCacheKey: String? = null,
     spinning: Boolean = false,
     enableArtworkTint: Boolean = false,
     artworkDiameterFraction: Float = DEFAULT_VINYL_ARTWORK_DIAMETER_FRACTION,
@@ -1803,6 +1816,7 @@ internal fun VinylPlaceholder(
                     LynArtworkImage(
                         artworkLocator = artworkLocator,
                         contentDescription = null,
+                        artworkCacheKey = artworkCacheKey,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                         maxDecodeSizePx = maxArtworkDecodeSizePx,

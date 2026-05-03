@@ -66,6 +66,7 @@ import top.iwesley.lyn.music.PlayerLyricsPane
 import top.iwesley.lyn.music.VinylPlaceholder
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.derivePlaybackLibraryNavigationTargets
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
@@ -316,6 +317,7 @@ private fun AutomotiveSwipeableArtwork(
             vinylSize = artworkSize,
             artworkBitmap = artworkBitmap,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
+            artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
             spinning = snapshot.isPlaying,
             enableArtworkTint = true,
             artworkDiameterFraction = 0.76f,

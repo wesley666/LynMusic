@@ -1302,6 +1302,7 @@ class PlaybackRepositoriesTest {
                     artworkLocator = "/tmp/manual-new.jpg",
                 ),
             )
+            advanceUntilIdle()
             database.trackDao().upsertAll(listOf(trackEntity.copy(modifiedAt = 1L)))
             advanceUntilIdle()
 
