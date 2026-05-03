@@ -10,19 +10,48 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.resolveArtworkDecodeSampleSize
 import top.iwesley.lyn.music.core.model.resolveArtworkSquareCropRect
+import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 
 private const val NOTIFICATION_ARTWORK_SIZE_PX = 512
 private const val OPAQUE_SAMPLE_ALPHA_THRESHOLD = 16
 
+internal data class AndroidNotificationArtworkLookup(
+    val locator: String,
+    val cacheKey: String,
+) {
+    fun bitmapKey(cacheVersion: Long): String = "$locator\u0000$cacheKey\u0000$cacheVersion"
+
+    companion object {
+        fun from(snapshot: PlaybackSnapshot): AndroidNotificationArtworkLookup? {
+            val track = snapshot.currentTrack ?: return null
+            val normalizedLocator = snapshot.currentDisplayArtworkLocator
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: return null
+            val cacheKey = trackArtworkCacheKey(track)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: normalizedLocator
+            return AndroidNotificationArtworkLookup(
+                locator = normalizedLocator,
+                cacheKey = cacheKey,
+            )
+        }
+    }
+}
+
 internal suspend fun resolveAndroidNotificationArtworkBitmap(
     locator: String?,
+    artworkCacheKey: String?,
     artworkCacheStore: ArtworkCacheStore,
 ): Bitmap? = withContext(Dispatchers.IO) {
     val normalized = locator?.trim().orEmpty().ifBlank { null } ?: return@withContext null
-    val target = artworkCacheStore.cache(normalized, normalized) ?: return@withContext null
+    val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalized
+    val target = artworkCacheStore.cache(normalized, cacheKey) ?: return@withContext null
     decodeAndroidNotificationArtworkBitmap(target)
 }
 

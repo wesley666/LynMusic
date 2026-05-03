@@ -20,8 +20,12 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SystemAudioFocusChange
 import top.iwesley.lyn.music.core.model.SystemAudioFocusCommand
@@ -34,15 +38,19 @@ import top.iwesley.lyn.music.core.model.shouldKeepPlaybackNotificationForeground
 
 fun createAndroidSystemPlaybackControlsPlatformService(
     context: Context,
+    artworkCacheStore: ArtworkCacheStore,
 ): SystemPlaybackControlsPlatformService {
-    return AndroidSystemPlaybackControlsPlatformService(context.applicationContext)
+    return AndroidSystemPlaybackControlsPlatformService(
+        context = context.applicationContext,
+        artworkCacheStore = artworkCacheStore,
+    )
 }
 
 private class AndroidSystemPlaybackControlsPlatformService(
     private val context: Context,
+    private val artworkCacheStore: ArtworkCacheStore,
 ) : SystemPlaybackControlsPlatformService {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val artworkCacheStore = createAndroidArtworkCacheStore(context)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val mediaSession = MediaSession(context, MEDIA_SESSION_TAG)
     private val audioAttributes = AudioAttributes.Builder()
@@ -54,6 +62,8 @@ private class AndroidSystemPlaybackControlsPlatformService(
     private var lastNotificationKey: AndroidNotificationKey? = null
     private var lastArtworkKey: String? = null
     private var lastArtworkBitmap: Bitmap? = null
+    private var observedArtworkCacheKey: String? = null
+    private var artworkVersionJob: Job? = null
     private var isNoisyReceiverRegistered = false
     private var hasAudioFocus = false
     private var audioFocusState = SystemAudioFocusState()
@@ -124,33 +134,26 @@ private class AndroidSystemPlaybackControlsPlatformService(
         val previousArtworkKey = lastArtworkKey
         val previousArtworkBitmap = lastArtworkBitmap
         latestSnapshot = snapshot
-        lastArtworkBitmap = resolveArtworkBitmap(snapshot.currentDisplayArtworkLocator)
+        val artworkLookup = AndroidNotificationArtworkLookup.from(snapshot)
+        lastArtworkBitmap = resolveArtworkBitmap(artworkLookup)
+        observeArtworkVersion(artworkLookup?.cacheKey)
         val artworkStateChanged = previousArtworkKey != lastArtworkKey || previousArtworkBitmap !== lastArtworkBitmap
         updateMediaSession(snapshot)
         updateAudioFocus(snapshot)
         updateNoisyReceiver(snapshot)
         if (snapshot.currentTrack == null) {
+            observeArtworkVersion(null)
             lastNotificationKey = null
             AndroidPlaybackNotificationService.stop(context)
             return
         }
         if (shouldRefreshNotification(previous, snapshot) || artworkStateChanged) {
-            lastNotificationKey = AndroidNotificationKey.from(snapshot)
-            val keepForeground = shouldKeepPlaybackNotificationForeground(
-                isPlaying = snapshot.isPlaying,
-                audioFocusState = audioFocusState,
-            )
-            val syncStarted = AndroidPlaybackNotificationService.requestSync(
-                context = context,
-                promoteToForeground = keepForeground,
-            )
-            if (!syncStarted && keepForeground && snapshot.isPlaying) {
-                serviceScope.launch { callbacks.pause() }
-            }
+            requestNotificationSync(snapshot)
         }
     }
 
     override suspend fun close() {
+        observeArtworkVersion(null)
         updateNoisyReceiver(PlaybackSnapshot())
         audioFocusState = SystemAudioFocusState()
         abandonAudioFocus()
@@ -231,23 +234,73 @@ private class AndroidSystemPlaybackControlsPlatformService(
         return AndroidNotificationState(notification, keepForeground)
     }
 
-    private suspend fun resolveArtworkBitmap(locator: String?): Bitmap? {
-        val normalized = locator?.trim().orEmpty().ifBlank { null }
-        if (normalized == null) {
+    private suspend fun resolveArtworkBitmap(artworkLookup: AndroidNotificationArtworkLookup?): Bitmap? {
+        if (artworkLookup == null) {
             lastArtworkKey = null
             lastArtworkBitmap = null
             return null
         }
-        if (normalized == lastArtworkKey && lastArtworkBitmap != null) return lastArtworkBitmap
-        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(normalized, artworkCacheStore)
+        val cacheVersion = artworkCacheStore.observeVersion(artworkLookup.cacheKey).first()
+        val artworkKey = artworkLookup.bitmapKey(cacheVersion)
+        if (artworkKey == lastArtworkKey && lastArtworkBitmap != null) return lastArtworkBitmap
+        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(
+            locator = artworkLookup.locator,
+            artworkCacheKey = artworkLookup.cacheKey,
+            artworkCacheStore = artworkCacheStore,
+        )
         if (resolvedBitmap == null) {
             lastArtworkKey = null
             lastArtworkBitmap = null
             return null
         }
-        lastArtworkKey = normalized
+        lastArtworkKey = artworkKey
         lastArtworkBitmap = resolvedBitmap
         return lastArtworkBitmap
+    }
+
+    private fun observeArtworkVersion(cacheKey: String?) {
+        if (cacheKey == observedArtworkCacheKey) return
+        artworkVersionJob?.cancel()
+        artworkVersionJob = null
+        observedArtworkCacheKey = cacheKey
+        if (cacheKey == null) return
+        artworkVersionJob = serviceScope.launch {
+            artworkCacheStore.observeVersion(cacheKey)
+                .drop(1)
+                .collect {
+                    refreshArtworkForLatestSnapshot(cacheKey)
+                }
+        }
+    }
+
+    private suspend fun refreshArtworkForLatestSnapshot(observedCacheKey: String) {
+        val snapshot = latestSnapshot
+        val artworkLookup = AndroidNotificationArtworkLookup.from(snapshot) ?: return
+        if (artworkLookup.cacheKey != observedCacheKey) return
+        val previousArtworkKey = lastArtworkKey
+        val previousArtworkBitmap = lastArtworkBitmap
+        lastArtworkBitmap = resolveArtworkBitmap(artworkLookup)
+        val artworkStateChanged = previousArtworkKey != lastArtworkKey || previousArtworkBitmap !== lastArtworkBitmap
+        updateMediaSession(snapshot)
+        if (artworkStateChanged) {
+            requestNotificationSync(snapshot)
+        }
+    }
+
+    private fun requestNotificationSync(snapshot: PlaybackSnapshot) {
+        if (snapshot.currentTrack == null) return
+        lastNotificationKey = AndroidNotificationKey.from(snapshot)
+        val keepForeground = shouldKeepPlaybackNotificationForeground(
+            isPlaying = snapshot.isPlaying,
+            audioFocusState = audioFocusState,
+        )
+        val syncStarted = AndroidPlaybackNotificationService.requestSync(
+            context = context,
+            promoteToForeground = keepForeground,
+        )
+        if (!syncStarted && keepForeground && snapshot.isPlaying) {
+            serviceScope.launch { callbacks.pause() }
+        }
     }
 
     private fun updateMediaSession(snapshot: PlaybackSnapshot) {

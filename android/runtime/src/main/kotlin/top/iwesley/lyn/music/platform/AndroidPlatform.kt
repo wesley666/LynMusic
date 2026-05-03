@@ -188,6 +188,7 @@ fun createAndroidRuntimeGraph(
     val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider(activity.applicationContext)
     val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(activity)
     val navidromeHttpClient = AndroidLyricsHttpClient()
+    val artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext)
     val platform = PlatformDescriptor(
         name = platformName,
         capabilities = PlatformCapabilities(
@@ -216,7 +217,7 @@ fun createAndroidRuntimeGraph(
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
             lyricsHttpClient = navidromeHttpClient,
-            artworkCacheStore = createAndroidArtworkCacheStore(activity.applicationContext),
+            artworkCacheStore = artworkCacheStore,
             appStorageGateway = createAndroidAppStorageGateway(activity.applicationContext, database),
             offlineDownloadGateway = createAndroidOfflineDownloadGateway(
                 context = activity.applicationContext,
@@ -263,7 +264,10 @@ fun createAndroidRuntimeGraph(
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
-            systemPlaybackControlsPlatformService = createAndroidSystemPlaybackControlsPlatformService(activity.applicationContext),
+            systemPlaybackControlsPlatformService = createAndroidSystemPlaybackControlsPlatformService(
+                context = activity.applicationContext,
+                artworkCacheStore = artworkCacheStore,
+            ),
         ),
     )
 }

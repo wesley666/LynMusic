@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.CompositePlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
@@ -62,9 +63,11 @@ class LynAutomotiveMediaService : MediaBrowserServiceCompat() {
             val preferencesStore = AndroidAppPreferencesStore(applicationContext)
             val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider(applicationContext)
             val navidromeHttpClient = AndroidLyricsHttpClient()
+            val artworkCacheStore = createAndroidArtworkCacheStore(applicationContext)
             val sessionControls = AutomotiveMediaSessionControls(
                 context = applicationContext,
                 mediaSession = mediaSession,
+                artworkCacheStore = artworkCacheStore,
             )
             database = openedDatabase
             playbackRepository = DefaultPlaybackRepository(
@@ -216,8 +219,8 @@ class LynAutomotiveMediaService : MediaBrowserServiceCompat() {
 private class AutomotiveMediaSessionControls(
     private val context: Context,
     private val mediaSession: MediaSessionCompat,
+    private val artworkCacheStore: ArtworkCacheStore,
 ) : SystemPlaybackControlsPlatformService {
-    private val artworkCacheStore = createAndroidArtworkCacheStore(context)
     private var callbacks = SystemPlaybackControlCallbacks()
     private var latestArtworkKey: String? = null
     private var latestArtworkBitmap: Bitmap? = null
@@ -228,7 +231,7 @@ private class AutomotiveMediaSessionControls(
 
     override suspend fun updateSnapshot(snapshot: PlaybackSnapshot) {
         mediaSession.isActive = snapshot.currentTrack != null
-        mediaSession.setMetadata(snapshot.toMediaMetadata(resolveArtworkBitmap(snapshot.currentDisplayArtworkLocator)))
+        mediaSession.setMetadata(snapshot.toMediaMetadata(resolveArtworkBitmap(snapshot)))
         mediaSession.setPlaybackState(snapshot.toPlaybackState())
     }
 
@@ -243,21 +246,27 @@ private class AutomotiveMediaSessionControls(
         )
     }
 
-    private suspend fun resolveArtworkBitmap(locator: String?): Bitmap? {
-        val normalized = locator?.trim().orEmpty().ifBlank { null }
-        if (normalized == null) {
+    private suspend fun resolveArtworkBitmap(snapshot: PlaybackSnapshot): Bitmap? {
+        val artworkLookup = AndroidNotificationArtworkLookup.from(snapshot)
+        if (artworkLookup == null) {
             latestArtworkKey = null
             latestArtworkBitmap = null
             return null
         }
-        if (normalized == latestArtworkKey && latestArtworkBitmap != null) return latestArtworkBitmap
-        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(normalized, artworkCacheStore)
+        val cacheVersion = artworkCacheStore.observeVersion(artworkLookup.cacheKey).first()
+        val artworkKey = artworkLookup.bitmapKey(cacheVersion)
+        if (artworkKey == latestArtworkKey && latestArtworkBitmap != null) return latestArtworkBitmap
+        val resolvedBitmap = resolveAndroidNotificationArtworkBitmap(
+            locator = artworkLookup.locator,
+            artworkCacheKey = artworkLookup.cacheKey,
+            artworkCacheStore = artworkCacheStore,
+        )
         if (resolvedBitmap == null) {
             latestArtworkKey = null
             latestArtworkBitmap = null
             return null
         }
-        latestArtworkKey = normalized
+        latestArtworkKey = artworkKey
         latestArtworkBitmap = resolvedBitmap
         return latestArtworkBitmap
     }
