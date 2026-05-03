@@ -979,6 +979,7 @@ private fun MobileLibraryHubTab(
                     showDuration = false,
                     showSearchField = false,
                     batchSelectionRequestKey = libraryBatchSelectionRequestKey,
+                    showInlineBatchOperationButton = false,
                     navigationTarget = libraryNavigationTarget,
                     onNavigationHandled = onLibraryNavigationHandled,
                     modifier = Modifier.fillMaxSize(),
@@ -1016,6 +1017,7 @@ private fun MobileLibraryHubTab(
                             showSearchField = false,
                             showRefreshActionButton = false,
                             batchSelectionRequestKey = favoritesBatchSelectionRequestKey,
+                            showInlineBatchOperationButton = false,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -1052,6 +1054,7 @@ private fun MobileLibraryHubTab(
                             showRefreshActionButton = false,
                             showSourceFilterActionButton = false,
                             batchSelectionRequestKey = playlistsBatchSelectionRequestKey,
+                            showInlineBatchOperationButton = false,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

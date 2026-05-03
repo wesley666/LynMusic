@@ -131,6 +131,7 @@ internal fun LibraryTab(
     onNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     batchSelectionRequestKey: Int = 0,
+    showInlineBatchOperationButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -174,6 +175,7 @@ internal fun LibraryTab(
         onNavigationHandled = onNavigationHandled,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
         batchSelectionRequestKey = batchSelectionRequestKey,
+        showInlineBatchOperationButton = showInlineBatchOperationButton,
         modifier = modifier,
     )
 }
@@ -189,6 +191,7 @@ internal fun FavoritesTab(
     showRefreshActionButton: Boolean = true,
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     batchSelectionRequestKey: Int = 0,
+    showInlineBatchOperationButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     LibraryBrowserTab(
@@ -245,6 +248,7 @@ internal fun FavoritesTab(
         showTrackSortActionButton = showSearchField,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
         batchSelectionRequestKey = batchSelectionRequestKey,
+        showInlineBatchOperationButton = showInlineBatchOperationButton,
         modifier = modifier,
     )
 }
@@ -314,6 +318,7 @@ private fun LibraryBrowserTab(
     onNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     batchSelectionRequestKey: Int = 0,
+    showInlineBatchOperationButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val tracksListState = rememberLazyListState()
@@ -408,7 +413,7 @@ private fun LibraryBrowserTab(
         )
     }
     val supportsBatchDownload = supportsBatchOfflineDownloadActions() && onOfflineDownloadIntent != null
-    val showInlineBatchOperationButton = !currentPlatformDescriptor.isMobilePlatform()
+    val inlineBatchOperationButtonVisible = showInlineBatchOperationButton
     fun exitSelectionMode() {
         selectionMode = false
         selectedTrackIds = emptyList()
@@ -574,7 +579,7 @@ private fun LibraryBrowserTab(
         selectedAlbumId == null
     val batchOperationButton: (@Composable () -> Unit)? = if (
         supportsBatchDownload &&
-        showInlineBatchOperationButton &&
+        inlineBatchOperationButtonVisible &&
         !selectionMode &&
         batchVisibleTracks.isNotEmpty()
     ) {

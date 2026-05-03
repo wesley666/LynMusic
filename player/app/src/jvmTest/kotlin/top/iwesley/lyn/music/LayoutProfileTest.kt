@@ -75,6 +75,20 @@ class LayoutProfileTest {
     }
 
     @Test
+    fun `android tablet landscape uses expanded shell`() {
+        val profile = buildLayoutProfile(
+            maxWidth = 1024.dp,
+            maxHeight = 700.dp,
+            platform = androidPlatform(),
+        )
+
+        assertTrue(profile.isMobilePlatform)
+        assertTrue(profile.isLandscape)
+        assertTrue(profile.isExpandedLayout)
+        assertFalse(profile.isCompactLayout)
+    }
+
+    @Test
     fun `automotive supports offline download ui actions with touch menus`() {
         val platform = automotivePlatform()
 

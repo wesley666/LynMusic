@@ -620,6 +620,7 @@ internal fun PlaylistsTab(
     showRefreshActionButton: Boolean = true,
     showSourceFilterActionButton: Boolean = true,
     batchSelectionRequestKey: Int = 0,
+    showInlineBatchOperationButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -731,6 +732,7 @@ internal fun PlaylistsTab(
                     modifier = Modifier.weight(0.64f).fillMaxHeight(),
                     showBackButton = false,
                     batchSelectionRequestKey = batchSelectionRequestKey,
+                    showInlineBatchOperationButton = showInlineBatchOperationButton,
                 )
             }
         } else if (!filteredDetailPresentation.shouldShowDetailPane) {
@@ -776,6 +778,7 @@ internal fun PlaylistsTab(
                 modifier = Modifier.fillMaxSize(),
                 showBackButton = true,
                 batchSelectionRequestKey = batchSelectionRequestKey,
+                showInlineBatchOperationButton = showInlineBatchOperationButton,
             )
         }
     }
@@ -1127,6 +1130,7 @@ private fun PlaylistDetailPane(
     modifier: Modifier = Modifier,
     showBackButton: Boolean,
     batchSelectionRequestKey: Int = 0,
+    showInlineBatchOperationButton: Boolean = true,
 ) {
     var selectionMode by rememberSaveable(detail?.id) { mutableStateOf(false) }
     var selectedTrackIds by rememberSaveable(detail?.id) { mutableStateOf(emptyList<String>()) }
@@ -1150,7 +1154,7 @@ private fun PlaylistDetailPane(
         )
     }
     val supportsBatchDownload = supportsBatchOfflineDownloadActions() && onOfflineDownloadIntent != null
-    val showInlineBatchOperationButton = !currentPlatformDescriptor.isMobilePlatform()
+    val inlineBatchOperationButtonVisible = showInlineBatchOperationButton
     fun exitSelectionMode() {
         selectionMode = false
         selectedTrackIds = emptyList()
@@ -1265,7 +1269,7 @@ private fun PlaylistDetailPane(
                         }
                         if (
                             supportsBatchDownload &&
-                            showInlineBatchOperationButton &&
+                            inlineBatchOperationButtonVisible &&
                             !selectionMode &&
                             detail.tracks.isNotEmpty()
                         ) {
