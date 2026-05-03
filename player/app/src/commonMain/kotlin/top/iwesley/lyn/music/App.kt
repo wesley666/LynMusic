@@ -362,6 +362,11 @@ fun App(
                         state = playerState,
                         compact = compact,
                         onPlayerIntent = component.playerStore::dispatch,
+                        drawerSide = if (component.platform.isAndroidAutomotivePlatform()) {
+                            QueueDrawerSide.Start
+                        } else {
+                            QueueDrawerSide.End
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                     if (playerState.isManualLyricsSearchVisible) {

@@ -17,6 +17,11 @@ import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 import top.iwesley.lyn.music.feature.offline.ActiveBatchDownloadState
 
 class AppCommonUiLogicTest {
+    @Test
+    fun `queue drawer slide offset follows drawer side`() {
+        assertEquals(-420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.Start, 420))
+        assertEquals(420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.End, 420))
+    }
 
     @Test
     fun `navidrome menu labels current offline quality`() {

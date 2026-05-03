@@ -8,7 +8,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -276,6 +278,7 @@ internal fun QueueDrawer(
     compact: Boolean,
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
+    drawerSide: QueueDrawerSide = QueueDrawerSide.End,
 ) {
     if (state.snapshot.currentTrack == null) return
     val shellColors = mainShellColors
@@ -285,29 +288,58 @@ internal fun QueueDrawer(
             listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
         }
     }
-    AnimatedVisibility(
-        visible = state.isQueueVisible,
-        modifier = modifier,
-        enter = fadeIn(animationSpec = tween(durationMillis = 220)),
-        exit = fadeOut(animationSpec = tween(durationMillis = 180)),
-    ) {
+    if (state.isQueueVisible) {
         // Register this only while visible so it takes precedence over the underlying player overlay.
         PlatformBackHandler(
             onBack = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
         )
-        Box(modifier = Modifier.fillMaxSize()) {
+    }
+    Box(modifier = modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = state.isQueueVisible,
+            enter = fadeIn(animationSpec = tween(durationMillis = 220)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 180)),
+        ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
                     .clickable { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
             )
+        }
+        AnimatedVisibility(
+            visible = state.isQueueVisible,
+            modifier = Modifier.align(queueDrawerAlignment(drawerSide)),
+            enter = slideInHorizontally(
+                initialOffsetX = { fullWidth -> queueDrawerHorizontalSlideOffset(drawerSide, fullWidth) },
+                animationSpec = tween(
+                    durationMillis = 280,
+                    easing = FastOutSlowInEasing,
+                ),
+            ) + fadeIn(
+                animationSpec = tween(
+                    durationMillis = 180,
+                    easing = FastOutSlowInEasing,
+                ),
+            ),
+            exit = slideOutHorizontally(
+                targetOffsetX = { fullWidth -> queueDrawerHorizontalSlideOffset(drawerSide, fullWidth) },
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = FastOutLinearInEasing,
+                ),
+            ) + fadeOut(
+                animationSpec = tween(
+                    durationMillis = 160,
+                    easing = FastOutLinearInEasing,
+                ),
+            ),
+        ) {
             Card(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
                     .fillMaxHeight()
                     .width(if (compact) 340.dp else 420.dp),
-                shape = RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp),
+                shape = queueDrawerShape(drawerSide),
                 colors = CardDefaults.cardColors(containerColor = shellColors.cardContainer),
                 border = BorderStroke(1.dp, shellColors.cardBorder),
             ) {
@@ -358,6 +390,32 @@ internal fun QueueDrawer(
                 }
             }
         }
+    }
+}
+
+internal enum class QueueDrawerSide {
+    Start,
+    End,
+}
+
+internal fun queueDrawerAlignment(side: QueueDrawerSide): Alignment {
+    return when (side) {
+        QueueDrawerSide.Start -> Alignment.CenterStart
+        QueueDrawerSide.End -> Alignment.CenterEnd
+    }
+}
+
+internal fun queueDrawerHorizontalSlideOffset(side: QueueDrawerSide, fullWidth: Int): Int {
+    return when (side) {
+        QueueDrawerSide.Start -> -fullWidth
+        QueueDrawerSide.End -> fullWidth
+    }
+}
+
+private fun queueDrawerShape(side: QueueDrawerSide): RoundedCornerShape {
+    return when (side) {
+        QueueDrawerSide.Start -> RoundedCornerShape(topEnd = 30.dp, bottomEnd = 30.dp)
+        QueueDrawerSide.End -> RoundedCornerShape(topStart = 30.dp, bottomStart = 30.dp)
     }
 }
 
