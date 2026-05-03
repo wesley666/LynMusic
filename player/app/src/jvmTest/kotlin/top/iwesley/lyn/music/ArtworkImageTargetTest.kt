@@ -1,0 +1,158 @@
+package top.iwesley.lyn.music
+
+import java.nio.file.Files
+import kotlin.io.path.absolutePathString
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
+
+class ArtworkImageTargetTest {
+
+    @Test
+    fun `resolver uses project cached file and includes local file version in memory key`() = runBlocking {
+        val cachedFile = Files.createTempFile("lynmusic-artwork-target", ".png").toFile()
+        cachedFile.writeBytes(byteArrayOf(1, 2, 3))
+        cachedFile.setLastModified(1_700_000_000_000L)
+        val store = FakeArtworkCacheStore(cachedFile.absolutePath)
+
+        val resolved = requireNotNull(
+            resolveLynArtworkTarget(
+                locator = "https://img.example.com/cover.png",
+                cacheRemote = true,
+                artworkCacheStore = store,
+            ),
+        )
+        val model = LynArtworkModel(
+            locator = resolved.locator,
+            target = resolved.target,
+            targetVersion = resolved.version,
+            isLocalFileTarget = resolved.isLocalFile,
+            cacheRemote = true,
+            maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+        )
+
+        assertEquals(cachedFile.absolutePath, resolved.target)
+        assertEquals("3:1700000000000", resolved.version)
+        assertTrue(resolved.isLocalFile)
+        assertEquals(
+            "lyn-artwork:https://img.example.com/cover.png:256:3:1700000000000",
+            lynArtworkMemoryCacheKey(model),
+        )
+    }
+
+    @Test
+    fun `local file version changes when file metadata changes`() = runBlocking {
+        val cachedFile = Files.createTempFile("lynmusic-artwork-target-version", ".png").toFile()
+        cachedFile.writeBytes(byteArrayOf(1, 2, 3))
+        cachedFile.setLastModified(1_700_000_000_000L)
+        val store = FakeArtworkCacheStore(cachedFile.absolutePath)
+
+        val first = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", true, store))
+        cachedFile.writeBytes(byteArrayOf(1, 2, 3, 4))
+        cachedFile.setLastModified(1_700_000_010_000L)
+        val second = requireNotNull(resolveLynArtworkTarget("https://img.example.com/cover.png", true, store))
+
+        assertNotEquals(first.version, second.version)
+        assertEquals("4:1700000010000", second.version)
+    }
+
+    @Test
+    fun `resolver falls back to original target when project cache fails`() = runBlocking {
+        val store = FakeArtworkCacheStore(error = IllegalStateException("cache unavailable"))
+
+        val resolved = requireNotNull(
+            resolveLynArtworkTarget(
+                locator = "https://img.example.com/cover.png",
+                cacheRemote = true,
+                artworkCacheStore = store,
+            ),
+        )
+
+        assertEquals("https://img.example.com/cover.png", resolved.target)
+        assertFalse(resolved.isLocalFile)
+    }
+
+    @Test
+    fun `cache remote false skips project cache`() = runBlocking {
+        val store = FakeArtworkCacheStore(error = IllegalStateException("should not be called"))
+
+        val resolved = requireNotNull(
+            resolveLynArtworkTarget(
+                locator = "https://img.example.com/preview.png",
+                cacheRemote = false,
+                artworkCacheStore = store,
+            ),
+        )
+
+        assertEquals("https://img.example.com/preview.png", resolved.target)
+        assertEquals(emptyList(), store.requests)
+    }
+
+    @Test
+    fun `navidrome passthrough cache target falls back to resolved cover url`() = runBlocking {
+        val locator = buildNavidromeCoverLocator("nav-source", "cover-123")
+        val coverUrl = "https://demo.example.com/rest/getCoverArt.view?id=cover-123"
+        NavidromeLocatorRuntime.install(
+            object : NavidromeLocatorResolver {
+                override suspend fun resolveStreamUrl(
+                    locator: String,
+                    audioQuality: NavidromeAudioQuality,
+                ): String? = null
+
+                override suspend fun resolveCoverArtUrl(locator: String): String? = coverUrl
+            },
+        )
+
+        val resolved = requireNotNull(
+            resolveLynArtworkTarget(
+                locator = locator,
+                cacheRemote = true,
+                artworkCacheStore = FakeArtworkCacheStore(target = locator),
+            ),
+        )
+
+        assertEquals(locator, resolved.locator)
+        assertEquals(coverUrl, resolved.target)
+        assertFalse(resolved.isLocalFile)
+    }
+
+    @Test
+    fun `file locator is versioned`() = runBlocking {
+        val file = Files.createTempFile("lynmusic-artwork-local", ".png").toFile()
+        file.writeBytes(byteArrayOf(1, 2, 3, 4, 5))
+        file.setLastModified(1_700_000_020_000L)
+
+        val resolved = requireNotNull(
+            resolveLynArtworkTarget(
+                locator = file.toPath().absolutePathString(),
+                cacheRemote = false,
+                artworkCacheStore = FakeArtworkCacheStore(),
+            ),
+        )
+
+        assertEquals(file.absolutePath, resolved.target)
+        assertEquals("5:1700000020000", resolved.version)
+        assertTrue(resolved.isLocalFile)
+    }
+}
+
+private class FakeArtworkCacheStore(
+    private val target: String? = null,
+    private val error: Throwable? = null,
+) : ArtworkCacheStore {
+    val requests = mutableListOf<Pair<String, String>>()
+
+    override suspend fun cache(locator: String, cacheKey: String): String? {
+        requests += locator to cacheKey
+        error?.let { throw it }
+        return target ?: locator
+    }
+}

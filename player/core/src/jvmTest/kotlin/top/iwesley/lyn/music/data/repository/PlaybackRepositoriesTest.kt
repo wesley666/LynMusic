@@ -1249,7 +1249,7 @@ class PlaybackRepositoriesTest {
     }
 
     @Test
-    fun `temporary playback artwork override survives live track refresh`() = runTest {
+    fun `current track artwork update clears stale playback metadata artwork`() = runTest {
         val database = createTestDatabase()
         val gateway = FakePlaybackGateway()
         val playbackPreferencesStore = FakePlaybackPreferencesStore()
@@ -1293,12 +1293,21 @@ class PlaybackRepositoriesTest {
             advanceUntilIdle()
             assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
 
+            database.lyricsCacheDao().upsert(
+                LyricsCacheEntity(
+                    trackId = "track-1",
+                    sourceId = MANUAL_LYRICS_OVERRIDE_SOURCE_ID,
+                    rawPayload = "manual line",
+                    updatedAt = 2L,
+                    artworkLocator = "/tmp/manual-new.jpg",
+                ),
+            )
             database.trackDao().upsertAll(listOf(trackEntity.copy(modifiedAt = 1L)))
             advanceUntilIdle()
 
-            assertEquals("/tmp/original.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
-            assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.metadataArtworkLocator)
-            assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
+            assertEquals("/tmp/manual-new.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
+            assertEquals(null, repository.snapshot.value.metadataArtworkLocator)
+            assertEquals("/tmp/manual-new.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
         } finally {
             repository.close()
             scope.cancel()

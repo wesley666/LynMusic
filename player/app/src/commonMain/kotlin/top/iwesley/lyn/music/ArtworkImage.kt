@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
@@ -21,6 +22,7 @@ import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
 import coil3.compose.setSingletonImageLoaderFactory
+import coil3.disk.DiskCache
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.maxBitmapSize
@@ -28,9 +30,9 @@ import coil3.size.Size
 import lynmusic.player.app.generated.resources.Res
 import lynmusic.player.app.generated.resources.default_cover
 import org.jetbrains.compose.resources.painterResource
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
-import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 
 internal object ArtworkDecodeSize {
     const val Thumbnail: Int = 256
@@ -43,14 +45,36 @@ internal object ArtworkDecodeSize {
 internal data class LynArtworkModel(
     val locator: String?,
     val target: String?,
+    val targetVersion: String?,
+    val isLocalFileTarget: Boolean,
     val cacheRemote: Boolean,
     val maxDecodeSizePx: Int,
 )
+
+internal data class LynResolvedArtworkTarget(
+    val locator: String,
+    val target: String,
+    val version: String? = null,
+    val isLocalFile: Boolean = false,
+)
+
+private object PassthroughArtworkCacheStore : ArtworkCacheStore {
+    override suspend fun cache(locator: String, cacheKey: String): String? = locator
+}
+
+internal val LocalArtworkCacheStore = staticCompositionLocalOf<ArtworkCacheStore> {
+    PassthroughArtworkCacheStore
+}
 
 @Composable
 internal fun ConfigureLynArtworkImageLoader() {
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(lynCoilDiskCacheDirectory(context))
+                    .build()
+            }
             .maxBitmapSize(Size(ArtworkDecodeSize.Player, ArtworkDecodeSize.Player))
             .build()
     }
@@ -69,10 +93,12 @@ internal fun LynArtworkImage(
     maxDecodeSizePx: Int = ArtworkDecodeSize.Thumbnail,
     retainPreviousWhileLoading: Boolean = false,
 ) {
+    val artworkCacheStore = LocalArtworkCacheStore.current
     val model = rememberLynArtworkModel(
         artworkLocator = artworkLocator,
         cacheRemote = cacheRemote,
         maxDecodeSizePx = maxDecodeSizePx,
+        artworkCacheStore = artworkCacheStore,
     )
     LynArtworkAsyncImage(
         data = model.target?.let(::coilArtworkData),
@@ -146,12 +172,13 @@ private fun LynArtworkAsyncImage(
     val fallbackPainter = painterResource(Res.drawable.default_cover)
     var lastSuccessPainter by remember { mutableStateOf<Painter?>(null) }
     val request = remember(context, data, memoryCacheKey, placeholderMemoryCacheKey, diskCacheKey, cacheRemote, maxDecodeSizePx) {
+        val shouldUseDiskCache = cacheRemote && diskCacheKey != null
         ImageRequest.Builder(context)
             .data(data)
             .memoryCacheKey(memoryCacheKey)
             .placeholderMemoryCacheKey(placeholderMemoryCacheKey)
-            .diskCacheKey(diskCacheKey?.takeIf { cacheRemote })
-            .diskCachePolicy(if (cacheRemote) CachePolicy.ENABLED else CachePolicy.DISABLED)
+            .diskCacheKey(diskCacheKey?.takeIf { shouldUseDiskCache })
+            .diskCachePolicy(if (shouldUseDiskCache) CachePolicy.ENABLED else CachePolicy.DISABLED)
             .maxBitmapSize(Size(maxDecodeSizePx, maxDecodeSizePx))
             .build()
     }
@@ -202,47 +229,100 @@ private fun resolveDisplayedArtworkPainter(
     }
 }
 
+internal expect suspend fun resolveLynArtworkTarget(
+    locator: String?,
+    cacheRemote: Boolean,
+    artworkCacheStore: ArtworkCacheStore,
+): LynResolvedArtworkTarget?
+
 @Composable
 private fun rememberLynArtworkModel(
     artworkLocator: String?,
     cacheRemote: Boolean,
     maxDecodeSizePx: Int,
+    artworkCacheStore: ArtworkCacheStore,
 ): LynArtworkModel {
     val normalized = remember(artworkLocator) { normalizedArtworkCacheLocator(artworkLocator) }
     val initialTarget = remember(normalized) {
-        normalized?.takeIf { parseNavidromeCoverLocator(it) == null }
+        normalized
+            ?.takeIf { parseNavidromeCoverLocator(it) == null }
+            ?.let { target ->
+                LynResolvedArtworkTarget(
+                    locator = target,
+                    target = target,
+                    version = null,
+                    isLocalFile = false,
+                )
+            }
     }
-    val target by produceState<String?>(initialValue = initialTarget, normalized, initialTarget) {
-        value = resolveArtworkCacheTarget(normalized) ?: initialTarget
+    val resolvedTarget by produceState<LynResolvedArtworkTarget?>(
+        initialValue = initialTarget,
+        normalized,
+        cacheRemote,
+        artworkCacheStore,
+    ) {
+        value = resolveLynArtworkTarget(
+            locator = normalized,
+            cacheRemote = cacheRemote,
+            artworkCacheStore = artworkCacheStore,
+        ) ?: initialTarget
     }
-    return remember(normalized, target, cacheRemote, maxDecodeSizePx) {
+    return remember(normalized, resolvedTarget, cacheRemote, maxDecodeSizePx) {
         LynArtworkModel(
             locator = normalized,
-            target = target,
+            target = resolvedTarget?.target,
+            targetVersion = resolvedTarget?.version,
+            isLocalFileTarget = resolvedTarget?.isLocalFile == true,
             cacheRemote = cacheRemote,
             maxDecodeSizePx = maxDecodeSizePx,
         )
     }
 }
 
-private fun lynArtworkMemoryCacheKey(model: LynArtworkModel): String? {
+internal fun lynArtworkMemoryCacheKey(model: LynArtworkModel): String? {
     val base = model.locator ?: model.target ?: return null
-    return "lyn-artwork:$base:${model.maxDecodeSizePx}"
+    return buildLynArtworkCacheKey(
+        base = base,
+        sizePx = model.maxDecodeSizePx,
+        version = model.targetVersion,
+    )
 }
 
-private fun lynArtworkMemoryPlaceholderKey(model: LynArtworkModel): String? {
+internal fun lynArtworkMemoryPlaceholderKey(model: LynArtworkModel): String? {
     val base = model.locator ?: model.target ?: return null
     val placeholderSize = when {
         model.maxDecodeSizePx > ArtworkDecodeSize.Card -> ArtworkDecodeSize.Card
         model.maxDecodeSizePx > ArtworkDecodeSize.Thumbnail -> ArtworkDecodeSize.Thumbnail
         else -> return null
     }
-    return "lyn-artwork:$base:$placeholderSize"
+    return buildLynArtworkCacheKey(
+        base = base,
+        sizePx = placeholderSize,
+        version = model.targetVersion,
+    )
 }
 
 private fun lynArtworkDiskCacheKey(model: LynArtworkModel): String? {
+    if (model.isLocalFileTarget) return null
     val base = model.locator ?: model.target ?: return null
     return "lyn-artwork:$base"
+}
+
+internal fun buildLynArtworkCacheKey(
+    base: String,
+    sizePx: Int,
+    version: String?,
+): String {
+    return buildString {
+        append("lyn-artwork:")
+        append(base)
+        append(':')
+        append(sizePx)
+        if (!version.isNullOrBlank()) {
+            append(':')
+            append(version)
+        }
+    }
 }
 
 private fun coilArtworkData(target: String): String {

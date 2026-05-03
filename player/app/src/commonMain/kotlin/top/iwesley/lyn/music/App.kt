@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaylistKind
@@ -67,6 +68,7 @@ class LynMusicAppComponent(
     val offlineDownloadStore: OfflineDownloadStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
+    val artworkCacheStore: ArtworkCacheStore,
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>,
     private val scope: CoroutineScope,
     private val onDispose: suspend () -> Unit,
@@ -117,6 +119,7 @@ fun buildPlayerAppComponent(
             logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,
+        artworkCacheStore = sharedGraph.artworkCacheStore,
         appDisplayScalePreset = sharedGraph.appDisplayScalePreset,
         scope = sharedGraph.scope,
         onDispose = {
@@ -167,6 +170,7 @@ fun App(
     CompositionLocalProvider(
         LocalPlatformDescriptor provides component.platform,
         LocalDesktopWindowChrome provides desktopWindowChrome,
+        LocalArtworkCacheStore provides component.artworkCacheStore,
         LocalOfflineDownloadUiState provides OfflineDownloadUiState(
             downloadsByTrackId = offlineDownloadState.downloadsByTrackId,
             availableSpaceBytes = offlineDownloadState.availableSpaceBytes,

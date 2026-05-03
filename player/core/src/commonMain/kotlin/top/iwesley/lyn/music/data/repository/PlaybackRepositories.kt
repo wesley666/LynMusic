@@ -119,6 +119,7 @@ class DefaultPlaybackRepository(
             }.collect { tracksById ->
                 var snapshotChanged = false
                 var currentTrackChanged = false
+                var currentArtworkChanged = false
                 mutableSnapshot.update { snapshot ->
                     if (snapshot.queue.isEmpty()) return@update snapshot
                     var queueChanged = false
@@ -128,6 +129,9 @@ class DefaultPlaybackRepository(
                             queueChanged = true
                             if (index == snapshot.currentIndex) {
                                 currentTrackChanged = true
+                                if (updated.artworkLocator != track.artworkLocator) {
+                                    currentArtworkChanged = true
+                                }
                             }
                         }
                         updated
@@ -149,8 +153,7 @@ class DefaultPlaybackRepository(
                         metadataTitle = if (currentTrackChanged) null else snapshot.metadataTitle,
                         metadataArtistName = if (currentTrackChanged) null else snapshot.metadataArtistName,
                         metadataAlbumTitle = if (currentTrackChanged) null else snapshot.metadataAlbumTitle,
-                        // Keep temporary artwork overrides stable across live track refreshes.
-                        metadataArtworkLocator = snapshot.metadataArtworkLocator,
+                        metadataArtworkLocator = if (currentArtworkChanged) null else snapshot.metadataArtworkLocator,
                     )
                 }
                 if (snapshotChanged) {
@@ -351,27 +354,11 @@ class DefaultPlaybackRepository(
     override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
         playbackCommandMutex.withLock {
             val snapshot = mutableSnapshot.value
-            val currentTrack = snapshot.currentTrack ?: return
-            val currentIndex = snapshot.currentIndex
-            if (currentIndex !in snapshot.queue.indices) return
-            val updatedCurrentTrack = currentTrack.copy(
-                artworkLocator = artworkLocator ?: currentTrack.artworkLocator,
-            )
-            val updatedQueue = snapshot.queue.toMutableList().also { queue ->
-                queue[currentIndex] = updatedCurrentTrack
-            }
-            val updatedOrderedQueue = snapshot.orderedQueue.map { track ->
-                if (track.id == currentTrack.id) {
-                    track.copy(artworkLocator = artworkLocator ?: track.artworkLocator)
-                } else {
-                    track
-                }
-            }
+            snapshot.currentTrack ?: return
+            val resolvedArtworkLocator = artworkLocator?.takeIf { it.isNotBlank() } ?: return
             mutableSnapshot.update {
                 it.copy(
-                    queue = updatedQueue,
-                    orderedQueue = updatedOrderedQueue.ifEmpty { updatedQueue },
-                    metadataArtworkLocator = artworkLocator ?: it.metadataArtworkLocator,
+                    metadataArtworkLocator = resolvedArtworkLocator,
                 )
             }
         }
