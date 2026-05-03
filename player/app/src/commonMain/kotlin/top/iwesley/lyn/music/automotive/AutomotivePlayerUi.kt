@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import top.iwesley.lyn.music.ArtworkDecodeSize
 import top.iwesley.lyn.music.LibraryNavigationTarget
 import top.iwesley.lyn.music.PlayerLyricsPane
 import top.iwesley.lyn.music.VinylPlaceholder
@@ -319,6 +320,8 @@ private fun AutomotiveSwipeableArtwork(
             enableArtworkTint = true,
             artworkDiameterFraction = 0.76f,
             innerGlowDiameterFraction = 0.72f,
+            maxArtworkDecodeSizePx = ArtworkDecodeSize.Player,
+            retainPreviousArtworkWhileLoading = true,
         )
     }
 }

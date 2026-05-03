@@ -16,7 +16,10 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.Image
+import org.jetbrains.skia.Rect
 import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
@@ -43,22 +46,45 @@ import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
+import kotlin.math.roundToInt
 
 @Composable
-actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
+actual fun rememberPlatformArtworkBitmap(
+    locator: String?,
+    cacheRemote: Boolean,
+    maxDecodeSizePx: Int,
+): ImageBitmap? {
     val fallbackBitmap = rememberBundledDefaultCoverBitmap()
     if (locator.isNullOrBlank()) return fallbackBitmap
-    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, fallbackBitmap) {
-        value = loadNativeArtworkBitmap(locator, cacheRemote)
+    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, maxDecodeSizePx, fallbackBitmap) {
+        value = loadNativeArtworkBitmap(locator, cacheRemote, maxDecodeSizePx)
     }
     return bitmap ?: fallbackBitmap
 }
 
-private suspend fun loadNativeArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.Default) {
+private suspend fun loadNativeArtworkBitmap(locator: String?, cacheRemote: Boolean, maxDecodeSizePx: Int): ImageBitmap? = withContext(Dispatchers.Default) {
     runCatching {
         val payload = loadNativeArtworkBytes(locator, cacheRemote) ?: return@runCatching null
-        Image.makeFromEncoded(payload).toComposeImageBitmap()
+        decodeNativeArtworkImageBitmap(payload, maxDecodeSizePx)
     }.getOrNull()
+}
+
+internal fun decodeNativeArtworkImageBitmap(bytes: ByteArray, maxDecodeSizePx: Int): ImageBitmap? {
+    val image = Image.makeFromEncoded(bytes)
+    val maxSize = maxDecodeSizePx.coerceAtLeast(1)
+    val currentMax = maxOf(image.width, image.height)
+    if (currentMax <= maxSize) return image.toComposeImageBitmap()
+    val scale = maxSize.toFloat() / currentMax.toFloat()
+    val targetWidth = (image.width * scale).roundToInt().coerceAtLeast(1)
+    val targetHeight = (image.height * scale).roundToInt().coerceAtLeast(1)
+    val bitmap = Bitmap()
+    if (!bitmap.allocN32Pixels(targetWidth, targetHeight)) return image.toComposeImageBitmap()
+    Canvas(bitmap).drawImageRect(
+        image,
+        Rect.makeWH(image.width.toFloat(), image.height.toFloat()),
+        Rect.makeWH(targetWidth.toFloat(), targetHeight.toFloat()),
+    )
+    return Image.makeFromBitmap(bitmap).toComposeImageBitmap()
 }
 
 private suspend fun loadNativeArtworkBytes(locator: String?, cacheRemote: Boolean): ByteArray? = withContext(Dispatchers.Default) {

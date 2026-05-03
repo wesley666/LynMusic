@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,14 +35,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TextFields
@@ -111,7 +108,6 @@ import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
-import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1226,10 +1222,13 @@ internal fun LyricsShareOverlay(
 ) {
     val lyrics = state.lyrics ?: return
     val shellColors = mainShellColors
-    val previewBitmap = rememberPlatformImageBitmap(state.sharePreviewBytes)
-    val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
+    val previewBytes = state.sharePreviewBytes
+    val artworkPaletteBitmap = rememberPlatformArtworkBitmap(
+        locator = state.snapshot.currentDisplayArtworkLocator,
+        maxDecodeSizePx = ArtworkDecodeSize.Palette,
+    )
     val artworkBackgroundPalette = rememberPlaybackArtworkBackgroundPalette(
-        artworkBitmap = artworkBitmap,
+        artworkBitmap = artworkPaletteBitmap,
         enabled = state.selectedLyricsShareTemplate == LyricsShareTemplate.ARTWORK_TINT,
     )
     val visibleShareLyricsLines = remember(lyrics) {
@@ -1399,7 +1398,7 @@ internal fun LyricsShareOverlay(
                             )
                             LyricsSharePreviewPane(
                                 state = state,
-                                previewBitmap = previewBitmap,
+                                previewBytes = previewBytes,
                                 artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
@@ -1417,7 +1416,7 @@ internal fun LyricsShareOverlay(
                         ) {
                             LyricsSharePreviewPane(
                                 state = state,
-                                previewBitmap = previewBitmap,
+                                previewBytes = previewBytes,
                                 artworkBackgroundPalette = artworkBackgroundPalette,
                                 fullscreenEnabled = fullscreenPreviewEnabled,
                                 onOpenFullscreen = { isFullscreenPreviewVisible = true },
@@ -1588,7 +1587,7 @@ internal fun LyricsShareOverlay(
         if (isFullscreenPreviewVisible && fullscreenPreviewEnabled) {
             LyricsShareFullscreenPreviewOverlay(
                 state = state,
-                previewBitmap = previewBitmap,
+                previewBytes = previewBytes,
                 artworkBackgroundPalette = artworkBackgroundPalette,
                 onDismiss = { isFullscreenPreviewVisible = false },
                 modifier = Modifier.fillMaxSize(),
@@ -2316,7 +2315,7 @@ private fun LyricsShareSelectableLine(
 @Composable
 private fun LyricsSharePreviewPane(
     state: PlayerState,
-    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    previewBytes: ByteArray?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     fullscreenEnabled: Boolean,
     onOpenFullscreen: () -> Unit,
@@ -2362,7 +2361,7 @@ private fun LyricsSharePreviewPane(
                 }
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
-                    previewBitmap = previewBitmap,
+                    previewBytes = previewBytes,
                     artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = previewModifier,
                 )
@@ -2381,7 +2380,7 @@ private fun LyricsSharePreviewPane(
 @Composable
 private fun LyricsSharePreviewContent(
     shareCardModel: LyricsShareCardModel?,
-    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    previewBytes: ByteArray?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
@@ -2397,13 +2396,15 @@ private fun LyricsSharePreviewContent(
                 )
             }
 
-            previewBitmap != null -> {
-                Image(
-                    bitmap = previewBitmap,
+            previewBytes != null -> {
+                LynArtworkImage(
+                    artworkBytes = previewBytes,
                     contentDescription = "歌词分享预览",
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(22.dp)),
+                    maxDecodeSizePx = ArtworkDecodeSize.Preview,
+                    retainPreviousWhileLoading = true,
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -2430,7 +2431,7 @@ private fun LyricsSharePreviewContent(
 @Composable
 private fun LyricsShareFullscreenPreviewOverlay(
     state: PlayerState,
-    previewBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    previewBytes: ByteArray?,
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -2456,10 +2457,10 @@ private fun LyricsShareFullscreenPreviewOverlay(
                     onClick = onDismiss,
                 ),
         ) {
-            if (previewBitmap != null) {
+            if (previewBytes != null) {
                 LyricsSharePreviewContent(
                     shareCardModel = shareCardModel,
-                    previewBitmap = previewBitmap,
+                    previewBytes = previewBytes,
                     artworkBackgroundPalette = artworkBackgroundPalette,
                     modifier = Modifier
                         .fillMaxSize()
@@ -2476,7 +2477,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
                 ) {
                     LyricsSharePreviewContent(
                         shareCardModel = shareCardModel,
-                        previewBitmap = null,
+                        previewBytes = null,
                         artworkBackgroundPalette = artworkBackgroundPalette,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2529,7 +2530,6 @@ private fun LyricsShareNoteCard(
     model: LyricsShareCardModel,
     modifier: Modifier = Modifier,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
     val previewFontFamily = lyricsSharePreviewFontFamily(
         fontKey = model.fontKey,
         displayName = model.fontKey,
@@ -2560,7 +2560,7 @@ private fun LyricsShareNoteCard(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 LyricsShareArtworkBlock(
-                    artworkBitmap = artworkBitmap,
+                    artworkLocator = model.artworkLocator,
                     modifier = Modifier.size(92.dp),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(LyricsShareCardSpec.LYRICS_PREVIEW_LINE_GAP_DP.dp)) {
@@ -2605,7 +2605,6 @@ private fun LyricsShareArtworkTintCard(
     artworkBackgroundPalette: PlaybackArtworkBackgroundColors?,
     modifier: Modifier = Modifier,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(model.artworkLocator)
     val previewFontFamily = lyricsSharePreviewFontFamily(
         fontKey = model.fontKey,
         displayName = model.fontKey,
@@ -2693,21 +2692,14 @@ private fun LyricsShareArtworkTintCard(
                         .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(24.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (artworkBitmap != null) {
-                        Image(
-                            bitmap = artworkBitmap,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(42.dp),
-                        )
-                    }
+                    LynArtworkImage(
+                        artworkLocator = model.artworkLocator,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        maxDecodeSizePx = ArtworkDecodeSize.Preview,
+                        retainPreviousWhileLoading = true,
+                        contentScale = ContentScale.Crop,
+                    )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(LyricsShareArtworkTintSpec.LYRICS_PREVIEW_LINE_GAP_DP.dp)) {
                     model.lyricsLines.forEach { line ->
@@ -2758,7 +2750,7 @@ private fun PlaybackArtworkBackgroundPalette.toPlaybackArtworkBackgroundColors()
 
 @Composable
 private fun LyricsShareArtworkBlock(
-    artworkBitmap: androidx.compose.ui.graphics.ImageBitmap?,
+    artworkLocator: String?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -2767,20 +2759,13 @@ private fun LyricsShareArtworkBlock(
             .background(Color(0xFFE4D2BE)),
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBitmap != null) {
-            Image(
-                bitmap = artworkBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.Album,
-                contentDescription = null,
-                tint = Color(0xFF8D735F),
-                modifier = Modifier.size(34.dp),
-            )
-        }
+        LynArtworkImage(
+            artworkLocator = artworkLocator,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            maxDecodeSizePx = ArtworkDecodeSize.Preview,
+            retainPreviousWhileLoading = true,
+            contentScale = ContentScale.Crop,
+        )
     }
 }

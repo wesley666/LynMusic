@@ -13,28 +13,54 @@ import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.Image
+import org.jetbrains.skia.Rect
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
+import kotlin.math.roundToInt
 
 @Composable
-actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
+actual fun rememberPlatformArtworkBitmap(
+    locator: String?,
+    cacheRemote: Boolean,
+    maxDecodeSizePx: Int,
+): ImageBitmap? {
     val fallbackBitmap = rememberBundledDefaultCoverBitmap()
     if (locator.isNullOrBlank()) return fallbackBitmap
-    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, fallbackBitmap) {
-        value = loadJvmArtworkBitmap(locator, cacheRemote)
+    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, maxDecodeSizePx, fallbackBitmap) {
+        value = loadJvmArtworkBitmap(locator, cacheRemote, maxDecodeSizePx)
     }
     return bitmap ?: fallbackBitmap
 }
 
-private suspend fun loadJvmArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? = withContext(Dispatchers.IO) {
+private suspend fun loadJvmArtworkBitmap(locator: String?, cacheRemote: Boolean, maxDecodeSizePx: Int): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
         val bytes = loadJvmArtworkBytes(locator, cacheRemote = cacheRemote) ?: return@runCatching null
-        Image.makeFromEncoded(bytes).toComposeImageBitmap()
+        decodeJvmArtworkImageBitmap(bytes, maxDecodeSizePx)
     }.getOrNull()
+}
+
+internal fun decodeJvmArtworkImageBitmap(bytes: ByteArray, maxDecodeSizePx: Int): ImageBitmap? {
+    val image = Image.makeFromEncoded(bytes)
+    val maxSize = maxDecodeSizePx.coerceAtLeast(1)
+    val currentMax = maxOf(image.width, image.height)
+    if (currentMax <= maxSize) return image.toComposeImageBitmap()
+    val scale = maxSize.toFloat() / currentMax.toFloat()
+    val targetWidth = (image.width * scale).roundToInt().coerceAtLeast(1)
+    val targetHeight = (image.height * scale).roundToInt().coerceAtLeast(1)
+    val bitmap = Bitmap()
+    if (!bitmap.allocN32Pixels(targetWidth, targetHeight)) return image.toComposeImageBitmap()
+    Canvas(bitmap).drawImageRect(
+        image,
+        Rect.makeWH(image.width.toFloat(), image.height.toFloat()),
+        Rect.makeWH(targetWidth.toFloat(), targetHeight.toFloat()),
+    )
+    return Image.makeFromBitmap(bitmap).toComposeImageBitmap()
 }
 
 suspend fun loadJvmArtworkBytes(

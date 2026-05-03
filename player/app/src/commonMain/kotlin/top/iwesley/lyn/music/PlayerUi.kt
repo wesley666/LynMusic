@@ -411,6 +411,7 @@ private fun MiniPlayerBar(
             vinylSize = 50.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             spinning = snapshot.isPlaying,
+            retainPreviousArtworkWhileLoading = true,
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -615,6 +616,7 @@ private fun MobileMiniPlayerBar(
                 vinylSize = 46.dp,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
                 spinning = snapshot.isPlaying,
+                retainPreviousArtworkWhileLoading = true,
             )
             if (showLyrics && preferLyricsView) {
                 Text(
@@ -885,9 +887,13 @@ private fun PlayerOverlay(
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
     var isPureModeRequested by remember { mutableStateOf(false) }
-    val artworkBitmap = rememberPlatformArtworkBitmap(state.snapshot.currentDisplayArtworkLocator)
+    val artworkLocator = state.snapshot.currentDisplayArtworkLocator
+    val paletteArtworkBitmap = rememberPlatformArtworkBitmap(
+        locator = artworkLocator,
+        maxDecodeSizePx = ArtworkDecodeSize.Palette,
+    )
     val backgroundPalette = rememberPlaybackArtworkBackgroundPalette(
-        artworkBitmap = artworkBitmap,
+        artworkBitmap = paletteArtworkBitmap,
         enabled = true,
     )
     val backgroundBaseColor by animateColorAsState(
@@ -911,11 +917,13 @@ private fun PlayerOverlay(
         color = backgroundBaseColor,
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            if (artworkBitmap != null) {
-                Image(
-                    bitmap = artworkBitmap,
+            if (!artworkLocator.isNullOrBlank()) {
+                LynArtworkImage(
+                    artworkLocator = artworkLocator,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    maxDecodeSizePx = ArtworkDecodeSize.Player,
+                    retainPreviousWhileLoading = true,
                     modifier = Modifier
                         .matchParentSize()
                         .graphicsLayer(scaleX = 1.16f, scaleY = 1.16f)
@@ -1014,7 +1022,7 @@ private fun PlayerOverlay(
                 AutomotiveLandscapePlayerOverlayContent(
                     state = state,
                     track = track,
-                    artworkBitmap = artworkBitmap,
+                    artworkBitmap = paletteArtworkBitmap,
                     isFavorite = isFavorite,
                     onToggleFavorite = onToggleFavorite,
                     onOpenQueue = onOpenQueue,
@@ -1130,7 +1138,7 @@ private fun PlayerOverlay(
                         MobilePlayerPrimaryPane(
                             state = state,
                             track = track,
-                            artworkBitmap = artworkBitmap,
+                            artworkBitmap = null,
                             showCompactPlayerLyrics = showCompactPlayerLyrics,
                             onPlayerIntent = onPlayerIntent,
                             modifier = Modifier
@@ -1148,7 +1156,7 @@ private fun PlayerOverlay(
                             PlayerInfoPane(
                                 snapshot = state.snapshot,
                                 track = track,
-                                artworkBitmap = artworkBitmap,
+                                artworkBitmap = null,
                                 onPlayerIntent = onPlayerIntent,
                                 modifier = Modifier
                                     .weight(0.5f)
@@ -1176,7 +1184,7 @@ private fun PlayerOverlay(
                             PlayerInfoPane(
                                 snapshot = state.snapshot,
                                 track = track,
-                                artworkBitmap = artworkBitmap,
+                                artworkBitmap = null,
                                 modifier = Modifier.fillMaxWidth(),
                                 compact = true,
                             )
@@ -1335,6 +1343,8 @@ private fun PlayerInfoPane(
                 spinning = snapshot.isPlaying,
                 artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
                 innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+                maxArtworkDecodeSizePx = ArtworkDecodeSize.Player,
+                retainPreviousArtworkWhileLoading = true,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -1418,6 +1428,8 @@ private fun SwipeablePlayerArtwork(
             spinning = snapshot.isPlaying,
             artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
             innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+            maxArtworkDecodeSizePx = ArtworkDecodeSize.Player,
+            retainPreviousArtworkWhileLoading = true,
         )
     }
 }

@@ -130,6 +130,8 @@ fun App(
     component: LynMusicAppComponent,
     desktopWindowChrome: DesktopWindowChrome = DesktopWindowChrome(),
 ) {
+    ConfigureLynArtworkImageLoader()
+
     DisposableEffect(component) {
         onDispose { component.dispose() }
     }

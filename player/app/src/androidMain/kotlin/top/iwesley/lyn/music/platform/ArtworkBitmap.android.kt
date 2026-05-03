@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.platform
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,16 +17,22 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
+import top.iwesley.lyn.music.core.model.resolveArtworkDecodeSampleSize
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
+import kotlin.math.roundToInt
 
 @Composable
-actual fun rememberPlatformArtworkBitmap(locator: String?, cacheRemote: Boolean): ImageBitmap? {
+actual fun rememberPlatformArtworkBitmap(
+    locator: String?,
+    cacheRemote: Boolean,
+    maxDecodeSizePx: Int,
+): ImageBitmap? {
     val context = LocalContext.current
     val fallbackBitmap = rememberBundledDefaultCoverBitmap()
     if (locator.isNullOrBlank()) return fallbackBitmap
-    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, fallbackBitmap) {
-        value = loadAndroidArtworkBitmap(context, locator, cacheRemote)
+    val bitmap by produceState<ImageBitmap?>(initialValue = fallbackBitmap, locator, cacheRemote, maxDecodeSizePx, fallbackBitmap) {
+        value = loadAndroidArtworkBitmap(context, locator, cacheRemote, maxDecodeSizePx)
     }
     return bitmap ?: fallbackBitmap
 }
@@ -34,6 +41,7 @@ private suspend fun loadAndroidArtworkBitmap(
     context: Context,
     locator: String?,
     cacheRemote: Boolean,
+    maxDecodeSizePx: Int,
 ): ImageBitmap? = withContext(Dispatchers.IO) {
     runCatching {
         val normalizedLocator = normalizedArtworkCacheLocator(locator) ?: return@runCatching null
@@ -44,7 +52,7 @@ private suspend fun loadAndroidArtworkBitmap(
                 val cacheKey = normalizedLocator.stableArtworkCacheHash()
                 val existingCacheFile = findValidAndroidArtworkCacheFile(cacheDirectory, cacheKey)
                 if (existingCacheFile != null) {
-                    BitmapFactory.decodeFile(existingCacheFile.absolutePath)
+                    decodeAndroidArtworkFile(existingCacheFile.absolutePath, maxDecodeSizePx)
                 } else {
                     val payload = URL(target).openStream().use { it.readBytes() }
                     if (!isCompleteArtworkPayload(payload)) return@runCatching null
@@ -55,16 +63,81 @@ private suspend fun loadAndroidArtworkBitmap(
                             payload = payload,
                         )
                     }
-                    BitmapFactory.decodeByteArray(payload, 0, payload.size)
+                    decodeAndroidArtworkBytes(payload, maxDecodeSizePx)
                 }
             }
             target.startsWith("file://", ignoreCase = true) ->
-                BitmapFactory.decodeFile(runCatching { File(URI(target)).absolutePath }.getOrElse { target.removePrefix("file://") })
+                decodeAndroidArtworkFile(
+                    runCatching { File(URI(target)).absolutePath }.getOrElse { target.removePrefix("file://") },
+                    maxDecodeSizePx,
+                )
 
-            else -> BitmapFactory.decodeFile(target)
+            else -> decodeAndroidArtworkFile(target, maxDecodeSizePx)
         }
         bitmap?.asImageBitmap()
     }.getOrNull()
+}
+
+internal fun decodeAndroidArtworkBytes(
+    payload: ByteArray,
+    maxDecodeSizePx: Int,
+): Bitmap? {
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeByteArray(payload, 0, payload.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val decoded = BitmapFactory.decodeByteArray(
+        payload,
+        0,
+        payload.size,
+        BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = resolveArtworkDecodeSampleSize(
+                sourceWidth = bounds.outWidth,
+                sourceHeight = bounds.outHeight,
+                targetSize = maxDecodeSizePx.coerceAtLeast(1),
+            )
+        },
+    ) ?: return null
+    return decoded.scaleDownAndroidArtworkBitmap(maxDecodeSizePx)
+}
+
+private fun decodeAndroidArtworkFile(
+    path: String,
+    maxDecodeSizePx: Int,
+): Bitmap? {
+    val bounds = BitmapFactory.Options().apply {
+        inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val decoded = BitmapFactory.decodeFile(
+        path,
+        BitmapFactory.Options().apply {
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inSampleSize = resolveArtworkDecodeSampleSize(
+                sourceWidth = bounds.outWidth,
+                sourceHeight = bounds.outHeight,
+                targetSize = maxDecodeSizePx.coerceAtLeast(1),
+            )
+        },
+    ) ?: return null
+    return decoded.scaleDownAndroidArtworkBitmap(maxDecodeSizePx)
+}
+
+private fun Bitmap.scaleDownAndroidArtworkBitmap(maxDecodeSizePx: Int): Bitmap {
+    val maxSize = maxDecodeSizePx.coerceAtLeast(1)
+    val currentMax = maxOf(width, height)
+    if (currentMax <= maxSize) return this
+    val scale = maxSize.toFloat() / currentMax.toFloat()
+    val targetWidth = (width * scale).roundToInt().coerceAtLeast(1)
+    val targetHeight = (height * scale).roundToInt().coerceAtLeast(1)
+    val scaled = Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
+    if (scaled !== this) {
+        recycle()
+    }
+    return scaled
 }
 
 private fun isRemoteArtworkTarget(target: String): Boolean {

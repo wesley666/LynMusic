@@ -99,7 +99,6 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
-import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
 fun buildPlaylistAddTargets(
@@ -1575,9 +1574,7 @@ private fun PlaylistArtworkThumbnail(
     containerColor: Color? = null,
     fallbackTint: Color? = null,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     val resolvedContainerColor = containerColor ?: mainShellColors.cardContainer
-    val resolvedFallbackTint = fallbackTint ?: MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = modifier
             .size(52.dp)
@@ -1586,20 +1583,12 @@ private fun PlaylistArtworkThumbnail(
             .padding(0.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBitmap != null) {
-            androidx.compose.foundation.Image(
-                bitmap = artworkBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.List,
-                contentDescription = null,
-                tint = resolvedFallbackTint,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        LynArtworkImage(
+            artworkLocator = artworkLocator,
+            contentDescription = null,
+            maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+        )
     }
 }

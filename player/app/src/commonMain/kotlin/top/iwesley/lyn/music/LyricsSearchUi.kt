@@ -1,7 +1,6 @@
 package top.iwesley.lyn.music
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +24,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,7 +57,6 @@ import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.platform.PlatformBackHandler
-import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
 internal data class LyricsSearchDialogState(
@@ -987,7 +984,6 @@ private fun LyricsSearchArtworkThumbnail(
     artworkLocator: String?,
     modifier: Modifier = Modifier,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator, cacheRemote = false)
     val shellColors = mainShellColors
     Box(
         modifier = modifier
@@ -1000,21 +996,14 @@ private fun LyricsSearchArtworkThumbnail(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBitmap != null) {
-            Image(
-                bitmap = artworkBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        LynArtworkImage(
+            artworkLocator = artworkLocator,
+            contentDescription = null,
+            cacheRemote = false,
+            maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
     }
 }
 

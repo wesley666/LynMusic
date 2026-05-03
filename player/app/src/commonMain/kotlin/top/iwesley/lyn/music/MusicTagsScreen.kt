@@ -88,8 +88,6 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
 import top.iwesley.lyn.music.platform.PlatformBackHandler
-import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
-import top.iwesley.lyn.music.platform.rememberPlatformImageBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
 private val MusicTagsTableWidth = 940.dp
@@ -553,10 +551,6 @@ private fun MusicTagsEditorPane(
                 if (!state.isLoadingSelected && readOnlyHint != null) {
                     MusicTagsNoteCard(readOnlyHint)
                 }
-                val previewBitmap = rememberPlatformImageBitmap(state.draft.pendingArtworkBytes)
-                val artworkBitmap = rememberPlatformArtworkBitmap(
-                    if (state.draft.clearArtwork) null else state.draft.artworkLocator,
-                )
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -566,17 +560,19 @@ private fun MusicTagsEditorPane(
                     MusicTagsArtworkPreview(
                         artworkContent = {
                             when {
-                                previewBitmap != null -> androidx.compose.foundation.Image(
-                                    bitmap = previewBitmap,
+                                state.draft.pendingArtworkBytes != null -> LynArtworkImage(
+                                    artworkBytes = state.draft.pendingArtworkBytes,
                                     contentDescription = "新封面预览",
                                     modifier = Modifier.fillMaxSize(),
+                                    maxDecodeSizePx = ArtworkDecodeSize.Preview,
                                     contentScale = ContentScale.Fit,
                                 )
 
-                                artworkBitmap != null -> androidx.compose.foundation.Image(
-                                    bitmap = artworkBitmap,
+                                !state.draft.clearArtwork && state.draft.artworkLocator != null -> LynArtworkImage(
+                                    artworkLocator = state.draft.artworkLocator,
                                     contentDescription = "歌曲封面",
                                     modifier = Modifier.fillMaxSize(),
+                                    maxDecodeSizePx = ArtworkDecodeSize.Preview,
                                     contentScale = ContentScale.Fit,
                                 )
 
@@ -787,7 +783,6 @@ private fun MusicTagsTrackFileCell(
     track: Track,
     width: androidx.compose.ui.unit.Dp,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(track.artworkLocator)
     Box(
         modifier = Modifier.width(width),
         contentAlignment = Alignment.CenterStart,
@@ -803,21 +798,13 @@ private fun MusicTagsTrackFileCell(
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)),
                 contentAlignment = Alignment.Center,
             ) {
-                if (artworkBitmap != null) {
-                    androidx.compose.foundation.Image(
-                        bitmap = artworkBitmap,
-                        contentDescription = "歌曲封面",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Icon(
-                        Icons.Rounded.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
-                    )
-                }
+                LynArtworkImage(
+                    artworkLocator = track.artworkLocator,
+                    contentDescription = "歌曲封面",
+                    modifier = Modifier.fillMaxSize(),
+                    maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+                    contentScale = ContentScale.Crop,
+                )
             }
             Text(
                 text = track.relativePath.substringAfterLast('/'),

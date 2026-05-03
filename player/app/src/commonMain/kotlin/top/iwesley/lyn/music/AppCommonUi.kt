@@ -121,7 +121,6 @@ import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
 import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 import top.iwesley.lyn.music.feature.offline.estimatedNavidromeTranscodedSizeBytes
 import top.iwesley.lyn.music.feature.offline.formatOfflineDownloadSizeLabel
-import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 import kotlin.math.max
 import kotlin.math.min
@@ -1180,7 +1179,6 @@ internal fun TrackArtworkThumbnail(
     artworkLocator: String?,
     modifier: Modifier = Modifier.size(52.dp),
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     val shellColors = mainShellColors
     Box(
         modifier = modifier
@@ -1192,21 +1190,13 @@ internal fun TrackArtworkThumbnail(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBitmap != null) {
-            Image(
-                bitmap = artworkBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Rounded.MusicNote,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        }
+        LynArtworkImage(
+            artworkLocator = artworkLocator,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+            maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+        )
     }
 }
 
@@ -1681,12 +1671,14 @@ internal fun VinylPlaceholder(
     enableArtworkTint: Boolean = false,
     artworkDiameterFraction: Float = DEFAULT_VINYL_ARTWORK_DIAMETER_FRACTION,
     innerGlowDiameterFraction: Float = DEFAULT_VINYL_INNER_GLOW_DIAMETER_FRACTION,
+    maxArtworkDecodeSizePx: Int = ArtworkDecodeSize.Thumbnail,
+    retainPreviousArtworkWhileLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val normalizedArtworkDiameterFraction = artworkDiameterFraction.coerceIn(0.2f, 1f)
     val normalizedInnerGlowDiameterFraction = innerGlowDiameterFraction
         .coerceIn(normalizedArtworkDiameterFraction, 1f)
-    val resolvedArtworkBitmap = artworkBitmap ?: rememberPlatformArtworkBitmap(artworkLocator)
+    val resolvedArtworkBitmap = artworkBitmap
     val palette = rememberVinylArtworkPalette(
         artworkBitmap = resolvedArtworkBitmap,
         enabled = enableArtworkTint,
@@ -1798,7 +1790,7 @@ internal fun VinylPlaceholder(
                     .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                if (resolvedArtworkBitmap != null) {
+                if (resolvedArtworkBitmap != null && artworkLocator.isNullOrBlank()) {
                     Image(
                         bitmap = resolvedArtworkBitmap,
                         contentDescription = null,
@@ -1808,11 +1800,13 @@ internal fun VinylPlaceholder(
                         contentScale = ContentScale.Crop,
                     )
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .size(vinylSize / 4)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
+                    LynArtworkImage(
+                        artworkLocator = artworkLocator,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        maxDecodeSizePx = maxArtworkDecodeSizePx,
+                        retainPreviousWhileLoading = retainPreviousArtworkWhileLoading,
                     )
                 }
             }

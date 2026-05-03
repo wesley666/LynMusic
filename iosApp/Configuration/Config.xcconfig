@@ -3,6 +3,6 @@
 TEAM_ID=
 
 PRODUCT_NAME=LynMusic
-PRODUCT_BUNDLE_IDENTIFIER=top.iwesley.lyn.music.LynMusic
+PRODUCT_BUNDLE_IDENTIFIER=top.iwesley.lyn.music.LynMusic.dev.hhh
 
 #include? "Config.local.xcconfig"

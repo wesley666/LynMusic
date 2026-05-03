@@ -1,6 +1,5 @@
 package top.iwesley.lyn.music
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,7 +56,6 @@ import top.iwesley.lyn.music.feature.my.MyIntent
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.platform.PlatformBackHandler
-import top.iwesley.lyn.music.platform.rememberPlatformArtworkBitmap
 import top.iwesley.lyn.music.ui.mainShellColors
 
 @Composable
@@ -494,20 +492,18 @@ private fun DailyRecommendationArtwork(
     shape: RoundedCornerShape,
     accentColor: Color,
 ) {
-    val artworkBitmap = rememberPlatformArtworkBitmap(artworkLocator)
     Box(
         modifier = modifier
             .clip(shape),
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBitmap != null) {
-            Image(
-                bitmap = artworkBitmap,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        }
+        LynArtworkImage(
+            artworkLocator = artworkLocator,
+            contentDescription = null,
+            maxDecodeSizePx = ArtworkDecodeSize.Card,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
     }
 }
 
