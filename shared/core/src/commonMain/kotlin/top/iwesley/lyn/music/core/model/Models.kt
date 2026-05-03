@@ -1,6 +1,8 @@
 package top.iwesley.lyn.music.core.model
 
 import kotlin.concurrent.Volatile
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 enum class AppTab {
     My,
@@ -441,6 +443,7 @@ interface ArtworkLoader {
 interface ArtworkCacheStore {
     suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean = false): String?
     suspend fun hasCached(cacheKey: String): Boolean = false
+    fun observeVersion(cacheKey: String): Flow<Long> = flowOf(0L)
 }
 
 interface AudioTagGateway {

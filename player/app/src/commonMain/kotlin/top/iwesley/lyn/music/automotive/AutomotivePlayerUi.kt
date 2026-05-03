@@ -318,7 +318,6 @@ private fun AutomotiveSwipeableArtwork(
             artworkBitmap = artworkBitmap,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
-            artworkRevision = snapshot.currentArtworkRevision,
             spinning = snapshot.isPlaying,
             enableArtworkTint = true,
             artworkDiameterFraction = 0.76f,

@@ -5,7 +5,9 @@ import android.system.Os
 import java.io.File
 import java.net.URI
 import java.net.URL
+import kotlinx.coroutines.flow.Flow
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
+import top.iwesley.lyn.music.core.model.ArtworkCacheVersionRegistry
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
@@ -17,31 +19,37 @@ private class AndroidArtworkCacheStore(
     context: Context,
 ) : ArtworkCacheStore {
     private val directory = File(context.cacheDir, "artwork-cache").apply { mkdirs() }
+    private val versionRegistry = ArtworkCacheVersionRegistry()
 
     override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
         return runCatching {
             val target = resolveArtworkCacheTarget(locator) ?: return@runCatching null
             if (target.isBlank()) return@runCatching null
-            val primaryPrefix = cacheKey.ifBlank { locator }.stableArtworkCacheHash()
+            val effectiveCacheKey = cacheKey.ifBlank { locator }
+            val primaryPrefix = effectiveCacheKey.stableArtworkCacheHash()
             val legacyPrefix = locator.stableArtworkCacheHash().takeIf { it != primaryPrefix }
             if (target.startsWith("file://", ignoreCase = true)) {
                 val file = runCatching { File(URI(target)) }.getOrNull()
                     ?: return@runCatching target
-                return@runCatching promoteLocalArtworkFile(
+                val promoted = promoteLocalArtworkFile(
                     source = file,
                     cachePrefix = primaryPrefix,
                     locator = target,
                     replaceExisting = replaceExisting,
-                )?.absolutePath ?: file.absolutePath
+                )
+                promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
+                return@runCatching promoted?.file?.absolutePath ?: file.absolutePath
             }
             if (!target.startsWith("http://", ignoreCase = true) && !target.startsWith("https://", ignoreCase = true)) {
                 val file = File(target)
-                return@runCatching promoteLocalArtworkFile(
+                val promoted = promoteLocalArtworkFile(
                     source = file,
                     cachePrefix = primaryPrefix,
                     locator = target,
                     replaceExisting = replaceExisting,
-                )?.absolutePath ?: target
+                )
+                promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
+                return@runCatching promoted?.file?.absolutePath ?: target
             }
             if (!replaceExisting) {
                 findValidArtworkCacheFile(primaryPrefix)
@@ -49,22 +57,26 @@ private class AndroidArtworkCacheStore(
                 legacyPrefix
                     ?.let(::findValidArtworkCacheFile)
                     ?.let { legacy ->
-                        return@runCatching promoteArtworkCacheFile(
+                        val promoted = promoteArtworkCacheFile(
                             source = legacy,
                             cachePrefix = primaryPrefix,
                             replaceExisting = false,
-                        )?.absolutePath ?: legacy.absolutePath
+                        )
+                        promoted?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
+                        return@runCatching promoted?.file?.absolutePath ?: legacy.absolutePath
                     }
             }
             val payload = URL(target).openStream().use { it.readBytes() }
             if (!isCompleteArtworkPayload(payload)) return@runCatching null
             val fileName = "$primaryPrefix${inferArtworkFileExtension(locator = target, bytes = payload)}"
-            writeArtworkCacheFileAtomically(
+            val written = writeArtworkCacheFileAtomically(
                 fileName = fileName,
                 payload = payload,
                 cachePrefix = primaryPrefix,
                 replaceExisting = replaceExisting,
-            )?.absolutePath
+            )
+            written?.takeIf { it.changed }?.let { versionRegistry.bump(effectiveCacheKey) }
+            written?.file?.absolutePath
         }.getOrNull()
     }
 
@@ -72,6 +84,8 @@ private class AndroidArtworkCacheStore(
         val cachePrefix = cacheKey.ifBlank { return false }.stableArtworkCacheHash()
         return findValidArtworkCacheFile(cachePrefix) != null
     }
+
+    override fun observeVersion(cacheKey: String): Flow<Long> = versionRegistry.observe(cacheKey)
 
     private fun findValidArtworkCacheFile(cachePrefix: String): File? {
         return directory.listFiles()
@@ -96,7 +110,7 @@ private class AndroidArtworkCacheStore(
         cachePrefix: String,
         locator: String,
         replaceExisting: Boolean,
-    ): File? {
+    ): ArtworkCacheFileResult? {
         if (!source.isFile || source.length() <= 0L) return null
         val payload = runCatching { source.readBytes() }.getOrNull()
             ?.takeIf(::isCompleteArtworkPayload)
@@ -109,7 +123,7 @@ private class AndroidArtworkCacheStore(
         source: File,
         cachePrefix: String,
         replaceExisting: Boolean,
-    ): File? {
+    ): ArtworkCacheFileResult? {
         val extension = source.name.substringAfter(cachePrefix, source.name.substringAfterLast('.', ""))
             .takeIf { it.startsWith(".") }
             ?: source.extension.takeIf { it.isNotBlank() }?.let { ".$it" }
@@ -122,18 +136,18 @@ private class AndroidArtworkCacheStore(
         cachePrefix: String,
         fileName: String,
         replaceExisting: Boolean,
-    ): File? {
+    ): ArtworkCacheFileResult? {
         if (!source.isFile || source.length() <= 0L) return null
         val output = File(directory, fileName)
         if (!replaceExisting) {
-            findValidArtworkCacheFile(cachePrefix)?.let { return it }
+            findValidArtworkCacheFile(cachePrefix)?.let { return ArtworkCacheFileResult(it, changed = false) }
         }
         return runCatching {
+            if (source.canonicalPath == output.canonicalPath) {
+                return@runCatching ArtworkCacheFileResult(output, changed = false)
+            }
             if (replaceExisting) {
                 deleteArtworkCacheFiles(cachePrefix)
-            }
-            if (source.canonicalPath == output.canonicalPath) {
-                return@runCatching output
             }
             runCatching {
                 Os.link(source.absolutePath, output.absolutePath)
@@ -144,7 +158,7 @@ private class AndroidArtworkCacheStore(
                 it.exists() &&
                     it.length() > 0L &&
                     runCatching { isCompleteArtworkPayload(it.readBytes()) }.getOrDefault(false)
-            }
+            }?.let { ArtworkCacheFileResult(it, changed = true) }
         }.getOrNull()
     }
 
@@ -153,12 +167,12 @@ private class AndroidArtworkCacheStore(
         payload: ByteArray,
         cachePrefix: String,
         replaceExisting: Boolean,
-    ): File? {
+    ): ArtworkCacheFileResult? {
         if (!isCompleteArtworkPayload(payload)) return null
         val output = File(directory, fileName)
         if (!replaceExisting && output.exists() && output.length() > 0L) {
             if (runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)) {
-                return output
+                return ArtworkCacheFileResult(output, changed = false)
             }
             runCatching { output.delete() }
         }
@@ -172,7 +186,7 @@ private class AndroidArtworkCacheStore(
                 output.exists() &&
                 runCatching { isCompleteArtworkPayload(output.readBytes()) }.getOrDefault(false)
             ) {
-                return@runCatching output
+                return@runCatching ArtworkCacheFileResult(output, changed = false)
             }
             if (replaceExisting) {
                 deleteArtworkCacheFiles(cachePrefix)
@@ -187,7 +201,7 @@ private class AndroidArtworkCacheStore(
                 it.exists() &&
                     it.length() > 0L &&
                     runCatching { isCompleteArtworkPayload(it.readBytes()) }.getOrDefault(false)
-            }
+            }?.let { ArtworkCacheFileResult(it, changed = true) }
         }.also {
             if (temporary.exists()) {
                 runCatching { temporary.delete() }
@@ -207,5 +221,10 @@ private class AndroidArtworkCacheStore(
             }
     }
 }
+
+private data class ArtworkCacheFileResult(
+    val file: File,
+    val changed: Boolean,
+)
 
 private const val ARTWORK_CACHE_TEMP_MARKER = ".tmp-"

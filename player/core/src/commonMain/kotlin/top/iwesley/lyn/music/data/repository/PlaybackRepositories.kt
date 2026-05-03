@@ -154,11 +154,6 @@ class DefaultPlaybackRepository(
                         metadataArtistName = if (currentTrackChanged) null else snapshot.metadataArtistName,
                         metadataAlbumTitle = if (currentTrackChanged) null else snapshot.metadataAlbumTitle,
                         metadataArtworkLocator = if (currentArtworkChanged) null else snapshot.metadataArtworkLocator,
-                        currentArtworkRevision = if (currentArtworkChanged) {
-                            snapshot.currentArtworkRevision + 1
-                        } else {
-                            snapshot.currentArtworkRevision
-                        },
                     )
                 }
                 if (snapshotChanged) {
@@ -185,7 +180,6 @@ class DefaultPlaybackRepository(
                         metadataArtistName = gatewayState.metadataArtistName,
                         metadataAlbumTitle = gatewayState.metadataAlbumTitle,
                         metadataArtworkLocator = it.metadataArtworkLocator,
-                        currentArtworkRevision = it.currentArtworkRevision,
                         currentNavidromeAudioQuality = gatewayState.currentNavidromeAudioQuality,
                         currentPlaybackAudioFormat = gatewayState.currentPlaybackAudioFormat,
                         errorMessage = gatewayState.errorMessage,
@@ -253,7 +247,6 @@ class DefaultPlaybackRepository(
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
                 metadataArtworkLocator = null,
-                currentArtworkRevision = 0L,
             )
             loadRequest = createLoadRequest(
                 track = target,
@@ -366,7 +359,6 @@ class DefaultPlaybackRepository(
             mutableSnapshot.update {
                 it.copy(
                     metadataArtworkLocator = resolvedArtworkLocator,
-                    currentArtworkRevision = it.currentArtworkRevision + 1,
                 )
             }
         }
@@ -439,7 +431,6 @@ class DefaultPlaybackRepository(
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
                 metadataArtworkLocator = null,
-                currentArtworkRevision = 0L,
                 errorMessage = null,
             )
         }
@@ -518,7 +509,6 @@ class DefaultPlaybackRepository(
                     metadataArtistName = null,
                     metadataAlbumTitle = null,
                     metadataArtworkLocator = null,
-                    currentArtworkRevision = 0L,
                 )
                 loadRequest = createLoadRequest(
                     track = tracks[index],

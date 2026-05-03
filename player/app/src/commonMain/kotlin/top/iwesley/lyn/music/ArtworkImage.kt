@@ -26,6 +26,7 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.maxBitmapSize
 import coil3.size.Size
+import kotlinx.coroutines.flow.flowOf
 import lynmusic.player.app.generated.resources.Res
 import lynmusic.player.app.generated.resources.default_cover
 import org.jetbrains.compose.resources.painterResource
@@ -49,7 +50,7 @@ internal data class LynArtworkModel(
     val isLocalFileTarget: Boolean,
     val cacheRemote: Boolean,
     val maxDecodeSizePx: Int,
-    val artworkRevision: Long,
+    val cacheVersion: Long,
 )
 
 internal data class LynResolvedArtworkTarget(
@@ -89,16 +90,25 @@ internal fun LynArtworkImage(
     colorFilter: ColorFilter? = null,
     cacheRemote: Boolean = true,
     maxDecodeSizePx: Int = ArtworkDecodeSize.Thumbnail,
-    artworkRevision: Long = 0L,
     retainPreviousWhileLoading: Boolean = false,
 ) {
     val artworkCacheStore = LocalArtworkCacheStore.current
+    val normalized = remember(artworkLocator) { normalizedArtworkCacheLocator(artworkLocator) }
+    val requestCacheKey = remember(artworkCacheKey, normalized) {
+        artworkCacheKey
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: normalized
+    }
+    val cacheVersion by remember(artworkCacheStore, requestCacheKey) {
+        requestCacheKey?.let(artworkCacheStore::observeVersion) ?: flowOf(0L)
+    }.collectAsState(initial = 0L)
     val model = rememberLynArtworkModel(
-        artworkLocator = artworkLocator,
-        artworkCacheKey = artworkCacheKey,
+        normalized = normalized,
+        requestCacheKey = requestCacheKey,
         cacheRemote = cacheRemote,
         maxDecodeSizePx = maxDecodeSizePx,
-        artworkRevision = artworkRevision,
+        cacheVersion = cacheVersion,
         artworkCacheStore = artworkCacheStore,
     )
     LynArtworkAsyncImage(
@@ -239,20 +249,13 @@ internal expect suspend fun resolveLynArtworkTarget(
 
 @Composable
 private fun rememberLynArtworkModel(
-    artworkLocator: String?,
-    artworkCacheKey: String?,
+    normalized: String?,
+    requestCacheKey: String?,
     cacheRemote: Boolean,
     maxDecodeSizePx: Int,
-    artworkRevision: Long,
+    cacheVersion: Long,
     artworkCacheStore: ArtworkCacheStore,
 ): LynArtworkModel {
-    val normalized = remember(artworkLocator) { normalizedArtworkCacheLocator(artworkLocator) }
-    val requestCacheKey = remember(artworkCacheKey, normalized) {
-        artworkCacheKey
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: normalized
-    }
     val initialTarget = remember(normalized, cacheRemote) {
         normalized
             ?.takeIf { shouldUseInitialArtworkTarget(it, cacheRemote) }
@@ -270,7 +273,7 @@ private fun rememberLynArtworkModel(
         normalized,
         requestCacheKey,
         cacheRemote,
-        artworkRevision,
+        cacheVersion,
         artworkCacheStore,
     ) {
         value = resolveLynArtworkTarget(
@@ -280,7 +283,7 @@ private fun rememberLynArtworkModel(
             artworkCacheStore = artworkCacheStore,
         ) ?: initialTarget
     }
-    return remember(normalized, requestCacheKey, resolvedTarget, cacheRemote, maxDecodeSizePx, artworkRevision) {
+    return remember(normalized, requestCacheKey, resolvedTarget, cacheRemote, maxDecodeSizePx, cacheVersion) {
         LynArtworkModel(
             locator = normalized,
             cacheKey = requestCacheKey,
@@ -289,7 +292,7 @@ private fun rememberLynArtworkModel(
             isLocalFileTarget = resolvedTarget?.isLocalFile == true,
             cacheRemote = cacheRemote,
             maxDecodeSizePx = maxDecodeSizePx,
-            artworkRevision = artworkRevision,
+            cacheVersion = cacheVersion,
         )
     }
 }
@@ -310,7 +313,7 @@ internal fun lynArtworkMemoryCacheKey(model: LynArtworkModel): String? {
         base = base,
         sizePx = model.maxDecodeSizePx,
         version = model.targetVersion,
-        revision = model.artworkRevision,
+        cacheVersion = model.cacheVersion,
     )
 }
 
@@ -325,7 +328,7 @@ internal fun lynArtworkMemoryPlaceholderKey(model: LynArtworkModel): String? {
         base = base,
         sizePx = placeholderSize,
         version = model.targetVersion,
-        revision = model.artworkRevision,
+        cacheVersion = model.cacheVersion,
     )
 }
 
@@ -339,7 +342,7 @@ internal fun buildLynArtworkCacheKey(
     base: String,
     sizePx: Int,
     version: String?,
-    revision: Long = 0L,
+    cacheVersion: Long = 0L,
 ): String {
     return buildString {
         append("lyn-artwork:")
@@ -350,9 +353,9 @@ internal fun buildLynArtworkCacheKey(
             append(':')
             append(version)
         }
-        if (revision > 0L) {
-            append(":r")
-            append(revision)
+        if (cacheVersion > 0L) {
+            append(":v")
+            append(cacheVersion)
         }
     }
 }

@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 import top.iwesley.lyn.music.platform.createJvmArtworkCacheStore
@@ -43,6 +44,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(firstPath, second)
                 assertTrue(firstPath.endsWith(".png"))
                 assertEquals(1, requestCount.get())
+                assertEquals(1L, runBlocking { store.observeVersion(locator).first() })
 
                 File(firstPath).delete()
 
@@ -50,6 +52,7 @@ class JvmArtworkCacheStoreTest {
 
                 assertEquals(firstPath, third)
                 assertEquals(2, requestCount.get())
+                assertEquals(2L, runBlocking { store.observeVersion(locator).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)
@@ -80,6 +83,7 @@ class JvmArtworkCacheStoreTest {
 
                 assertNull(result)
                 assertTrue(cacheDirectory.listFiles().isNullOrEmpty())
+                assertEquals(0L, runBlocking { store.observeVersion(locator).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)
@@ -109,6 +113,7 @@ class JvmArtworkCacheStoreTest {
                 val albumKey = "album:source-1:album-1"
 
                 val legacy = assertNotNull(runBlocking { store.cache(locator, locator) })
+                assertEquals(0L, runBlocking { store.observeVersion(albumKey).first() })
                 val promoted = assertNotNull(runBlocking { store.cache(locator, albumKey) })
 
                 assertEquals(1, requestCount.get())
@@ -116,6 +121,7 @@ class JvmArtworkCacheStoreTest {
                 assertTrue(File(promoted).isFile)
                 assertTrue(runBlocking { store.hasCached(albumKey) })
                 assertEquals(payload.toList(), File(promoted).readBytes().toList())
+                assertEquals(1L, runBlocking { store.observeVersion(albumKey).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)
@@ -149,6 +155,7 @@ class JvmArtworkCacheStoreTest {
                 val albumKey = "album:source-1:album-1"
 
                 val first = assertNotNull(runBlocking { store.cache(firstLocator, albumKey) })
+                assertEquals(1L, runBlocking { store.observeVersion(albumKey).first() })
                 val second = assertNotNull(
                     runBlocking {
                         store.cache(
@@ -162,6 +169,20 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(first, second)
                 assertEquals(secondPayload.toList(), File(second).readBytes().toList())
                 assertTrue(runBlocking { store.hasCached(albumKey) })
+                assertEquals(2L, runBlocking { store.observeVersion(albumKey).first() })
+
+                val samePath = assertNotNull(
+                    runBlocking {
+                        store.cache(
+                            locator = second,
+                            cacheKey = albumKey,
+                            replaceExisting = true,
+                        )
+                    },
+                )
+                assertEquals(second, samePath)
+                assertTrue(File(samePath).isFile)
+                assertEquals(2L, runBlocking { store.observeVersion(albumKey).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)

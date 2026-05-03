@@ -1292,7 +1292,6 @@ class PlaybackRepositoriesTest {
             repository.overrideCurrentTrackArtwork("https://img.example.com/override.jpg")
             advanceUntilIdle()
             assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
-            assertEquals(1L, repository.snapshot.value.currentArtworkRevision)
 
             database.lyricsCacheDao().upsert(
                 LyricsCacheEntity(
@@ -1310,40 +1309,6 @@ class PlaybackRepositoriesTest {
             assertEquals("/tmp/manual-new.jpg", repository.snapshot.value.currentTrack?.artworkLocator)
             assertEquals(null, repository.snapshot.value.metadataArtworkLocator)
             assertEquals("/tmp/manual-new.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
-            assertEquals(2L, repository.snapshot.value.currentArtworkRevision)
-        } finally {
-            repository.close()
-            scope.cancel()
-            database.close()
-        }
-    }
-
-    @Test
-    fun `switching current track resets artwork revision`() = runTest {
-        val database = createTestDatabase()
-        val gateway = FakePlaybackGateway()
-        val playbackPreferencesStore = FakePlaybackPreferencesStore()
-        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val repository = DefaultPlaybackRepository(
-            database = database,
-            gateway = gateway,
-            playbackPreferencesStore = playbackPreferencesStore,
-            scope = scope,
-        )
-
-        try {
-            advanceUntilIdle()
-            repository.playTracks(sampleTracks().take(2), startIndex = 0)
-            advanceUntilIdle()
-            repository.overrideCurrentTrackArtwork("https://img.example.com/override.jpg")
-            advanceUntilIdle()
-            assertEquals(1L, repository.snapshot.value.currentArtworkRevision)
-
-            repository.playQueueIndex(1)
-            advanceUntilIdle()
-
-            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
-            assertEquals(0L, repository.snapshot.value.currentArtworkRevision)
         } finally {
             repository.close()
             scope.cancel()
