@@ -110,6 +110,36 @@ import top.iwesley.lyn.music.ui.mainShellColors
 internal val mobilePrimaryNavigationTabs: List<AppTab> = listOf(AppTab.Library, AppTab.My)
 internal val mobileLibraryHubTabs: List<AppTab> = listOf(AppTab.Library, AppTab.Favorites, AppTab.Playlists)
 
+internal fun supportsMusicTagsEntry(platform: PlatformDescriptor): Boolean {
+    return !platform.isAndroidAutomotivePlatform()
+}
+
+internal fun isAppTabAvailableForPlatform(tab: AppTab, platform: PlatformDescriptor): Boolean {
+    return tab != AppTab.Tags || supportsMusicTagsEntry(platform)
+}
+
+internal fun resolveAppTabForPlatform(tab: AppTab, platform: PlatformDescriptor): AppTab {
+    return if (isAppTabAvailableForPlatform(tab, platform)) tab else AppTab.Library
+}
+
+internal fun mobileMoreNavigationTabs(platform: PlatformDescriptor): List<AppTab> {
+    return if (supportsMusicTagsEntry(platform)) {
+        listOf(AppTab.Tags, AppTab.Sources, AppTab.Settings)
+    } else {
+        listOf(AppTab.Sources, AppTab.Settings)
+    }
+}
+
+internal fun desktopNavigationTabs(platform: PlatformDescriptor): List<AppTab> {
+    val primaryTabs = listOf(AppTab.My, AppTab.Library, AppTab.Favorites, AppTab.Playlists)
+    val secondaryTabs = if (supportsMusicTagsEntry(platform)) {
+        listOf(AppTab.Tags, AppTab.Sources, AppTab.Settings)
+    } else {
+        listOf(AppTab.Sources, AppTab.Settings)
+    }
+    return primaryTabs + secondaryTabs
+}
+
 internal fun isMobileLibraryHubTab(tab: AppTab): Boolean = tab in mobileLibraryHubTabs
 
 internal fun mobileLibraryHubSupportsTrackSort(tab: AppTab): Boolean {
@@ -248,7 +278,7 @@ internal fun MobileShell(
 ) {
     val shellColors = mainShellColors
     val mobileNavIconSize = 29.dp
-    val moreTabs = remember { listOf(AppTab.Tags, AppTab.Sources, AppTab.Settings) }
+    val moreTabs = remember(platform) { mobileMoreNavigationTabs(platform) }
     val isMoreSelected = selectedTab in moreTabs
     var isMoreSheetVisible by rememberSaveable { mutableStateOf(false) }
     val moreSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -373,6 +403,7 @@ internal fun MobileShell(
                 isMoreSheetVisible = false
                 onTabSelected(tab)
             },
+            tabs = moreTabs,
         )
     }
 }
@@ -384,14 +415,19 @@ private fun MobileMoreSheet(
     sheetState: androidx.compose.material3.SheetState,
     onDismiss: () -> Unit,
     onSelect: (AppTab) -> Unit,
+    tabs: List<AppTab>,
 ) {
     val shellColors = mainShellColors
-    val items = remember {
-        listOf(
-            Triple(AppTab.Tags, Icons.Rounded.Tune, "音乐标签"),
-            Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
-            Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
-        )
+    val items = remember(tabs) {
+        tabs.map { tab ->
+            val icon = when (tab) {
+                AppTab.Tags -> Icons.Rounded.Tune
+                AppTab.Sources -> Icons.Rounded.FolderOpen
+                AppTab.Settings -> Icons.Rounded.Settings
+                else -> Icons.Rounded.MoreHoriz
+            }
+            Triple(tab, icon, mobileLibraryHubTabLabel(tab))
+        }
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -489,6 +525,7 @@ internal fun DesktopShell(
                 Spacer(Modifier.height(40.dp))
                 DesktopNav(
                     selectedTab = selectedTab,
+                    platform = platform,
                     onTabSelected = onTabSelected,
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
@@ -562,6 +599,7 @@ internal fun DesktopShell(
 @Composable
 private fun DesktopNav(
     selectedTab: AppTab,
+    platform: PlatformDescriptor,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -573,15 +611,17 @@ private fun DesktopNav(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        listOf(
-            Triple(AppTab.My, Icons.Rounded.Person, "我的"),
-            Triple(AppTab.Library, Icons.Rounded.LibraryMusic, "曲库"),
-            Triple(AppTab.Favorites, Icons.Rounded.FavoriteBorder, "喜欢"),
-            Triple(AppTab.Playlists, Icons.AutoMirrored.Rounded.List, "歌单"),
-            Triple(AppTab.Tags, Icons.Rounded.LocalOffer, "音乐标签"),
-            Triple(AppTab.Sources, Icons.Rounded.FolderOpen, "来源"),
-            Triple(AppTab.Settings, Icons.Rounded.Settings, "设置"),
-        ).forEach { (tab, icon, label) ->
+        desktopNavigationTabs(platform).forEach { tab ->
+            val icon = when (tab) {
+                AppTab.My -> Icons.Rounded.Person
+                AppTab.Library -> Icons.Rounded.LibraryMusic
+                AppTab.Favorites -> Icons.Rounded.FavoriteBorder
+                AppTab.Playlists -> Icons.AutoMirrored.Rounded.List
+                AppTab.Tags -> Icons.Rounded.LocalOffer
+                AppTab.Sources -> Icons.Rounded.FolderOpen
+                AppTab.Settings -> Icons.Rounded.Settings
+            }
+            val label = mobileLibraryHubTabLabel(tab)
             val selected = selectedTab == tab
             Row(
                 modifier = Modifier
@@ -662,9 +702,15 @@ private fun TabContent(
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (mobileLibraryHub && isMobileLibraryHubTab(selectedTab)) {
+    val resolvedSelectedTab = resolveAppTabForPlatform(selectedTab, platform)
+    LaunchedEffect(selectedTab, resolvedSelectedTab) {
+        if (resolvedSelectedTab != selectedTab) {
+            onTabSelected(resolvedSelectedTab)
+        }
+    }
+    if (mobileLibraryHub && isMobileLibraryHubTab(resolvedSelectedTab)) {
         MobileLibraryHubTab(
-            selectedTab = selectedTab,
+            selectedTab = resolvedSelectedTab,
             libraryState = libraryState,
             playlistsState = playlistsState,
             favoritesState = favoritesState,
@@ -680,7 +726,7 @@ private fun TabContent(
         return
     }
 
-    when (selectedTab) {
+    when (resolvedSelectedTab) {
         AppTab.My -> MyTab(
             platform = platform,
             state = myState,

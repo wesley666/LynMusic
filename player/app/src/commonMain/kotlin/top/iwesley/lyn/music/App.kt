@@ -180,6 +180,12 @@ fun App(
             onIntent = component.offlineDownloadStore::dispatch,
         ),
     ) {
+        LaunchedEffect(component.platform, selectedTab) {
+            val resolvedTab = resolveAppTabForPlatform(selectedTab, component.platform)
+            if (resolvedTab != selectedTab) {
+                selectedTab = resolvedTab
+            }
+        }
         LaunchedEffect(component) {
             withFrameNanos { }
             component.playerStore.startHydration()
@@ -451,7 +457,7 @@ private fun activateStartupStores(
     selectedTab: AppTab,
     pendingPlaylistTrack: Track?,
 ) {
-    when (selectedTab) {
+    when (resolveAppTabForPlatform(selectedTab, component.platform)) {
         AppTab.My -> component.myStore.ensureStarted()
         AppTab.Library -> component.libraryStore.ensureStarted()
         AppTab.Favorites -> component.favoritesStore.ensureContentStarted()

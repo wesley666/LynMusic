@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.AppTab
+import top.iwesley.lyn.music.core.model.PlatformCapabilities
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 
 class MobileLibraryHubNavigationTest {
@@ -170,5 +172,51 @@ class MobileLibraryHubNavigationTest {
         assertEquals(listOf(playlists[0]), filterMobileLibraryHubPlaylists(playlists, "daily"))
         assertEquals(listOf(playlists[1]), filterMobileLibraryHubPlaylists(playlists, "驾驶"))
         assertEquals(emptyList(), filterMobileLibraryHubPlaylists(playlists, "album"))
+    }
+
+    @Test
+    fun `automotive navigation hides music tags entry`() {
+        val platform = automotivePlatform()
+
+        assertFalse(supportsMusicTagsEntry(platform))
+        assertFalse(AppTab.Tags in mobileMoreNavigationTabs(platform))
+        assertFalse(AppTab.Tags in desktopNavigationTabs(platform))
+        assertFalse(isAppTabAvailableForPlatform(AppTab.Tags, platform))
+        assertEquals(AppTab.Library, resolveAppTabForPlatform(AppTab.Tags, platform))
+    }
+
+    @Test
+    fun `non automotive navigation keeps music tags entry`() {
+        val platform = androidPlatform()
+
+        assertTrue(supportsMusicTagsEntry(platform))
+        assertTrue(AppTab.Tags in mobileMoreNavigationTabs(platform))
+        assertTrue(AppTab.Tags in desktopNavigationTabs(platform))
+        assertTrue(isAppTabAvailableForPlatform(AppTab.Tags, platform))
+        assertEquals(AppTab.Tags, resolveAppTabForPlatform(AppTab.Tags, platform))
+    }
+
+    private fun androidPlatform(): PlatformDescriptor {
+        return PlatformDescriptor(
+            name = ANDROID_PLATFORM_NAME,
+            capabilities = emptyCapabilities(),
+        )
+    }
+
+    private fun automotivePlatform(): PlatformDescriptor {
+        return PlatformDescriptor(
+            name = ANDROID_AUTOMOTIVE_PLATFORM_NAME,
+            capabilities = emptyCapabilities(),
+        )
+    }
+
+    private fun emptyCapabilities(): PlatformCapabilities {
+        return PlatformCapabilities(
+            supportsLocalFolderImport = false,
+            supportsSambaImport = false,
+            supportsWebDavImport = false,
+            supportsNavidromeImport = false,
+            supportsSystemMediaControls = false,
+        )
     }
 }
