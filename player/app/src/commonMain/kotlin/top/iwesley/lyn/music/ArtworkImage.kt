@@ -22,7 +22,6 @@ import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.compose.rememberAsyncImagePainter
 import coil3.compose.setSingletonImageLoaderFactory
-import coil3.disk.DiskCache
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.maxBitmapSize
@@ -70,11 +69,7 @@ internal val LocalArtworkCacheStore = staticCompositionLocalOf<ArtworkCacheStore
 internal fun ConfigureLynArtworkImageLoader() {
     setSingletonImageLoaderFactory { context ->
         ImageLoader.Builder(context)
-            .diskCache {
-                DiskCache.Builder()
-                    .directory(lynCoilDiskCacheDirectory(context))
-                    .build()
-            }
+            .diskCache(null)
             .maxBitmapSize(Size(ArtworkDecodeSize.Player, ArtworkDecodeSize.Player))
             .build()
     }
@@ -172,7 +167,7 @@ private fun LynArtworkAsyncImage(
     val fallbackPainter = painterResource(Res.drawable.default_cover)
     var lastSuccessPainter by remember { mutableStateOf<Painter?>(null) }
     val request = remember(context, data, memoryCacheKey, placeholderMemoryCacheKey, diskCacheKey, cacheRemote, maxDecodeSizePx) {
-        val shouldUseDiskCache = cacheRemote && diskCacheKey != null
+        val shouldUseDiskCache = false
         ImageRequest.Builder(context)
             .data(data)
             .memoryCacheKey(memoryCacheKey)
