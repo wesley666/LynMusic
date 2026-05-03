@@ -49,6 +49,7 @@ internal data class LynArtworkModel(
     val isLocalFileTarget: Boolean,
     val cacheRemote: Boolean,
     val maxDecodeSizePx: Int,
+    val artworkRevision: Long,
 )
 
 internal data class LynResolvedArtworkTarget(
@@ -88,6 +89,7 @@ internal fun LynArtworkImage(
     colorFilter: ColorFilter? = null,
     cacheRemote: Boolean = true,
     maxDecodeSizePx: Int = ArtworkDecodeSize.Thumbnail,
+    artworkRevision: Long = 0L,
     retainPreviousWhileLoading: Boolean = false,
 ) {
     val artworkCacheStore = LocalArtworkCacheStore.current
@@ -96,6 +98,7 @@ internal fun LynArtworkImage(
         artworkCacheKey = artworkCacheKey,
         cacheRemote = cacheRemote,
         maxDecodeSizePx = maxDecodeSizePx,
+        artworkRevision = artworkRevision,
         artworkCacheStore = artworkCacheStore,
     )
     LynArtworkAsyncImage(
@@ -240,6 +243,7 @@ private fun rememberLynArtworkModel(
     artworkCacheKey: String?,
     cacheRemote: Boolean,
     maxDecodeSizePx: Int,
+    artworkRevision: Long,
     artworkCacheStore: ArtworkCacheStore,
 ): LynArtworkModel {
     val normalized = remember(artworkLocator) { normalizedArtworkCacheLocator(artworkLocator) }
@@ -266,6 +270,7 @@ private fun rememberLynArtworkModel(
         normalized,
         requestCacheKey,
         cacheRemote,
+        artworkRevision,
         artworkCacheStore,
     ) {
         value = resolveLynArtworkTarget(
@@ -275,7 +280,7 @@ private fun rememberLynArtworkModel(
             artworkCacheStore = artworkCacheStore,
         ) ?: initialTarget
     }
-    return remember(normalized, requestCacheKey, resolvedTarget, cacheRemote, maxDecodeSizePx) {
+    return remember(normalized, requestCacheKey, resolvedTarget, cacheRemote, maxDecodeSizePx, artworkRevision) {
         LynArtworkModel(
             locator = normalized,
             cacheKey = requestCacheKey,
@@ -284,6 +289,7 @@ private fun rememberLynArtworkModel(
             isLocalFileTarget = resolvedTarget?.isLocalFile == true,
             cacheRemote = cacheRemote,
             maxDecodeSizePx = maxDecodeSizePx,
+            artworkRevision = artworkRevision,
         )
     }
 }
@@ -304,6 +310,7 @@ internal fun lynArtworkMemoryCacheKey(model: LynArtworkModel): String? {
         base = base,
         sizePx = model.maxDecodeSizePx,
         version = model.targetVersion,
+        revision = model.artworkRevision,
     )
 }
 
@@ -318,6 +325,7 @@ internal fun lynArtworkMemoryPlaceholderKey(model: LynArtworkModel): String? {
         base = base,
         sizePx = placeholderSize,
         version = model.targetVersion,
+        revision = model.artworkRevision,
     )
 }
 
@@ -331,6 +339,7 @@ internal fun buildLynArtworkCacheKey(
     base: String,
     sizePx: Int,
     version: String?,
+    revision: Long = 0L,
 ): String {
     return buildString {
         append("lyn-artwork:")
@@ -340,6 +349,10 @@ internal fun buildLynArtworkCacheKey(
         if (!version.isNullOrBlank()) {
             append(':')
             append(version)
+        }
+        if (revision > 0L) {
+            append(":r")
+            append(revision)
         }
     }
 }

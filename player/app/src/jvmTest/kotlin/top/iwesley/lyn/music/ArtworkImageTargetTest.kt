@@ -39,6 +39,7 @@ class ArtworkImageTargetTest {
             isLocalFileTarget = resolved.isLocalFile,
             cacheRemote = true,
             maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
+            artworkRevision = 0L,
         )
 
         assertEquals(cachedFile.absolutePath, resolved.target)
@@ -48,6 +49,10 @@ class ArtworkImageTargetTest {
         assertEquals(
             "lyn-artwork:album:source:album-1:256:3:1700000000000",
             lynArtworkMemoryCacheKey(model),
+        )
+        assertEquals(
+            "lyn-artwork:album:source:album-1:256:3:1700000000000:r7",
+            lynArtworkMemoryCacheKey(model.copy(artworkRevision = 7L)),
         )
     }
 

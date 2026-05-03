@@ -1685,6 +1685,7 @@ internal fun VinylPlaceholder(
     artworkDiameterFraction: Float = DEFAULT_VINYL_ARTWORK_DIAMETER_FRACTION,
     innerGlowDiameterFraction: Float = DEFAULT_VINYL_INNER_GLOW_DIAMETER_FRACTION,
     maxArtworkDecodeSizePx: Int = ArtworkDecodeSize.Thumbnail,
+    artworkRevision: Long = 0L,
     retainPreviousArtworkWhileLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -1820,6 +1821,7 @@ internal fun VinylPlaceholder(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                         maxDecodeSizePx = maxArtworkDecodeSizePx,
+                        artworkRevision = artworkRevision,
                         retainPreviousWhileLoading = retainPreviousArtworkWhileLoading,
                     )
                 }

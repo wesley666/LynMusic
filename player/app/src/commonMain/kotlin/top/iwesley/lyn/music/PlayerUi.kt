@@ -412,6 +412,7 @@ private fun MiniPlayerBar(
             vinylSize = 50.dp,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
+            artworkRevision = snapshot.currentArtworkRevision,
             spinning = snapshot.isPlaying,
             retainPreviousArtworkWhileLoading = true,
         )
@@ -618,6 +619,7 @@ private fun MobileMiniPlayerBar(
                 vinylSize = 46.dp,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
                 artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
+                artworkRevision = snapshot.currentArtworkRevision,
                 spinning = snapshot.isPlaying,
                 retainPreviousArtworkWhileLoading = true,
             )
@@ -927,6 +929,7 @@ private fun PlayerOverlay(
                     artworkCacheKey = trackArtworkCacheKey(track),
                     contentScale = ContentScale.Crop,
                     maxDecodeSizePx = ArtworkDecodeSize.Player,
+                    artworkRevision = state.snapshot.currentArtworkRevision,
                     retainPreviousWhileLoading = true,
                     modifier = Modifier
                         .matchParentSize()
@@ -1350,6 +1353,7 @@ private fun PlayerInfoPane(
                 artworkBitmap = artworkBitmap,
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
                 artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
+                artworkRevision = snapshot.currentArtworkRevision,
                 spinning = snapshot.isPlaying,
                 artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
                 innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,
@@ -1436,6 +1440,7 @@ private fun SwipeablePlayerArtwork(
             artworkBitmap = artworkBitmap,
             artworkLocator = snapshot.currentDisplayArtworkLocator,
             artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
+            artworkRevision = snapshot.currentArtworkRevision,
             spinning = snapshot.isPlaying,
             artworkDiameterFraction = PLAYER_INFO_VINYL_ARTWORK_DIAMETER_FRACTION,
             innerGlowDiameterFraction = PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION,

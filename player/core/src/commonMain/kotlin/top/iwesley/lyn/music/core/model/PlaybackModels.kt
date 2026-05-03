@@ -23,6 +23,7 @@ data class PlaybackSnapshot(
     val metadataArtistName: String? = null,
     val metadataAlbumTitle: String? = null,
     val metadataArtworkLocator: String? = null,
+    val currentArtworkRevision: Long = 0L,
     val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
     val currentPlaybackAudioFormat: PlaybackAudioFormat? = null,
     val errorMessage: String? = null,
