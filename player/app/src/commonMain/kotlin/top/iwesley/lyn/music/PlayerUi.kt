@@ -1264,44 +1264,49 @@ private fun MobilePlayerPrimaryPane(
     }
     var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
 
-    if (lyricsVisible) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { lyricsVisible = false },
-        ) {
-            PlayerLyricsPane(
-                state = state,
-                track = track,
-                onPlayerIntent = onPlayerIntent,
-                modifier = Modifier.fillMaxSize(),
-                compact = true,
-            )
-        }
-        return
-    }
-
     Box(
         modifier = modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(30.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { lyricsVisible = true },
     ) {
-        PlayerInfoPane(
-            snapshot = state.snapshot,
-            track = track,
-            artworkBitmap = artworkBitmap,
-            modifier = Modifier.fillMaxSize(),
-            compact = true,
-            compactLyricsText = displayCompactLyricsText,
-            onPlayerIntent = onPlayerIntent,
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(30.dp))
+                .alpha(if (lyricsVisible) 0f else 1f)
+                .clickable(
+                    enabled = !lyricsVisible,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { lyricsVisible = true },
+        ) {
+            PlayerInfoPane(
+                snapshot = state.snapshot,
+                track = track,
+                artworkBitmap = artworkBitmap,
+                modifier = Modifier.fillMaxSize(),
+                compact = true,
+                compactLyricsText = displayCompactLyricsText,
+                onPlayerIntent = onPlayerIntent,
+            )
+        }
+        if (lyricsVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { lyricsVisible = false },
+            ) {
+                PlayerLyricsPane(
+                    state = state,
+                    track = track,
+                    onPlayerIntent = onPlayerIntent,
+                    modifier = Modifier.fillMaxSize(),
+                    compact = true,
+                )
+            }
+        }
     }
 }
 
