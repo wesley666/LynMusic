@@ -552,6 +552,7 @@ internal fun DesktopShell(
                     onOpenAddToPlaylist = onOpenAddToPlaylist,
                     onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                     compact = false,
+                    automotiveLandscape = shouldUseAutomotiveLandscapeMiniPlayer(platform),
                 )
             }
         }

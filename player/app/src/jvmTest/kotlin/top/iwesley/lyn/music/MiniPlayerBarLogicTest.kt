@@ -11,10 +11,32 @@ import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
+import top.iwesley.lyn.music.core.model.PlatformCapabilities
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 
 class MiniPlayerBarLogicTest {
+    @Test
+    fun `automotive landscape mini player is only selected for automotive platform`() {
+        assertTrue(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform(ANDROID_AUTOMOTIVE_PLATFORM_NAME)))
+        assertFalse(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform(ANDROID_PLATFORM_NAME)))
+        assertFalse(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform("Desktop")))
+    }
+
+    @Test
+    fun `automotive landscape mini player action order prioritizes playback controls`() {
+        assertEquals(
+            listOf(
+                AutomotiveLandscapeMiniPlayerAction.Previous,
+                AutomotiveLandscapeMiniPlayerAction.PlayPause,
+                AutomotiveLandscapeMiniPlayerAction.Next,
+                AutomotiveLandscapeMiniPlayerAction.Queue,
+                AutomotiveLandscapeMiniPlayerAction.Favorite,
+            ),
+            automotiveLandscapeMiniPlayerActions(),
+        )
+    }
 
     @Test
     fun `mini player lyrics prefers highlighted line`() {
@@ -516,6 +538,19 @@ class MiniPlayerBarLogicTest {
             lines = lines.toList(),
             sourceId = "test-source",
             rawPayload = "lyrics",
+        )
+    }
+
+    private fun testPlatform(name: String): PlatformDescriptor {
+        return PlatformDescriptor(
+            name = name,
+            capabilities = PlatformCapabilities(
+                supportsLocalFolderImport = false,
+                supportsSambaImport = false,
+                supportsWebDavImport = false,
+                supportsNavidromeImport = false,
+                supportsSystemMediaControls = false,
+            ),
         )
     }
 

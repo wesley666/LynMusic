@@ -228,6 +228,7 @@ internal fun MiniPlayerBarVisibility(
     compact: Boolean = false,
     mobile: Boolean = false,
     mobilePortraitMiniPlayer: Boolean = false,
+    automotiveLandscape: Boolean = false,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -268,6 +269,7 @@ internal fun MiniPlayerBarVisibility(
             compact = compact,
             mobile = mobile,
             mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
+            automotiveLandscape = automotiveLandscape,
         )
     }
 }
@@ -430,6 +432,7 @@ private fun MiniPlayerBar(
     compact: Boolean = false,
     mobile: Boolean = false,
     mobilePortraitMiniPlayer: Boolean = false,
+    automotiveLandscape: Boolean = false,
 ) {
     val snapshot = state.snapshot
     if (snapshot.currentTrack == null) {
@@ -444,6 +447,17 @@ private fun MiniPlayerBar(
             snapshot = snapshot,
             lyricsText = miniPlayerLyricsText,
             showPortraitLyrics = mobilePortraitMiniPlayer,
+            onPlayerIntent = onPlayerIntent,
+            onOpenQueue = onOpenQueue,
+        )
+        return
+    }
+    if (automotiveLandscape) {
+        AutomotiveLandscapeMiniPlayerBar(
+            snapshot = snapshot,
+            lyricsText = miniPlayerLyricsText,
+            isFavorite = isFavorite,
+            onToggleFavorite = onToggleFavorite,
             onPlayerIntent = onPlayerIntent,
             onOpenQueue = onOpenQueue,
         )
@@ -549,6 +563,173 @@ private fun MiniPlayerBar(
         }
         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
             Icon(Icons.Rounded.SkipNext, contentDescription = null)
+        }
+    }
+}
+
+internal enum class AutomotiveLandscapeMiniPlayerAction {
+    Previous,
+    PlayPause,
+    Next,
+    Queue,
+    Favorite,
+}
+
+internal fun shouldUseAutomotiveLandscapeMiniPlayer(platform: PlatformDescriptor): Boolean {
+    return platform.isAndroidAutomotivePlatform()
+}
+
+internal fun automotiveLandscapeMiniPlayerActions(): List<AutomotiveLandscapeMiniPlayerAction> {
+    return listOf(
+        AutomotiveLandscapeMiniPlayerAction.Previous,
+        AutomotiveLandscapeMiniPlayerAction.PlayPause,
+        AutomotiveLandscapeMiniPlayerAction.Next,
+        AutomotiveLandscapeMiniPlayerAction.Queue,
+        AutomotiveLandscapeMiniPlayerAction.Favorite,
+    )
+}
+
+@Composable
+private fun AutomotiveLandscapeMiniPlayerBar(
+    snapshot: PlaybackSnapshot,
+    lyricsText: String?,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenQueue: () -> Unit,
+) {
+    val actionTint = Color.White.copy(alpha = 0.96f)
+    val supportingText = lyricsText
+        ?.takeIf { hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = it) }
+        ?: snapshot.currentDisplayArtistName
+        ?: "未知艺人"
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 0.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                shape = RoundedCornerShape(26.dp),
+            )
+            .clickable { onPlayerIntent(PlayerIntent.ExpandedChanged(true)) }
+            .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Row(
+            modifier = Modifier.widthIn(min = 290.dp, max = 330.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            automotiveLandscapeMiniPlayerActions().forEach { action ->
+                when (action) {
+                    AutomotiveLandscapeMiniPlayerAction.Previous -> {
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(46.dp)) {
+                            Icon(
+                                imageVector = Icons.Rounded.SkipPrevious,
+                                contentDescription = "上一首",
+                                tint = actionTint,
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
+                    }
+
+                    AutomotiveLandscapeMiniPlayerAction.PlayPause -> {
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(58.dp)) {
+                            Icon(
+                                imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                                contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                                tint = actionTint,
+                                modifier = Modifier.size(44.dp),
+                            )
+                        }
+                    }
+
+                    AutomotiveLandscapeMiniPlayerAction.Next -> {
+                        IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(46.dp)) {
+                            Icon(
+                                imageVector = Icons.Rounded.SkipNext,
+                                contentDescription = "下一首",
+                                tint = actionTint,
+                                modifier = Modifier.size(26.dp),
+                            )
+                        }
+                    }
+
+                    AutomotiveLandscapeMiniPlayerAction.Queue -> {
+                        QueueToggleButton(
+                            onClick = onOpenQueue,
+                            tint = actionTint,
+                            buttonSize = 46.dp,
+                            iconSize = 24.dp,
+                        )
+                    }
+
+                    AutomotiveLandscapeMiniPlayerAction.Favorite -> {
+                        FavoriteToggleButton(
+                            isFavorite = isFavorite,
+                            onClick = onToggleFavorite,
+                            tint = if (isFavorite) Color(0xFFE5484D) else actionTint,
+                            buttonSize = 46.dp,
+                            iconSize = 24.dp,
+                        )
+                    }
+                }
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                text = "${formatDuration(snapshot.positionMs)}/${formatDuration(snapshot.durationMs)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.86f),
+                maxLines = 1,
+            )
+            MiniPlayerProgressScrubber(
+                snapshot = snapshot,
+                onPlayerIntent = onPlayerIntent,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Row(
+            modifier = Modifier.widthIn(min = 300.dp, max = 390.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+        ) {
+            Column(
+                modifier = Modifier.weight(1f, fill = false),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = snapshot.currentDisplayTitle,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White.copy(alpha = 0.96f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                )
+                Text(
+                    text = supportingText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                )
+            }
+            VinylPlaceholder(
+                vinylSize = 52.dp,
+                artworkLocator = snapshot.currentDisplayArtworkLocator,
+                artworkCacheKey = snapshot.currentTrack?.let(::trackArtworkCacheKey),
+                spinning = snapshot.isPlaying,
+                retainPreviousArtworkWhileLoading = true,
+            )
         }
     }
 }
