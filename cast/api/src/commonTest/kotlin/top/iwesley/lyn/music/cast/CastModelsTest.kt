@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import top.iwesley.lyn.music.core.model.Track
 
 class CastModelsTest {
     @Test
@@ -34,6 +35,30 @@ class CastModelsTest {
     }
 
     @Test
+    fun `direct cast artwork uri keeps network urls and drops local urls`() {
+        val track = sampleTrack()
+        val networkArtwork = buildDirectCastMediaRequest(
+            track = track,
+            uri = "https://example.com/song.mp3",
+            artworkUri = " https://img.example.com/cover.jpg?token=1 ",
+        )
+        val localArtwork = buildDirectCastMediaRequest(
+            track = track,
+            uri = "https://example.com/song.mp3",
+            artworkUri = "/tmp/cover.jpg",
+        )
+        val fileArtwork = buildDirectCastMediaRequest(
+            track = track,
+            uri = "https://example.com/song.mp3",
+            artworkUri = "file:///tmp/cover.jpg",
+        )
+
+        assertEquals("https://img.example.com/cover.jpg?token=1", networkArtwork.artworkUri)
+        assertEquals(null, localArtwork.artworkUri)
+        assertEquals(null, fileArtwork.artworkUri)
+    }
+
+    @Test
     fun `mime type is inferred from common audio extensions`() {
         assertEquals("audio/mpeg", inferCastMimeType("https://example.com/a.mp3?token=1"))
         assertEquals("audio/flac", inferCastMimeType("https://example.com/a.FLAC"))
@@ -49,4 +74,17 @@ class CastModelsTest {
 
         assertEquals("网络不可用", castSessionStatusLabel(state))
     }
+}
+
+private fun sampleTrack(): Track {
+    return Track(
+        id = "track-1",
+        sourceId = "source-1",
+        title = "Song",
+        artistName = "Artist",
+        albumTitle = "Album",
+        durationMs = 180_000L,
+        mediaLocator = "https://example.com/song.mp3",
+        relativePath = "Song.mp3",
+    )
 }

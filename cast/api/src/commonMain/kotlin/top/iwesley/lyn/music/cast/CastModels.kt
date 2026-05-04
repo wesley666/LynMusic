@@ -21,6 +21,7 @@ data class CastMediaRequest(
     val albumTitle: String? = null,
     val mimeType: String = DEFAULT_CAST_AUDIO_MIME_TYPE,
     val durationMs: Long = 0L,
+    val artworkUri: String? = null,
 )
 
 enum class CastSessionStatus {
@@ -98,6 +99,11 @@ fun isDirectCastUri(uri: String): Boolean {
         trimmed.startsWith("https://", ignoreCase = true)
 }
 
+fun directCastUriOrNull(uri: String?): String? {
+    val trimmed = uri?.trim().orEmpty()
+    return trimmed.takeIf(::isDirectCastUri)
+}
+
 fun inferCastMimeType(uri: String): String {
     val path = uri.substringBefore('?').substringBefore('#').lowercase()
     return when {
@@ -116,14 +122,17 @@ fun buildDirectCastMediaRequest(
     track: Track,
     uri: String,
     durationMs: Long = track.durationMs,
+    artworkUri: String? = null,
 ): CastMediaRequest {
+    val normalizedUri = uri.trim()
     return CastMediaRequest(
-        uri = uri,
+        uri = normalizedUri,
         title = track.title,
         artistName = track.artistName,
         albumTitle = track.albumTitle,
-        mimeType = inferCastMimeType(uri),
+        mimeType = inferCastMimeType(normalizedUri),
         durationMs = durationMs.coerceAtLeast(0L),
+        artworkUri = directCastUriOrNull(artworkUri),
     )
 }
 

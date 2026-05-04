@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.cast.upnp.android
 
 import top.iwesley.lyn.music.cast.CastMediaRequest
+import top.iwesley.lyn.music.cast.directCastUriOrNull
 
 internal fun buildUpnpDidl(request: CastMediaRequest): String {
     val duration = request.durationMs
@@ -8,6 +9,7 @@ internal fun buildUpnpDidl(request: CastMediaRequest): String {
         ?.let(::formatUpnpDuration)
     val artist = request.artistName?.takeIf { it.isNotBlank() }
     val album = request.albumTitle?.takeIf { it.isNotBlank() }
+    val artworkUri = directCastUriOrNull(request.artworkUri)
     return buildString {
         append("""<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" """)
         append("""xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" """)
@@ -25,6 +27,11 @@ internal fun buildUpnpDidl(request: CastMediaRequest): String {
             append("<upnp:album>")
             append(escapeXml(it))
             append("</upnp:album>")
+        }
+        artworkUri?.let {
+            append("<upnp:albumArtURI>")
+            append(escapeXml(it))
+            append("</upnp:albumArtURI>")
         }
         append("<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
         append("""<res protocolInfo="http-get:*:""")

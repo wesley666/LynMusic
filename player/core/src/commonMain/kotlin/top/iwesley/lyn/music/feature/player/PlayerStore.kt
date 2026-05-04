@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.cast.CastGateway
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.buildDirectCastMediaRequest
+import top.iwesley.lyn.music.cast.directCastUriOrNull
 import top.iwesley.lyn.music.cast.isDirectCastUri
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -35,6 +36,7 @@ import top.iwesley.lyn.music.core.model.buildLyricsShareSuggestedName
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseLyricsShareImportedFontHash
+import top.iwesley.lyn.music.core.model.parseNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.core.mvi.BaseStore
@@ -468,8 +470,19 @@ class PlayerStore(
                 track = track,
                 uri = uri,
                 durationMs = snapshot.durationMs.takeIf { it > 0L } ?: track.durationMs,
+                artworkUri = resolveCastArtworkUri(snapshot),
             ),
         )
+    }
+
+    private suspend fun resolveCastArtworkUri(snapshot: PlaybackSnapshot): String? {
+        val artworkLocator = snapshot.currentDisplayArtworkLocator?.trim().orEmpty()
+        val artworkUri = when {
+            isDirectCastUri(artworkLocator) -> artworkLocator
+            parseNavidromeCoverLocator(artworkLocator) != null -> NavidromeLocatorRuntime.resolveCoverArtUrl(artworkLocator)
+            else -> null
+        }
+        return directCastUriOrNull(artworkUri)
     }
 
     private suspend fun openLyricsShare() {

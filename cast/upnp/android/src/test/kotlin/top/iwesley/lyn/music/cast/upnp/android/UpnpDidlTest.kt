@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.cast.upnp.android
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import top.iwesley.lyn.music.cast.CastMediaRequest
 
 class UpnpDidlTest {
@@ -30,5 +31,32 @@ class UpnpDidlTest {
         assertContains(didl, "<upnp:album>&quot;Hits&quot;</upnp:album>")
         assertContains(didl, "https://example.com/a&amp;b.mp3")
         assertContains(didl, "duration=\"00:02:03\"")
+    }
+
+    @Test
+    fun `didl writes network album art uri`() {
+        val didl = buildUpnpDidl(
+            CastMediaRequest(
+                uri = "https://example.com/song.mp3",
+                title = "Song",
+                artworkUri = "https://img.example.com/a&b.jpg",
+            ),
+        )
+
+        assertContains(didl, "<upnp:albumArtURI>https://img.example.com/a&amp;b.jpg</upnp:albumArtURI>")
+    }
+
+    @Test
+    fun `didl omits local album art uri`() {
+        val didl = buildUpnpDidl(
+            CastMediaRequest(
+                uri = "https://example.com/song.mp3",
+                title = "Song",
+                artworkUri = "/tmp/cover.jpg",
+            ),
+        )
+
+        assertFalse(didl.contains("albumArtURI"))
+        assertFalse(didl.contains("/tmp/cover.jpg"))
     }
 }
