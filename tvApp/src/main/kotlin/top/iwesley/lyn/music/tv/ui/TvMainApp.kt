@@ -7,12 +7,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import top.iwesley.lyn.music.LynMusicAppComponent
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.tv.ConfigureTvImageLoader
 import top.iwesley.lyn.music.tv.TvAppComponentHolder
+import top.iwesley.lyn.music.tv.TvPlayerActivity
 
 @Composable
 internal fun TvMainApp(
@@ -35,6 +37,7 @@ internal fun TvMainApp(
     val libraryState by component.libraryStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
     val playerState by component.playerStore.state.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(component, tvStore) {
         component.playerStore.startHydration()
@@ -51,8 +54,10 @@ internal fun TvMainApp(
                     component.libraryStore.dispatch(LibraryIntent.SearchChanged(effect.query))
                 is TvMainEffect.SearchFavorites ->
                     component.favoritesStore.dispatch(FavoritesIntent.SearchChanged(effect.query))
-                is TvMainEffect.PlayTracks ->
+                is TvMainEffect.PlayTracks -> {
                     component.playerStore.dispatch(PlayerIntent.PlayTracks(effect.tracks, effect.startIndex))
+                    context.startActivity(TvPlayerActivity.createIntent(context))
+                }
                 is TvMainEffect.ToggleFavorite ->
                     component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(effect.track))
             }

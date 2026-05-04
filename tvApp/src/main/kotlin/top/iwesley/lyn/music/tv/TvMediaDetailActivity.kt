@@ -107,6 +107,9 @@ class TvMediaDetailActivity : ComponentActivity() {
                     component = component,
                     args = args,
                     onBack = ::finish,
+                    onOpenPlayer = {
+                        startActivity(TvPlayerActivity.createIntent(this@TvMediaDetailActivity))
+                    },
                 )
             }
         }
@@ -137,6 +140,7 @@ private fun TvMediaDetailApp(
     component: LynMusicAppComponent,
     args: TvMediaDetailArgs,
     onBack: () -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     val libraryState by component.libraryStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
@@ -175,6 +179,7 @@ private fun TvMediaDetailApp(
             artworkCacheStore = component.artworkCacheStore,
             onPlayTracks = { playTracks, index ->
                 component.playerStore.dispatch(PlayerIntent.PlayTracks(playTracks, index))
+                onOpenPlayer()
             },
             onToggleFavorite = { track ->
                 component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
