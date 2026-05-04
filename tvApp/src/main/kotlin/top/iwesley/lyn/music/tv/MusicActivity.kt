@@ -56,6 +56,7 @@ class MusicActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         TvUpnpRendererService.start(this)
         setContent {
+            ConfigureTvImageLoader()
             val state by TvUpnpRendererRouter.state.collectAsState()
             MusicRendererTheme {
                 MusicRendererScreen(

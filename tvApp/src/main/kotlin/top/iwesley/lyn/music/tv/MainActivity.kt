@@ -16,12 +16,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import top.iwesley.lyn.music.ANDROID_TV_PLATFORM_NAME
 import kotlin.math.min
-import top.iwesley.lyn.music.App
 import top.iwesley.lyn.music.StartupDatabaseErrorScreen
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.platform.createAndroidRuntimeGraph
+import top.iwesley.lyn.music.tv.ui.TvMainApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
             if (appComponent != null) {
                 val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
                 ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                    App(appComponent)
+                    TvMainApp(appComponent)
                 }
             } else {
                 StartupDatabaseErrorScreen(
