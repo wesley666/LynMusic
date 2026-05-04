@@ -14,6 +14,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.cast.CastGateway
+import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -738,6 +740,7 @@ class DefaultPlaybackRepository(
 data class PlayerRuntimeServices(
     val playbackGateway: PlaybackGateway,
     val playbackPreferencesStore: PlaybackPreferencesStore,
+    val castGateway: CastGateway = UnsupportedCastGateway,
     val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
     val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,

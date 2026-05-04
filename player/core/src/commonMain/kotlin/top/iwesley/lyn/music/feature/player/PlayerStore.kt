@@ -6,6 +6,11 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import top.iwesley.lyn.music.cast.CastGateway
+import top.iwesley.lyn.music.cast.CastSessionState
+import top.iwesley.lyn.music.cast.UnsupportedCastGateway
+import top.iwesley.lyn.music.cast.buildDirectCastMediaRequest
+import top.iwesley.lyn.music.cast.isDirectCastUri
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
@@ -19,6 +24,7 @@ import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
@@ -89,6 +95,9 @@ data class PlayerState(
     val isShareSaving: Boolean = false,
     val isShareCopying: Boolean = false,
     val sleepTimer: SleepTimerState = SleepTimerState(),
+    val castState: CastSessionState = CastSessionState(),
+    val isCastSheetVisible: Boolean = false,
+    val castMessage: String? = null,
     val shareMessage: String? = null,
     val message: String? = null,
 ) {
@@ -110,6 +119,12 @@ sealed interface PlayerIntent {
     data object CycleMode : PlayerIntent
     data class StartSleepTimer(val minutes: Int) : PlayerIntent
     data object CancelSleepTimer : PlayerIntent
+    data object OpenCastSheet : PlayerIntent
+    data object DismissCastSheet : PlayerIntent
+    data object RefreshCastDevices : PlayerIntent
+    data class CastToDevice(val deviceId: String) : PlayerIntent
+    data object StopCast : PlayerIntent
+    data object ClearCastMessage : PlayerIntent
     data class ExpandedChanged(val value: Boolean) : PlayerIntent
     data class QueueVisibilityChanged(val value: Boolean) : PlayerIntent
     data object OpenManualLyricsSearch : PlayerIntent
@@ -148,6 +163,7 @@ class PlayerStore(
     private val playbackRepository: PlaybackRepository,
     private val lyricsRepository: LyricsRepository,
     private val storeScope: CoroutineScope,
+    private val castGateway: CastGateway = UnsupportedCastGateway,
     private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
     private val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
@@ -173,6 +189,11 @@ class PlayerStore(
     private var sleepTimerJob: Job? = null
 
     init {
+        storeScope.launch {
+            castGateway.state.collect { castState ->
+                updateState { it.copy(castState = castState) }
+            }
+        }
         storeScope.launch {
             playbackRepository.snapshot.collect { snapshot ->
                 val previousTrackId = state.value.snapshot.currentTrack?.id
@@ -204,6 +225,7 @@ class PlayerStore(
                         manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
                         manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
                         manualLyricsError = if (trackChanged) null else current.manualLyricsError,
+                        castMessage = if (trackChanged) null else current.castMessage,
                         message = when {
                             shouldShowPlaybackError -> snapshot.errorMessage
                             trackChanged -> null
@@ -252,6 +274,12 @@ class PlayerStore(
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
             is PlayerIntent.StartSleepTimer -> startSleepTimer(intent.minutes)
             PlayerIntent.CancelSleepTimer -> cancelSleepTimer()
+            PlayerIntent.OpenCastSheet -> openCastSheet()
+            PlayerIntent.DismissCastSheet -> dismissCastSheet()
+            PlayerIntent.RefreshCastDevices -> refreshCastDevices()
+            is PlayerIntent.CastToDevice -> castToDevice(intent.deviceId)
+            PlayerIntent.StopCast -> stopCast()
+            PlayerIntent.ClearCastMessage -> updateState { it.copy(castMessage = null) }
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
             is PlayerIntent.QueueVisibilityChanged -> updateState {
                 it.copy(isQueueVisible = intent.value && it.snapshot.currentTrack != null)
@@ -373,6 +401,75 @@ class PlayerStore(
                 message = null,
             )
         }
+    }
+
+    private suspend fun openCastSheet() {
+        if (!castGateway.isSupported) {
+            updateState {
+                it.copy(
+                    isCastSheetVisible = true,
+                    castMessage = "当前平台暂不支持投屏。",
+                )
+            }
+            return
+        }
+        updateState { it.copy(isCastSheetVisible = true, castMessage = null) }
+        refreshCastDevices()
+    }
+
+    private suspend fun dismissCastSheet() {
+        updateState { it.copy(isCastSheetVisible = false, castMessage = null) }
+        castGateway.stopDiscovery()
+    }
+
+    private suspend fun refreshCastDevices() {
+        if (!castGateway.isSupported) {
+            updateState { it.copy(castMessage = "当前平台暂不支持投屏。") }
+            return
+        }
+        castGateway.startDiscovery()
+    }
+
+    private suspend fun castToDevice(deviceId: String) {
+        val snapshot = state.value.snapshot
+        val track = snapshot.currentTrack ?: run {
+            updateState { it.copy(castMessage = "没有正在播放的歌曲。") }
+            return
+        }
+        val request = resolveCastMediaRequest(track = track, snapshot = snapshot).getOrElse { error ->
+            updateState { it.copy(castMessage = error.message ?: "当前歌曲暂不支持投屏。") }
+            return
+        }
+        updateState { it.copy(castMessage = null) }
+        castGateway.cast(deviceId = deviceId, request = request)
+    }
+
+    private suspend fun stopCast() {
+        castGateway.stopCast()
+    }
+
+    private suspend fun resolveCastMediaRequest(
+        track: Track,
+        snapshot: PlaybackSnapshot,
+    ): Result<top.iwesley.lyn.music.cast.CastMediaRequest> {
+        val locator = track.mediaLocator.trim()
+        val uri = when {
+            isDirectCastUri(locator) -> locator
+            parseNavidromeSongLocator(locator) != null -> NavidromeLocatorRuntime.resolveStreamUrl(locator)
+            else -> null
+        }?.takeIf(::isDirectCastUri)
+
+        if (uri == null) {
+            return Result.failure(IllegalStateException("当前歌曲暂不支持投屏。"))
+        }
+
+        return Result.success(
+            buildDirectCastMediaRequest(
+                track = track,
+                uri = uri,
+                durationMs = snapshot.durationMs.takeIf { it > 0L } ?: track.durationMs,
+            ),
+        )
     }
 
     private suspend fun openLyricsShare() {

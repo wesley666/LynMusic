@@ -26,25 +26,18 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":cast:api"))
             implementation(project(":shared:core"))
-            implementation(project(":shared:data"))
-            implementation(libs.androidx.room.runtime)
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
-        jvmTest.dependencies {
-            implementation(libs.kotlin.testJunit)
-            implementation(libs.kotlinx.coroutines.test)
-        }
     }
 }
 
 android {
-    namespace = "top.iwesley.lyn.music.player.core"
+    namespace = "top.iwesley.lyn.music.cast.api"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {

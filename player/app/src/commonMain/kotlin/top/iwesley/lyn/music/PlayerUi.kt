@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -48,6 +50,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -60,6 +63,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
@@ -123,6 +128,9 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
+import top.iwesley.lyn.music.cast.CastSessionState
+import top.iwesley.lyn.music.cast.CastSessionStatus
+import top.iwesley.lyn.music.cast.castSessionStatusLabel
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
@@ -1445,6 +1453,9 @@ private fun PlayerOverlay(
                         PlayerBottomControls(
                             snapshot = state.snapshot,
                             sleepTimer = state.sleepTimer,
+                            castState = state.castState,
+                            isCastSheetVisible = state.isCastSheetVisible,
+                            castMessage = state.castMessage,
                             track = track,
                             mobilePlayback = mobilePlayback,
                             wide = wide,
@@ -1688,6 +1699,9 @@ private fun SwipeablePlayerArtwork(
 private fun PlayerBottomControls(
     snapshot: PlaybackSnapshot,
     sleepTimer: SleepTimerState,
+    castState: CastSessionState,
+    isCastSheetVisible: Boolean,
+    castMessage: String?,
     track: Track,
     mobilePlayback: Boolean,
     wide: Boolean,
@@ -1890,6 +1904,8 @@ private fun PlayerBottomControls(
                     onOpenLibraryNavigationTarget(target)
                 },
                 sleepTimer = sleepTimer,
+                castState = castState,
+                castMessage = castMessage,
                 showOfflineDownload = showOfflineDownloadEntry,
                 offlineDownloadStatus = compactPlayerOfflineDownloadStatusLabel(offlineDownload),
                 onOpenOfflineDownload = {
@@ -1900,6 +1916,20 @@ private fun PlayerBottomControls(
                     isMoreSheetVisible = false
                     isSleepTimerSheetVisible = true
                 },
+                onOpenCast = {
+                    isMoreSheetVisible = false
+                    onPlayerIntent(PlayerIntent.OpenCastSheet)
+                },
+            )
+        }
+        if (mobilePlayback && isCastSheetVisible) {
+            CastDeviceBottomSheet(
+                castState = castState,
+                castMessage = castMessage,
+                onDismiss = { onPlayerIntent(PlayerIntent.DismissCastSheet) },
+                onRefresh = { onPlayerIntent(PlayerIntent.RefreshCastDevices) },
+                onCastDevice = { deviceId -> onPlayerIntent(PlayerIntent.CastToDevice(deviceId)) },
+                onStopCast = { onPlayerIntent(PlayerIntent.StopCast) },
             )
         }
         if (
@@ -2144,12 +2174,15 @@ private fun CompactPlayerMoreSheet(
     track: Track,
     navigationTargets: PlaybackLibraryNavigationTargets,
     sleepTimer: SleepTimerState,
+    castState: CastSessionState,
+    castMessage: String?,
     onDismiss: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
     showOfflineDownload: Boolean,
     offlineDownloadStatus: String,
     onOpenOfflineDownload: () -> Unit,
     onOpenSleepTimer: () -> Unit,
+    onOpenCast: () -> Unit,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -2230,6 +2263,13 @@ private fun CompactPlayerMoreSheet(
                         onClick = {},
                     )
                 }
+                CompactPlayerMoreSheetRow(
+                    icon = Icons.Rounded.Cast,
+                    title = "投屏",
+                    value = castMessage ?: castSessionStatusLabel(castState),
+                    enabled = true,
+                    onClick = onOpenCast,
+                )
                 if (showOfflineDownload) {
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.Download,
@@ -2267,6 +2307,135 @@ private fun CompactPlayerMoreSheet(
                     enabled = true,
                     onClick = onOpenSleepTimer,
                 )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CastDeviceBottomSheet(
+    castState: CastSessionState,
+    castMessage: String?,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onCastDevice: (String) -> Unit,
+    onStopCast: () -> Unit,
+) {
+    val shellColors = mainShellColors
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val appDensity = LocalDensity.current
+    val statusText = castMessage ?: castState.errorMessage ?: castSessionStatusLabel(castState)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = shellColors.navContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+        dragHandle = {
+            CompositionLocalProvider(LocalDensity provides appDensity) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 8.dp)
+                        .size(width = 50.dp, height = 5.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(shellColors.cardBorder.copy(alpha = 0.75f)),
+                )
+            }
+        },
+    ) {
+        CompositionLocalProvider(LocalDensity provides appDensity) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "投屏",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = statusText,
+                    color = if (castState.status == CastSessionStatus.Failed || castMessage != null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        enabled = !castState.isConnecting,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("重新搜索", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (castState.isCasting) {
+                        Button(
+                            onClick = onStopCast,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Stop,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("停止投屏", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (castState.devices.isEmpty()) {
+                    CompactPlayerMoreSheetRow(
+                        icon = Icons.Rounded.Cast,
+                        title = if (castState.isSearching) "正在搜索设备" else "未发现设备",
+                        value = if (castState.isSearching) "请确认电视和手机在同一网络" else "点击重新搜索再试一次",
+                        enabled = false,
+                        onClick = {},
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(castState.devices, key = { it.id }) { device ->
+                            val isSelected = castState.selectedDeviceId == device.id
+                            CompactPlayerMoreSheetRow(
+                                icon = Icons.Rounded.Cast,
+                                title = device.name,
+                                value = when {
+                                    isSelected && castState.isCasting -> "正在播放"
+                                    isSelected && castState.isConnecting -> "正在连接"
+                                    else -> device.description ?: device.location ?: "DLNA Renderer"
+                                },
+                                enabled = !castState.isConnecting,
+                                onClick = { onCastDevice(device.id) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

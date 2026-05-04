@@ -47,6 +47,7 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.SharedGraph
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.cast.upnp.android.AndroidUpnpCastGateway
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
 import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
@@ -261,6 +262,10 @@ fun createAndroidRuntimeGraph(
                 logger = logger,
             ),
             playbackPreferencesStore = appPreferencesStore,
+            castGateway = AndroidUpnpCastGateway(
+                context = activity.applicationContext,
+                logger = logger,
+            ),
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,

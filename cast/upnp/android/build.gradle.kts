@@ -6,11 +6,24 @@ plugins {
 }
 
 android {
-    namespace = "top.iwesley.lyn.music.android.runtime"
+    namespace = "top.iwesley.lyn.music.cast.upnp.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++17")
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     compileOptions {
@@ -27,21 +40,10 @@ kotlin {
 
 dependencies {
     api(project(":cast:api"))
-    implementation(project(":cast:upnp:android"))
-    api(project(":shared:core"))
-    api(project(":shared:data"))
-    api(project(":shared:features"))
-    api(project(":player:core"))
-
-    implementation(libs.androidx.activity)
+    implementation(project(":shared:core"))
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.documentfile)
-    implementation(libs.androidx.media)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.session)
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.sardineAndroid)
-    implementation(libs.smbj)
+
+    testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlin.testJunit)
 }
