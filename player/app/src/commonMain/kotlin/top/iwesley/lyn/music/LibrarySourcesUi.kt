@@ -71,6 +71,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -618,6 +620,10 @@ private fun LibraryBrowserTab(
         unfocusedBorderColor = searchFieldContainerColor,
         disabledBorderColor = searchFieldContainerColor,
     )
+    val tracksStatFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        tracksStatFocusRequester.requestFocus()
+    }
     val activeListState = when {
         selectedAlbum != null -> albumDetailListState
         rootView == LibraryBrowserRootView.Artists && selectedArtist != null -> artistDetailListState
@@ -732,7 +738,9 @@ private fun LibraryBrowserTab(
                         icon = strings.songsIcon,
                         selected = rootView == LibraryBrowserRootView.Tracks,
                         onClick = { selectRootView(LibraryBrowserRootView.Tracks) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(tracksStatFocusRequester),
                     )
                     StatCard(
                         title = "专辑",
