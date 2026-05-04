@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,6 +105,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.tv.TvMediaDetailActivity
 import top.iwesley.lyn.music.tv.TvMediaDetailSource
+import top.iwesley.lyn.music.tv.TvPlayerActivity
 
 private val TvPanelShape = RoundedCornerShape(18.dp)
 private val TvCardShape = RoundedCornerShape(14.dp)
@@ -123,6 +126,7 @@ internal fun TvMainScreen(
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val context = LocalContext.current
     val allowContentInitialFocus = drawerState.currentValue == DrawerValue.Closed
     val myNavFocusRequester = remember { FocusRequester() }
     val libraryNavFocusRequester = remember { FocusRequester() }
@@ -149,6 +153,7 @@ internal fun TvMainScreen(
                 artworkCacheStore = artworkCacheStore,
                 onDestinationSelected = { onIntent(TvMainIntent.SelectDestination(it)) },
                 onPlayerIntent = onPlayerIntent,
+                onOpenPlayer = { context.startActivity(TvPlayerActivity.createIntent(context)) },
             )
         },
         scrimBrush = SolidColor(Color.Transparent),
@@ -211,6 +216,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
     artworkCacheStore: ArtworkCacheStore,
     onDestinationSelected: (TvMainDestination) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     val expanded = drawerValue == DrawerValue.Open
     Column(
@@ -277,6 +283,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
             state = playerState,
             artworkCacheStore = artworkCacheStore,
             onPlayerIntent = onPlayerIntent,
+            onOpenPlayer = onOpenPlayer,
         )
     }
 }
@@ -1121,37 +1128,70 @@ private fun TvFeaturedTracksPanel(
     onPlayAll: () -> Unit,
     onPlayTrack: (Int) -> Unit,
 ) {
-    Card(
-        onClick = onPlayAll,
-        scale = CardDefaults.scale(focusedScale = 1.01f, pressedScale = 1.01f),
-        modifier = Modifier.fillMaxWidth(),
+    val displayedTracks = remember(tracks) { tracks.take(30) }
+    val displayedTrackIds = remember(displayedTracks) { displayedTracks.map(Track::id) }
+    val playAllFocusRequester = remember { FocusRequester() }
+    val trackFocusRequesters = remember(displayedTrackIds) {
+        List(displayedTrackIds.size) { FocusRequester() }
+    }
+    var lastFocusedTrackIndex by remember(displayedTrackIds) { mutableStateOf(0) }
+    var playAllFocused by remember { mutableStateOf(false) }
+    val playAllDownFocusRequester = trackFocusRequesters.getOrNull(
+        lastFocusedTrackIndex.coerceIn(0, trackFocusRequesters.lastIndex.coerceAtLeast(0)),
+    )
+    val playAllColor = if (playAllFocused) MaterialTheme.colorScheme.primary else Color.White
+    val playAllDisabledColor = Color.White.copy(alpha = 0.38f)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(TvPanelShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                    Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text("全部播放", color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (tracks.isEmpty()) {
-                Text("曲库有歌曲后会生成推荐。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    itemsIndexed(tracks.take(12), key = { _, track -> track.id }) { index, track ->
-                        TvSmallTrackCard(
-                            track = track,
-                            artworkCacheStore = artworkCacheStore,
-                            onClick = { onPlayTrack(index) },
-                        )
+            OutlinedButton(
+                onClick = onPlayAll,
+                enabled = displayedTracks.isNotEmpty(),
+                modifier = Modifier
+                    .focusRequester(playAllFocusRequester)
+                    .focusProperties {
+                        playAllDownFocusRequester?.let { down = it }
                     }
+                    .onFocusChanged { focusState ->
+                        playAllFocused = focusState.isFocused || focusState.hasFocus
+                    },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = playAllColor,
+                    disabledContentColor = playAllDisabledColor,
+                ),
+                border = BorderStroke(1.dp, if (displayedTracks.isNotEmpty()) playAllColor else playAllDisabledColor),
+            ) {
+                Text("全部播放")
+            }
+        }
+        if (displayedTracks.isEmpty()) {
+            Text("曲库有歌曲后会生成推荐。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().focusGroup(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                itemsIndexed(displayedTracks, key = { _, track -> track.id }) { index, track ->
+                    TvSmallTrackCard(
+                        track = track,
+                        artworkCacheStore = artworkCacheStore,
+                        onClick = { onPlayTrack(index) },
+                        focusRequester = trackFocusRequesters.getOrNull(index),
+                        upFocusRequester = playAllFocusRequester,
+                        onFocused = { lastFocusedTrackIndex = index },
+                    )
                 }
             }
         }
@@ -1193,11 +1233,30 @@ private fun TvSmallTrackCard(
     track: Track,
     artworkCacheStore: ArtworkCacheStore,
     onClick: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
+    onFocused: () -> Unit = {},
 ) {
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.01f, pressedScale = 1.01f),
-        modifier = Modifier.width(152.dp),
+        modifier = Modifier
+            .width(152.dp)
+            .then(
+                if (focusRequester != null) {
+                    Modifier.focusRequester(focusRequester)
+                } else {
+                    Modifier
+                },
+            )
+            .focusProperties {
+                upFocusRequester?.let { up = it }
+            }
+            .onFocusChanged { focusState ->
+                if (focusState.isFocused) {
+                    onFocused()
+                }
+            },
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             TvArtworkImage(
@@ -1278,12 +1337,14 @@ private fun TvSideNowPlayingPanel(
     state: PlayerState,
     artworkCacheStore: ArtworkCacheStore,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     if (expanded) {
         TvSideNowPlayingExpanded(
             state = state,
             artworkCacheStore = artworkCacheStore,
             onPlayerIntent = onPlayerIntent,
+            onOpenPlayer = onOpenPlayer,
             modifier = Modifier.fillMaxWidth(),
         )
     } else {
@@ -1291,6 +1352,7 @@ private fun TvSideNowPlayingPanel(
             state = state,
             artworkCacheStore = artworkCacheStore,
             onPlayerIntent = onPlayerIntent,
+            onOpenPlayer = onOpenPlayer,
         )
     }
 }
@@ -1300,6 +1362,7 @@ private fun TvSideNowPlayingCollapsed(
     state: PlayerState,
     artworkCacheStore: ArtworkCacheStore,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenPlayer: () -> Unit,
 ) {
     val snapshot = state.snapshot
     val currentTrack = snapshot.currentTrack
@@ -1307,9 +1370,11 @@ private fun TvSideNowPlayingCollapsed(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Card(
-            onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
-            modifier = Modifier.size(56.dp),
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             TvArtworkImage(
                 artworkLocator = snapshot.currentDisplayArtworkLocator,
@@ -1327,6 +1392,12 @@ private fun TvSideNowPlayingCollapsed(
                 contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
             )
         }
+        IconButton(
+            onClick = onOpenPlayer,
+            modifier = Modifier.size(48.dp),
+        ) {
+            Icon(Icons.Rounded.Fullscreen, contentDescription = "播放界面")
+        }
     }
 }
 
@@ -1335,72 +1406,75 @@ private fun TvSideNowPlayingExpanded(
     state: PlayerState,
     artworkCacheStore: ArtworkCacheStore,
     onPlayerIntent: (PlayerIntent) -> Unit,
+    onOpenPlayer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val snapshot = state.snapshot
     val currentTrack = snapshot.currentTrack
-    Card(
-        onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
-        modifier = modifier.height(194.dp),
+    Column(
+        modifier = modifier
+            .height(194.dp)
+            .clip(TvPanelShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                TvArtworkImage(
-                    artworkLocator = snapshot.currentDisplayArtworkLocator,
-                    artworkCacheKey = currentTrack?.let(::trackArtworkCacheKey),
-                    artworkCacheStore = artworkCacheStore,
-                    modifier = Modifier.size(58.dp).clip(RoundedCornerShape(12.dp)),
+            TvArtworkImage(
+                artworkLocator = snapshot.currentDisplayArtworkLocator,
+                artworkCacheKey = currentTrack?.let(::trackArtworkCacheKey),
+                artworkCacheStore = artworkCacheStore,
+                modifier = Modifier.size(58.dp).clip(RoundedCornerShape(12.dp)),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = snapshot.currentDisplayTitle.ifBlank { "还没有播放" },
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = snapshot.currentDisplayTitle.ifBlank { "还没有播放" },
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = snapshot.currentDisplayArtistName.orEmpty().ifBlank { "选择歌曲后开始播放" },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = snapshot.currentDisplayArtistName.orEmpty().ifBlank { "选择歌曲后开始播放" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            LinearProgressIndicator(
-                progress = { playbackProgress(snapshot.positionMs, snapshot.durationMs) },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Text(
-                text = "${formatTvDuration(snapshot.positionMs)} / ${formatTvDuration(snapshot.durationMs)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "上一首")
-                }
-                IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
-                    Icon(
-                        imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
-                    )
-                }
-                IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "下一首")
-                }
+        }
+        LinearProgressIndicator(
+            progress = { playbackProgress(snapshot.positionMs, snapshot.durationMs) },
+            modifier = Modifier.fillMaxWidth().height(4.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
+        )
+        Text(
+            text = "${formatTvDuration(snapshot.positionMs)} / ${formatTvDuration(snapshot.durationMs)}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = "上一首")
+            }
+            IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
+                Icon(
+                    imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                )
+            }
+            IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
+                Icon(Icons.Rounded.SkipNext, contentDescription = "下一首")
+            }
+            IconButton(onClick = onOpenPlayer) {
+                Icon(Icons.Rounded.Fullscreen, contentDescription = "播放界面")
             }
         }
     }
