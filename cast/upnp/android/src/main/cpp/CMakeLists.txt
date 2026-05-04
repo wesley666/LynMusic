@@ -91,6 +91,7 @@ set(UPNP_SOURCES
 
 add_library(lyn_upnp_cast SHARED
     lyn_upnp_cast_jni.cpp
+    lyn_upnp_renderer_jni.cpp
     ${UPNP_SOURCES}
 )
 

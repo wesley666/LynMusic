@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        TvUpnpRendererService.start(this)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         val appComponentResult = runCatching {
             val runtimeGraph = createAndroidRuntimeGraph(this, platformName = ANDROID_TV_PLATFORM_NAME)

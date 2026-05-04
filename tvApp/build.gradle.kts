@@ -5,6 +5,7 @@ val sharedVersionConfig = rootProject.readSharedVersionConfig()
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
+    alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
@@ -50,10 +51,19 @@ kotlin {
 
 dependencies {
     implementation(project(":android:runtime"))
+    implementation(project(":cast:upnp:android"))
     implementation(project(":player:app"))
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.ktor3)
+    implementation(compose.materialIconsExtended)
 
     debugImplementation(libs.compose.uiTooling)
 }
