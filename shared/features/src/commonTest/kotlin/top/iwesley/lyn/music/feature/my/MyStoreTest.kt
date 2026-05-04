@@ -133,6 +133,35 @@ class MyStoreTest {
         assertEquals(2, repository.ensureDailyRecommendationCalls)
     }
 
+    @Test
+    fun `candidate songs becoming available retries empty daily recommendation`() = runTest {
+        val repository = FakeMyRepository(hasDailyRecommendationCandidates = false)
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setHasDailyRecommendationCandidates(true)
+        advanceUntilIdle()
+
+        assertEquals(2, repository.ensureDailyRecommendationCalls)
+    }
+
+    @Test
+    fun `candidate songs becoming available does not retry existing daily recommendation`() = runTest {
+        val repository = FakeMyRepository(
+            dailyRecommendation = listOf(sampleTrack("daily-1")),
+            hasDailyRecommendationCandidates = false,
+        )
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setHasDailyRecommendationCandidates(true)
+        advanceUntilIdle()
+
+        assertEquals(1, repository.ensureDailyRecommendationCalls)
+    }
+
     private fun createStore(
         repository: FakeMyRepository,
         scheduler: TestCoroutineScheduler,
@@ -154,11 +183,13 @@ private class FakeMyRepository(
     dailyRecommendation: List<Track> = emptyList(),
     private val refreshResult: Result<Unit> = Result.success(Unit),
     private val ensureDailyRecommendationResult: Result<Unit> = Result.success(Unit),
+    hasDailyRecommendationCandidates: Boolean = false,
 ) : MyRepository {
     private val mutableTracks = MutableStateFlow(tracks)
     private val mutableAlbums = MutableStateFlow(albums)
     private val mutableDateKey = MutableStateFlow("2026-05-01")
     private val mutableDailyRecommendation = MutableStateFlow(dailyRecommendation)
+    private val mutableHasDailyRecommendationCandidates = MutableStateFlow(hasDailyRecommendationCandidates)
     var currentDateKey: String = "2026-05-01"
     var refreshCalls: Int = 0
         private set
@@ -171,9 +202,14 @@ private class FakeMyRepository(
     override val recentAlbums: Flow<List<RecentAlbum>> = mutableAlbums.asStateFlow()
     override val dailyRecommendationDateKey: Flow<String> = mutableDateKey.asStateFlow()
     override val dailyRecommendation: Flow<List<Track>> = mutableDailyRecommendation.asStateFlow()
+    override val hasDailyRecommendationCandidates: Flow<Boolean> = mutableHasDailyRecommendationCandidates.asStateFlow()
 
     fun setDateKey(dateKey: String) {
         mutableDateKey.value = dateKey
+    }
+
+    fun setHasDailyRecommendationCandidates(value: Boolean) {
+        mutableHasDailyRecommendationCandidates.value = value
     }
 
     override fun refreshDailyRecommendationDateKey() {

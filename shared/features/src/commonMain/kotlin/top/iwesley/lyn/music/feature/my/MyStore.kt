@@ -40,6 +40,7 @@ class MyStore(
     private var refreshJob: Job? = null
     private var dailyRecommendationJob: Job? = null
     private var dailyRecommendationDateJob: Job? = null
+    private var dailyRecommendationCandidateJob: Job? = null
 
     init {
         if (startImmediately) {
@@ -75,6 +76,23 @@ class MyStore(
                     .distinctUntilChanged()
                     .collect {
                         ensureDailyRecommendation()
+                    }
+            }
+        }
+        if (dailyRecommendationCandidateJob?.isActive != true) {
+            dailyRecommendationCandidateJob = storeScope.launch {
+                var previousHasCandidates: Boolean? = null
+                repository.hasDailyRecommendationCandidates
+                    .distinctUntilChanged()
+                    .collect { hasCandidates ->
+                        val shouldGenerate =
+                            previousHasCandidates == false &&
+                                hasCandidates &&
+                                state.value.dailyRecommendationTracks.isEmpty()
+                        previousHasCandidates = hasCandidates
+                        if (shouldGenerate) {
+                            ensureDailyRecommendation()
+                        }
                     }
             }
         }

@@ -6,6 +6,7 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.first
@@ -18,6 +19,7 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.data.db.AlbumEntity
+import top.iwesley.lyn.music.data.db.DailyRecommendationEntity
 import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -199,6 +201,62 @@ class MyRepositoryTest {
             assertEquals(first?.trackIds, repeated?.trackIds)
             assertTrue(first?.trackIds.orEmpty().isNotBlank())
             assertTrue(next?.trackIds.orEmpty().isNotBlank())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation does not cache empty library`() = runTest {
+        val database = createMyTestDatabase()
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01"),
+        )
+
+        try {
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+
+            assertNull(database.dailyRecommendationDao().getByDateKey("2026-05-01"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation overwrites existing empty cache when songs appear`() = runTest {
+        val database = createMyTestDatabase()
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01"),
+        )
+
+        try {
+            database.dailyRecommendationDao().upsert(
+                DailyRecommendationEntity(
+                    dateKey = "2026-05-01",
+                    generatedAt = 1L,
+                    trackIds = "[]",
+                ),
+            )
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-1", "local-1", "A Song", null, null),
+                    trackEntity("track-2", "local-1", "B Song", null, null),
+                ),
+            )
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val recommendation = database.dailyRecommendationDao().getByDateKey("2026-05-01")
+
+            assertTrue(recommendation?.trackIds.orEmpty().contains("track-"))
         } finally {
             database.close()
         }

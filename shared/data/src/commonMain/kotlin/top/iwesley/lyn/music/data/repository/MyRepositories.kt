@@ -39,6 +39,7 @@ interface MyRepository {
     val recentAlbums: Flow<List<RecentAlbum>>
     val dailyRecommendationDateKey: Flow<String>
     val dailyRecommendation: Flow<List<Track>>
+    val hasDailyRecommendationCandidates: Flow<Boolean>
 
     fun refreshDailyRecommendationDateKey()
     suspend fun refreshNavidromeRecentPlays(): Result<Unit>
@@ -148,6 +149,14 @@ class RoomMyRepository(
             .map { track -> track.toDomain(artworkOverrides[track.id]) }
     }
 
+    override val hasDailyRecommendationCandidates: Flow<Boolean> = combine(
+        database.trackDao().observeAll(),
+        database.importSourceDao().observeAll(),
+    ) { tracks, sources ->
+        val enabledSourceIds = sources.enabledSourceIds()
+        tracks.any { track -> track.sourceId in enabledSourceIds }
+    }.distinctUntilChanged()
+
     override suspend fun refreshNavidromeRecentPlays(): Result<Unit> {
         return runCatching {
             val failures = mutableListOf<Throwable>()
@@ -174,12 +183,16 @@ class RoomMyRepository(
     override suspend fun ensureDailyRecommendation(): Result<Unit> {
         return runCatching {
             val dateKey = dailyRecommendationDateKeyProvider.currentDateKey()
-            if (database.dailyRecommendationDao().getByDateKey(dateKey) != null) return@runCatching
+            val existing = database.dailyRecommendationDao().getByDateKey(dateKey)
+            if (existing != null && decodeDailyRecommendationTrackIds(existing.trackIds).isNotEmpty()) {
+                return@runCatching
+            }
             val generatedAt = Clock.System.now().toEpochMilliseconds()
             val trackIds = generateDailyRecommendationTrackIds(
                 dateKey = dateKey,
                 generatedAt = generatedAt,
             )
+            if (trackIds.isEmpty()) return@runCatching
             database.dailyRecommendationDao().upsert(
                 DailyRecommendationEntity(
                     dateKey = dateKey,
