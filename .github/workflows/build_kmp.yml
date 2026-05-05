@@ -75,6 +75,28 @@ jobs:
           path: automotiveApp/build/outputs/apk/release/**/*.apk
           if-no-files-found: error
 
+  build-tv-release-unsigned:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'zulu'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Clean & Build TV Release APK (unsigned)
+        run: ./gradlew clean :tvApp:assembleRelease
+
+      - name: Upload TV Release APK (unsigned)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TV-APK-Release-Unsigned
+          path: tvApp/build/outputs/apk/release/**/*.apk
+          if-no-files-found: error
+
   build-desktop:
     strategy:
       fail-fast: false
@@ -114,6 +136,7 @@ jobs:
       - build-android-debug
       - build-android-release-unsigned
       - build-automotive-release-unsigned
+      - build-tv-release-unsigned
       - build-desktop
     runs-on: ubuntu-latest
     permissions:
@@ -155,6 +178,7 @@ jobs:
           - Android Debug APK
           - Android Release APK (unsigned)
           - Automotive Release APK (unsigned)
+          - TV Release APK (unsigned)
           - Desktop packages for matrix builds
 
           Please review the assets before publishing if this is a draft release.
