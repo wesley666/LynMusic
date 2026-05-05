@@ -21,6 +21,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
 
+      - name: Configure Gradle memory for CI
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx1536M
+          org.gradle.workers.max=2
+          EOF
+
       - name: Clean & Build Android Debug APK
         run: ./gradlew clean :composeApp:assembleDebug
 
@@ -42,6 +52,16 @@ jobs:
           distribution: 'zulu'
 
       - uses: gradle/actions/setup-gradle@v3
+
+      - name: Configure Gradle memory for CI
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx1536M
+          org.gradle.workers.max=2
+          EOF
 
       - name: Clean & Build Android Release APK (unsigned)
         run: ./gradlew clean :composeApp:assembleRelease
@@ -65,6 +85,16 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v3
 
+      - name: Configure Gradle memory for CI
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx1536M
+          org.gradle.workers.max=2
+          EOF
+
       - name: Clean & Build Automotive Release APK (unsigned)
         run: ./gradlew clean :automotiveApp:assembleRelease
 
@@ -86,6 +116,16 @@ jobs:
           distribution: 'zulu'
 
       - uses: gradle/actions/setup-gradle@v3
+
+      - name: Configure Gradle memory for CI
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx1536M
+          org.gradle.workers.max=2
+          EOF
 
       - name: Clean & Build TV Release APK (unsigned)
         run: ./gradlew clean :tvApp:assembleRelease
