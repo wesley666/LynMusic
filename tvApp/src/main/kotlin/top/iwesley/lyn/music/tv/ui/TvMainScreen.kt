@@ -1658,7 +1658,10 @@ private fun buildAlbumArtworkTrackById(tracks: List<Track>): Map<String, Track> 
     val result = LinkedHashMap<String, Track>()
     tracks.forEach { track ->
         val albumTitle = track.albumTitle?.takeIf { it.isNotBlank() } ?: return@forEach
-        result.putIfAbsent(libraryAlbumId(track.artistName, albumTitle), track)
+        val albumId = libraryAlbumId(track.artistName, albumTitle)
+        if (!result.containsKey(albumId)) {
+            result[albumId] = track
+        }
     }
     return result
 }

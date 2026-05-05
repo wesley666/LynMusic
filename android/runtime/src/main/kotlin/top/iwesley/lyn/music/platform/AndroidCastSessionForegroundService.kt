@@ -223,7 +223,7 @@ internal class AndroidCastSessionForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_STOP_SERVICE -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForegroundCompat(removeNotification = true)
                 stopSelf()
                 START_NOT_STICKY
             }
@@ -232,7 +232,7 @@ internal class AndroidCastSessionForegroundService : Service() {
                 val requiresForegroundStart = intent?.action == ACTION_START
                 val controller = AndroidCastSessionServiceRegistry.controller
                 if (controller == null) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopForegroundCompat(removeNotification = true)
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -240,7 +240,7 @@ internal class AndroidCastSessionForegroundService : Service() {
                 val notification = controller.buildNotification()
                     ?: if (requiresForegroundStart) buildBootstrapNotification() else null
                 if (notification == null) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopForegroundCompat(removeNotification = true)
                     stopSelf()
                     return START_NOT_STICKY
                 }

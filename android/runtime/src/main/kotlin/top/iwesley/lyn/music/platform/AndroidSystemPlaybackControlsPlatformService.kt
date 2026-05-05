@@ -468,7 +468,7 @@ internal class AndroidPlaybackNotificationService : Service() {
         }
         val controller = AndroidPlaybackServiceRegistry.controller
         if (controller == null) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForegroundCompat(removeNotification = true)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -476,7 +476,7 @@ internal class AndroidPlaybackNotificationService : Service() {
         val state = controller.buildNotificationState()
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (state.notification == null) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForegroundCompat(removeNotification = true)
             notificationManager.cancel(NOTIFICATION_ID)
             stopSelf()
             return START_NOT_STICKY
@@ -484,11 +484,11 @@ internal class AndroidPlaybackNotificationService : Service() {
         if (state.promoteToForeground || requiresForegroundStart) {
             startForeground(NOTIFICATION_ID, state.notification)
             if (!state.promoteToForeground) {
-                stopForeground(STOP_FOREGROUND_DETACH)
+                stopForegroundCompat(removeNotification = false)
                 notificationManager.notify(NOTIFICATION_ID, state.notification)
             }
         } else {
-            stopForeground(STOP_FOREGROUND_DETACH)
+            stopForegroundCompat(removeNotification = false)
             notificationManager.notify(NOTIFICATION_ID, state.notification)
         }
         return START_STICKY

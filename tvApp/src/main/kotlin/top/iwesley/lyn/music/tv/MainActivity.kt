@@ -22,6 +22,7 @@ import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.platform.createAndroidRuntimeGraph
 import top.iwesley.lyn.music.tv.ui.TvMainApp
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,9 +61,9 @@ private fun ProvideFixedAndroidComposeDensity(
     content: @Composable () -> Unit,
 ) {
     val currentDensity = LocalDensity.current
-    val fixedDensity = remember(currentDensity.fontScale, appDisplayScalePreset) {
+    val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(androidStableDensityScale(), appDisplayScalePreset),
+            density = effectiveAppDisplayDensity(androidStableDensityScale(currentDensity.density), appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }
@@ -73,7 +74,7 @@ private fun ProvideFixedAndroidComposeDensity(
 
 private fun ComponentActivity.isTabletIgnoringDisplaySize(): Boolean {
     val (widthPx, heightPx) = currentDisplayPx()
-    val stableDensity = androidStableDensityScale()
+    val stableDensity = androidStableDensityScale(resources.displayMetrics.density)
     if (widthPx == null || heightPx == null || stableDensity <= 0f) return false
     val smallestWidthDp = min(widthPx, heightPx) / stableDensity
     return smallestWidthDp >= 600f
@@ -82,18 +83,21 @@ private fun ComponentActivity.isTabletIgnoringDisplaySize(): Boolean {
 private fun ComponentActivity.currentDisplayPx(): Pair<Int?, Int?> {
     val displayMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         display?.mode
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+    } else {
         @Suppress("DEPRECATION")
         windowManager.defaultDisplay.mode
-    } else {
-        null
     }
     val width = displayMode?.physicalWidth?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.takeIf { it > 0 }
     val height = displayMode?.physicalHeight?.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels.takeIf { it > 0 }
     return width to height
 }
 
-private fun androidStableDensityScale(): Float {
-    val stableDpi = DisplayMetrics.DENSITY_DEVICE_STABLE.takeIf { it > 0 } ?: DisplayMetrics.DENSITY_DEFAULT
+private fun androidStableDensityScale(fallbackDensity: Float): Float {
+    val fallbackDpi = (fallbackDensity.takeIf { it > 0f } ?: 1f) * DisplayMetrics.DENSITY_DEFAULT
+    val stableDpi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        DisplayMetrics.DENSITY_DEVICE_STABLE
+    } else {
+        fallbackDpi.roundToInt()
+    }.takeIf { it > 0 } ?: fallbackDpi.roundToInt()
     return stableDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
 }

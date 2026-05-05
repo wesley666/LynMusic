@@ -13,7 +13,7 @@ internal class AndroidCastProxyForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForegroundCompat(removeNotification = true)
                 stopSelf()
                 START_NOT_STICKY
             }

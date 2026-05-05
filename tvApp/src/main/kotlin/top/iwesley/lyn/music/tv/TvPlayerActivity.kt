@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.tv
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.os.Build
 import android.os.Bundle
 import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
@@ -1005,9 +1006,9 @@ private fun ProvideTvPlayerDensity(
     content: @Composable () -> Unit,
 ) {
     val currentDensity = LocalDensity.current
-    val fixedDensity = remember(currentDensity.fontScale, appDisplayScalePreset) {
+    val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(tvPlayerStableDensityScale(), appDisplayScalePreset),
+            density = effectiveAppDisplayDensity(tvPlayerStableDensityScale(currentDensity.density), appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }
@@ -1087,8 +1088,13 @@ private fun formatTvPlayerDuration(durationMs: Long): String {
     }
 }
 
-private fun tvPlayerStableDensityScale(): Float {
-    val stableDpi = DisplayMetrics.DENSITY_DEVICE_STABLE.takeIf { it > 0 } ?: DisplayMetrics.DENSITY_DEFAULT
+private fun tvPlayerStableDensityScale(fallbackDensity: Float): Float {
+    val fallbackDpi = (fallbackDensity.takeIf { it > 0f } ?: 1f) * DisplayMetrics.DENSITY_DEFAULT
+    val stableDpi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        DisplayMetrics.DENSITY_DEVICE_STABLE
+    } else {
+        fallbackDpi.roundToInt()
+    }.takeIf { it > 0 } ?: fallbackDpi.roundToInt()
     return stableDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
 }
 
