@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -103,6 +104,7 @@ internal fun SettingsTab(
     platform: PlatformDescriptor,
     state: SettingsState,
     onSettingsIntent: (SettingsIntent) -> Unit,
+    onOpenBackgroundRunSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shellColors = mainShellColors
@@ -205,7 +207,11 @@ internal fun SettingsTab(
     }
     val desktopSelectedSection =
         resolveSettingsSection(desktopSelectedSectionName)?.takeIf { it in availableSections } ?: defaultSection
-    val mobileNavigation = toSettingsMobileNavigation(mobileDetailSectionName)
+    val mobileNavigation = when (val navigation = toSettingsMobileNavigation(mobileDetailSectionName)) {
+        SettingsMobileNavigation.List -> navigation
+        is SettingsMobileNavigation.Detail ->
+            if (navigation.section in availableSections) navigation else SettingsMobileNavigation.List
+    }
     Box(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -315,6 +321,14 @@ internal fun SettingsTab(
                                 .weight(1f)
                                 .fillMaxHeight(),
                         )
+
+                        SettingsSection.Help -> HelpSettingsPane(
+                            onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
+                            showHeading = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        )
                     }
                 }
             } else {
@@ -389,6 +403,12 @@ internal fun SettingsTab(
 
                                 SettingsSection.AboutApp -> AboutAppSettingsPane(
                                     platformName = platform.name,
+                                    showHeading = false,
+                                    modifier = detailModifier,
+                                )
+
+                                SettingsSection.Help -> HelpSettingsPane(
+                                    onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
                                     showHeading = false,
                                     modifier = detailModifier,
                                 )
@@ -541,6 +561,76 @@ private fun MobileSettingsDetailLayout(
             }
         }
         content(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun HelpSettingsPane(
+    onOpenBackgroundRunSettings: () -> Unit,
+    showHeading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val shellColors = mainShellColors
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (showHeading) {
+            SectionTitle(
+                title = "帮助",
+                subtitle = "查看投屏和后台运行常见问题。",
+            )
+        }
+        MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.HelpOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "后台投屏失败，怎么解决",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "投屏时如果应用退到后台后无法自动投下一首，通常是系统冻结了后台运行。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = shellColors.secondaryText,
+                        )
+                    }
+                }
+                Text(
+                    text = "请在系统电池设置中允许 LynMusic 完全后台运行，或关闭电池优化。这样应用退到后台后仍能继续维护投屏会话、同步状态并发起下一首音乐。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onOpenBackgroundRunSettings,
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Text("允许后台运行")
+                }
+            }
+        }
     }
 }
 
@@ -1467,6 +1557,7 @@ private fun settingsSectionTitle(section: SettingsSection): String {
         SettingsSection.Storage -> "空间管理"
         SettingsSection.AboutDevice -> "关于本机"
         SettingsSection.AboutApp -> "关于应用"
+        SettingsSection.Help -> "帮助"
     }
 }
 
@@ -1478,6 +1569,7 @@ private fun settingsSectionSubtitle(section: SettingsSection): String {
         SettingsSection.Storage -> "查看并清理缓存占用。"
         SettingsSection.AboutDevice -> "查看系统、屏幕和硬件信息。"
         SettingsSection.AboutApp -> "查看开发者、项目地址和公众号信息。"
+        SettingsSection.Help -> "查看投屏和后台运行常见问题。"
     }
 }
 
@@ -1489,6 +1581,7 @@ private fun settingsSectionIcon(section: SettingsSection): ImageVector {
         SettingsSection.Storage -> Icons.Rounded.Storage
         SettingsSection.AboutDevice -> Icons.Rounded.Info
         SettingsSection.AboutApp -> Icons.Rounded.LibraryMusic
+        SettingsSection.Help -> Icons.AutoMirrored.Rounded.HelpOutline
     }
 }
 

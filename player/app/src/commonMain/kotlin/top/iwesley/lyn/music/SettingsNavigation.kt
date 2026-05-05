@@ -9,6 +9,7 @@ internal enum class SettingsSection {
     Storage,
     AboutDevice,
     AboutApp,
+    Help,
 }
 
 internal sealed interface SettingsMobileNavigation {
@@ -18,7 +19,9 @@ internal sealed interface SettingsMobileNavigation {
 }
 
 internal fun settingsSectionsForPlatform(platform: PlatformDescriptor): List<SettingsSection> {
-    return SettingsSection.entries
+    return SettingsSection.entries.filter { section ->
+        section != SettingsSection.Help || platform.name == ANDROID_PLATFORM_NAME
+    }
 }
 
 internal fun defaultSettingsSection(platform: PlatformDescriptor): SettingsSection {

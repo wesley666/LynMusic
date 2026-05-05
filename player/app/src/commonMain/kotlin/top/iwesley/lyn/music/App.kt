@@ -33,6 +33,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import top.iwesley.lyn.music.cast.CastBackgroundRunSettingsOpener
 import top.iwesley.lyn.music.cast.CastNotificationPermissionRequester
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppTab
@@ -80,6 +81,7 @@ class LynMusicAppComponent(
     val lyricsRepository: LyricsRepository,
     val artworkCacheStore: ArtworkCacheStore,
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>,
+    val castBackgroundRunSettingsOpener: CastBackgroundRunSettingsOpener,
     val castNotificationPermissionRequester: CastNotificationPermissionRequester,
     private val scope: CoroutineScope,
     private val onDispose: suspend () -> Unit,
@@ -137,6 +139,7 @@ fun buildPlayerAppComponent(
         lyricsRepository = sharedGraph.lyricsRepository,
         artworkCacheStore = sharedGraph.artworkCacheStore,
         appDisplayScalePreset = sharedGraph.appDisplayScalePreset,
+        castBackgroundRunSettingsOpener = playerRuntimeServices.castBackgroundRunSettingsOpener,
         castNotificationPermissionRequester = playerRuntimeServices.castNotificationPermissionRequester,
         scope = sharedGraph.scope,
         onDispose = {
@@ -323,6 +326,7 @@ fun App(
                             onImportIntent = component.importStore::dispatch,
                             onPlayerIntent = onPlayerIntent,
                             onSettingsIntent = component.settingsStore::dispatch,
+                            onOpenBackgroundRunSettings = component.castBackgroundRunSettingsOpener::openSettings,
                             libraryNavigationTarget = pendingLibraryNavigationTarget,
                             onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
                             onOpenLibraryNavigationTarget = { target ->
@@ -360,6 +364,7 @@ fun App(
                             onImportIntent = component.importStore::dispatch,
                             onPlayerIntent = onPlayerIntent,
                             onSettingsIntent = component.settingsStore::dispatch,
+                            onOpenBackgroundRunSettings = component.castBackgroundRunSettingsOpener::openSettings,
                             libraryNavigationTarget = pendingLibraryNavigationTarget,
                             onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
                             onOpenLibraryNavigationTarget = { target ->

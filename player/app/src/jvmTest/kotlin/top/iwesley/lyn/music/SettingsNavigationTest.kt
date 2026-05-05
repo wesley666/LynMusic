@@ -4,6 +4,7 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -21,6 +22,19 @@ class SettingsNavigationTest {
     @Test
     fun `mobile settings sections include general`() {
         assertTrue(settingsSectionsForPlatform(mobilePlatform()).contains(SettingsSection.General))
+    }
+
+    @Test
+    fun `android phone settings sections include help`() {
+        assertTrue(settingsSectionsForPlatform(mobilePlatform()).contains(SettingsSection.Help))
+    }
+
+    @Test
+    fun `non phone platforms hide help section`() {
+        assertFalse(settingsSectionsForPlatform(desktopPlatform()).contains(SettingsSection.Help))
+        assertFalse(settingsSectionsForPlatform(platformNamed(IOS_PLATFORM_NAME)).contains(SettingsSection.Help))
+        assertFalse(settingsSectionsForPlatform(platformNamed(ANDROID_TV_PLATFORM_NAME)).contains(SettingsSection.Help))
+        assertFalse(settingsSectionsForPlatform(platformNamed(ANDROID_AUTOMOTIVE_PLATFORM_NAME)).contains(SettingsSection.Help))
     }
 
     @Test
@@ -93,5 +107,16 @@ private fun mobilePlatform(): PlatformDescriptor = PlatformDescriptor(
         supportsWebDavImport = true,
         supportsNavidromeImport = true,
         supportsSystemMediaControls = true,
+    ),
+)
+
+private fun platformNamed(name: String): PlatformDescriptor = PlatformDescriptor(
+    name = name,
+    capabilities = PlatformCapabilities(
+        supportsLocalFolderImport = false,
+        supportsSambaImport = false,
+        supportsWebDavImport = false,
+        supportsNavidromeImport = false,
+        supportsSystemMediaControls = false,
     ),
 )

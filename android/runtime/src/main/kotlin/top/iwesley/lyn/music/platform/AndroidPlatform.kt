@@ -47,6 +47,7 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.SharedGraph
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.cast.UnsupportedCastBackgroundRunSettingsOpener
 import top.iwesley.lyn.music.cast.UnsupportedCastSessionForegroundPlatformService
 import top.iwesley.lyn.music.cast.UnsupportedCastNotificationPermissionRequester
 import top.iwesley.lyn.music.cast.upnp.android.AndroidUpnpCastGateway
@@ -274,6 +275,11 @@ fun createAndroidRuntimeGraph(
                 secureCredentialStore = secureStore,
                 logger = logger,
             ),
+            castBackgroundRunSettingsOpener = if (platformName == "Android") {
+                AndroidCastBackgroundRunSettingsOpener(activity.applicationContext)
+            } else {
+                UnsupportedCastBackgroundRunSettingsOpener
+            },
             castNotificationPermissionRequester = if (platformName == "Android") {
                 AndroidCastNotificationPermissionRequester(activity)
             } else {

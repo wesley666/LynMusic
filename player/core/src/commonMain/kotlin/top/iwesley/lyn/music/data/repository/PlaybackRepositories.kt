@@ -14,11 +14,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import kotlin.random.Random
 import kotlin.time.Clock
+import top.iwesley.lyn.music.cast.CastBackgroundRunSettingsOpener
 import top.iwesley.lyn.music.cast.CastGateway
-import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
 import top.iwesley.lyn.music.cast.CastNotificationPermissionRequester
 import top.iwesley.lyn.music.cast.CastSessionForegroundPlatformService
+import top.iwesley.lyn.music.cast.UnsupportedCastBackgroundRunSettingsOpener
+import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.UnsupportedCastMediaUrlResolver
 import top.iwesley.lyn.music.cast.UnsupportedCastNotificationPermissionRequester
 import top.iwesley.lyn.music.cast.UnsupportedCastSessionForegroundPlatformService
@@ -787,6 +789,8 @@ data class PlayerRuntimeServices(
     val playbackPreferencesStore: PlaybackPreferencesStore,
     val castGateway: CastGateway = UnsupportedCastGateway,
     val castMediaUrlResolver: CastMediaUrlResolver = UnsupportedCastMediaUrlResolver,
+    val castBackgroundRunSettingsOpener: CastBackgroundRunSettingsOpener =
+        UnsupportedCastBackgroundRunSettingsOpener,
     val castNotificationPermissionRequester: CastNotificationPermissionRequester =
         UnsupportedCastNotificationPermissionRequester,
     val castSessionForegroundPlatformService: CastSessionForegroundPlatformService =
