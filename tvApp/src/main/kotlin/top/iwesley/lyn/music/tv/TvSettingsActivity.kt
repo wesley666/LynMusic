@@ -9,10 +9,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,7 +81,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1499,7 +1503,7 @@ private fun TvAboutAppSettingsPane(
         item {
             TvSettingsPaneHeader(
                 title = "关于应用",
-                subtitle = "查看版本、开发者和项目地址。",
+                subtitle = "查看版本、开发者、项目地址和公众号信息。",
             )
         }
         item {
@@ -1524,9 +1528,35 @@ private fun TvAboutAppSettingsPane(
                 rows = listOf(
                     "名称" to "Wesley",
                     "项目地址" to "https://github.com/wesley666/LynMusic",
-                    "微信公众号" to "锋风",
                 ),
             )
+        }
+        item {
+            TvSettingsInfoCard(title = "微信公众号") {
+                TvSettingsFieldRow(label = "账号", value = "锋风")
+                Text(
+                    text = "公众号二维码",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    TvAboutAppQrImage(
+                        modifier = Modifier
+                            .widthIn(max = 260.dp)
+                            .fillMaxWidth(0.38f)
+                            .aspectRatio(1f),
+                    )
+                }
+                Text(
+                    text = "扫码关注公众号，获取更新和交流信息。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -1580,6 +1610,26 @@ private fun TvSettingsInfoCard(
     ) {
         Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
         content()
+    }
+}
+
+@Composable
+private fun TvAboutAppQrImage(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White)
+            .padding(2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.about_app_wechat_qr),
+            contentDescription = "公众号二维码",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
