@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.cast.CastDevice
 import top.iwesley.lyn.music.cast.CastGateway
 import top.iwesley.lyn.music.cast.CastMediaRequest
+import top.iwesley.lyn.music.cast.CastPlaybackState
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.CastSessionStatus
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -36,6 +37,7 @@ class AndroidUpnpCastGateway(
     private val nativeHandle: Long
     private val nativeLoadFailure: Throwable?
     private var discoveryJob: Job? = null
+    private var playbackPollingJob: Job? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var released = false
 
@@ -72,11 +74,15 @@ class AndroidUpnpCastGateway(
             return
         }
         updateCastState {
-            it.copy(
-                status = CastSessionStatus.Searching,
-                message = "正在搜索附近设备",
-                errorMessage = null,
-            )
+            if (it.status == CastSessionStatus.Casting) {
+                it.copy(errorMessage = null)
+            } else {
+                it.copy(
+                    status = CastSessionStatus.Searching,
+                    message = "正在搜索附近设备",
+                    errorMessage = null,
+                )
+            }
         }
         pollDevices()
         discoveryJob = scope.launch {
@@ -111,6 +117,7 @@ class AndroidUpnpCastGateway(
                 selectedDeviceName = deviceName,
                 message = deviceName?.let { name -> "正在连接 $name" } ?: "正在连接设备",
                 errorMessage = null,
+                playback = null,
             )
         }
         val metadata = buildUpnpDidl(request)
@@ -133,13 +140,44 @@ class AndroidUpnpCastGateway(
                 selectedDeviceName = deviceName,
                 message = deviceName?.let { name -> "已投屏到 $name" } ?: "正在投屏",
                 errorMessage = null,
+                playback = CastPlaybackState(
+                    durationMs = request.durationMs.coerceAtLeast(0L),
+                    isPlaying = true,
+                    canSeek = request.durationMs > 0L,
+                    lastUpdatedAtMs = System.currentTimeMillis(),
+                ),
             )
         }
+        startPlaybackPolling(deviceId)
         logger.info(CAST_LOG_TAG) { "cast-started device=${deviceId} uri=${request.uri}" }
+    }
+
+    override suspend fun playCast() {
+        controlSelectedDevice(
+            nativeCall = { handle, deviceId -> nativePlayCast(handle, deviceId) },
+            failureMessage = "恢复投屏播放失败。",
+        )
+    }
+
+    override suspend fun pauseCast() {
+        controlSelectedDevice(
+            nativeCall = { handle, deviceId -> nativePauseCast(handle, deviceId) },
+            failureMessage = "暂停投屏失败。",
+        )
+    }
+
+    override suspend fun seekCast(positionMs: Long) {
+        val normalizedPositionMs = positionMs.coerceAtLeast(0L)
+        controlSelectedDevice(
+            nativeCall = { handle, deviceId -> nativeSeekCast(handle, deviceId, normalizedPositionMs) },
+            failureMessage = "调整投屏进度失败。",
+        )
     }
 
     override suspend fun stopCast() {
         if (!ensureAvailable()) return
+        playbackPollingJob?.cancelAndJoin()
+        playbackPollingJob = null
         val selectedDeviceId = state.value.selectedDeviceId
         if (selectedDeviceId != null) {
             withContext(Dispatchers.IO) { nativeStopCast(nativeHandle, selectedDeviceId) }
@@ -151,6 +189,7 @@ class AndroidUpnpCastGateway(
                 selectedDeviceName = null,
                 message = null,
                 errorMessage = null,
+                playback = null,
             )
         }
     }
@@ -160,6 +199,8 @@ class AndroidUpnpCastGateway(
         released = true
         discoveryJob?.cancelAndJoin()
         discoveryJob = null
+        playbackPollingJob?.cancelAndJoin()
+        playbackPollingJob = null
         releaseMulticastLock()
         scope.cancel()
         if (nativeHandle != 0L) {
@@ -208,7 +249,52 @@ class AndroidUpnpCastGateway(
                 selectedDeviceName = selectedDeviceName,
                 message = null,
                 errorMessage = message,
+                playback = null,
             )
+        }
+    }
+
+    private suspend fun controlSelectedDevice(
+        nativeCall: suspend (handle: Long, deviceId: String) -> String?,
+        failureMessage: String,
+    ) {
+        if (!ensureAvailable()) return
+        val selectedDeviceId = state.value.selectedDeviceId ?: return
+        val error = withContext(Dispatchers.IO) {
+            nativeCall(nativeHandle, selectedDeviceId)
+        }
+        if (error != null) {
+            fail(error.ifBlank { failureMessage })
+            return
+        }
+        queryAndUpdatePlayback(selectedDeviceId)
+    }
+
+    private fun startPlaybackPolling(deviceId: String) {
+        playbackPollingJob?.cancel()
+        playbackPollingJob = scope.launch {
+            queryAndUpdatePlayback(deviceId)
+            while (isActive && !released) {
+                delay(PLAYBACK_POLL_INTERVAL_MS)
+                val current = state.value
+                if (current.status != CastSessionStatus.Casting || current.selectedDeviceId != deviceId) break
+                queryAndUpdatePlayback(deviceId)
+            }
+        }
+    }
+
+    private suspend fun queryAndUpdatePlayback(deviceId: String) {
+        if (!isSupported || released) return
+        val payload = withContext(Dispatchers.IO) {
+            nativeQueryCastPlayback(nativeHandle, deviceId)
+        }
+        val playback = parseNativePlayback(payload) ?: return
+        updateCastState { current ->
+            if (current.status == CastSessionStatus.Casting && current.selectedDeviceId == deviceId) {
+                current.copy(playback = playback)
+            } else {
+                current
+            }
         }
     }
 
@@ -247,6 +333,10 @@ class AndroidUpnpCastGateway(
     private external fun nativeStartDiscovery(handle: Long): String?
     private external fun nativeListDevices(handle: Long): String
     private external fun nativeCastMedia(handle: Long, deviceId: String, uri: String, metadata: String): String?
+    private external fun nativePlayCast(handle: Long, deviceId: String): String?
+    private external fun nativePauseCast(handle: Long, deviceId: String): String?
+    private external fun nativeSeekCast(handle: Long, deviceId: String, positionMs: Long): String?
+    private external fun nativeQueryCastPlayback(handle: Long, deviceId: String): String
     private external fun nativeStopCast(handle: Long, deviceId: String): String?
     private external fun nativeRelease(handle: Long)
 }
@@ -270,7 +360,31 @@ private fun parseNativeDevices(payload: String): List<CastDevice> {
         }
 }
 
+private fun parseNativePlayback(payload: String): CastPlaybackState? {
+    if (payload.isBlank()) return null
+    val fields = payload.split(FIELD_SEPARATOR)
+    if (fields.size < 3) return null
+    val transportState = fields[0].trim().uppercase()
+    val positionMs = fields[1].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    val durationMs = fields[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    val isPlaying = transportState == "PLAYING" || transportState == "TRANSITIONING"
+    val isPaused = transportState.startsWith("PAUSED")
+    val isStoppedAtEnd = transportState == "STOPPED" &&
+        durationMs > 0L &&
+        positionMs >= (durationMs - CAST_ENDED_POSITION_TOLERANCE_MS).coerceAtLeast(0L)
+    return CastPlaybackState(
+        positionMs = positionMs.coerceAtMost(durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE),
+        durationMs = durationMs,
+        isPlaying = isPlaying,
+        canSeek = durationMs > 0L && (isPlaying || isPaused || transportState == "STOPPED"),
+        isEnded = transportState == "ENDED" || isStoppedAtEnd,
+        lastUpdatedAtMs = System.currentTimeMillis(),
+    )
+}
+
 private const val CAST_LOG_TAG = "Cast"
 private const val DISCOVERY_POLL_INTERVAL_MS = 1_000L
+private const val PLAYBACK_POLL_INTERVAL_MS = 1_000L
+private const val CAST_ENDED_POSITION_TOLERANCE_MS = 1_500L
 private const val RECORD_SEPARATOR = "\u001E"
 private const val FIELD_SEPARATOR = "\u001F"

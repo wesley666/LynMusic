@@ -49,6 +49,7 @@ interface PlaybackRepository {
 
     suspend fun hydratePersistedQueueIfNeeded()
     suspend fun playTracks(tracks: List<Track>, startIndex: Int)
+    suspend fun prepareExternalPlaybackQueue(tracks: List<Track>, startIndex: Int): PlaybackSnapshot?
     suspend fun playQueueIndex(index: Int)
     suspend fun togglePlayPause()
     suspend fun pause()
@@ -229,29 +230,14 @@ class DefaultPlaybackRepository(
             if (tracks.isEmpty()) return@withLock
             updatePlaybackStats(mutableSnapshot.value)
             val currentSnapshot = mutableSnapshot.value
-            val index = startIndex.coerceIn(0, tracks.lastIndex)
-            val (queue, currentIndex) = if (currentSnapshot.mode == PlaybackMode.SHUFFLE) {
-                shuffledQueueForCurrent(tracks, index)
-            } else {
-                tracks to index
-            }
-            val target = queue[currentIndex]
-            mutableSnapshot.value = PlaybackSnapshot(
-                queue = queue,
-                orderedQueue = tracks,
-                currentIndex = currentIndex,
-                mode = currentSnapshot.mode,
-                isHydratingPlayback = false,
+            val nextSnapshot = buildQueueSnapshot(
+                tracks = tracks,
+                startIndex = startIndex,
+                currentSnapshot = currentSnapshot,
                 isPlaying = true,
-                positionMs = 0L,
-                durationMs = target.durationMs,
-                canSeek = false,
-                volume = currentSnapshot.volume,
-                metadataTitle = null,
-                metadataArtistName = null,
-                metadataAlbumTitle = null,
-                metadataArtworkLocator = null,
             )
+            val target = nextSnapshot.currentTrack ?: return@withLock
+            mutableSnapshot.value = nextSnapshot
             loadRequest = createLoadRequest(
                 track = target,
                 playWhenReady = true,
@@ -262,6 +248,28 @@ class DefaultPlaybackRepository(
             loadGatewaySafely(it)
             persistSnapshot()
         }
+    }
+
+    override suspend fun prepareExternalPlaybackQueue(tracks: List<Track>, startIndex: Int): PlaybackSnapshot? {
+        var preparedSnapshot: PlaybackSnapshot? = null
+        playbackCommandMutex.withLock {
+            if (tracks.isEmpty()) return@withLock
+            updatePlaybackStats(mutableSnapshot.value)
+            val currentSnapshot = mutableSnapshot.value
+            latestLoadRequestId += 1L
+            val nextSnapshot = buildQueueSnapshot(
+                tracks = tracks,
+                startIndex = startIndex,
+                currentSnapshot = currentSnapshot,
+                isPlaying = false,
+            )
+            preparedSnapshot = nextSnapshot
+            mutableSnapshot.value = nextSnapshot
+        }
+        if (preparedSnapshot != null) {
+            persistSnapshot()
+        }
+        return preparedSnapshot
     }
 
     override suspend fun playQueueIndex(index: Int) {
@@ -720,6 +728,37 @@ class DefaultPlaybackRepository(
         val currentTrack = orderedQueue[currentIndex]
         val remainingTracks = orderedQueue.filterIndexed { index, _ -> index != currentIndex }
         return (listOf(currentTrack) + remainingTracks.shuffled(shuffleRandom)) to 0
+    }
+
+    private fun buildQueueSnapshot(
+        tracks: List<Track>,
+        startIndex: Int,
+        currentSnapshot: PlaybackSnapshot,
+        isPlaying: Boolean,
+    ): PlaybackSnapshot {
+        val index = startIndex.coerceIn(0, tracks.lastIndex)
+        val (queue, currentIndex) = if (currentSnapshot.mode == PlaybackMode.SHUFFLE) {
+            shuffledQueueForCurrent(tracks, index)
+        } else {
+            tracks to index
+        }
+        val target = queue[currentIndex]
+        return PlaybackSnapshot(
+            queue = queue,
+            orderedQueue = tracks,
+            currentIndex = currentIndex,
+            mode = currentSnapshot.mode,
+            isHydratingPlayback = false,
+            isPlaying = isPlaying,
+            positionMs = 0L,
+            durationMs = target.durationMs,
+            canSeek = false,
+            volume = currentSnapshot.volume,
+            metadataTitle = null,
+            metadataArtistName = null,
+            metadataAlbumTitle = null,
+            metadataArtworkLocator = null,
+        )
     }
 
     private fun logDisplayArtwork(snapshot: PlaybackSnapshot) {

@@ -1176,6 +1176,8 @@ private class FakeLyricsSharePlaybackRepository(
 
     override suspend fun playTracks(tracks: List<Track>, startIndex: Int) = Unit
 
+    override suspend fun prepareExternalPlaybackQueue(tracks: List<Track>, startIndex: Int): PlaybackSnapshot? = null
+
     override suspend fun playQueueIndex(index: Int) = Unit
 
     override suspend fun togglePlayPause() = Unit

@@ -33,6 +33,15 @@ enum class CastSessionStatus {
     Unsupported,
 }
 
+data class CastPlaybackState(
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val isPlaying: Boolean = false,
+    val canSeek: Boolean = false,
+    val isEnded: Boolean = false,
+    val lastUpdatedAtMs: Long = 0L,
+)
+
 data class CastSessionState(
     val status: CastSessionStatus = CastSessionStatus.Idle,
     val devices: List<CastDevice> = emptyList(),
@@ -40,6 +49,7 @@ data class CastSessionState(
     val selectedDeviceName: String? = null,
     val message: String? = null,
     val errorMessage: String? = null,
+    val playback: CastPlaybackState? = null,
     val revision: Long = 0L,
 ) {
     val isSearching: Boolean
@@ -59,6 +69,9 @@ interface CastGateway {
     suspend fun startDiscovery()
     suspend fun stopDiscovery()
     suspend fun cast(deviceId: String, request: CastMediaRequest)
+    suspend fun playCast()
+    suspend fun pauseCast()
+    suspend fun seekCast(positionMs: Long)
     suspend fun stopCast()
     suspend fun release()
 }
@@ -77,6 +90,9 @@ object UnsupportedCastGateway : CastGateway {
     override suspend fun startDiscovery() = Unit
     override suspend fun stopDiscovery() = Unit
     override suspend fun cast(deviceId: String, request: CastMediaRequest) = Unit
+    override suspend fun playCast() = Unit
+    override suspend fun pauseCast() = Unit
+    override suspend fun seekCast(positionMs: Long) = Unit
     override suspend fun stopCast() = Unit
     override suspend fun release() = Unit
 }

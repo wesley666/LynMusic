@@ -20,6 +20,7 @@ import top.iwesley.lyn.music.cast.CastDevice
 import top.iwesley.lyn.music.cast.CastGateway
 import top.iwesley.lyn.music.cast.CastMediaRequest
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
+import top.iwesley.lyn.music.cast.CastPlaybackState
 import top.iwesley.lyn.music.cast.CastProxySession
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.CastSessionStatus
@@ -451,6 +452,332 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `cast success pauses local playback and effective snapshot mirrors remote playback`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.updatePlayback(
+            CastPlaybackState(
+                positionMs = 12_345L,
+                durationMs = 180_000L,
+                isPlaying = false,
+                canSeek = true,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, playbackRepository.pauseCallCount)
+        assertEquals(false, store.state.value.effectiveSnapshot.isPlaying)
+        assertEquals(12_345L, store.state.value.effectiveSnapshot.positionMs)
+        assertEquals(emptyList(), playbackRepository.seekCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `opening cast sheet while casting keeps remote playback mirrored`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.OpenCastSheet)
+        advanceUntilIdle()
+        castGateway.updatePlayback(
+            CastPlaybackState(
+                positionMs = 24_000L,
+                durationMs = 180_000L,
+                isPlaying = true,
+                canSeek = true,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(1, castGateway.startDiscoveryCallCount)
+        assertEquals(CastSessionStatus.Casting, store.state.value.castState.status)
+        assertEquals(true, store.state.value.isCastSheetVisible)
+        assertEquals(24_000L, store.state.value.effectiveSnapshot.positionMs)
+        scope.cancel()
+    }
+
+    @Test
+    fun `recasting queue item keeps effective snapshot on target while connecting`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(
+                isPlaying = true,
+                canSeek = true,
+                positionMs = 73_000L,
+            ),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.completeCastImmediately = false
+        store.dispatch(PlayerIntent.SkipNext)
+        advanceUntilIdle()
+
+        assertEquals(CastSessionStatus.Connecting, store.state.value.castState.status)
+        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertEquals("Second Song", store.state.value.effectiveSnapshot.currentDisplayTitle)
+        assertEquals(0L, store.state.value.effectiveSnapshot.positionMs)
+        assertEquals(false, store.state.value.effectiveSnapshot.isPlaying)
+        assertEquals("Second Song", castGateway.lastRequest?.title)
+        scope.cancel()
+    }
+
+    @Test
+    fun `recasting queue item reloads lyrics for effective track without changing local snapshot`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val lyricsRepository = DeferredQueueLyricsRepository()
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = lyricsRepository,
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        lyricsRepository.complete(
+            trackId = "track-1",
+            result = resolvedLyricsResult(sourceId = "source-track-1", line = "lyrics for track-1"),
+        )
+        advanceUntilIdle()
+        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.completeCastImmediately = false
+        store.dispatch(PlayerIntent.SkipNext)
+        advanceUntilIdle()
+
+        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertEquals(listOf("track-1", "track-2"), lyricsRepository.requestedTrackIds)
+        assertEquals(null, store.state.value.lyrics)
+
+        lyricsRepository.complete(
+            trackId = "track-2",
+            result = resolvedLyricsResult(sourceId = "source-track-2", line = "lyrics for track-2"),
+        )
+        advanceUntilIdle()
+
+        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertEquals("lyrics for track-2", store.state.value.lyrics?.rawPayload)
+        assertEquals(null, playbackRepository.lastArtworkOverride)
+        scope.cancel()
+    }
+
+    @Test
+    fun `play tracks uses local playback when not casting`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+        val tracks = listOf(
+            sampleTrack("track-4", "Fourth Song"),
+            sampleTrack("track-5", "Fifth Song"),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.PlayTracks(tracks, 1))
+        advanceUntilIdle()
+
+        assertEquals(tracks, playbackRepository.lastPlayTracks)
+        assertEquals(1, playbackRepository.lastPlayStartIndex)
+        assertEquals(0, playbackRepository.prepareExternalPlaybackQueueCallCount)
+        assertEquals(null, castGateway.lastRequest)
+        assertEquals("track-5", store.state.value.snapshot.currentTrack?.id)
+        scope.cancel()
+    }
+
+    @Test
+    fun `play tracks while casting prepares external queue and recasts without local playback`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+        val tracks = listOf(
+            sampleTrack("track-4", "Fourth Song"),
+            sampleTrack("track-5", "Fifth Song"),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.PlayTracks(tracks, 1))
+        advanceUntilIdle()
+
+        assertEquals(null, playbackRepository.lastPlayTracks)
+        assertEquals(1, playbackRepository.prepareExternalPlaybackQueueCallCount)
+        assertEquals(2, playbackRepository.pauseCallCount)
+        assertEquals("track-5", playbackRepository.snapshot.value.currentTrack?.id)
+        assertEquals("track-5", store.state.value.snapshot.currentTrack?.id)
+        assertEquals("track-5", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertEquals("Fifth Song", castGateway.lastRequest?.title)
+        assertEquals(1, store.state.value.castQueueIndex)
+        scope.cancel()
+    }
+
+    @Test
+    fun `cast controls route play pause and seek to cast gateway`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.TogglePlayPause)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.SeekTo(45_000L))
+        advanceUntilIdle()
+
+        assertEquals(1, castGateway.pauseCastCallCount)
+        assertEquals(listOf(45_000L), castGateway.seekCastCalls)
+        assertEquals(emptyList(), playbackRepository.seekCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `remote ended automatically casts next queue item`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val proxySession = FakeCastProxySession()
+        val resolver = FakeCastMediaUrlResolver(proxySession)
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = resolver,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.updatePlayback(
+            CastPlaybackState(
+                positionMs = 180_000L,
+                durationMs = 180_000L,
+                isPlaying = false,
+                canSeek = true,
+                isEnded = true,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("Second Song", castGateway.lastRequest?.title)
+        assertEquals(1, store.state.value.castQueueIndex)
+        assertEquals(2, resolver.resolveCallCount)
+        assertEquals(1, proxySession.closeCallCount)
+        assertEquals(null, playbackRepository.lastPlayQueueIndex)
+        scope.cancel()
+    }
+
+    @Test
+    fun `stop cast resumes local playback from remote position`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.updatePlayback(
+            CastPlaybackState(
+                positionMs = 42_000L,
+                durationMs = 180_000L,
+                isPlaying = true,
+                canSeek = true,
+            ),
+        )
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.StopCast)
+        advanceUntilIdle()
+
+        assertEquals(listOf(42_000L), playbackRepository.seekCalls)
+        assertEquals(1, playbackRepository.togglePlayPauseCallCount)
+        assertEquals(1, playbackRepository.pauseCallCount)
+        assertEquals(null, store.state.value.castQueueIndex)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -530,26 +857,75 @@ private class FakePlayerCastGateway : CastGateway {
 
     var lastRequest: CastMediaRequest? = null
         private set
+    var playCastCallCount: Int = 0
+        private set
+    var pauseCastCallCount: Int = 0
+        private set
+    var startDiscoveryCallCount: Int = 0
+        private set
+    val seekCastCalls = mutableListOf<Long>()
+    var completeCastImmediately: Boolean = true
 
     override val state: StateFlow<CastSessionState> = mutableState.asStateFlow()
     override val isSupported: Boolean = true
 
-    override suspend fun startDiscovery() = Unit
+    override suspend fun startDiscovery() {
+        startDiscoveryCallCount += 1
+    }
     override suspend fun stopDiscovery() = Unit
 
     override suspend fun cast(deviceId: String, request: CastMediaRequest) {
         lastRequest = request
         mutableState.value = mutableState.value.copy(
+            status = CastSessionStatus.Connecting,
+            selectedDeviceId = deviceId,
+            playback = null,
+        )
+        if (!completeCastImmediately) return
+        mutableState.value = mutableState.value.copy(
             status = CastSessionStatus.Casting,
             selectedDeviceId = deviceId,
+            playback = CastPlaybackState(
+                durationMs = request.durationMs,
+                isPlaying = true,
+                canSeek = request.durationMs > 0L,
+            ),
+        )
+    }
+
+    override suspend fun playCast() {
+        playCastCallCount += 1
+        mutableState.value = mutableState.value.copy(
+            playback = mutableState.value.playback?.copy(isPlaying = true)
+                ?: CastPlaybackState(isPlaying = true),
+        )
+    }
+
+    override suspend fun pauseCast() {
+        pauseCastCallCount += 1
+        mutableState.value = mutableState.value.copy(
+            playback = mutableState.value.playback?.copy(isPlaying = false)
+                ?: CastPlaybackState(isPlaying = false),
+        )
+    }
+
+    override suspend fun seekCast(positionMs: Long) {
+        seekCastCalls += positionMs
+        mutableState.value = mutableState.value.copy(
+            playback = mutableState.value.playback?.copy(positionMs = positionMs)
+                ?: CastPlaybackState(positionMs = positionMs),
         )
     }
 
     override suspend fun stopCast() {
-        mutableState.value = mutableState.value.copy(status = CastSessionStatus.Idle)
+        mutableState.value = mutableState.value.copy(status = CastSessionStatus.Idle, playback = null)
     }
 
     override suspend fun release() = Unit
+
+    fun updatePlayback(playback: CastPlaybackState) {
+        mutableState.value = mutableState.value.copy(playback = playback)
+    }
 }
 
 private class FakeCastMediaUrlResolver(
@@ -590,9 +966,13 @@ private class FakeQueuePlaybackRepository(
         private set
     var lastPlayQueueIndex: Int? = null
         private set
+    var prepareExternalPlaybackQueueCallCount: Int = 0
+        private set
     var lastArtworkOverride: String? = null
         private set
     var pauseCallCount: Int = 0
+        private set
+    var togglePlayPauseCallCount: Int = 0
         private set
     val seekCalls = mutableListOf<Long>()
 
@@ -619,6 +999,29 @@ private class FakeQueuePlaybackRepository(
         )
     }
 
+    override suspend fun prepareExternalPlaybackQueue(tracks: List<Track>, startIndex: Int): PlaybackSnapshot? {
+        prepareExternalPlaybackQueueCallCount += 1
+        if (tracks.isEmpty()) return null
+        val targetIndex = startIndex.coerceIn(0, tracks.lastIndex)
+        val snapshot = mutableSnapshot.value.copy(
+            queue = tracks,
+            orderedQueue = tracks,
+            currentIndex = targetIndex,
+            isPlaying = false,
+            positionMs = 0L,
+            durationMs = tracks[targetIndex].durationMs,
+            canSeek = false,
+            metadataTitle = null,
+            metadataArtistName = null,
+            metadataAlbumTitle = null,
+            metadataArtworkLocator = null,
+            currentNavidromeAudioQuality = null,
+            currentPlaybackAudioFormat = null,
+        )
+        mutableSnapshot.value = snapshot
+        return snapshot
+    }
+
     override suspend fun playQueueIndex(index: Int) {
         lastPlayQueueIndex = index
         val target = mutableSnapshot.value.queue.getOrNull(index) ?: return
@@ -632,7 +1035,10 @@ private class FakeQueuePlaybackRepository(
         )
     }
 
-    override suspend fun togglePlayPause() = Unit
+    override suspend fun togglePlayPause() {
+        togglePlayPauseCallCount += 1
+        mutableSnapshot.value = mutableSnapshot.value.copy(isPlaying = !mutableSnapshot.value.isPlaying)
+    }
 
     override suspend fun pause() {
         pauseCallCount += 1

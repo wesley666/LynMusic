@@ -254,6 +254,7 @@ fun App(
                 val compact = layoutProfile.isCompactLayout
                 val mobilePortraitMiniPlayer = layoutProfile.isCompactLayout
                 val shellColors = mainShellColors
+                val effectivePlayerSnapshot = playerState.effectiveSnapshot
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -293,7 +294,7 @@ fun App(
                                 isMusicTagsMobileEditorVisible = it
                             },
                             onOpenAddToPlaylist = {
-                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                                pendingPlaylistTrack = effectivePlayerSnapshot.currentTrack
                             },
                         )
                     } else {
@@ -325,7 +326,7 @@ fun App(
                                 selectedTab = AppTab.Library
                             },
                             onOpenAddToPlaylist = {
-                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                                pendingPlaylistTrack = effectivePlayerSnapshot.currentTrack
                             },
                         )
                     }
@@ -343,9 +344,9 @@ fun App(
                             lyricsShareThemeTokens = shellThemeTokens,
                             lyricsShareTextPalette = shellTextPalette,
                             onPlayerIntent = component.playerStore::dispatch,
-                            isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                            isFavorite = effectivePlayerSnapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
                             onToggleFavorite = {
-                                playerState.snapshot.currentTrack?.let { track ->
+                                effectivePlayerSnapshot.currentTrack?.let { track ->
                                     component.favoritesStore.dispatch(
                                         FavoritesIntent.ToggleFavorite(
                                             track
@@ -354,7 +355,7 @@ fun App(
                                 }
                             },
                             onOpenAddToPlaylist = {
-                                pendingPlaylistTrack = playerState.snapshot.currentTrack
+                                pendingPlaylistTrack = effectivePlayerSnapshot.currentTrack
                             },
                             onOpenQueue = {
                                 component.playerStore.dispatch(

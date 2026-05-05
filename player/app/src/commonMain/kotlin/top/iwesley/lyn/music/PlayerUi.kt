@@ -290,12 +290,13 @@ internal fun QueueDrawer(
     modifier: Modifier = Modifier,
     drawerSide: QueueDrawerSide = QueueDrawerSide.End,
 ) {
-    if (state.snapshot.currentTrack == null) return
+    val effectiveSnapshot = state.effectiveSnapshot
+    if (effectiveSnapshot.currentTrack == null) return
     val shellColors = mainShellColors
     val listState = rememberLazyListState()
-    LaunchedEffect(state.isQueueVisible, state.snapshot.currentIndex, state.snapshot.queue.size) {
-        if (state.isQueueVisible && state.snapshot.currentIndex in state.snapshot.queue.indices) {
-            listState.scrollToItem((state.snapshot.currentIndex - 2).coerceAtLeast(0))
+    LaunchedEffect(state.isQueueVisible, effectiveSnapshot.currentIndex, state.snapshot.queue.size) {
+        if (state.isQueueVisible && effectiveSnapshot.currentIndex in state.snapshot.queue.indices) {
+            listState.scrollToItem((effectiveSnapshot.currentIndex - 2).coerceAtLeast(0))
         }
     }
     if (state.isQueueVisible) {
@@ -390,8 +391,8 @@ internal fun QueueDrawer(
                                 QueueTrackRow(
                                     track = track,
                                     index = index,
-                                    isCurrent = index == state.snapshot.currentIndex,
-                                    isPlaying = index == state.snapshot.currentIndex && state.snapshot.isPlaying,
+                                    isCurrent = index == effectiveSnapshot.currentIndex,
+                                    isPlaying = index == effectiveSnapshot.currentIndex && effectiveSnapshot.isPlaying,
                                     onClick = { onPlayerIntent(PlayerIntent.PlayQueueIndex(index)) },
                                 )
                             }
@@ -442,7 +443,7 @@ private fun MiniPlayerBar(
     mobilePortraitMiniPlayer: Boolean = false,
     automotiveLandscape: Boolean = false,
 ) {
-    val snapshot = state.snapshot
+    val snapshot = state.effectiveSnapshot
     if (snapshot.currentTrack == null) {
         if (snapshot.isHydratingPlayback) {
             MiniPlayerHydratingBar(mobile = mobile, compact = compact)
@@ -1132,12 +1133,13 @@ private fun PlayerOverlay(
     onOpenQueue: () -> Unit,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
-    val track = state.snapshot.currentTrack ?: return
+    val snapshot = state.effectiveSnapshot
+    val track = snapshot.currentTrack ?: return
     val desktopWindowChrome = currentDesktopWindowChrome
     PlatformBackHandler(onBack = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) })
     val defaultBackgroundColor = Color(0xFF232325)
     var isPureModeRequested by remember { mutableStateOf(false) }
-    val artworkLocator = state.snapshot.currentDisplayArtworkLocator
+    val artworkLocator = snapshot.currentDisplayArtworkLocator
     val paletteArtworkBitmap = rememberPlatformArtworkBitmap(
         locator = artworkLocator,
         maxDecodeSizePx = ArtworkDecodeSize.Palette,
@@ -1405,7 +1407,7 @@ private fun PlayerOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             PlayerInfoPane(
-                                snapshot = state.snapshot,
+                                snapshot = snapshot,
                                 track = track,
                                 artworkBitmap = null,
                                 onPlayerIntent = onPlayerIntent,
@@ -1433,7 +1435,7 @@ private fun PlayerOverlay(
                             verticalArrangement = Arrangement.spacedBy(24.dp),
                         ) {
                             PlayerInfoPane(
-                                snapshot = state.snapshot,
+                                snapshot = snapshot,
                                 track = track,
                                 artworkBitmap = null,
                                 modifier = Modifier.fillMaxWidth(),
@@ -1451,7 +1453,7 @@ private fun PlayerOverlay(
                     }
                     if (!isPureMode) {
                         PlayerBottomControls(
-                            snapshot = state.snapshot,
+                            snapshot = snapshot,
                             sleepTimer = state.sleepTimer,
                             castState = state.castState,
                             isCastSheetVisible = state.isCastSheetVisible,
@@ -1530,7 +1532,7 @@ private fun MobilePlayerPrimaryPane(
                 ) { lyricsVisible = true },
         ) {
             PlayerInfoPane(
-                snapshot = state.snapshot,
+                snapshot = state.effectiveSnapshot,
                 track = track,
                 artworkBitmap = artworkBitmap,
                 modifier = Modifier.fillMaxSize(),

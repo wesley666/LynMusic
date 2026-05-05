@@ -280,6 +280,7 @@ internal fun MobileShell(
     val mobileNavIconSize = 29.dp
     val moreTabs = remember(platform) { mobileMoreNavigationTabs(platform) }
     val isMoreSelected = selectedTab in moreTabs
+    val effectivePlayerSnapshot = playerState.effectiveSnapshot
     var isMoreSheetVisible by rememberSaveable { mutableStateOf(false) }
     val moreSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     Scaffold(
@@ -293,14 +294,14 @@ internal fun MobileShell(
                     textPalette = AppThemeTextPalette.White,
                 ) {
                     MiniPlayerBarVisibility(
-                        visible = (playerState.snapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
+                        visible = (effectivePlayerSnapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
                                 !playerState.isExpanded &&
                                 !hideMiniPlayerBar,
                         state = playerState,
                         onPlayerIntent = onPlayerIntent,
-                        isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                        isFavorite = effectivePlayerSnapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
                         onToggleFavorite = {
-                            playerState.snapshot.currentTrack?.let { track ->
+                            effectivePlayerSnapshot.currentTrack?.let { track ->
                                 onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                             }
                         },
@@ -508,6 +509,7 @@ internal fun DesktopShell(
     onOpenAddToPlaylist: () -> Unit,
 ) {
     val shellColors = mainShellColors
+    val effectivePlayerSnapshot = playerState.effectiveSnapshot
     Row(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -576,13 +578,13 @@ internal fun DesktopShell(
                 textPalette = AppThemeTextPalette.White,
             ) {
                 MiniPlayerBarVisibility(
-                    visible = (playerState.snapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
+                    visible = (effectivePlayerSnapshot.currentTrack != null || playerState.snapshot.isHydratingPlayback) &&
                             !playerState.isExpanded,
                     state = playerState,
                     onPlayerIntent = onPlayerIntent,
-                    isFavorite = playerState.snapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
+                    isFavorite = effectivePlayerSnapshot.currentTrack?.id in favoritesState.favoriteTrackIds,
                     onToggleFavorite = {
-                        playerState.snapshot.currentTrack?.let { track ->
+                        effectivePlayerSnapshot.currentTrack?.let { track ->
                             onFavoritesIntent(FavoritesIntent.ToggleFavorite(track))
                         }
                     },

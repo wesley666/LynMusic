@@ -18,12 +18,34 @@ class CastModelsTest {
 
         gateway.startDiscovery()
         gateway.cast(deviceId = "device-1", request = request)
+        gateway.playCast()
+        gateway.pauseCast()
+        gateway.seekCast(42_000L)
         gateway.stopCast()
         gateway.stopDiscovery()
 
         assertFalse(gateway.isSupported)
         assertEquals(CastSessionStatus.Unsupported, gateway.state.value.status)
         assertTrue(gateway.state.value.errorMessage.orEmpty().contains("暂不支持"))
+    }
+
+    @Test
+    fun `session state can carry remote playback state`() {
+        val playback = CastPlaybackState(
+            positionMs = 12_000L,
+            durationMs = 180_000L,
+            isPlaying = true,
+            canSeek = true,
+            isEnded = false,
+            lastUpdatedAtMs = 100L,
+        )
+        val state = CastSessionState(
+            status = CastSessionStatus.Casting,
+            playback = playback,
+        )
+
+        assertEquals(playback, state.playback)
+        assertTrue(state.isCasting)
     }
 
     @Test

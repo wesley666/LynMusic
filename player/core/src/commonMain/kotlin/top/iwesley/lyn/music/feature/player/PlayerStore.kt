@@ -11,6 +11,7 @@ import top.iwesley.lyn.music.cast.CastMediaRequest
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
 import top.iwesley.lyn.music.cast.CastProxySession
 import top.iwesley.lyn.music.cast.CastSessionState
+import top.iwesley.lyn.music.cast.CastSessionStatus
 import top.iwesley.lyn.music.cast.UnsupportedCastMediaUrlResolver
 import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.buildDirectCastMediaRequest
@@ -30,6 +31,7 @@ import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
@@ -102,6 +104,7 @@ data class PlayerState(
     val isShareCopying: Boolean = false,
     val sleepTimer: SleepTimerState = SleepTimerState(),
     val castState: CastSessionState = CastSessionState(),
+    val castQueueIndex: Int? = null,
     val isCastSheetVisible: Boolean = false,
     val castMessage: String? = null,
     val shareMessage: String? = null,
@@ -112,6 +115,58 @@ data class PlayerState(
             sharePreviewSelection == selectedLyricsLineIndices &&
             sharePreviewTemplate == selectedLyricsShareTemplate &&
             sharePreviewFontKey == selectedLyricsShareFontKey
+
+    val effectiveSnapshot: PlaybackSnapshot
+        get() {
+            val shouldUseCastSnapshot = castState.status == CastSessionStatus.Casting ||
+                (castState.status == CastSessionStatus.Connecting &&
+                    castQueueIndex?.let { it in snapshot.queue.indices } == true)
+            if (!shouldUseCastSnapshot) return snapshot
+            val effectiveIndex = castQueueIndex
+                ?.takeIf { it in snapshot.queue.indices }
+                ?: snapshot.currentIndex
+            val track = snapshot.queue.getOrNull(effectiveIndex)
+            val playback = castState.playback
+            val remoteDurationMs = playback?.durationMs?.takeIf { it > 0L }
+                ?: track?.durationMs?.takeIf { it > 0L }
+                ?: snapshot.durationMs
+            val remotePositionMs = playback?.positionMs
+                ?.coerceAtLeast(0L)
+                ?.let { position ->
+                    remoteDurationMs.takeIf { it > 0L }?.let(position::coerceAtMost) ?: position
+                }
+                ?: if (castState.status == CastSessionStatus.Connecting && effectiveIndex != snapshot.currentIndex) {
+                    0L
+                } else {
+                    snapshot.positionMs
+                }
+            return snapshot.copy(
+                currentIndex = effectiveIndex,
+                isPlaying = playback?.isPlaying
+                    ?: if (castState.status == CastSessionStatus.Connecting && effectiveIndex != snapshot.currentIndex) {
+                        false
+                    } else {
+                        snapshot.isPlaying
+                    },
+                positionMs = remotePositionMs,
+                durationMs = remoteDurationMs,
+                canSeek = playback?.canSeek ?: snapshot.canSeek,
+                metadataTitle = if (effectiveIndex == snapshot.currentIndex) snapshot.metadataTitle else null,
+                metadataArtistName = if (effectiveIndex == snapshot.currentIndex) snapshot.metadataArtistName else null,
+                metadataAlbumTitle = if (effectiveIndex == snapshot.currentIndex) snapshot.metadataAlbumTitle else null,
+                metadataArtworkLocator = if (effectiveIndex == snapshot.currentIndex) snapshot.metadataArtworkLocator else null,
+                currentNavidromeAudioQuality = if (effectiveIndex == snapshot.currentIndex) {
+                    snapshot.currentNavidromeAudioQuality
+                } else {
+                    null
+                },
+                currentPlaybackAudioFormat = if (effectiveIndex == snapshot.currentIndex) {
+                    snapshot.currentPlaybackAudioFormat
+                } else {
+                    null
+                },
+            )
+        }
 }
 
 sealed interface PlayerIntent {
@@ -195,71 +250,30 @@ class PlayerStore(
     private var lastPlaybackErrorKey: PlaybackErrorKey? = null
     private var sleepTimerJob: Job? = null
     private var currentCastProxySession: CastProxySession? = null
+    private var castResumeSession: CastResumeSession? = null
+    private var isStoppingCastExplicitly = false
+    private var lastAutoAdvancedEndedTrackId: String? = null
 
     init {
         storeScope.launch {
             castGateway.state.collect { castState ->
-                updateState { it.copy(castState = castState) }
+                updateState { current ->
+                    val updated = current.copy(castState = castState)
+                    updated.copy(
+                        highlightedLineIndex = if (castState.status == CastSessionStatus.Casting) {
+                            findHighlightedLine(updated.lyrics, updated.effectiveSnapshot.positionMs)
+                        } else {
+                            updated.highlightedLineIndex
+                        },
+                    )
+                }
+                handleCastPlaybackUpdate(castState)
+                syncAutomaticLyricsForEffectiveSnapshot()
             }
         }
         storeScope.launch {
             playbackRepository.snapshot.collect { snapshot ->
-                val previousTrackId = state.value.snapshot.currentTrack?.id
-                val trackChanged = previousTrackId != snapshot.currentTrack?.id
-                val playbackErrorKey = snapshot.errorMessage?.let { message ->
-                    PlaybackErrorKey(trackId = snapshot.currentTrack?.id, message = message)
-                }
-                val shouldShowPlaybackError = playbackErrorKey != null && playbackErrorKey != lastPlaybackErrorKey
-                lastPlaybackErrorKey = playbackErrorKey
-                if (trackChanged || snapshot.currentTrack == null) {
-                    invalidateLyricsSharePreviewRequests()
-                }
-                updateState { current ->
-                    current.copy(
-                        snapshot = snapshot,
-                        isLyricsLoading = if (trackChanged || snapshot.currentTrack == null) false else current.isLyricsLoading,
-                        lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
-                        isQueueVisible = if (snapshot.currentTrack == null) false else current.isQueueVisible,
-                        highlightedLineIndex = findHighlightedLine(
-                            lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
-                            positionMs = snapshot.positionMs,
-                        ),
-                        isManualLyricsSearchVisible = if (trackChanged) false else current.isManualLyricsSearchVisible,
-                        manualLyricsTitle = if (trackChanged) "" else current.manualLyricsTitle,
-                        manualLyricsArtistName = if (trackChanged) "" else current.manualLyricsArtistName,
-                        manualLyricsAlbumTitle = if (trackChanged) "" else current.manualLyricsAlbumTitle,
-                        isManualLyricsSearchLoading = if (trackChanged) false else current.isManualLyricsSearchLoading,
-                        hasManualLyricsSearchResult = if (trackChanged) false else current.hasManualLyricsSearchResult,
-                        manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
-                        manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
-                        manualLyricsError = if (trackChanged) null else current.manualLyricsError,
-                        castMessage = if (trackChanged) null else current.castMessage,
-                        message = when {
-                            shouldShowPlaybackError -> snapshot.errorMessage
-                            trackChanged -> null
-                            else -> current.message
-                        },
-                    ).let { updated ->
-                        if (trackChanged || snapshot.currentTrack == null) {
-                            updated.clearLyricsShareState()
-                        } else {
-                            updated
-                        }
-                    }
-                }
-                val track = snapshot.currentTrack
-                val lookupTrack = snapshot.toLyricsLookupTrack()
-                val requestKey = lookupTrack?.lyricsRequestKey()
-                if (track != null && shouldLoadLyrics(track, requestKey)) {
-                    launchAutomaticLyricsLoad(
-                        track = track,
-                        lookupTrack = lookupTrack ?: track,
-                        requestKey = requestKey,
-                    )
-                } else if (track == null) {
-                    cancelAutomaticLyricsLoad(resetTracking = true)
-                    updateState { it.copy(isLyricsLoading = false, lyrics = null, highlightedLineIndex = -1) }
-                }
+                applyPlaybackSnapshot(snapshot)
             }
         }
     }
@@ -272,11 +286,11 @@ class PlayerStore(
 
     override suspend fun handleIntent(intent: PlayerIntent) {
         when (intent) {
-            is PlayerIntent.PlayTracks -> playbackRepository.playTracks(intent.tracks, intent.startIndex)
+            is PlayerIntent.PlayTracks -> playTracks(intent.tracks, intent.startIndex)
             is PlayerIntent.PlayQueueIndex -> playQueueIndex(intent.index)
-            PlayerIntent.TogglePlayPause -> playbackRepository.togglePlayPause()
-            PlayerIntent.SkipNext -> playbackRepository.skipNext()
-            PlayerIntent.SkipPrevious -> playbackRepository.skipPrevious()
+            PlayerIntent.TogglePlayPause -> togglePlayPause()
+            PlayerIntent.SkipNext -> skipNext()
+            PlayerIntent.SkipPrevious -> skipPrevious()
             is PlayerIntent.SeekTo -> seekTo(intent.positionMs)
             is PlayerIntent.SetVolume -> playbackRepository.setVolume(intent.value)
             PlayerIntent.CycleMode -> playbackRepository.cycleMode()
@@ -338,9 +352,76 @@ class PlayerStore(
         }
     }
 
+    private suspend fun playTracks(tracks: List<Track>, startIndex: Int) {
+        if (!hasRemoteCastRoute()) {
+            playbackRepository.playTracks(tracks, startIndex)
+            return
+        }
+        if (tracks.isEmpty()) return
+        playbackRepository.pause()
+        val preparedSnapshot = playbackRepository.prepareExternalPlaybackQueue(tracks, startIndex) ?: return
+        applyPlaybackSnapshot(preparedSnapshot)
+        castQueueIndex(preparedSnapshot.currentIndex, pauseLocalAfterCast = false)
+    }
+
+    private fun applyPlaybackSnapshot(snapshot: PlaybackSnapshot) {
+        val previousTrackId = state.value.snapshot.currentTrack?.id
+        val trackChanged = previousTrackId != snapshot.currentTrack?.id
+        val playbackErrorKey = snapshot.errorMessage?.let { message ->
+            PlaybackErrorKey(trackId = snapshot.currentTrack?.id, message = message)
+        }
+        val shouldShowPlaybackError = playbackErrorKey != null && playbackErrorKey != lastPlaybackErrorKey
+        lastPlaybackErrorKey = playbackErrorKey
+        if (trackChanged || snapshot.currentTrack == null) {
+            invalidateLyricsSharePreviewRequests()
+        }
+        updateState { current ->
+            current.copy(
+                snapshot = snapshot,
+                isLyricsLoading = if (trackChanged || snapshot.currentTrack == null) false else current.isLyricsLoading,
+                lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
+                isQueueVisible = if (snapshot.currentTrack == null) false else current.isQueueVisible,
+                highlightedLineIndex = findHighlightedLine(
+                    lyrics = if (trackChanged || snapshot.currentTrack == null) null else current.lyrics,
+                    positionMs = if (current.castState.status == CastSessionStatus.Casting) {
+                        current.effectiveSnapshot.positionMs
+                    } else {
+                        snapshot.positionMs
+                    },
+                ),
+                isManualLyricsSearchVisible = if (trackChanged) false else current.isManualLyricsSearchVisible,
+                manualLyricsTitle = if (trackChanged) "" else current.manualLyricsTitle,
+                manualLyricsArtistName = if (trackChanged) "" else current.manualLyricsArtistName,
+                manualLyricsAlbumTitle = if (trackChanged) "" else current.manualLyricsAlbumTitle,
+                isManualLyricsSearchLoading = if (trackChanged) false else current.isManualLyricsSearchLoading,
+                hasManualLyricsSearchResult = if (trackChanged) false else current.hasManualLyricsSearchResult,
+                manualLyricsResults = if (trackChanged) emptyList() else current.manualLyricsResults,
+                manualWorkflowSongResults = if (trackChanged) emptyList() else current.manualWorkflowSongResults,
+                manualLyricsError = if (trackChanged) null else current.manualLyricsError,
+                castMessage = if (trackChanged) null else current.castMessage,
+                message = when {
+                    shouldShowPlaybackError -> snapshot.errorMessage
+                    trackChanged -> null
+                    else -> current.message
+                },
+            ).let { updated ->
+                if (trackChanged || snapshot.currentTrack == null) {
+                    updated.clearLyricsShareState()
+                } else {
+                    updated
+                }
+            }
+        }
+        syncAutomaticLyricsForEffectiveSnapshot()
+    }
+
     private suspend fun playQueueIndex(index: Int) {
         val snapshot = state.value.snapshot
         if (index !in snapshot.queue.indices) return
+        if (isRemoteCastActive()) {
+            castQueueIndex(index, closeQueue = true)
+            return
+        }
         if (index == snapshot.currentIndex) {
             updateState { it.copy(isQueueVisible = false) }
             return
@@ -349,7 +430,51 @@ class PlayerStore(
         updateState { it.copy(isQueueVisible = false) }
     }
 
+    private suspend fun togglePlayPause() {
+        if (!isRemoteCastActive()) {
+            playbackRepository.togglePlayPause()
+            return
+        }
+        val playback = state.value.castState.playback
+        if (playback?.isPlaying == true) {
+            castGateway.pauseCast()
+        } else {
+            castGateway.playCast()
+        }
+    }
+
+    private suspend fun skipNext() {
+        if (!isRemoteCastActive()) {
+            playbackRepository.skipNext()
+            return
+        }
+        val nextIndex = resolveNextCastIndex(autoTriggered = false) ?: return
+        castQueueIndex(nextIndex)
+    }
+
+    private suspend fun skipPrevious() {
+        if (!isRemoteCastActive()) {
+            playbackRepository.skipPrevious()
+            return
+        }
+        val current = state.value.effectiveSnapshot
+        if (current.mode != PlaybackMode.REPEAT_ONE && current.canSeek && current.positionMs > 5_000L) {
+            castGateway.seekCast(0L)
+            return
+        }
+        val previousIndex = resolvePreviousCastIndex() ?: return
+        castQueueIndex(previousIndex)
+    }
+
     private suspend fun seekTo(positionMs: Long) {
+        if (isRemoteCastActive()) {
+            if (state.value.castState.playback?.canSeek != true) {
+                updateState { it.copy(message = PLAYBACK_UNSEEKABLE_MESSAGE) }
+                return
+            }
+            castGateway.seekCast(positionMs)
+            return
+        }
         if (!state.value.snapshot.canSeek) {
             updateState { it.copy(message = PLAYBACK_UNSEEKABLE_MESSAGE) }
             return
@@ -450,13 +575,172 @@ class PlayerStore(
         }
         closeCurrentCastProxySession()
         currentCastProxySession = resolved.proxySession
-        updateState { it.copy(castMessage = null) }
+        updateState {
+            it.copy(
+                castQueueIndex = snapshot.currentIndex,
+                castMessage = null,
+            )
+        }
         castGateway.cast(deviceId = deviceId, request = resolved.request)
+        if (castGateway.state.value.status == CastSessionStatus.Casting) {
+            castResumeSession = CastResumeSession(
+                trackId = track.id,
+                wasPlayingBeforeCast = snapshot.isPlaying,
+            )
+            lastAutoAdvancedEndedTrackId = null
+            playbackRepository.pause()
+        }
     }
 
     private suspend fun stopCast() {
-        castGateway.stopCast()
+        val current = state.value
+        val resumeSession = castResumeSession
+        val resumeIndex = current.effectiveSnapshot.currentIndex
+        val resumePositionMs = current.castState.playback?.positionMs
+            ?: current.effectiveSnapshot.positionMs
+        isStoppingCastExplicitly = true
+        try {
+            castGateway.stopCast()
+        } finally {
+            isStoppingCastExplicitly = false
+        }
         closeCurrentCastProxySession()
+        castResumeSession = null
+        lastAutoAdvancedEndedTrackId = null
+        updateState {
+            it.copy(
+                castQueueIndex = null,
+                castMessage = null,
+            )
+        }
+        syncAutomaticLyricsForEffectiveSnapshot()
+        if (resumeSession != null) {
+            resumeLocalPlaybackAfterCast(
+                targetIndex = resumeIndex,
+                positionMs = resumePositionMs,
+                wasPlayingBeforeCast = resumeSession.wasPlayingBeforeCast,
+            )
+        }
+    }
+
+    private suspend fun castQueueIndex(
+        index: Int,
+        closeQueue: Boolean = false,
+        autoTriggered: Boolean = false,
+        pauseLocalAfterCast: Boolean = true,
+    ) {
+        val currentState = state.value
+        val snapshot = currentState.snapshot
+        val track = snapshot.queue.getOrNull(index) ?: return
+        val deviceId = currentState.castState.selectedDeviceId ?: return
+        val targetSnapshot = snapshot.forCastQueueIndex(index)
+        val resolved = resolveCastMediaRequest(track = track, snapshot = targetSnapshot).getOrElse { error ->
+            updateState {
+                it.copy(
+                    castMessage = error.message ?: "当前歌曲暂不支持投屏。",
+                    isQueueVisible = if (closeQueue) false else it.isQueueVisible,
+                )
+            }
+            return
+        }
+        closeCurrentCastProxySession()
+        currentCastProxySession = resolved.proxySession
+        lastAutoAdvancedEndedTrackId = null
+        updateState {
+            it.copy(
+                castQueueIndex = index,
+                castMessage = null,
+                isQueueVisible = if (closeQueue) false else it.isQueueVisible,
+            )
+        }
+        syncAutomaticLyricsForEffectiveSnapshot()
+        castGateway.cast(deviceId = deviceId, request = resolved.request)
+        if (castGateway.state.value.status == CastSessionStatus.Casting && !autoTriggered && pauseLocalAfterCast) {
+            playbackRepository.pause()
+        }
+    }
+
+    private suspend fun handleCastPlaybackUpdate(castState: CastSessionState) {
+        if (isStoppingCastExplicitly) return
+        if (castState.status != CastSessionStatus.Casting) return
+        val playback = castState.playback ?: return
+        if (!playback.isEnded) return
+        val snapshot = state.value.effectiveSnapshot
+        val track = snapshot.currentTrack ?: return
+        if (lastAutoAdvancedEndedTrackId == track.id) return
+        lastAutoAdvancedEndedTrackId = track.id
+        val nextIndex = resolveNextCastIndex(autoTriggered = true) ?: return
+        castQueueIndex(index = nextIndex, autoTriggered = true)
+    }
+
+    private fun resolveNextCastIndex(autoTriggered: Boolean): Int? {
+        val snapshot = state.value.effectiveSnapshot
+        if (snapshot.queue.isEmpty()) return null
+        return when (snapshot.mode) {
+            PlaybackMode.REPEAT_ONE -> if (autoTriggered) {
+                snapshot.currentIndex.coerceIn(0, snapshot.queue.lastIndex)
+            } else {
+                nextSequentialIndex(snapshot)
+            }
+            PlaybackMode.SHUFFLE,
+            PlaybackMode.ORDER -> nextSequentialIndex(snapshot)
+        }
+    }
+
+    private fun resolvePreviousCastIndex(): Int? {
+        val snapshot = state.value.effectiveSnapshot
+        if (snapshot.queue.isEmpty()) return null
+        return when {
+            snapshot.mode == PlaybackMode.SHUFFLE -> previousSequentialIndex(snapshot)
+            snapshot.currentIndex > 0 -> snapshot.currentIndex - 1
+            snapshot.mode == PlaybackMode.ORDER -> snapshot.queue.lastIndex
+            else -> 0
+        }
+    }
+
+    private fun nextSequentialIndex(snapshot: PlaybackSnapshot): Int {
+        if (snapshot.currentIndex + 1 <= snapshot.queue.lastIndex) {
+            return snapshot.currentIndex + 1
+        }
+        return 0
+    }
+
+    private fun previousSequentialIndex(snapshot: PlaybackSnapshot): Int {
+        if (snapshot.currentIndex - 1 >= 0) {
+            return snapshot.currentIndex - 1
+        }
+        return snapshot.queue.lastIndex
+    }
+
+    private suspend fun resumeLocalPlaybackAfterCast(
+        targetIndex: Int,
+        positionMs: Long,
+        wasPlayingBeforeCast: Boolean,
+    ) {
+        val snapshot = playbackRepository.snapshot.value
+        if (targetIndex in snapshot.queue.indices && targetIndex != snapshot.currentIndex) {
+            playbackRepository.playQueueIndex(targetIndex)
+        }
+        if (positionMs > 0L) {
+            playbackRepository.seekTo(positionMs)
+        }
+        if (wasPlayingBeforeCast) {
+            if (!playbackRepository.snapshot.value.isPlaying) {
+                playbackRepository.togglePlayPause()
+            }
+        } else {
+            playbackRepository.pause()
+        }
+    }
+
+    private fun isRemoteCastActive(): Boolean {
+        return state.value.castState.status == CastSessionStatus.Casting
+    }
+
+    private fun hasRemoteCastRoute(): Boolean {
+        val castState = state.value.castState
+        return castState.selectedDeviceId != null &&
+            (castState.status == CastSessionStatus.Casting || castState.status == CastSessionStatus.Connecting)
     }
 
     private suspend fun resolveCastMediaRequest(
@@ -1164,7 +1448,12 @@ class PlayerStore(
             if (!isActive || !isLatestLyricsRequest(requestId, track.id, requestKey)) return@launch
             val lyrics = result?.document
             val artworkLocator = result?.artworkLocator
-            if (!artworkLocator.isNullOrBlank() && isLatestLyricsRequest(requestId, track.id, requestKey)) {
+            val canOverrideCurrentArtwork = state.value.snapshot.currentTrack?.id == track.id
+            if (
+                !artworkLocator.isNullOrBlank() &&
+                canOverrideCurrentArtwork &&
+                isLatestLyricsRequest(requestId, track.id, requestKey)
+            ) {
                 val cacheKey = trackArtworkCacheKey(track)
                 val hasAlbumArtworkCache = cacheKey?.let { key ->
                     runCatching { artworkCacheStore.hasCached(key) }.getOrDefault(false)
@@ -1195,10 +1484,29 @@ class PlayerStore(
                     latest.copy(
                         isLyricsLoading = false,
                         lyrics = lyrics,
-                        highlightedLineIndex = findHighlightedLine(lyrics, latest.snapshot.positionMs),
+                        highlightedLineIndex = findHighlightedLine(lyrics, latest.effectiveSnapshot.positionMs),
                     )
                 }
             }
+        }
+    }
+
+    private fun syncAutomaticLyricsForEffectiveSnapshot() {
+        val snapshot = state.value.effectiveSnapshot
+        val track = snapshot.currentTrack
+        if (track == null) {
+            cancelAutomaticLyricsLoad(resetTracking = true)
+            updateState { it.copy(isLyricsLoading = false, lyrics = null, highlightedLineIndex = -1) }
+            return
+        }
+        val lookupTrack = snapshot.toLyricsLookupTrack()
+        val requestKey = lookupTrack?.lyricsRequestKey()
+        if (shouldLoadLyrics(track, requestKey)) {
+            launchAutomaticLyricsLoad(
+                track = track,
+                lookupTrack = lookupTrack ?: track,
+                requestKey = requestKey,
+            )
         }
     }
 
@@ -1364,6 +1672,26 @@ private data class ResolvedCastMediaRequest(
     val request: CastMediaRequest,
     val proxySession: CastProxySession?,
 )
+
+private data class CastResumeSession(
+    val trackId: String,
+    val wasPlayingBeforeCast: Boolean,
+)
+
+private fun PlaybackSnapshot.forCastQueueIndex(index: Int): PlaybackSnapshot {
+    if (index == currentIndex) return this
+    return copy(
+        currentIndex = index,
+        positionMs = 0L,
+        durationMs = queue.getOrNull(index)?.durationMs ?: durationMs,
+        metadataTitle = null,
+        metadataArtistName = null,
+        metadataAlbumTitle = null,
+        metadataArtworkLocator = null,
+        currentNavidromeAudioQuality = null,
+        currentPlaybackAudioFormat = null,
+    )
+}
 
 private fun PlaybackSnapshot.toLyricsLookupTrack(): Track? {
     val track = currentTrack ?: return null
