@@ -55,6 +55,11 @@
             android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <activity
+            android:name=".TvSettingsActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
             android:name=".CrashReportActivity"
             android:exported="false"
             android:process=":crash"

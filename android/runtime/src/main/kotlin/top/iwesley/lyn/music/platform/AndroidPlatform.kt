@@ -828,11 +828,10 @@ private const val KEY_THEME_TEXT_PALETTE_OCEAN = "theme_text_palette_ocean"
 private const val KEY_THEME_TEXT_PALETTE_SAND = "theme_text_palette_sand"
 private const val KEY_THEME_TEXT_PALETTE_CUSTOM = "theme_text_palette_custom"
 
-private class AndroidImportSourceGateway(
+class AndroidLocalFolderPicker(
     private val activity: ComponentActivity,
-    private val logger: DiagnosticLogger,
-    private val navidromeHttpClient: LyricsHttpClient,
-) : ImportSourceGateway {
+    private val logger: DiagnosticLogger = GlobalDiagnosticLogger,
+) {
     private var folderContinuation: ((LocalFolderSelection?) -> Unit)? = null
     private var legacyPermissionContinuation: ((Boolean) -> Unit)? = null
 
@@ -875,7 +874,7 @@ private class AndroidImportSourceGateway(
         }
     }
 
-    override suspend fun pickLocalFolder(): LocalFolderSelection? {
+    suspend fun pickLocalFolder(): LocalFolderSelection? {
         return withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { continuation ->
                 folderContinuation = { selection ->
@@ -894,6 +893,68 @@ private class AndroidImportSourceGateway(
                 }
             }
         }
+    }
+
+    private fun showManageAllFilesAccessPrompt() {
+        AlertDialog.Builder(activity)
+            .setTitle("需要文件管理权限")
+            .setMessage("授予“管理所有文件”后，导入的本地歌曲可以直接编辑音乐标签；如果不授权，会回退到 SAF 只读导入。")
+            .setPositiveButton("去授权") { _, _ ->
+                manageAllFilesPermissionLauncher.launch(buildManageAllFilesAccessIntent(activity))
+            }
+            .setNegativeButton("使用 SAF") { _, _ ->
+                picker.launch(null)
+            }
+            .setOnCancelListener {
+                resumeFolderSelection(null)
+            }
+            .show()
+    }
+
+    private fun shouldRequestManageAllFilesAccess(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasManageAllFilesAccess(activity)
+    }
+
+    private fun launchPickerAfterLegacyPermissionCheck() {
+        if (!shouldRequestLegacyDirectLocalFileAccess(activity)) {
+            picker.launch(null)
+            return
+        }
+        legacyPermissionContinuation = {
+            if (folderContinuation != null) {
+                picker.launch(null)
+            }
+        }
+        runCatching {
+            legacyPermissionLauncher.launch(legacyDirectLocalFileAccessPermissions())
+        }.onFailure { throwable ->
+            logger.warn(LOCAL_IMPORT_LOG_TAG) {
+                "legacy-storage-permission-launch-failed reason=${throwable.message.orEmpty()}"
+            }
+            legacyPermissionContinuation = null
+            if (folderContinuation != null) {
+                picker.launch(null)
+            }
+        }
+    }
+
+    private fun resumeFolderSelection(selection: LocalFolderSelection?) {
+        val continuation = folderContinuation
+        folderContinuation = null
+        legacyPermissionContinuation = null
+        continuation?.invoke(selection)
+    }
+}
+
+private class AndroidImportSourceGateway(
+    private val activity: ComponentActivity,
+    private val logger: DiagnosticLogger,
+    private val navidromeHttpClient: LyricsHttpClient,
+) : ImportSourceGateway {
+    private val localFolderPicker = AndroidLocalFolderPicker(activity, logger)
+
+    override suspend fun pickLocalFolder(): LocalFolderSelection? {
+        return localFolderPicker.pickLocalFolder()
     }
 
     override suspend fun scanLocalFolder(selection: LocalFolderSelection, sourceId: String): ImportScanReport {
@@ -1037,56 +1098,6 @@ private class AndroidImportSourceGateway(
             supportedImportExtensions = ANDROID_SUPPORTED_IMPORT_AUDIO_EXTENSIONS,
             logger = logger,
         )
-    }
-
-    private fun showManageAllFilesAccessPrompt() {
-        AlertDialog.Builder(activity)
-            .setTitle("需要文件管理权限")
-            .setMessage("授予“管理所有文件”后，导入的本地歌曲可以直接编辑音乐标签；如果不授权，会回退到 SAF 只读导入。")
-            .setPositiveButton("去授权") { _, _ ->
-                manageAllFilesPermissionLauncher.launch(buildManageAllFilesAccessIntent(activity))
-            }
-            .setNegativeButton("使用 SAF") { _, _ ->
-                picker.launch(null)
-            }
-            .setOnCancelListener {
-                resumeFolderSelection(null)
-            }
-            .show()
-    }
-
-    private fun shouldRequestManageAllFilesAccess(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !hasManageAllFilesAccess(activity)
-    }
-
-    private fun launchPickerAfterLegacyPermissionCheck() {
-        if (!shouldRequestLegacyDirectLocalFileAccess(activity)) {
-            picker.launch(null)
-            return
-        }
-        legacyPermissionContinuation = {
-            if (folderContinuation != null) {
-                picker.launch(null)
-            }
-        }
-        runCatching {
-            legacyPermissionLauncher.launch(legacyDirectLocalFileAccessPermissions())
-        }.onFailure { throwable ->
-            logger.warn(LOCAL_IMPORT_LOG_TAG) {
-                "legacy-storage-permission-launch-failed reason=${throwable.message.orEmpty()}"
-            }
-            legacyPermissionContinuation = null
-            if (folderContinuation != null) {
-                picker.launch(null)
-            }
-        }
-    }
-
-    private fun resumeFolderSelection(selection: LocalFolderSelection?) {
-        val continuation = folderContinuation
-        folderContinuation = null
-        legacyPermissionContinuation = null
-        continuation?.invoke(selection)
     }
 
     private fun scanLocalTree(treeUri: Uri): ImportScanReport {

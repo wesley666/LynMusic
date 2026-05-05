@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Today
@@ -106,6 +107,7 @@ import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.tv.TvMediaDetailActivity
 import top.iwesley.lyn.music.tv.TvMediaDetailSource
 import top.iwesley.lyn.music.tv.TvPlayerActivity
+import top.iwesley.lyn.music.tv.TvSettingsActivity
 
 private val TvPanelShape = RoundedCornerShape(18.dp)
 private val TvCardShape = RoundedCornerShape(14.dp)
@@ -154,6 +156,7 @@ internal fun TvMainScreen(
                 onDestinationSelected = { onIntent(TvMainIntent.SelectDestination(it)) },
                 onPlayerIntent = onPlayerIntent,
                 onOpenPlayer = { context.startActivity(TvPlayerActivity.createIntent(context)) },
+                onOpenSettings = { context.startActivity(TvSettingsActivity.createIntent(context)) },
             )
         },
         scrimBrush = SolidColor(Color.Transparent),
@@ -217,6 +220,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
     onDestinationSelected: (TvMainDestination) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onOpenPlayer: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val expanded = drawerValue == DrawerValue.Open
     Column(
@@ -241,15 +245,29 @@ private fun NavigationDrawerScope.TvNavigationRail(
         horizontalAlignment = if (expanded) Alignment.Start else Alignment.CenterHorizontally,
     ) {
         if (expanded) {
-            Text(
-                text = "LynMusic",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.headlineMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 4.dp, bottom = 24.dp),
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, bottom = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "LynMusic",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(Icons.Rounded.Settings, contentDescription = "设置")
+                }
+            }
         } else {
             Spacer(Modifier.height(58.dp))
         }

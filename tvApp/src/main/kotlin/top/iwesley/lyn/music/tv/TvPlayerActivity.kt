@@ -1320,7 +1320,7 @@ private data class TvVisibleLyricsLine(
 )
 
 private val TvPlayerPanelShape = RoundedCornerShape(22.dp)
-private val TvPlayerArtworkShape = RoundedCornerShape(26.dp)
+private val TvPlayerArtworkShape = RoundedCornerShape(0.dp)
 private val TvPlayerQueuePanelShape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 private val TvPlayerQueueRowShape = RoundedCornerShape(16.dp)
 private const val TV_PLAYER_SEEK_STEP_MS = 10_000L

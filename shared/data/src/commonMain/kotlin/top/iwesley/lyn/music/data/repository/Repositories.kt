@@ -136,6 +136,9 @@ interface TrackPlaybackStatsRepository {
 interface ImportSourceRepository {
     fun observeSources(): Flow<List<SourceWithStatus>>
     suspend fun importLocalFolder(): Result<ImportScanSummary?>
+    suspend fun importSelectedLocalFolder(selection: LocalFolderSelection): Result<ImportScanSummary> {
+        return Result.failure(UnsupportedOperationException("Importing a preselected local folder is not supported."))
+    }
     suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit>
     suspend fun testUpdatedSambaSource(
         sourceId: String,
@@ -323,6 +326,12 @@ class RoomImportSourceRepository(
     override suspend fun importLocalFolder(): Result<ImportScanSummary?> {
         return runCatching {
             val selection = gateway.pickLocalFolder() ?: return@runCatching null
+            importSelectedLocalFolder(selection).getOrThrow()
+        }
+    }
+
+    override suspend fun importSelectedLocalFolder(selection: LocalFolderSelection): Result<ImportScanSummary> {
+        return runCatching {
             validateImportSourceCreation(
                 label = selection.label,
                 localFolderRootReference = selection.persistentReference,

@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
@@ -53,6 +54,7 @@ data class ImportState(
     val navidromeBaseUrl: String = "",
     val navidromeUsername: String = "",
     val navidromePassword: String = "",
+    val creatingSourceType: ImportSourceType? = null,
     val editingSource: RemoteSourceEditorState? = null,
     val isWorking: Boolean = false,
     val activeScanOperation: ImportScanOperation? = null,
@@ -63,12 +65,15 @@ data class ImportState(
 
 sealed interface ImportIntent {
     data object ImportLocalFolder : ImportIntent
+    data class ImportSelectedLocalFolder(val selection: LocalFolderSelection) : ImportIntent
     data object TestSambaSource : ImportIntent
     data object AddSambaSource : ImportIntent
     data object TestWebDavSource : ImportIntent
     data object AddWebDavSource : ImportIntent
     data object TestNavidromeSource : ImportIntent
     data object AddNavidromeSource : ImportIntent
+    data class OpenRemoteSourceCreator(val type: ImportSourceType) : ImportIntent
+    data object DismissRemoteSourceCreator : ImportIntent
     data class OpenRemoteSourceEditor(val sourceId: String) : ImportIntent
     data object DismissRemoteSourceEditor : ImportIntent
     data object TestRemoteSource : ImportIntent
@@ -143,6 +148,15 @@ class ImportStore(
                     .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
             }
 
+            is ImportIntent.ImportSelectedLocalFolder -> runImport(ImportScanOperation.CreateLocalFolder) {
+                repository.importSelectedLocalFolder(intent.selection)
+                    .onSuccess { summary ->
+                        recordScanSummary(summary)
+                        setMessage(scanSuccessMessage("本地音乐源已导入。", summary))
+                    }
+                    .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
+            }
+
             ImportIntent.TestSambaSource -> {
                 val draft = sambaDraftOrNull(state.value) ?: return
                 runImport {
@@ -160,18 +174,20 @@ class ImportStore(
                         .onSuccess { summary ->
                             updateState {
                                 it.copy(
+                                    creatingSourceType = null,
                                     sambaLabel = "",
                                     sambaServer = "",
                                     sambaPort = "",
                                     sambaPath = "",
                                     sambaUsername = "",
                                     sambaPassword = "",
+                                    testMessage = null,
                                 )
                             }
                             recordScanSummary(summary)
                             setMessage(scanSuccessMessage("Samba 音乐源已导入。", summary))
                         }
-                        .onFailure { setMessage("Samba 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.SAMBA, "Samba 导入失败: ${it.message}") }
                 }
             }
 
@@ -191,17 +207,19 @@ class ImportStore(
                         .onSuccess { summary ->
                             updateState {
                                 it.copy(
+                                    creatingSourceType = null,
                                     webDavLabel = "",
                                     webDavRootUrl = "",
                                     webDavUsername = "",
                                     webDavPassword = "",
                                     webDavAllowInsecureTls = false,
+                                    testMessage = null,
                                 )
                             }
                             recordScanSummary(summary)
                             setMessage(scanSuccessMessage("WebDAV 音乐源已导入。", summary))
                         }
-                        .onFailure { setMessage("WebDAV 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.WEBDAV, "WebDAV 导入失败: ${it.message}") }
                 }
             }
 
@@ -233,16 +251,38 @@ class ImportStore(
                         .onSuccess { summary ->
                             updateState {
                                 it.copy(
+                                    creatingSourceType = null,
                                     navidromeLabel = "",
                                     navidromeBaseUrl = "",
                                     navidromeUsername = "",
                                     navidromePassword = "",
+                                    testMessage = null,
                                 )
                             }
                             recordScanSummary(summary)
                             setMessage(scanSuccessMessage("Navidrome 音乐源已导入。", summary))
                         }
-                        .onFailure { setMessage("Navidrome 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.NAVIDROME, "Navidrome 导入失败: ${it.message}") }
+                }
+            }
+
+            is ImportIntent.OpenRemoteSourceCreator -> {
+                if (intent.type == ImportSourceType.LOCAL_FOLDER) return
+                updateState { state ->
+                    state.clearCreateDraft(intent.type).copy(
+                        creatingSourceType = intent.type,
+                        editingSource = null,
+                        testMessage = null,
+                    )
+                }
+            }
+
+            ImportIntent.DismissRemoteSourceCreator -> updateState { state ->
+                val type = state.creatingSourceType
+                if (type == null) {
+                    state.copy(testMessage = null)
+                } else {
+                    state.clearCreateDraft(type).copy(creatingSourceType = null, testMessage = null)
                 }
             }
 
@@ -447,15 +487,15 @@ class ImportStore(
     private fun sambaDraftOrNull(state: ImportState): SambaSourceDraft? {
         val port = state.sambaPort.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         if (state.sambaServer.isBlank()) {
-            setMessage("请先填写 Samba 服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, "请先填写 Samba 服务器地址。")
             return null
         }
         if (state.sambaPort.isNotBlank() && port == null) {
-            setMessage("端口号格式不正确。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, "端口号格式不正确。")
             return null
         }
         if (state.sambaPath.isBlank()) {
-            setMessage("请填写路径，至少包含共享名，例如 Media 或 Media/Music。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, "请填写路径，至少包含共享名，例如 Media 或 Media/Music。")
             return null
         }
         return SambaSourceDraft(
@@ -473,15 +513,15 @@ class ImportStore(
         allowBlankPassword: Boolean,
     ): WebDavSourceDraft? {
         if (state.webDavRootUrl.isBlank()) {
-            setMessage("请先填写 WebDAV 根 URL。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, "请先填写 WebDAV 根 URL。")
             return null
         }
         if (!allowBlankPassword && state.webDavPassword.isBlank()) {
-            setMessage("请先填写 WebDAV 密码。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, "请先填写 WebDAV 密码。")
             return null
         }
         if (state.webDavPassword.isNotBlank() && state.webDavUsername.isBlank()) {
-            setMessage("WebDAV 使用密码时必须填写用户名。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, "WebDAV 使用密码时必须填写用户名。")
             return null
         }
         return WebDavSourceDraft(
@@ -501,15 +541,15 @@ class ImportStore(
         allowBlankPassword: Boolean,
     ): NavidromeSourceDraft? {
         if (baseUrl.isBlank()) {
-            setMessage("请先填写 Navidrome 服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请先填写 Navidrome 服务器地址。")
             return null
         }
         if (username.isBlank()) {
-            setMessage("请先填写 Navidrome 用户名。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请先填写 Navidrome 用户名。")
             return null
         }
         if (!allowBlankPassword && password.isBlank()) {
-            setMessage("请先填写 Navidrome 密码。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请先填写 Navidrome 密码。")
             return null
         }
         return NavidromeSourceDraft(
@@ -583,6 +623,36 @@ class ImportStore(
         }
     }
 
+    private fun ImportState.clearCreateDraft(type: ImportSourceType): ImportState {
+        return when (type) {
+            ImportSourceType.SAMBA -> copy(
+                sambaLabel = "",
+                sambaServer = "",
+                sambaPort = "",
+                sambaPath = "",
+                sambaUsername = "",
+                sambaPassword = "",
+            )
+
+            ImportSourceType.WEBDAV -> copy(
+                webDavLabel = "",
+                webDavRootUrl = "",
+                webDavUsername = "",
+                webDavPassword = "",
+                webDavAllowInsecureTls = false,
+            )
+
+            ImportSourceType.NAVIDROME -> copy(
+                navidromeLabel = "",
+                navidromeBaseUrl = "",
+                navidromeUsername = "",
+                navidromePassword = "",
+            )
+
+            ImportSourceType.LOCAL_FOLDER -> this
+        }
+    }
+
     private fun recordScanSummary(summary: ImportScanSummary) {
         updateState { state ->
             state.copy(
@@ -612,6 +682,14 @@ class ImportStore(
 
     private fun setTestMessage(message: String) {
         updateState { it.copy(testMessage = message) }
+    }
+
+    private fun setCreateOrPageMessage(type: ImportSourceType, message: String) {
+        if (state.value.creatingSourceType == type) {
+            setTestMessage(message)
+        } else {
+            setMessage(message)
+        }
     }
 }
 
