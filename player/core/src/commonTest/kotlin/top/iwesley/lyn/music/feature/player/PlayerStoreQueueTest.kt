@@ -22,6 +22,9 @@ import top.iwesley.lyn.music.cast.CastMediaRequest
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
 import top.iwesley.lyn.music.cast.CastPlaybackState
 import top.iwesley.lyn.music.cast.CastProxySession
+import top.iwesley.lyn.music.cast.CastSessionForegroundCallbacks
+import top.iwesley.lyn.music.cast.CastSessionForegroundPlatformService
+import top.iwesley.lyn.music.cast.CastSessionForegroundState
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.CastSessionStatus
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
@@ -703,6 +706,101 @@ class PlayerStoreQueueTest {
     }
 
     @Test
+    fun `cast foreground service starts and updates while casting`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val foregroundService = FakeCastSessionForegroundPlatformService()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+            castSessionForegroundPlatformService = foregroundService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        castGateway.updatePlayback(
+            CastPlaybackState(
+                positionMs = 32_000L,
+                durationMs = 180_000L,
+                isPlaying = true,
+                canSeek = true,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(true, foregroundService.isStarted)
+        assertEquals("First Song", foregroundService.updateStates.last().snapshot.currentDisplayTitle)
+        assertEquals(32_000L, foregroundService.updateStates.last().snapshot.positionMs)
+        assertEquals(CastSessionStatus.Casting, foregroundService.updateStates.last().castState.status)
+        scope.cancel()
+    }
+
+    @Test
+    fun `cast foreground notification callbacks route to cast controls`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val foregroundService = FakeCastSessionForegroundPlatformService()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+            castSessionForegroundPlatformService = foregroundService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        foregroundService.togglePlayPause()
+        advanceUntilIdle()
+        foregroundService.skipNext()
+        advanceUntilIdle()
+
+        assertEquals(1, castGateway.pauseCastCallCount)
+        assertEquals("Second Song", castGateway.lastRequest?.title)
+        assertEquals(null, playbackRepository.lastPlayQueueIndex)
+        scope.cancel()
+    }
+
+    @Test
+    fun `stop cast stops foreground service`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(
+            sampleSnapshot().copy(isPlaying = true, canSeek = true),
+        )
+        val castGateway = FakePlayerCastGateway()
+        val foregroundService = FakeCastSessionForegroundPlatformService()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+            castSessionForegroundPlatformService = foregroundService,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.StopCast)
+        advanceUntilIdle()
+
+        assertEquals(false, foregroundService.isStarted)
+        scope.cancel()
+    }
+
+    @Test
     fun `remote ended automatically casts next queue item`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
@@ -940,6 +1038,53 @@ private class FakeCastMediaUrlResolver(
     }
 
     override suspend fun release() = Unit
+}
+
+private class FakeCastSessionForegroundPlatformService : CastSessionForegroundPlatformService {
+    private var callbacks = CastSessionForegroundCallbacks()
+    val updateStates = mutableListOf<CastSessionForegroundState>()
+    var isStarted: Boolean = false
+        private set
+    var startCallCount: Int = 0
+        private set
+    var stopCallCount: Int = 0
+        private set
+
+    override fun bind(callbacks: CastSessionForegroundCallbacks) {
+        this.callbacks = callbacks
+    }
+
+    override suspend fun start() {
+        startCallCount += 1
+        isStarted = true
+    }
+
+    override suspend fun update(state: CastSessionForegroundState) {
+        updateStates += state
+    }
+
+    override suspend fun stop() {
+        stopCallCount += 1
+        isStarted = false
+    }
+
+    override suspend fun close() = Unit
+
+    suspend fun togglePlayPause() {
+        callbacks.togglePlayPause()
+    }
+
+    suspend fun skipNext() {
+        callbacks.skipNext()
+    }
+
+    suspend fun skipPrevious() {
+        callbacks.skipPrevious()
+    }
+
+    suspend fun stopCast() {
+        callbacks.stopCast()
+    }
 }
 
 private class FakeCastProxySession : CastProxySession {

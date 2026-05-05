@@ -10,8 +10,12 @@ import top.iwesley.lyn.music.cast.CastGateway
 import top.iwesley.lyn.music.cast.CastMediaRequest
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
 import top.iwesley.lyn.music.cast.CastProxySession
+import top.iwesley.lyn.music.cast.CastSessionForegroundCallbacks
+import top.iwesley.lyn.music.cast.CastSessionForegroundPlatformService
+import top.iwesley.lyn.music.cast.CastSessionForegroundState
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.CastSessionStatus
+import top.iwesley.lyn.music.cast.UnsupportedCastSessionForegroundPlatformService
 import top.iwesley.lyn.music.cast.UnsupportedCastMediaUrlResolver
 import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.buildDirectCastMediaRequest
@@ -186,6 +190,7 @@ sealed interface PlayerIntent {
     data class CastToDevice(val deviceId: String) : PlayerIntent
     data object StopCast : PlayerIntent
     data object ClearCastMessage : PlayerIntent
+    data object CastNotificationPermissionDenied : PlayerIntent
     data class ExpandedChanged(val value: Boolean) : PlayerIntent
     data class QueueVisibilityChanged(val value: Boolean) : PlayerIntent
     data object OpenManualLyricsSearch : PlayerIntent
@@ -226,6 +231,8 @@ class PlayerStore(
     private val storeScope: CoroutineScope,
     private val castGateway: CastGateway = UnsupportedCastGateway,
     private val castMediaUrlResolver: CastMediaUrlResolver = UnsupportedCastMediaUrlResolver,
+    private val castSessionForegroundPlatformService: CastSessionForegroundPlatformService =
+        UnsupportedCastSessionForegroundPlatformService,
     private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
     private val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
@@ -255,6 +262,14 @@ class PlayerStore(
     private var lastAutoAdvancedEndedTrackId: String? = null
 
     init {
+        castSessionForegroundPlatformService.bind(
+            CastSessionForegroundCallbacks(
+                togglePlayPause = { togglePlayPause() },
+                skipNext = { skipNext() },
+                skipPrevious = { skipPrevious() },
+                stopCast = { stopCast() },
+            ),
+        )
         storeScope.launch {
             castGateway.state.collect { castState ->
                 updateState { current ->
@@ -269,11 +284,13 @@ class PlayerStore(
                 }
                 handleCastPlaybackUpdate(castState)
                 syncAutomaticLyricsForEffectiveSnapshot()
+                syncCastForegroundService()
             }
         }
         storeScope.launch {
             playbackRepository.snapshot.collect { snapshot ->
                 applyPlaybackSnapshot(snapshot)
+                syncCastForegroundService()
             }
         }
     }
@@ -302,6 +319,9 @@ class PlayerStore(
             is PlayerIntent.CastToDevice -> castToDevice(intent.deviceId)
             PlayerIntent.StopCast -> stopCast()
             PlayerIntent.ClearCastMessage -> updateState { it.copy(castMessage = null) }
+            PlayerIntent.CastNotificationPermissionDenied -> updateState {
+                it.copy(message = "通知权限未开启，后台投屏通知可能不显示。")
+            }
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
             is PlayerIntent.QueueVisibilityChanged -> updateState {
                 it.copy(isQueueVisible = intent.value && it.snapshot.currentTrack != null)
@@ -613,6 +633,7 @@ class PlayerStore(
                 castMessage = null,
             )
         }
+        castSessionForegroundPlatformService.stop()
         syncAutomaticLyricsForEffectiveSnapshot()
         if (resumeSession != null) {
             resumeLocalPlaybackAfterCast(
@@ -671,6 +692,24 @@ class PlayerStore(
         lastAutoAdvancedEndedTrackId = track.id
         val nextIndex = resolveNextCastIndex(autoTriggered = true) ?: return
         castQueueIndex(index = nextIndex, autoTriggered = true)
+    }
+
+    private suspend fun syncCastForegroundService(current: PlayerState = state.value) {
+        val status = current.castState.status
+        val shouldKeepService = current.effectiveSnapshot.currentTrack != null &&
+            (status == CastSessionStatus.Casting ||
+                (status == CastSessionStatus.Connecting && current.castState.selectedDeviceId != null))
+        if (!shouldKeepService) {
+            castSessionForegroundPlatformService.stop()
+            return
+        }
+        castSessionForegroundPlatformService.start()
+        castSessionForegroundPlatformService.update(
+            CastSessionForegroundState(
+                snapshot = current.effectiveSnapshot,
+                castState = current.castState,
+            ),
+        )
     }
 
     private fun resolveNextCastIndex(autoTriggered: Boolean): Int? {

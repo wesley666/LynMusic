@@ -17,7 +17,11 @@ import kotlin.time.Clock
 import top.iwesley.lyn.music.cast.CastGateway
 import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.CastMediaUrlResolver
+import top.iwesley.lyn.music.cast.CastNotificationPermissionRequester
+import top.iwesley.lyn.music.cast.CastSessionForegroundPlatformService
 import top.iwesley.lyn.music.cast.UnsupportedCastMediaUrlResolver
+import top.iwesley.lyn.music.cast.UnsupportedCastNotificationPermissionRequester
+import top.iwesley.lyn.music.cast.UnsupportedCastSessionForegroundPlatformService
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
@@ -783,6 +787,10 @@ data class PlayerRuntimeServices(
     val playbackPreferencesStore: PlaybackPreferencesStore,
     val castGateway: CastGateway = UnsupportedCastGateway,
     val castMediaUrlResolver: CastMediaUrlResolver = UnsupportedCastMediaUrlResolver,
+    val castNotificationPermissionRequester: CastNotificationPermissionRequester =
+        UnsupportedCastNotificationPermissionRequester,
+    val castSessionForegroundPlatformService: CastSessionForegroundPlatformService =
+        UnsupportedCastSessionForegroundPlatformService,
     val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
     val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,

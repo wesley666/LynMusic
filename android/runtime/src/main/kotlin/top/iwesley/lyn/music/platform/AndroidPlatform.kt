@@ -47,6 +47,8 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.SharedGraph
 import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildSharedGraph
+import top.iwesley.lyn.music.cast.UnsupportedCastSessionForegroundPlatformService
+import top.iwesley.lyn.music.cast.UnsupportedCastNotificationPermissionRequester
 import top.iwesley.lyn.music.cast.upnp.android.AndroidUpnpCastGateway
 import top.iwesley.lyn.music.core.model.AndroidDiagnosticLogger
 import top.iwesley.lyn.music.core.model.AppDisplayPreferencesStore
@@ -272,6 +274,19 @@ fun createAndroidRuntimeGraph(
                 secureCredentialStore = secureStore,
                 logger = logger,
             ),
+            castNotificationPermissionRequester = if (platformName == "Android") {
+                AndroidCastNotificationPermissionRequester(activity)
+            } else {
+                UnsupportedCastNotificationPermissionRequester
+            },
+            castSessionForegroundPlatformService = if (platformName == "Android") {
+                createAndroidCastSessionForegroundPlatformService(
+                    context = activity.applicationContext,
+                    artworkCacheStore = artworkCacheStore,
+                )
+            } else {
+                UnsupportedCastSessionForegroundPlatformService
+            },
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
