@@ -40,6 +40,40 @@ class UpnpRendererDidlTest {
     }
 
     @Test
+    fun parseUpnpRendererMediaRepairsBareAmpersandsInDidlUrls() {
+        val currentUri = "http://192.168.31.115:32768/rest/stream?id=1&u=wesley&t=token&s=salt&v=1&c=LynMusic"
+        val metadata = """
+            <DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/"
+                xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"
+                xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/">
+                <item id="0" parentID="0" restricted="1">
+                    <dc:title>晴天</dc:title>
+                    <upnp:artist>周杰伦</upnp:artist>
+                    <upnp:album>叶惠美</upnp:album>
+                    <upnp:albumArtURI>http://192.168.31.115:32768/rest/getCoverArt?id=cover-1&u=wesley&t=token&s=salt&v=1&c=LynMusic</upnp:albumArtURI>
+                    <res protocolInfo="http-get:*:audio/mpeg:*" duration="00:04:29">
+                        http://192.168.31.115:32768/rest/stream?id=1&u=wesley&t=token&s=salt&v=1&c=LynMusic
+                    </res>
+                </item>
+            </DIDL-Lite>
+        """.trimIndent()
+
+        val media = parseUpnpRendererMedia(currentUri, metadata)
+
+        assertNotNull(media)
+        assertEquals(currentUri, media.uri)
+        assertEquals("晴天", media.title)
+        assertEquals("周杰伦", media.artistName)
+        assertEquals("叶惠美", media.albumTitle)
+        assertEquals(
+            "http://192.168.31.115:32768/rest/getCoverArt?id=cover-1&u=wesley&t=token&s=salt&v=1&c=LynMusic",
+            media.artworkUri,
+        )
+        assertEquals("audio/mpeg", media.mimeType)
+        assertEquals(269_000L, media.durationMs)
+    }
+
+    @Test
     fun parseUpnpRendererMediaUsesCurrentUriBeforeDidlResource() {
         val metadata = """
             <DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/">

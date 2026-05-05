@@ -87,10 +87,25 @@ class AndroidUpnpMediaRenderer(
 
     @Suppress("unused")
     private fun handleSetMedia(uri: String, metadata: String): Boolean {
+        val diagnostics = metadataDiagnostics(metadata)
+        logger.info(RENDERER_LOG_TAG) {
+            "upnp-renderer-set-media-received uri=${uri.redactedUriForLog()} $diagnostics"
+        }
         val media = parseUpnpRendererMedia(uri, metadata)
         if (media == null) {
-            logger.info(RENDERER_LOG_TAG) { "upnp-renderer-reject-media uri=$uri" }
+            logger.info(RENDERER_LOG_TAG) {
+                "upnp-renderer-reject-media uri=${uri.redactedUriForLog()} $diagnostics"
+            }
             return false
+        }
+        logger.info(RENDERER_LOG_TAG) {
+            "upnp-renderer-media-parsed uri=${media.uri.redactedUriForLog()} " +
+                "type=${media.mediaType} title=${media.title.logPreview()} " +
+                "artistPresent=${!media.artistName.isNullOrBlank()} " +
+                "albumPresent=${!media.albumTitle.isNullOrBlank()} " +
+                "artworkPresent=${!media.artworkUri.isNullOrBlank()} " +
+                "mime=${media.mimeType.orEmpty().ifBlank { "<none>" }} " +
+                "durationMs=${media.durationMs}"
         }
         return runCatching { callback.onSetMedia(media) }
             .getOrElse { throwable ->
@@ -173,6 +188,45 @@ class AndroidUpnpMediaRenderer(
     companion object {
         const val DEFAULT_RENDERER_FRIENDLY_NAME = "LynMusic TV"
     }
+}
+
+private fun metadataDiagnostics(metadata: String): String {
+    val trimmed = metadata.trim()
+    return buildString {
+        append("metadataLength=${metadata.length}")
+        append(" metadataBlank=${trimmed.isBlank()}")
+        append(" metadataStartsRawXml=${trimmed.startsWith("<")}")
+        append(" metadataStartsEscapedXml=${trimmed.startsWith("&lt;", ignoreCase = true)}")
+        append(" containsDidl=${metadata.contains("DIDL-Lite", ignoreCase = true)}")
+        append(" containsEscapedDidl=${metadata.contains("&lt;DIDL-Lite", ignoreCase = true)}")
+        append(" containsTitleTag=${metadata.contains("title", ignoreCase = true)}")
+        append(" containsArtistTag=${metadata.contains("artist", ignoreCase = true)}")
+        append(" containsAlbumTag=${metadata.contains("album", ignoreCase = true)}")
+        append(" containsAlbumArtTag=${metadata.contains("albumArtURI", ignoreCase = true)}")
+        append(
+            " containsResTag=${
+                metadata.contains("<res", ignoreCase = true) ||
+                    metadata.contains("&lt;res", ignoreCase = true)
+            }",
+        )
+    }
+}
+
+private fun String.redactedUriForLog(): String {
+    val trimmed = trim()
+    if (trimmed.isBlank()) return "<blank>"
+    val withoutQuery = trimmed.substringBefore('#').substringBefore('?')
+    return withoutQuery.take(120).ifBlank { "<blank>" }
+}
+
+private fun String.logPreview(maxLength: Int = 48): String {
+    val normalized = replace('\n', ' ').replace('\r', ' ').trim()
+    val preview = if (normalized.length <= maxLength) {
+        normalized
+    } else {
+        normalized.take(maxLength) + "..."
+    }
+    return "\"$preview\""
 }
 
 private const val RENDERER_LOG_TAG = "CastRenderer"

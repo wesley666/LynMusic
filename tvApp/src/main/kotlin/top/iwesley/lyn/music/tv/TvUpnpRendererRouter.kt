@@ -13,6 +13,8 @@ import top.iwesley.lyn.music.cast.upnp.android.UpnpMediaRendererCallback
 import top.iwesley.lyn.music.cast.upnp.android.UpnpRendererMedia
 import top.iwesley.lyn.music.cast.upnp.android.UpnpRendererMediaType
 import top.iwesley.lyn.music.cast.upnp.android.UpnpRendererTransportState
+import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
+import top.iwesley.lyn.music.core.model.info
 
 internal enum class TvRendererRoute {
     Music,
@@ -82,6 +84,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                 renderer = AndroidUpnpMediaRenderer(
                     context = applicationContext,
                     callback = this,
+                    logger = GlobalDiagnosticLogger,
                 )
             }
             val error = renderer?.start()
@@ -188,6 +191,15 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
     override fun onSetMedia(media: UpnpRendererMedia): Boolean {
         val route = media.routeOrNull() ?: return false
         val context = appContext ?: return false
+        GlobalDiagnosticLogger.info(RENDERER_LOG_TAG) {
+            "tv-renderer-on-set-media route=$route type=${media.mediaType} " +
+                "title=${media.title.logPreview()} " +
+                "artistPresent=${!media.artistName.isNullOrBlank()} " +
+                "albumPresent=${!media.albumTitle.isNullOrBlank()} " +
+                "artworkPresent=${!media.artworkUri.isNullOrBlank()} " +
+                "mime=${media.mimeType.orEmpty().ifBlank { "<none>" }} " +
+                "durationMs=${media.durationMs}"
+        }
         runOnMain {
             currentMedia = media
             currentRoute = route
@@ -405,3 +417,15 @@ private fun UpnpRendererMedia.routeOrNull(): TvRendererRoute? {
         UpnpRendererMediaType.Video -> TvRendererRoute.Video
     }
 }
+
+private fun String.logPreview(maxLength: Int = 48): String {
+    val normalized = replace('\n', ' ').replace('\r', ' ').trim()
+    val preview = if (normalized.length <= maxLength) {
+        normalized
+    } else {
+        normalized.take(maxLength) + "..."
+    }
+    return "\"$preview\""
+}
+
+private const val RENDERER_LOG_TAG = "CastRenderer"
