@@ -28,6 +28,11 @@
             android:name="top.iwesley.lyn.music.platform.AndroidPlaybackNotificationService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <service
+            android:name="top.iwesley.lyn.music.platform.AndroidCastProxyForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>

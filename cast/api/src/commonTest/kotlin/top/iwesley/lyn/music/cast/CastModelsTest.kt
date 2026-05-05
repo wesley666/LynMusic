@@ -66,6 +66,17 @@ class CastModelsTest {
     }
 
     @Test
+    fun `direct cast request can override mime type`() {
+        val request = buildDirectCastMediaRequest(
+            track = sampleTrack(),
+            uri = "https://example.com/cast/stream/token",
+            mimeType = "audio/flac",
+        )
+
+        assertEquals("audio/flac", request.mimeType)
+    }
+
+    @Test
     fun `status label prefers explicit error`() {
         val state = CastSessionState(
             status = CastSessionStatus.Searching,

@@ -16,6 +16,13 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import top.iwesley.lyn.music.cast.CastDevice
+import top.iwesley.lyn.music.cast.CastGateway
+import top.iwesley.lyn.music.cast.CastMediaRequest
+import top.iwesley.lyn.music.cast.CastMediaUrlResolver
+import top.iwesley.lyn.music.cast.CastProxySession
+import top.iwesley.lyn.music.cast.CastSessionState
+import top.iwesley.lyn.music.cast.CastSessionStatus
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsDocument
@@ -389,6 +396,61 @@ class PlayerStoreQueueTest {
         scope.cancel()
     }
 
+    @Test
+    fun `direct http cast does not request proxy resolver`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val track = sampleTrack("track-http", "Http Song").copy(
+            mediaLocator = "https://example.com/song.mp3",
+            relativePath = "song.mp3",
+        )
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot().copy(queue = listOf(track)))
+        val castGateway = FakePlayerCastGateway()
+        val resolver = FakeCastMediaUrlResolver()
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = resolver,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+
+        assertEquals(0, resolver.resolveCallCount)
+        assertEquals("https://example.com/song.mp3", castGateway.lastRequest?.uri)
+        scope.cancel()
+    }
+
+    @Test
+    fun `non direct cast uses proxy resolver and closes session on stop`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
+        val castGateway = FakePlayerCastGateway()
+        val proxySession = FakeCastProxySession()
+        val resolver = FakeCastMediaUrlResolver(proxySession)
+        val store = PlayerStore(
+            playbackRepository = playbackRepository,
+            lyricsRepository = NoopQueueLyricsRepository(),
+            storeScope = scope,
+            castGateway = castGateway,
+            castMediaUrlResolver = resolver,
+        )
+
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.StopCast)
+        advanceUntilIdle()
+
+        assertEquals(1, resolver.resolveCallCount)
+        assertEquals(proxySession.uri, castGateway.lastRequest?.uri)
+        assertEquals(proxySession.mimeType, castGateway.lastRequest?.mimeType)
+        assertEquals(1, proxySession.closeCallCount)
+        scope.cancel()
+    }
+
     private fun sampleSnapshot(): PlaybackSnapshot {
         return PlaybackSnapshot(
             queue = listOf(
@@ -456,6 +518,64 @@ private class FakePlayerArtworkCacheStore(
     override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean {
         checkedPlaceholderKeys += cacheKey
         return cacheKey in replaceablePlaceholderKeys
+    }
+}
+
+private class FakePlayerCastGateway : CastGateway {
+    private val mutableState = MutableStateFlow(
+        CastSessionState(
+            devices = listOf(CastDevice(id = "device-1", name = "TV")),
+        ),
+    )
+
+    var lastRequest: CastMediaRequest? = null
+        private set
+
+    override val state: StateFlow<CastSessionState> = mutableState.asStateFlow()
+    override val isSupported: Boolean = true
+
+    override suspend fun startDiscovery() = Unit
+    override suspend fun stopDiscovery() = Unit
+
+    override suspend fun cast(deviceId: String, request: CastMediaRequest) {
+        lastRequest = request
+        mutableState.value = mutableState.value.copy(
+            status = CastSessionStatus.Casting,
+            selectedDeviceId = deviceId,
+        )
+    }
+
+    override suspend fun stopCast() {
+        mutableState.value = mutableState.value.copy(status = CastSessionStatus.Idle)
+    }
+
+    override suspend fun release() = Unit
+}
+
+private class FakeCastMediaUrlResolver(
+    private val session: CastProxySession = FakeCastProxySession(),
+) : CastMediaUrlResolver {
+    var resolveCallCount: Int = 0
+        private set
+
+    override suspend fun resolve(track: Track, snapshot: PlaybackSnapshot): Result<CastProxySession> {
+        resolveCallCount += 1
+        return Result.success(session)
+    }
+
+    override suspend fun release() = Unit
+}
+
+private class FakeCastProxySession : CastProxySession {
+    override val uri: String = "http://192.168.1.2:3000/cast/stream/token"
+    override val mimeType: String = "audio/flac"
+    override val durationMs: Long = 180_000L
+
+    var closeCallCount: Int = 0
+        private set
+
+    override suspend fun close() {
+        closeCallCount += 1
     }
 }
 

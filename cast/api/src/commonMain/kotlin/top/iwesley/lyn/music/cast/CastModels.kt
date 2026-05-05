@@ -123,6 +123,7 @@ fun buildDirectCastMediaRequest(
     uri: String,
     durationMs: Long = track.durationMs,
     artworkUri: String? = null,
+    mimeType: String = inferCastMimeType(uri),
 ): CastMediaRequest {
     val normalizedUri = uri.trim()
     return CastMediaRequest(
@@ -130,7 +131,7 @@ fun buildDirectCastMediaRequest(
         title = track.title,
         artistName = track.artistName,
         albumTitle = track.albumTitle,
-        mimeType = inferCastMimeType(normalizedUri),
+        mimeType = mimeType.ifBlank { inferCastMimeType(normalizedUri) },
         durationMs = durationMs.coerceAtLeast(0L),
         artworkUri = directCastUriOrNull(artworkUri),
     )

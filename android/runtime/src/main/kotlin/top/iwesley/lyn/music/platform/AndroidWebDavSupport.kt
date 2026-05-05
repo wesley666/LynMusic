@@ -57,7 +57,7 @@ internal data class AndroidWebDavPlaybackTarget(
     val requestUrl: String,
 )
 
-private data class AndroidWebDavSession(
+internal data class AndroidWebDavSession(
     val rootUrl: String,
     val authEnabled: Boolean,
     val allowInsecureTls: Boolean,
@@ -322,7 +322,7 @@ private fun resolveAndroidWebDavScanCandidate(
     return candidate
 }
 
-private fun createAndroidWebDavSession(
+internal fun createAndroidWebDavSession(
     rootUrl: String,
     username: String,
     password: String,

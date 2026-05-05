@@ -41,6 +41,8 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.room.runtime)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.cio)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.sardineAndroid)
     implementation(libs.smbj)

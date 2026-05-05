@@ -116,6 +116,7 @@ fun buildPlayerAppComponent(
             lyricsRepository = sharedGraph.lyricsRepository,
             storeScope = sharedGraph.scope,
             castGateway = playerRuntimeServices.castGateway,
+            castMediaUrlResolver = playerRuntimeServices.castMediaUrlResolver,
             lyricsSharePlatformService = playerRuntimeServices.lyricsSharePlatformService,
             lyricsShareFontLibraryPlatformService = playerRuntimeServices.lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = playerRuntimeServices.lyricsShareFontPreferencesStore,
@@ -129,6 +130,7 @@ fun buildPlayerAppComponent(
         scope = sharedGraph.scope,
         onDispose = {
             playerRuntimeServices.castGateway.release()
+            playerRuntimeServices.castMediaUrlResolver.release()
             playbackRepository.close()
         },
     )

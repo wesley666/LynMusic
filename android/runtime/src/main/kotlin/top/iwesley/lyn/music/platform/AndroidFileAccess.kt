@@ -75,6 +75,19 @@ internal fun resolveAndroidLocalTrackFile(locator: String): File? {
     }.getOrNull()?.takeIf { it.isAbsolute }
 }
 
+internal fun resolveAndroidLocalTrackUri(locator: String): Uri? {
+    val value = locator.trim()
+    if (value.isBlank()) return null
+    resolveAndroidLocalTrackFile(value)?.let { file ->
+        return Uri.fromFile(file)
+    }
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
+    return when (uri.scheme?.lowercase()) {
+        "content", "file" -> uri
+        else -> null
+    }
+}
+
 internal fun resolveTreeUriToDirectory(context: Context, treeUri: Uri): File? {
     if (!hasDirectLocalFileAccess(context)) return null
     if (treeUri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) return null

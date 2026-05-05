@@ -7,7 +7,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.cast.CastGateway
+import top.iwesley.lyn.music.cast.CastMediaRequest
+import top.iwesley.lyn.music.cast.CastMediaUrlResolver
+import top.iwesley.lyn.music.cast.CastProxySession
 import top.iwesley.lyn.music.cast.CastSessionState
+import top.iwesley.lyn.music.cast.UnsupportedCastMediaUrlResolver
 import top.iwesley.lyn.music.cast.UnsupportedCastGateway
 import top.iwesley.lyn.music.cast.buildDirectCastMediaRequest
 import top.iwesley.lyn.music.cast.directCastUriOrNull
@@ -166,6 +170,7 @@ class PlayerStore(
     private val lyricsRepository: LyricsRepository,
     private val storeScope: CoroutineScope,
     private val castGateway: CastGateway = UnsupportedCastGateway,
+    private val castMediaUrlResolver: CastMediaUrlResolver = UnsupportedCastMediaUrlResolver,
     private val lyricsSharePlatformService: LyricsSharePlatformService = UnsupportedLyricsSharePlatformService,
     private val lyricsShareFontLibraryPlatformService: LyricsShareFontLibraryPlatformService =
         UnsupportedLyricsShareFontLibraryPlatformService,
@@ -189,6 +194,7 @@ class PlayerStore(
     private var lyricsShareFontsLoadGeneration: Long = 0L
     private var lastPlaybackErrorKey: PlaybackErrorKey? = null
     private var sleepTimerJob: Job? = null
+    private var currentCastProxySession: CastProxySession? = null
 
     init {
         storeScope.launch {
@@ -438,22 +444,25 @@ class PlayerStore(
             updateState { it.copy(castMessage = "没有正在播放的歌曲。") }
             return
         }
-        val request = resolveCastMediaRequest(track = track, snapshot = snapshot).getOrElse { error ->
+        val resolved = resolveCastMediaRequest(track = track, snapshot = snapshot).getOrElse { error ->
             updateState { it.copy(castMessage = error.message ?: "当前歌曲暂不支持投屏。") }
             return
         }
+        closeCurrentCastProxySession()
+        currentCastProxySession = resolved.proxySession
         updateState { it.copy(castMessage = null) }
-        castGateway.cast(deviceId = deviceId, request = request)
+        castGateway.cast(deviceId = deviceId, request = resolved.request)
     }
 
     private suspend fun stopCast() {
         castGateway.stopCast()
+        closeCurrentCastProxySession()
     }
 
     private suspend fun resolveCastMediaRequest(
         track: Track,
         snapshot: PlaybackSnapshot,
-    ): Result<top.iwesley.lyn.music.cast.CastMediaRequest> {
+    ): Result<ResolvedCastMediaRequest> {
         val locator = track.mediaLocator.trim()
         val uri = when {
             isDirectCastUri(locator) -> locator
@@ -461,18 +470,40 @@ class PlayerStore(
             else -> null
         }?.takeIf(::isDirectCastUri)
 
-        if (uri == null) {
-            return Result.failure(IllegalStateException("当前歌曲暂不支持投屏。"))
+        if (uri != null) {
+            return Result.success(
+                ResolvedCastMediaRequest(
+                    request = buildDirectCastMediaRequest(
+                        track = track,
+                        uri = uri,
+                        durationMs = snapshot.durationMs.takeIf { it > 0L } ?: track.durationMs,
+                        artworkUri = resolveCastArtworkUri(snapshot),
+                    ),
+                    proxySession = null,
+                ),
+            )
         }
 
-        return Result.success(
-            buildDirectCastMediaRequest(
-                track = track,
-                uri = uri,
-                durationMs = snapshot.durationMs.takeIf { it > 0L } ?: track.durationMs,
-                artworkUri = resolveCastArtworkUri(snapshot),
-            ),
-        )
+        return castMediaUrlResolver.resolve(track = track, snapshot = snapshot).map { proxySession ->
+            ResolvedCastMediaRequest(
+                request = buildDirectCastMediaRequest(
+                    track = track,
+                    uri = proxySession.uri,
+                    durationMs = proxySession.durationMs.takeIf { it > 0L }
+                        ?: snapshot.durationMs.takeIf { it > 0L }
+                        ?: track.durationMs,
+                    artworkUri = resolveCastArtworkUri(snapshot),
+                    mimeType = proxySession.mimeType,
+                ),
+                proxySession = proxySession,
+            )
+        }
+    }
+
+    private suspend fun closeCurrentCastProxySession() {
+        val session = currentCastProxySession ?: return
+        currentCastProxySession = null
+        runCatching { session.close() }
     }
 
     private suspend fun resolveCastArtworkUri(snapshot: PlaybackSnapshot): String? {
@@ -1327,6 +1358,11 @@ private fun resolveLyricsShareFontSelection(
 private data class PlaybackErrorKey(
     val trackId: String?,
     val message: String,
+)
+
+private data class ResolvedCastMediaRequest(
+    val request: CastMediaRequest,
+    val proxySession: CastProxySession?,
 )
 
 private fun PlaybackSnapshot.toLyricsLookupTrack(): Track? {

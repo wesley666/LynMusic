@@ -266,6 +266,12 @@ fun createAndroidRuntimeGraph(
                 context = activity.applicationContext,
                 logger = logger,
             ),
+            castMediaUrlResolver = AndroidCastMediaUrlResolver(
+                context = activity.applicationContext,
+                database = database,
+                secureCredentialStore = secureStore,
+                logger = logger,
+            ),
             lyricsSharePlatformService = AndroidLyricsSharePlatformService(activity, lyricsShareFontLibraryPlatformService),
             lyricsShareFontLibraryPlatformService = lyricsShareFontLibraryPlatformService,
             lyricsShareFontPreferencesStore = appPreferencesStore,
@@ -1530,19 +1536,6 @@ private suspend fun resolveAndroidSambaTagReadTarget(
         username = spec.username,
         password = password,
     )
-}
-
-private fun resolveAndroidLocalTrackUri(locator: String): Uri? {
-    val value = locator.trim()
-    if (value.isBlank()) return null
-    resolveAndroidLocalTrackFile(value)?.let { file ->
-        return Uri.fromFile(file)
-    }
-    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return null
-    return when (uri.scheme?.lowercase()) {
-        "content", "file" -> uri
-        else -> null
-    }
 }
 
 internal class AndroidPlaybackGateway(
