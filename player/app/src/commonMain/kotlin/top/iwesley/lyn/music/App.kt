@@ -36,6 +36,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
 import top.iwesley.lyn.music.core.model.resolveAppThemeTokens
 import top.iwesley.lyn.music.data.repository.DefaultPlaybackRepository
+import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesStore
@@ -68,6 +69,7 @@ class LynMusicAppComponent(
     val offlineDownloadStore: OfflineDownloadStore,
     val playerStore: PlayerStore,
     val settingsStore: SettingsStore,
+    val lyricsRepository: LyricsRepository,
     val artworkCacheStore: ArtworkCacheStore,
     val appDisplayScalePreset: StateFlow<AppDisplayScalePreset>,
     private val scope: CoroutineScope,
@@ -121,6 +123,7 @@ fun buildPlayerAppComponent(
             logger = sharedGraph.logger,
         ),
         settingsStore = sharedGraph.settingsStore,
+        lyricsRepository = sharedGraph.lyricsRepository,
         artworkCacheStore = sharedGraph.artworkCacheStore,
         appDisplayScalePreset = sharedGraph.appDisplayScalePreset,
         scope = sharedGraph.scope,

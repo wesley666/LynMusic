@@ -9,6 +9,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
+import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.LyricsLookupMetadata
+import top.iwesley.lyn.music.data.repository.LyricsRepository
 
 class MusicActivity : ComponentActivity() {
     private val playbackSession by lazy {
@@ -70,10 +77,12 @@ class MusicActivity : ComponentActivity() {
         TvUpnpRendererService.start(this)
         setContent {
             ConfigureTvImageLoader()
+            val component = TvAppComponentHolder.current()
             val state by TvUpnpRendererRouter.state.collectAsState()
             MusicRendererTheme {
                 MusicRendererScreen(
                     state = state,
+                    lyricsRepository = component?.lyricsRepository,
                     onPlay = TvUpnpRendererRouter::play,
                     onPause = TvUpnpRendererRouter::pause,
                     onSeek = TvUpnpRendererRouter::seekTo,
@@ -126,6 +135,7 @@ private fun MusicRendererTheme(content: @Composable () -> Unit) {
 @Composable
 private fun MusicRendererScreen(
     state: TvRendererSessionState,
+    lyricsRepository: LyricsRepository?,
     onPlay: () -> Unit,
     onPause: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -137,6 +147,10 @@ private fun MusicRendererScreen(
     }
 
     val backgroundColors = rememberTvPlaybackBackgroundColors(state.artworkUri)
+    val lyricsState = rememberMusicRendererLyricsState(
+        state = state,
+        lyricsRepository = lyricsRepository,
+    )
     Box(modifier = Modifier.fillMaxSize()) {
         TvPlaybackArtworkBackground(
             artworkModel = state.artworkUri,
@@ -165,6 +179,7 @@ private fun MusicRendererScreen(
                 )
                 MusicRendererInfoPanel(
                     state = state,
+                    lyricsState = lyricsState,
                     modifier = Modifier
                         .weight(0.60f)
                         .fillMaxHeight(),
@@ -188,8 +203,48 @@ private fun MusicRendererScreen(
 }
 
 @Composable
+private fun rememberMusicRendererLyricsState(
+    state: TvRendererSessionState,
+    lyricsRepository: LyricsRepository?,
+): MusicRendererLyricsState {
+    val request = remember(
+        state.uri,
+        state.title,
+        state.artistName,
+        state.albumTitle,
+        state.durationMs,
+    ) {
+        state.toLyricsRequest()
+    }
+    var lyricsState by remember { mutableStateOf(MusicRendererLyricsState()) }
+    LaunchedEffect(lyricsRepository, request?.key) {
+        if (lyricsRepository == null || request == null) {
+            lyricsState = MusicRendererLyricsState()
+            return@LaunchedEffect
+        }
+        lyricsState = MusicRendererLyricsState(isLoading = true)
+        val resolved = try {
+            lyricsRepository.resolveNetworkLyrics(request.metadata)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Throwable) {
+            null
+        }
+        lyricsState = MusicRendererLyricsState(
+            lyrics = resolved?.document,
+            isLoading = false,
+        )
+    }
+    val highlightedLineIndex = remember(lyricsState.lyrics, state.positionMs) {
+        findMusicRendererHighlightedLine(lyricsState.lyrics, state.positionMs)
+    }
+    return lyricsState.copy(highlightedLineIndex = highlightedLineIndex)
+}
+
+@Composable
 private fun MusicRendererInfoPanel(
     state: TvRendererSessionState,
+    lyricsState: MusicRendererLyricsState,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -223,7 +278,8 @@ private fun MusicRendererInfoPanel(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 10.dp),
         )
-        LyricsPlaceholder(
+        MusicRendererLyricsContent(
+            state = lyricsState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -233,13 +289,64 @@ private fun MusicRendererInfoPanel(
 }
 
 @Composable
-private fun LyricsPlaceholder(modifier: Modifier = Modifier) {
+private fun MusicRendererLyricsContent(
+    state: MusicRendererLyricsState,
+    modifier: Modifier = Modifier,
+) {
+    val visibleLines = remember(state.lyrics) {
+        state.lyrics?.lines
+            ?.mapIndexedNotNull { index, line ->
+                line.text.trim().takeIf { it.isNotBlank() }?.let { text ->
+                    MusicRendererVisibleLyricsLine(rawIndex = index, text = text)
+                }
+            }
+            .orEmpty()
+    }
+    val highlightedVisibleIndex = remember(visibleLines, state.highlightedLineIndex) {
+        visibleLines.indexOfFirst { it.rawIndex == state.highlightedLineIndex }
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(highlightedVisibleIndex, visibleLines.size) {
+        if (highlightedVisibleIndex >= 0) {
+            listState.animateScrollToItem((highlightedVisibleIndex - 3).coerceAtLeast(0))
+        }
+    }
+
+    when {
+        state.isLoading -> LyricsMessage(message = "歌词加载中...", modifier = modifier)
+        visibleLines.isEmpty() -> LyricsMessage(message = "暂无歌词", modifier = modifier)
+        else -> LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            itemsIndexed(visibleLines, key = { _, line -> line.rawIndex }) { _, line ->
+                val highlighted = line.rawIndex == state.highlightedLineIndex
+                Text(
+                    text = line.text,
+                    color = if (highlighted) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.74f),
+                    fontWeight = if (highlighted) FontWeight.ExtraBold else FontWeight.Medium,
+                    style = if (highlighted) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsMessage(
+    message: String,
+    modifier: Modifier = Modifier,
+) {
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "暂无歌词",
+            text = message,
             color = Color.White.copy(alpha = 0.62f),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Medium,
@@ -456,11 +563,59 @@ private fun musicRendererProgress(positionMs: Long, durationMs: Long): Float {
     return (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
 }
 
+private fun TvRendererSessionState.toLyricsRequest(): MusicRendererLyricsRequest? {
+    if (!hasMedia) return null
+    val normalizedTitle = title.trim().takeIf { it.isNotEmpty() } ?: return null
+    val normalizedArtist = artistName?.trim()?.takeIf { it.isNotEmpty() }
+    val normalizedAlbum = albumTitle?.trim()?.takeIf { it.isNotEmpty() }
+    val normalizedDurationMs = durationMs.coerceAtLeast(0L)
+    val key = listOf(
+        normalizedTitle,
+        normalizedArtist.orEmpty(),
+        normalizedAlbum.orEmpty(),
+        normalizedDurationMs.toString(),
+        uri.orEmpty(),
+    ).joinToString("|")
+    return MusicRendererLyricsRequest(
+        key = key,
+        metadata = LyricsLookupMetadata(
+            title = normalizedTitle,
+            artistName = normalizedArtist,
+            albumTitle = normalizedAlbum,
+            durationMs = normalizedDurationMs,
+        ),
+    )
+}
+
+private fun findMusicRendererHighlightedLine(lyrics: LyricsDocument?, positionMs: Long): Int {
+    val lines = lyrics?.lines ?: return -1
+    val target = positionMs + lyrics.offsetMs
+    return lines.indexOfLast { line ->
+        line.timestampMs?.let { it <= target } ?: false
+    }
+}
+
 private fun formatDuration(durationMs: Long): String {
     val totalSeconds = durationMs.coerceAtLeast(0L) / 1000L
     val minutes = totalSeconds / 60L
     val seconds = totalSeconds % 60L
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
+
+private data class MusicRendererLyricsRequest(
+    val key: String,
+    val metadata: LyricsLookupMetadata,
+)
+
+private data class MusicRendererLyricsState(
+    val lyrics: LyricsDocument? = null,
+    val isLoading: Boolean = false,
+    val highlightedLineIndex: Int = -1,
+)
+
+private data class MusicRendererVisibleLyricsLine(
+    val rawIndex: Int,
+    val text: String,
+)
 
 private const val MUSIC_RENDERER_SEEK_STEP_MS = 10_000L

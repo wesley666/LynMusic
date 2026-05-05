@@ -26,6 +26,7 @@ import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.LyricsLookupMetadata
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsResponseFormat
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
@@ -193,6 +194,7 @@ interface PlaylistRepository {
 
 interface LyricsRepository {
     suspend fun getLyrics(track: Track): ResolvedLyricsResult?
+    suspend fun resolveNetworkLyrics(metadata: LyricsLookupMetadata): ResolvedLyricsResult? = null
     suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean = true): List<LyricsSearchCandidate>
     suspend fun applyLyricsCandidate(
         trackId: String,
@@ -1354,9 +1356,41 @@ class DefaultLyricsRepository(
             }
         }
 
+        return resolveNetworkLyricsForTrack(
+            track = track,
+            requestType = "auto",
+            manualArtworkOverride = manualArtworkOverride,
+            suppressArtwork = hasRealLocalAlbumArtworkCache,
+            cacheArtwork = true,
+            storeResult = true,
+        )
+    }
+
+    override suspend fun resolveNetworkLyrics(metadata: LyricsLookupMetadata): ResolvedLyricsResult? {
+        val lookupTrack = metadata.toNetworkLyricsLookupTrack() ?: return null
+        return resolveNetworkLyricsForTrack(
+            track = lookupTrack,
+            requestType = "cast-auto",
+            manualArtworkOverride = null,
+            suppressArtwork = false,
+            cacheArtwork = false,
+            storeResult = false,
+        )
+    }
+
+    private suspend fun resolveNetworkLyricsForTrack(
+        track: Track,
+        requestType: String,
+        manualArtworkOverride: String?,
+        suppressArtwork: Boolean,
+        cacheArtwork: Boolean,
+        storeResult: Boolean,
+    ): ResolvedLyricsResult? {
+        val trackLabel = track.logIdentity()
         val sources = enabledLyricsSources()
+        val logPrefix = requestType.takeUnless { it == "auto" }?.let { "$it-" }.orEmpty()
         if (sources.isEmpty()) {
-            logger.warn(LYRICS_LOG_TAG) { "no-enabled-sources track=$trackLabel" }
+            logger.warn(LYRICS_LOG_TAG) { "${logPrefix}no-enabled-sources track=$trackLabel" }
             return null
         }
 
@@ -1368,7 +1402,7 @@ class DefaultLyricsRepository(
                         candidates = requestDirectLyricsResults(
                             track = track,
                             config = source,
-                            requestType = "auto",
+                            requestType = requestType,
                         ),
                         selection = DEFAULT_DIRECT_LYRICS_SELECTION,
                         syncedBonus = AUTO_DIRECT_LYRICS_SYNCED_BONUS,
@@ -1378,17 +1412,21 @@ class DefaultLyricsRepository(
                         ?.takeIf { it.score >= DEFAULT_DIRECT_LYRICS_SELECTION.minScore }
                         ?.candidate
                     logger.debug(LYRICS_LOG_TAG) {
-                        "auto-direct-ranked track=$trackLabel source=${source.id} candidates=${rankedCandidates.size} " +
+                        "$requestType-direct-ranked track=$trackLabel source=${source.id} candidates=${rankedCandidates.size} " +
                             "topScore=${topCandidate?.score.logScore()} matched=${matchedCandidate != null} " +
                             "itemId=${matchedCandidate?.itemId.orEmpty()}"
                     }
                     matchedCandidate?.let { parsed ->
-                        val artworkLocator = cacheAutomaticArtworkLocator(
-                            track = track,
-                            sourceKey = source.id,
-                            candidateKey = parsed.itemId ?: parsed.title ?: "auto-direct",
-                            sourceLocator = parsed.artworkLocator,
-                        )
+                        val artworkLocator = if (cacheArtwork) {
+                            cacheAutomaticArtworkLocator(
+                                track = track,
+                                sourceKey = source.id,
+                                candidateKey = parsed.itemId ?: parsed.title ?: requestType.directArtworkCandidateFallbackKey(),
+                                sourceLocator = parsed.artworkLocator,
+                            )
+                        } else {
+                            normalizeArtworkLocator(parsed.artworkLocator)
+                        }
                         ResolvedLyricsResult(
                             document = parsed.document,
                             artworkLocator = artworkLocator,
@@ -1399,26 +1437,29 @@ class DefaultLyricsRepository(
                 is WorkflowLyricsSourceConfig -> requestWorkflowLyricsDocument(
                     track = track,
                     config = source,
-                    requestType = "auto",
+                    requestType = requestType,
+                    cacheArtwork = cacheArtwork,
                 )
             } ?: continue
-            val automaticArtworkLocator = sourceResult.artworkLocator.takeUnless { hasRealLocalAlbumArtworkCache }
+            val automaticArtworkLocator = sourceResult.artworkLocator.takeUnless { suppressArtwork }
             val result = sourceResult
                 .copy(artworkLocator = automaticArtworkLocator)
                 .withArtworkOverride(manualArtworkOverride)
-            storeLyricsDocument(
-                track.id,
-                sourceResult.document,
-                artworkLocator = automaticArtworkLocator,
-            )
+            if (storeResult) {
+                storeLyricsDocument(
+                    track.id,
+                    sourceResult.document,
+                    artworkLocator = automaticArtworkLocator,
+                )
+            }
             logger.info(LYRICS_LOG_TAG) {
-                "resolved track=$trackLabel source=${source.id} synced=${result.document.isSynced} " +
+                "${logPrefix}resolved track=$trackLabel source=${source.id} synced=${result.document.isSynced} " +
                     "lines=${result.document.lines.size} artworkLocator=${result.artworkLocator.orEmpty()}"
             }
             return result
         }
         logger.warn(LYRICS_LOG_TAG) {
-            "miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
+            "${logPrefix}miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
         }
         return null
     }
@@ -2225,6 +2266,7 @@ class DefaultLyricsRepository(
         track: Track,
         config: WorkflowLyricsSourceConfig,
         requestType: String,
+        cacheArtwork: Boolean = true,
     ): ResolvedLyricsResult? {
         val candidates = searchWorkflowCandidates(track, config, requestType)
         val rankedCandidates = rankWorkflowSongCandidates(
@@ -2249,7 +2291,11 @@ class DefaultLyricsRepository(
                 }
                 continue
             }
-            val artworkLocator = cacheWorkflowArtwork(track.id, candidate)
+            val artworkLocator = if (cacheArtwork) {
+                cacheWorkflowArtwork(track.id, candidate)
+            } else {
+                normalizeArtworkLocator(candidate.imageUrl)
+            }
             return ResolvedLyricsResult(
                 document = document,
                 artworkLocator = artworkLocator,
@@ -2474,6 +2520,7 @@ private sealed interface SameNameLyricsLookup {
 internal fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
 private const val LYRICS_LOG_TAG = "Lyrics"
+private const val NETWORK_LYRICS_LOOKUP_SOURCE_ID = "network-lyrics"
 const val MANUAL_LYRICS_OVERRIDE_SOURCE_ID = "manual-override"
 const val SAME_NAME_LRC_SOURCE_ID = "same-name-lrc"
 internal const val EMBEDDED_LYRICS_SOURCE_ID = "embedded-tag"
@@ -2567,6 +2614,10 @@ private fun Double?.logScore(): String {
     return rounded.toString()
 }
 
+private fun String.directArtworkCandidateFallbackKey(): String {
+    return if (this == "auto") "auto-direct" else this
+}
+
 fun effectiveArtworkOverridesByTrackId(rows: List<LyricsCacheEntity>): Map<String, String> {
     val manualOverrides = linkedMapOf<String, String>()
     val automaticOverrides = linkedMapOf<String, String>()
@@ -2612,6 +2663,29 @@ fun TrackEntity.toDomain(artworkOverrideLocator: String? = null): Track {
         bitRate = bitRate,
         channelCount = channelCount,
         albumId = albumId,
+    )
+}
+
+private fun LyricsLookupMetadata.toNetworkLyricsLookupTrack(): Track? {
+    val normalizedTitle = title.trim().takeIf { it.isNotEmpty() } ?: return null
+    val normalizedArtist = artistName?.trim()?.takeIf { it.isNotEmpty() }
+    val normalizedAlbum = albumTitle?.trim()?.takeIf { it.isNotEmpty() }
+    val normalizedDurationMs = durationMs.coerceAtLeast(0L)
+    val key = listOf(
+        normalizedTitle,
+        normalizedArtist.orEmpty(),
+        normalizedAlbum.orEmpty(),
+        normalizedDurationMs.toString(),
+    ).joinToString("|")
+    return Track(
+        id = "network-lyrics:${key.hashCode()}",
+        sourceId = NETWORK_LYRICS_LOOKUP_SOURCE_ID,
+        title = normalizedTitle,
+        artistName = normalizedArtist,
+        albumTitle = normalizedAlbum,
+        durationMs = normalizedDurationMs,
+        mediaLocator = "",
+        relativePath = "",
     )
 }
 

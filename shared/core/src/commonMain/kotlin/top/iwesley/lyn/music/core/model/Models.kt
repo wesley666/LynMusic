@@ -265,6 +265,13 @@ data class LyricsDocument(
     val isSynced: Boolean = lines.any { it.timestampMs != null }
 }
 
+data class LyricsLookupMetadata(
+    val title: String,
+    val artistName: String? = null,
+    val albumTitle: String? = null,
+    val durationMs: Long = 0L,
+)
+
 data class LyricsSearchCandidate(
     val sourceId: String,
     val sourceName: String,

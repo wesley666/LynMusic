@@ -24,6 +24,7 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsLine
+import top.iwesley.lyn.music.core.model.LyricsLookupMetadata
 import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
@@ -51,6 +52,80 @@ import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 
 class LyricsRepositoryManualOverrideTest {
+
+    @Test
+    fun `network lyrics metadata uses direct source without caching`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-cast",
+                urlTemplate = "https://lyrics.example/direct-cast",
+                priority = 100,
+            ),
+        )
+        val httpClient = RecordingLyricsHttpClient(
+            responses = mapOf(
+                "https://lyrics.example/direct-cast" to Result.success(
+                    LyricsHttpResponse(
+                        statusCode = 200,
+                        body = """
+                            {"data":[
+                              {"id":"right","title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"cast line","cover":"https://img.example.com/cast.jpg"}
+                            ]}
+                        """.trimIndent(),
+                    ),
+                ),
+            ),
+        )
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.resolveNetworkLyrics(
+            LyricsLookupMetadata(
+                title = "Blue",
+                artistName = "Artist A",
+                albumTitle = "Album A",
+                durationMs = 215_000L,
+            ),
+        )
+
+        assertNotNull(resolved)
+        assertEquals("direct-cast", resolved.document.sourceId)
+        assertEquals("cast line", resolved.document.lines.single().text)
+        assertEquals("https://img.example.com/cast.jpg", resolved.artworkLocator)
+        assertEquals(listOf("https://lyrics.example/direct-cast"), httpClient.requestedUrls)
+        assertEquals(emptyList(), database.lyricsCacheDao().observeBySourceId("direct-cast").first())
+    }
+
+    @Test
+    fun `network lyrics metadata with blank title returns null without request`() = runTest {
+        val database = createTestDatabase()
+        database.lyricsSourceConfigDao().upsert(
+            directSourceEntity(
+                id = "direct-cast",
+                urlTemplate = "https://lyrics.example/direct-cast",
+                priority = 100,
+            ),
+        )
+        val httpClient = RecordingLyricsHttpClient()
+        val repository = DefaultLyricsRepository(
+            database = database,
+            httpClient = httpClient,
+            secureCredentialStore = MapCredentialStore(),
+            logger = NoopDiagnosticLogger,
+        )
+
+        val resolved = repository.resolveNetworkLyrics(
+            LyricsLookupMetadata(title = " "),
+        )
+
+        assertNull(resolved)
+        assertEquals(emptyList(), httpClient.requestedUrls)
+    }
 
     @Test
     fun `auto direct lyrics picks highest scored candidate instead of first result`() = runTest {
