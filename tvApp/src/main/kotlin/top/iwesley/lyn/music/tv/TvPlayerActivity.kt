@@ -2,8 +2,6 @@ package top.iwesley.lyn.music.tv
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.util.DisplayMetrics
@@ -74,8 +72,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -83,7 +79,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -99,12 +94,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import coil3.compose.rememberAsyncImagePainter
-import java.io.File
-import java.net.URI
-import java.net.URL
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlin.math.max
 import kotlin.math.roundToInt
 import top.iwesley.lyn.music.LynMusicAppComponent
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
@@ -115,12 +104,10 @@ import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
-import top.iwesley.lyn.music.core.model.resolveArtworkDecodeSampleSize
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
@@ -223,7 +210,7 @@ private fun TvPlayerScreen(
         artworkCacheKey = trackArtworkCacheKey(track),
         artworkCacheStore = artworkCacheStore,
     )
-    val backgroundColors = rememberTvPlayerBackgroundColors(artworkModel)
+    val backgroundColors = rememberTvPlaybackBackgroundColors(artworkModel)
     val lyricsTitle = remember(
         snapshot.currentDisplayArtistName,
         snapshot.currentDisplayTitle,
@@ -247,7 +234,7 @@ private fun TvPlayerScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        TvPlayerBackground(
+        TvPlaybackArtworkBackground(
             artworkModel = artworkModel,
             colors = backgroundColors,
             modifier = Modifier.fillMaxSize(),
@@ -296,93 +283,6 @@ private fun TvPlayerScreen(
             onPlayerIntent = onPlayerIntent,
             modifier = Modifier.fillMaxSize(),
         )
-    }
-}
-
-@Composable
-private fun TvPlayerBackground(
-    artworkModel: String?,
-    colors: TvPlayerBackgroundColors?,
-    modifier: Modifier = Modifier,
-) {
-    val defaultBaseColor = MaterialTheme.colorScheme.background
-    val baseColor by animateColorAsState(
-        targetValue = colors?.baseColor ?: defaultBaseColor,
-        label = "tv-player-background-base",
-    )
-    val primaryColor by animateColorAsState(
-        targetValue = colors?.primaryColor ?: Color.Transparent,
-        label = "tv-player-background-primary",
-    )
-    val secondaryColor by animateColorAsState(
-        targetValue = colors?.secondaryColor ?: Color.Transparent,
-        label = "tv-player-background-secondary",
-    )
-    val tertiaryColor by animateColorAsState(
-        targetValue = colors?.tertiaryColor ?: Color.Transparent,
-        label = "tv-player-background-tertiary",
-    )
-
-    Box(
-        modifier = modifier.background(baseColor),
-    ) {
-        if (!artworkModel.isNullOrBlank()) {
-            Image(
-                painter = rememberAsyncImagePainter(model = artworkModel),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(scaleX = 1.14f, scaleY = 1.14f)
-                    .blur(82.dp)
-                    .alpha(0.28f),
-            )
-        }
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val radius = maxOf(size.width, size.height)
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        primaryColor.copy(alpha = 0.58f),
-                        Color.Transparent,
-                    ),
-                    center = Offset(size.width * 0.10f, size.height * 0.72f),
-                    radius = radius * 0.80f,
-                ),
-            )
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        secondaryColor.copy(alpha = 0.46f),
-                        Color.Transparent,
-                    ),
-                    center = Offset(size.width * 0.96f, size.height * 0.18f),
-                    radius = radius * 0.76f,
-                ),
-            )
-            drawRect(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        tertiaryColor.copy(alpha = 0.34f),
-                        Color.Transparent,
-                    ),
-                    center = Offset(size.width * 0.52f, size.height * 0.48f),
-                    radius = radius * 0.64f,
-                ),
-            )
-            drawRect(color = Color.Black.copy(alpha = 0.36f))
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Black.copy(alpha = 0.20f),
-                        Color.Transparent,
-                        Color.Black.copy(alpha = 0.48f),
-                    ),
-                    startY = 0f,
-                    endY = size.height,
-                ),
-            )
-        }
     }
 }
 
@@ -1047,18 +947,6 @@ private fun rememberTvPlayerArtworkModel(
 }
 
 @Composable
-private fun rememberTvPlayerBackgroundColors(
-    artworkModel: String?,
-): TvPlayerBackgroundColors? {
-    val colors by produceState<TvPlayerBackgroundColors?>(initialValue = null, artworkModel) {
-        value = withContext(Dispatchers.IO) {
-            deriveTvPlayerBackgroundColors(artworkModel)
-        }
-    }
-    return colors
-}
-
-@Composable
 private fun TvPlayerMessagePanel(
     message: String,
     modifier: Modifier = Modifier,
@@ -1199,120 +1087,10 @@ private fun formatTvPlayerDuration(durationMs: Long): String {
     }
 }
 
-private fun deriveTvPlayerBackgroundColors(artworkModel: String?): TvPlayerBackgroundColors? {
-    if (artworkModel.isNullOrBlank()) return null
-    return runCatching {
-        val bitmap = decodeTvPlayerBackgroundBitmap(artworkModel, TV_PLAYER_PALETTE_DECODE_SIZE_PX) ?: return@runCatching null
-        try {
-            val palette = derivePlaybackArtworkBackgroundPalette(sampleTvPlayerBitmapPixels(bitmap))
-                ?: return@runCatching null
-            TvPlayerBackgroundColors(
-                baseColor = composeTvColorFromArgb(palette.baseColorArgb),
-                primaryColor = composeTvColorFromArgb(palette.primaryColorArgb),
-                secondaryColor = composeTvColorFromArgb(palette.secondaryColorArgb),
-                tertiaryColor = composeTvColorFromArgb(palette.tertiaryColorArgb),
-            )
-        } finally {
-            bitmap.recycle()
-        }
-    }.getOrNull()
-}
-
-private fun decodeTvPlayerBackgroundBitmap(target: String, maxDecodeSizePx: Int): Bitmap? {
-    return when {
-        target.startsWith("http://", ignoreCase = true) ||
-            target.startsWith("https://", ignoreCase = true) -> {
-            val payload = URL(target).openStream().use { it.readBytes() }
-            decodeTvPlayerArtworkBytes(payload, maxDecodeSizePx)
-        }
-        target.startsWith("file://", ignoreCase = true) -> {
-            val path = runCatching { File(URI(target)).absolutePath }
-                .getOrElse { target.removePrefix("file://") }
-            decodeTvPlayerArtworkFile(path, maxDecodeSizePx)
-        }
-        target.startsWith("content://", ignoreCase = true) -> null
-        else -> decodeTvPlayerArtworkFile(target, maxDecodeSizePx)
-    }
-}
-
-private fun decodeTvPlayerArtworkBytes(
-    payload: ByteArray,
-    maxDecodeSizePx: Int,
-): Bitmap? {
-    val bounds = BitmapFactory.Options().apply {
-        inJustDecodeBounds = true
-    }
-    BitmapFactory.decodeByteArray(payload, 0, payload.size, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    return BitmapFactory.decodeByteArray(
-        payload,
-        0,
-        payload.size,
-        BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inSampleSize = resolveArtworkDecodeSampleSize(
-                sourceWidth = bounds.outWidth,
-                sourceHeight = bounds.outHeight,
-                targetSize = maxDecodeSizePx.coerceAtLeast(1),
-            )
-        },
-    )
-}
-
-private fun decodeTvPlayerArtworkFile(
-    path: String,
-    maxDecodeSizePx: Int,
-): Bitmap? {
-    val bounds = BitmapFactory.Options().apply {
-        inJustDecodeBounds = true
-    }
-    BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    return BitmapFactory.decodeFile(
-        path,
-        BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-            inSampleSize = resolveArtworkDecodeSampleSize(
-                sourceWidth = bounds.outWidth,
-                sourceHeight = bounds.outHeight,
-                targetSize = maxDecodeSizePx.coerceAtLeast(1),
-            )
-        },
-    )
-}
-
-private fun sampleTvPlayerBitmapPixels(bitmap: Bitmap): List<Int> {
-    val stepX = max(1, bitmap.width / 24)
-    val stepY = max(1, bitmap.height / 24)
-    return buildList {
-        for (y in 0 until bitmap.height step stepY) {
-            for (x in 0 until bitmap.width step stepX) {
-                add(bitmap.getPixel(x, y))
-            }
-        }
-    }
-}
-
-private fun composeTvColorFromArgb(argb: Int): Color {
-    return Color(
-        red = ((argb ushr 16) and 0xFF) / 255f,
-        green = ((argb ushr 8) and 0xFF) / 255f,
-        blue = (argb and 0xFF) / 255f,
-        alpha = ((argb ushr 24) and 0xFF) / 255f,
-    )
-}
-
 private fun tvPlayerStableDensityScale(): Float {
     val stableDpi = DisplayMetrics.DENSITY_DEVICE_STABLE.takeIf { it > 0 } ?: DisplayMetrics.DENSITY_DEFAULT
     return stableDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
 }
-
-private data class TvPlayerBackgroundColors(
-    val baseColor: Color,
-    val primaryColor: Color,
-    val secondaryColor: Color,
-    val tertiaryColor: Color,
-)
 
 private data class TvVisibleLyricsLine(
     val rawIndex: Int,
@@ -1324,4 +1102,3 @@ private val TvPlayerArtworkShape = RoundedCornerShape(0.dp)
 private val TvPlayerQueuePanelShape = RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
 private val TvPlayerQueueRowShape = RoundedCornerShape(16.dp)
 private const val TV_PLAYER_SEEK_STEP_MS = 10_000L
-private const val TV_PLAYER_PALETTE_DECODE_SIZE_PX = 384
