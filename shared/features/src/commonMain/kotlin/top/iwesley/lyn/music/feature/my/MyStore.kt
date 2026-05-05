@@ -82,15 +82,25 @@ class MyStore(
         if (dailyRecommendationCandidateJob?.isActive != true) {
             dailyRecommendationCandidateJob = storeScope.launch {
                 var previousHasCandidates: Boolean? = null
-                repository.hasDailyRecommendationCandidates
-                    .distinctUntilChanged()
-                    .collect { hasCandidates ->
-                        val shouldGenerate =
+                var previousRecommendationIsEmpty: Boolean? = null
+                combine(
+                    repository.hasDailyRecommendationCandidates.distinctUntilChanged(),
+                    repository.dailyRecommendation,
+                ) { hasCandidates, dailyRecommendation ->
+                    hasCandidates to dailyRecommendation.isEmpty()
+                }.distinctUntilChanged()
+                    .collect { (hasCandidates, recommendationIsEmpty) ->
+                        val candidatesBecameAvailable =
                             previousHasCandidates == false &&
                                 hasCandidates &&
-                                state.value.dailyRecommendationTracks.isEmpty()
+                                recommendationIsEmpty
+                        val recommendationBecameEmpty =
+                            previousRecommendationIsEmpty == false &&
+                                recommendationIsEmpty &&
+                                hasCandidates
                         previousHasCandidates = hasCandidates
-                        if (shouldGenerate) {
+                        previousRecommendationIsEmpty = recommendationIsEmpty
+                        if (candidatesBecameAvailable || recommendationBecameEmpty) {
                             ensureDailyRecommendation()
                         }
                     }

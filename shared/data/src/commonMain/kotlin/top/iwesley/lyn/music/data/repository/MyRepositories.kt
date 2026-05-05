@@ -184,7 +184,10 @@ class RoomMyRepository(
         return runCatching {
             val dateKey = dailyRecommendationDateKeyProvider.currentDateKey()
             val existing = database.dailyRecommendationDao().getByDateKey(dateKey)
-            if (existing != null && decodeDailyRecommendationTrackIds(existing.trackIds).isNotEmpty()) {
+            val existingTrackIds = existing
+                ?.let { decodeDailyRecommendationTrackIds(it.trackIds) }
+                .orEmpty()
+            if (hasVisibleDailyRecommendationTracks(existingTrackIds)) {
                 return@runCatching
             }
             val generatedAt = Clock.System.now().toEpochMilliseconds()
@@ -201,6 +204,18 @@ class RoomMyRepository(
                 ),
             )
         }
+    }
+
+    private suspend fun hasVisibleDailyRecommendationTracks(trackIds: List<String>): Boolean {
+        if (trackIds.isEmpty()) return false
+        val enabledSourceIds = database.importSourceDao()
+            .getAll()
+            .enabledSourceIds()
+        if (enabledSourceIds.isEmpty()) return false
+        val trackIdSet = trackIds.toSet()
+        return database.trackDao()
+            .getAll()
+            .any { track -> track.id in trackIdSet && track.sourceId in enabledSourceIds }
     }
 
     private suspend fun generateDailyRecommendationTrackIds(

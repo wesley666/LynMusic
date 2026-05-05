@@ -263,6 +263,83 @@ class MyRepositoryTest {
     }
 
     @Test
+    fun `daily recommendation overwrites cache when cached tracks are no longer visible`() = runTest {
+        val database = createMyTestDatabase()
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01"),
+        )
+
+        try {
+            seedSource(database, sourceId = "navidrome-1", type = "NAVIDROME", enabled = false)
+            seedSource(database, sourceId = "samba-1", type = "SAMBA", enabled = true)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-navidrome", "navidrome-1", "Hidden Song", null, null),
+                    trackEntity("track-samba", "samba-1", "Visible Song", null, null),
+                ),
+            )
+            database.dailyRecommendationDao().upsert(
+                DailyRecommendationEntity(
+                    dateKey = "2026-05-01",
+                    generatedAt = 1L,
+                    trackIds = """["track-navidrome"]""",
+                ),
+            )
+
+            assertEquals(emptyList(), repository.dailyRecommendation.first().map { it.id })
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val recommendation = repository.dailyRecommendation.first()
+            val recommendationRow = database.dailyRecommendationDao().getByDateKey("2026-05-01")
+
+            assertEquals(listOf("track-samba"), recommendation.map { it.id })
+            assertTrue(recommendationRow?.trackIds.orEmpty().contains("track-samba"))
+            assertTrue(!recommendationRow?.trackIds.orEmpty().contains("track-navidrome"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `daily recommendation keeps cache when cached tracks are still visible`() = runTest {
+        val database = createMyTestDatabase()
+        val repository = RoomMyRepository(
+            database = database,
+            secureCredentialStore = MyCredentialStore(),
+            httpClient = RecordingMyHttpClient(),
+            dailyRecommendationDateKeyProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01"),
+        )
+
+        try {
+            seedSource(database, sourceId = "local-1", type = "LOCAL_FOLDER", enabled = true)
+            database.trackDao().upsertAll(
+                listOf(
+                    trackEntity("track-visible", "local-1", "Visible Song", null, null),
+                    trackEntity("track-other", "local-1", "Other Song", null, null),
+                ),
+            )
+            database.dailyRecommendationDao().upsert(
+                DailyRecommendationEntity(
+                    dateKey = "2026-05-01",
+                    generatedAt = 1L,
+                    trackIds = """["track-visible"]""",
+                ),
+            )
+
+            assertTrue(repository.ensureDailyRecommendation().isSuccess)
+            val recommendationRow = database.dailyRecommendationDao().getByDateKey("2026-05-01")
+
+            assertEquals(1L, recommendationRow?.generatedAt)
+            assertEquals("""["track-visible"]""", recommendationRow?.trackIds)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun `daily recommendation flow follows emitted date key changes`() = runTest {
         val database = createMyTestDatabase()
         val dateProvider = FakeDailyRecommendationDateKeyProvider("2026-05-01")

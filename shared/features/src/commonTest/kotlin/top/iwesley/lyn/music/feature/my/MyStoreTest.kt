@@ -162,6 +162,38 @@ class MyStoreTest {
         assertEquals(1, repository.ensureDailyRecommendationCalls)
     }
 
+    @Test
+    fun `daily recommendation becoming empty retries when candidates still exist`() = runTest {
+        val repository = FakeMyRepository(
+            dailyRecommendation = listOf(sampleTrack("daily-1")),
+            hasDailyRecommendationCandidates = true,
+        )
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setDailyRecommendation(emptyList())
+        advanceUntilIdle()
+
+        assertEquals(2, repository.ensureDailyRecommendationCalls)
+    }
+
+    @Test
+    fun `daily recommendation becoming empty does not retry without candidates`() = runTest {
+        val repository = FakeMyRepository(
+            dailyRecommendation = listOf(sampleTrack("daily-1")),
+            hasDailyRecommendationCandidates = false,
+        )
+        val store = createStore(repository, testScheduler, startImmediately = false)
+
+        store.ensureStarted()
+        advanceUntilIdle()
+        repository.setDailyRecommendation(emptyList())
+        advanceUntilIdle()
+
+        assertEquals(1, repository.ensureDailyRecommendationCalls)
+    }
+
     private fun createStore(
         repository: FakeMyRepository,
         scheduler: TestCoroutineScheduler,
@@ -210,6 +242,10 @@ private class FakeMyRepository(
 
     fun setHasDailyRecommendationCandidates(value: Boolean) {
         mutableHasDailyRecommendationCandidates.value = value
+    }
+
+    fun setDailyRecommendation(value: List<Track>) {
+        mutableDailyRecommendation.value = value
     }
 
     override fun refreshDailyRecommendationDateKey() {
