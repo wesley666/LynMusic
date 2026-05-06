@@ -9,38 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  build-android-debug:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'zulu'
-
-      - uses: gradle/actions/setup-gradle@v3
-
-      - name: Configure Gradle memory for CI
-        shell: bash
-        run: |
-          mkdir -p "$HOME/.gradle"
-          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
-          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
-          kotlin.daemon.jvmargs=-Xmx1536M
-          org.gradle.workers.max=2
-          EOF
-
-      - name: Clean & Build Android Debug APK
-        run: ./gradlew clean :composeApp:assembleDebug
-
-      - name: Upload Android Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-APK-Debug
-          path: composeApp/build/outputs/apk/debug/**/*.apk
-          if-no-files-found: error
-
   build-android-release-unsigned:
     runs-on: ubuntu-latest
     steps:
@@ -195,7 +163,6 @@ jobs:
   release:
     name: Create Release
     needs:
-      - build-android-debug
       - build-android-release-unsigned
       - build-automotive-release-unsigned
       - build-tv-release-unsigned
@@ -237,7 +204,6 @@ jobs:
           Automated release for tag ${GITHUB_REF_NAME}
 
           Included artifacts:
-          - Android Debug APK
           - Android Release APK (unsigned)
           - Automotive Release APK (unsigned)
           - TV Release APK (unsigned)
