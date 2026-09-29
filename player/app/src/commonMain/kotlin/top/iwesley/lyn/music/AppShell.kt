@@ -329,6 +329,7 @@ internal fun MobileShell(
     var lastCollectionTab by rememberSaveable { mutableStateOf(AppTab.Favorites) }
     val contentStateHolder = rememberSaveableStateHolder()
     val dockBackdrop = if (phoneNavigation) rememberLayerBackdrop() else null
+    val miniPlayerGlass = dockBackdrop?.let { miniPlayerGlassStyle(it) }
     val layoutDirection = LocalLayoutDirection.current
     val contentBehindDock = phoneNavigation &&
         (isMobileLibraryHubTab(selectedTab) || selectedTab == AppTab.My)
@@ -402,6 +403,7 @@ internal fun MobileShell(
                         onOpenQueue = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
                         mobile = true,
                         mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
+                        glassStyle = miniPlayerGlass,
                     )
                 }
                 if (dockBackdrop != null) {

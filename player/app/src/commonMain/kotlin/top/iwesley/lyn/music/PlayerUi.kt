@@ -57,6 +57,8 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
@@ -253,6 +255,7 @@ internal fun MiniPlayerBarVisibility(
     mobile: Boolean = false,
     mobilePortraitMiniPlayer: Boolean = false,
     automotiveLandscape: Boolean = false,
+    glassStyle: MiniPlayerGlassStyle? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -283,19 +286,34 @@ internal fun MiniPlayerBarVisibility(
             ),
         ),
     ) {
-        MiniPlayerBar(
-            state = state,
-            onPlayerIntent = onPlayerIntent,
-            isFavorite = isFavorite,
-            canToggleFavorite = canToggleFavorite,
-            onToggleFavorite = onToggleFavorite,
-            onOpenAddToPlaylist = onOpenAddToPlaylist,
-            onOpenQueue = onOpenQueue,
-            compact = compact,
-            mobile = mobile,
-            mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
-            automotiveLandscape = automotiveLandscape,
-        )
+        val playerContent: @Composable () -> Unit = {
+            MiniPlayerBar(
+                state = state,
+                onPlayerIntent = onPlayerIntent,
+                isFavorite = isFavorite,
+                canToggleFavorite = canToggleFavorite,
+                onToggleFavorite = onToggleFavorite,
+                onOpenAddToPlaylist = onOpenAddToPlaylist,
+                onOpenQueue = onOpenQueue,
+                compact = compact,
+                mobile = mobile,
+                mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
+                automotiveLandscape = automotiveLandscape,
+                glassStyle = glassStyle,
+            )
+        }
+        if (glassStyle != null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.widthIn(max = 440.dp).fillMaxWidth()) {
+                    playerContent()
+                }
+            }
+        } else {
+            playerContent()
+        }
     }
 }
 
@@ -460,11 +478,12 @@ private fun MiniPlayerBar(
     mobile: Boolean = false,
     mobilePortraitMiniPlayer: Boolean = false,
     automotiveLandscape: Boolean = false,
+    glassStyle: MiniPlayerGlassStyle? = null,
 ) {
     val snapshot = state.effectiveSnapshot
     if (snapshot.currentTrack == null) {
         if (snapshot.isHydratingPlayback) {
-            MiniPlayerHydratingBar(mobile = mobile, compact = compact)
+            MiniPlayerHydratingBar(mobile = mobile, compact = compact, glassStyle = glassStyle)
         }
         return
     }
@@ -474,6 +493,7 @@ private fun MiniPlayerBar(
             snapshot = snapshot,
             lyricsText = miniPlayerLyricsText,
             showPortraitLyrics = mobilePortraitMiniPlayer,
+            glassStyle = glassStyle,
             onPlayerIntent = onPlayerIntent,
             onOpenQueue = onOpenQueue,
         )
@@ -769,16 +789,20 @@ private fun AutomotiveLandscapeMiniPlayerBar(
 private fun MiniPlayerHydratingBar(
     mobile: Boolean,
     compact: Boolean,
+    glassStyle: MiniPlayerGlassStyle? = null,
 ) {
+    val shape = if (glassStyle != null) RoundedCornerShape(50) else RoundedCornerShape(28.dp)
+    val background = if (glassStyle != null) {
+        Modifier.miniPlayerGlassBackground(glassStyle, shape).clip(shape)
+    } else {
+        Modifier.clip(shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), shape)
+    }
     val modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = if (mobile || compact) 0.dp else 18.dp, vertical = 12.dp)
-        .clip(RoundedCornerShape(28.dp))
-        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
-        .border(
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-            shape = RoundedCornerShape(28.dp),
-        )
+        .padding(horizontal = if (glassStyle != null || mobile || compact) 0.dp else 18.dp, vertical = 12.dp)
+        .then(background)
         .padding(horizontal = 18.dp, vertical = 14.dp)
     Row(
         modifier = modifier,
@@ -796,6 +820,7 @@ private fun MiniPlayerHydratingBar(
         ) {
             Text(
                 text = "正在恢复上次播放",
+                color = glassStyle?.content ?: LocalContentColor.current,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -803,7 +828,7 @@ private fun MiniPlayerHydratingBar(
             Text(
                 text = "播放队列和进度会在后台继续加载。",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.78f),
+                color = glassStyle?.secondaryContent ?: Color.White.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -819,7 +844,16 @@ private fun MobileMiniPlayerBar(
     showPortraitLyrics: Boolean,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onOpenQueue: () -> Unit,
+    glassStyle: MiniPlayerGlassStyle? = null,
 ) {
+    val shape = if (glassStyle != null) RoundedCornerShape(50) else RoundedCornerShape(26.dp)
+    val background = if (glassStyle != null) {
+        Modifier.miniPlayerGlassBackground(glassStyle, shape).clip(shape)
+    } else {
+        Modifier.clip(shape)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), shape)
+    }
     val density = LocalDensity.current
     val swipeThresholdPx = with(density) { 72.dp.toPx() }
     val maxVisualOffsetPx = with(density) { 84.dp.toPx() }
@@ -842,13 +876,8 @@ private fun MobileMiniPlayerBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .clip(RoundedCornerShape(26.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f))
-            .border(
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                shape = RoundedCornerShape(26.dp),
-            )
+            .padding(horizontal = if (glassStyle != null) 0.dp else 12.dp, vertical = 10.dp)
+            .then(background)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -898,7 +927,7 @@ private fun MobileMiniPlayerBar(
                         .weight(1f)
                         .basicMarquee(),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.88f),
+                    color = glassStyle?.content ?: Color.White.copy(alpha = 0.88f),
                     maxLines = 1,
                 )
             } else {
@@ -909,14 +938,14 @@ private fun MobileMiniPlayerBar(
                     Text(
                         text = snapshot.currentDisplayTitle,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.96f),
+                        color = glassStyle?.content ?: Color.White.copy(alpha = 0.96f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = snapshot.currentDisplayArtistName ?: "未知艺人",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.72f),
+                        color = glassStyle?.secondaryContent ?: Color.White.copy(alpha = 0.72f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -925,7 +954,7 @@ private fun MobileMiniPlayerBar(
         }
         QueueToggleButton(
             onClick = onOpenQueue,
-            tint = Color.White.copy(alpha = 0.96f),
+            tint = glassStyle?.controlContent ?: Color.White.copy(alpha = 0.96f),
             buttonSize = 46.dp,
             iconSize = 25.dp,
         )
@@ -933,12 +962,21 @@ private fun MobileMiniPlayerBar(
             onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
             modifier = Modifier.size(50.dp),
         ) {
-            Icon(
-                imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.96f),
-                modifier = Modifier.size(36.dp),
-            )
+            if (glassStyle != null && glassStyle.usePlainPlaybackIcon) {
+                Icon(
+                    imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    tint = glassStyle.controlContent,
+                    modifier = Modifier.size(28.dp),
+                )
+            } else {
+                Icon(
+                    imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
+                    contentDescription = null,
+                    tint = glassStyle?.content ?: Color.White.copy(alpha = 0.96f),
+                    modifier = Modifier.size(36.dp),
+                )
+            }
         }
     }
 }
