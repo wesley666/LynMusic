@@ -177,8 +177,8 @@ internal fun LiquidGlassDock(
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(8.dp.toPx())
-                    if (level == DockGlassLevel.Full) lens(24.dp.toPx(), 24.dp.toPx())
+                    blur(4.dp.toPx())
+                    if (level == DockGlassLevel.Full) lens(32.dp.toPx(), 36.dp.toPx())
                 },
                 layerBlock = {
                     val scale = 1f + 16.dp.toPx() / size.width * pressProgress
@@ -202,7 +202,7 @@ internal fun LiquidGlassDock(
                     effects = {
                         blur(4.dp.toPx())
                         if (level == DockGlassLevel.Full) {
-                            lens((6f + 4f * pressProgress).dp.toPx(), (8f + 6f * pressProgress).dp.toPx(), chromaticAberration = true)
+                            lens((12f + 4f * pressProgress).dp.toPx(), (16f + 6f * pressProgress).dp.toPx(), chromaticAberration = true)
                         }
                     },
                     highlight = { Highlight.Default.copy(alpha = 0.5f + 0.5f * pressProgress) },

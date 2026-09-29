@@ -55,9 +55,9 @@ internal fun Modifier.miniPlayerGlassBackground(
         backdrop = style.backdrop,
         shape = { shape },
         effects = {
-            blur(12.dp.toPx())
+            blur(8.dp.toPx())
             if (style.level == DockGlassLevel.Full) {
-                lens(12.dp.toPx(), 16.dp.toPx(), chromaticAberration = false)
+                lens(16.dp.toPx(), 16.dp.toPx(), chromaticAberration = false)
             }
         },
         onDrawSurface = { drawRect(style.surface) },
