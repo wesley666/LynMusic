@@ -51,6 +51,9 @@ internal data class LayoutProfile(
 
     val isAndroidAuto: Boolean = platform?.isAndroidAutomotivePlatform() == true
 
+    val usesPortraitLibraryNavigation: Boolean
+        get() = isPortrait && (isMobilePlatform || isAndroidAuto)
+
 
 //    val isCompactShell: Boolean
 //        get() = maxWidth < COMPACT_SHELL_MIN_WIDTH

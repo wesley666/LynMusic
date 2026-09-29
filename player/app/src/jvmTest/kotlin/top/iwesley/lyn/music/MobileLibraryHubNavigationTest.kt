@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music
 
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,10 +13,65 @@ import top.iwesley.lyn.music.core.model.PlaylistSummary
 class MobileLibraryHubNavigationTest {
 
     @Test
-    fun `mobile primary navigation only contains my and library`() {
+    fun `legacy mobile primary navigation only contains my and library`() {
         assertEquals(listOf(AppTab.Library, AppTab.My), mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Favorites in mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Playlists in mobilePrimaryNavigationTabs)
+    }
+
+    @Test
+    fun `portrait phone tablet and automotive navigation includes collection`() {
+        for (name in listOf(ANDROID_PLATFORM_NAME, IOS_PLATFORM_NAME, ANDROID_AUTOMOTIVE_PLATFORM_NAME)) {
+            val platform = PlatformDescriptor(name, emptyCapabilities())
+            for ((width, height) in listOf(390 to 844, 800 to 1280)) {
+                val layout = buildLayoutProfile(width.dp, height.dp, platform)
+                assertTrue(layout.usesPortraitLibraryNavigation)
+                assertEquals(
+                    listOf(AppTab.Library, AppTab.Favorites, AppTab.My),
+                    primaryNavigationTabs(layout.usesPortraitLibraryNavigation),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `likes and playlists highlight collection instead of library on phones`() {
+        assertEquals(AppTab.Library, phoneNavigationGroup(AppTab.Library))
+        assertEquals(AppTab.Favorites, phoneNavigationGroup(AppTab.Favorites))
+        assertEquals(AppTab.Favorites, phoneNavigationGroup(AppTab.Playlists))
+        assertEquals(AppTab.My, phoneNavigationGroup(AppTab.My))
+        assertEquals(AppTab.Settings, phoneNavigationGroup(AppTab.Settings))
+    }
+
+    @Test
+    fun `phone library and collection have separate pagers`() {
+        assertEquals(listOf(AppTab.Library), libraryHubTabs(AppTab.Library, phoneNavigation = true))
+        assertEquals(listOf(AppTab.Favorites, AppTab.Playlists), libraryHubTabs(AppTab.Favorites, true))
+        assertEquals(listOf(AppTab.Favorites, AppTab.Playlists), libraryHubTabs(AppTab.Playlists, true))
+        assertEquals(mobileLibraryHubTabs, libraryHubTabs(AppTab.Library, false))
+    }
+
+    @Test
+    fun `phone root categories retain folder page for unsupported online sources`() {
+        assertEquals(
+            listOf("歌曲", "专辑", "艺人", "文件夹"),
+            LibraryBrowserRootView.entries.map(::phoneLibraryRootLabel),
+        )
+        assertEquals(3, LibraryBrowserRootView.Folders.ordinal)
+    }
+
+    @Test
+    fun `landscape and desktop or television portrait navigation stays unchanged`() {
+        for (name in listOf(ANDROID_PLATFORM_NAME, IOS_PLATFORM_NAME, "Desktop", ANDROID_TV_PLATFORM_NAME, ANDROID_AUTOMOTIVE_PLATFORM_NAME)) {
+            val platform = PlatformDescriptor(name, emptyCapabilities())
+            val landscape = buildLayoutProfile(1280.dp, 800.dp, platform)
+            assertFalse(landscape.usesPortraitLibraryNavigation)
+            assertEquals(mobilePrimaryNavigationTabs, primaryNavigationTabs(landscape.usesPortraitLibraryNavigation))
+            if (name == "Desktop" || name == ANDROID_TV_PLATFORM_NAME) {
+                assertFalse(buildLayoutProfile(800.dp, 1280.dp, platform).usesPortraitLibraryNavigation)
+            }
+            assertEquals(listOf(AppTab.My, AppTab.Library, AppTab.Favorites, AppTab.Playlists), desktopNavigationTabs(platform).take(4))
+        }
     }
 
     @Test

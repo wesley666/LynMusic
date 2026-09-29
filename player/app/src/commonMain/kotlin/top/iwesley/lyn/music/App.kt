@@ -718,6 +718,7 @@ fun App(
                 ) {
                     if (compact) {
                         MobileShell(
+                            phoneNavigation = layoutProfile.usesPortraitLibraryNavigation,
                             selectedTab = selectedTab,
                             onTabSelected = { selectedTab = it },
                             platform = component.platform,
