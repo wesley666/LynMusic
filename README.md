@@ -2,6 +2,10 @@ LynMusic is a cross-platform local music player for Windows, Linux, macOS, Andro
 
 LynMusic是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，目标平台包括 Android、iOS 和桌面端（JVM），支持 Windows 、 macOS 和 Linux。
 
+LynMusic 现已上架苹果商店，包括 iPhone、iPad、Mac：[‎LynMusic App - App Store](https://apps.apple.com/us/app/lynmusic/id6797922509)
+
+参考：[LynMusic 终于来到 Apple 平台了](https://mp.weixin.qq.com/s/qMaVVd0ZJFal5G48F8m-7g)
+
 ![LynMusic](./doc/LynMusic.png)
 ## 为什么做这个播放器
 
