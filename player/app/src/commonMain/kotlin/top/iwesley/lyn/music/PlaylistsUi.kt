@@ -1040,7 +1040,7 @@ private fun PlaylistListPane(
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
+            contentPadding = dockContentPadding(PaddingValues(20.dp)),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
@@ -1787,7 +1787,7 @@ private fun PlaylistDetailPane(
     }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = dockContentPadding(PaddingValues(20.dp)),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

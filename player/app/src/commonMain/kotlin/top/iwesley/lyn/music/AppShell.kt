@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,6 +61,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,11 +78,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
@@ -321,6 +328,10 @@ internal fun MobileShell(
     val navigationTabs = primaryNavigationTabs(phoneNavigation)
     var lastCollectionTab by rememberSaveable { mutableStateOf(AppTab.Favorites) }
     val contentStateHolder = rememberSaveableStateHolder()
+    val dockBackdrop = if (phoneNavigation) rememberLayerBackdrop() else null
+    val layoutDirection = LocalLayoutDirection.current
+    val contentBehindDock = phoneNavigation &&
+        (isMobileLibraryHubTab(selectedTab) || selectedTab == AppTab.My)
     LaunchedEffect(selectedTab) {
         if (selectedTab in phoneCollectionTabs) lastCollectionTab = selectedTab
     }
@@ -393,7 +404,36 @@ internal fun MobileShell(
                         mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                     )
                 }
-                NavigationBar(containerColor = shellColors.navContainer) {
+                if (dockBackdrop != null) {
+                    // MobileMiniPlayerBar already contributes 10dp of bottom padding.
+                    if (effectivePlayerSnapshot.currentTrack != null && !playerState.isExpanded && !hideMiniPlayerBar) {
+                        Spacer(Modifier.height(2.dp))
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        LiquidGlassDock(
+                            selectedIndex = when {
+                                isMoreSheetVisible || isMoreSelected -> 3
+                                else -> navigationTabs.indexOf(phoneNavigationGroup(selectedTab)).coerceAtLeast(0)
+                            },
+                            backdrop = dockBackdrop,
+                            showUpdateBadge = showSettingsUpdateBadge,
+                            enabled = !isMoreSheetVisible && !playerState.isExpanded,
+                            onSelect = { index ->
+                                if (index == 3) {
+                                    isMoreSheetVisible = true
+                                } else {
+                                    isMoreSheetVisible = false
+                                    val tab = navigationTabs[index]
+                                    selectMobileTab(if (tab == AppTab.Favorites) lastCollectionTab else tab)
+                                }
+                            },
+                            modifier = Modifier.widthIn(max = 440.dp).fillMaxWidth(),
+                        )
+                    }
+                } else NavigationBar(containerColor = shellColors.navContainer) {
                     navigationTabs.forEach { tab ->
                         val label = if (phoneNavigation && tab == AppTab.Favorites) "收藏" else mobileLibraryHubTabLabel(tab)
                         NavigationBarItem(
@@ -447,51 +487,63 @@ internal fun MobileShell(
             }
         },
     ) { padding ->
+        val contentPadding = if (contentBehindDock) PaddingValues(
+            start = padding.calculateStartPadding(layoutDirection),
+            top = padding.calculateTopPadding(),
+            end = padding.calculateEndPadding(layoutDirection),
+        ) else padding
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .then(if (dockBackdrop != null) {
+                    Modifier.layerBackdrop(dockBackdrop).background(MaterialTheme.colorScheme.background)
+                } else Modifier)
+                .padding(contentPadding),
         ) {
-            contentStateHolder.SaveableStateProvider(
-                key = if (phoneNavigation) phoneNavigationGroup(selectedTab).name else "legacy",
+            CompositionLocalProvider(
+                LocalDockBottomInset provides if (contentBehindDock) padding.calculateBottomPadding() else 0.dp,
             ) {
-                TabContent(
-                    selectedTab = selectedTab,
-                    platform = platform,
-                    myState = myState,
-                    libraryState = libraryState,
-                    onlineLibraryState = onlineLibraryState,
-                    playlistsState = playlistsState,
-                    onlinePlaylistsState = onlinePlaylistsState,
-                    favoritesState = favoritesState,
-                    onlineFavoritesState = onlineFavoritesState,
-                    musicTagsState = musicTagsState,
-                    musicTagsEffects = musicTagsEffects,
-                    importState = importState,
-                    settingsState = settingsState,
-                    onMyIntent = onMyIntent,
-                    onLibraryIntent = onLibraryIntent,
-                    onOnlineLibraryIntent = onOnlineLibraryIntent,
-                    onPlaylistsIntent = onPlaylistsIntent,
-                    onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
-                    onFavoritesIntent = onFavoritesIntent,
-                    onOnlineFavoritesIntent = onOnlineFavoritesIntent,
-                    onMusicTagsIntent = onMusicTagsIntent,
-                    onImportIntent = onImportIntent,
-                    onPlayerIntent = onPlayerIntent,
-                    onSettingsIntent = onSettingsIntent,
-                    onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
-                    libraryNavigationTarget = libraryNavigationTarget,
-                    onLibraryNavigationHandled = onLibraryNavigationHandled,
-                    onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-                    onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
-                    compact = true,
-                    mobileLibraryHub = true,
-                    phoneLibraryNavigation = phoneNavigation,
-                    playerExpanded = playerState.isExpanded,
-                    onTabSelected = ::selectMobileTab,
-                    modifier = Modifier.weight(1f),
-                )
+                contentStateHolder.SaveableStateProvider(
+                    key = if (phoneNavigation) phoneNavigationGroup(selectedTab).name else "legacy",
+                ) {
+                    TabContent(
+                        selectedTab = selectedTab,
+                        platform = platform,
+                        myState = myState,
+                        libraryState = libraryState,
+                        onlineLibraryState = onlineLibraryState,
+                        playlistsState = playlistsState,
+                        onlinePlaylistsState = onlinePlaylistsState,
+                        favoritesState = favoritesState,
+                        onlineFavoritesState = onlineFavoritesState,
+                        musicTagsState = musicTagsState,
+                        musicTagsEffects = musicTagsEffects,
+                        importState = importState,
+                        settingsState = settingsState,
+                        onMyIntent = onMyIntent,
+                        onLibraryIntent = onLibraryIntent,
+                        onOnlineLibraryIntent = onOnlineLibraryIntent,
+                        onPlaylistsIntent = onPlaylistsIntent,
+                        onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
+                        onFavoritesIntent = onFavoritesIntent,
+                        onOnlineFavoritesIntent = onOnlineFavoritesIntent,
+                        onMusicTagsIntent = onMusicTagsIntent,
+                        onImportIntent = onImportIntent,
+                        onPlayerIntent = onPlayerIntent,
+                        onSettingsIntent = onSettingsIntent,
+                        onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
+                        libraryNavigationTarget = libraryNavigationTarget,
+                        onLibraryNavigationHandled = onLibraryNavigationHandled,
+                        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+                        onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
+                        compact = true,
+                        mobileLibraryHub = true,
+                        phoneLibraryNavigation = phoneNavigation,
+                        playerExpanded = playerState.isExpanded,
+                        onTabSelected = ::selectMobileTab,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }

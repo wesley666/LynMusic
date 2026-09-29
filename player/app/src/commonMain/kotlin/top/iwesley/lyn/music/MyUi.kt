@@ -121,10 +121,10 @@ internal fun MyTab(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         state = mainListState,
-        contentPadding = PaddingValues(
+        contentPadding = dockContentPadding(PaddingValues(
             horizontal = if (isMobile) 16.dp else 32.dp,
             vertical = if (isMobile) 16.dp else 28.dp,
-        ),
+        )),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         state.message?.let { message ->
@@ -526,7 +526,7 @@ private fun DailyRecommendationDetail(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+        contentPadding = dockContentPadding(PaddingValues(horizontal = 16.dp, vertical = 18.dp)),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
@@ -600,10 +600,10 @@ private fun RecentTracksDetail(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
+        contentPadding = dockContentPadding(PaddingValues(
             horizontal = if (showDuration) 32.dp else 16.dp,
             vertical = if (showDuration) 28.dp else 18.dp,
-        ),
+        )),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
@@ -644,10 +644,10 @@ private fun RecentAlbumsDetail(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
+        contentPadding = dockContentPadding(PaddingValues(
             horizontal = if (compact) 16.dp else 32.dp,
             vertical = if (compact) 18.dp else 28.dp,
-        ),
+        )),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {

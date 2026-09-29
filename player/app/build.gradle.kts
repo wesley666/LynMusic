@@ -46,6 +46,7 @@ kotlin {
             dependsOn(macosMain)
         }
         commonMain.dependencies {
+            implementation(libs.kyant.backdrop)
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))

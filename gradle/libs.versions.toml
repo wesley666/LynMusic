@@ -1,6 +1,6 @@
 [versions]
 agp = "8.13.2"
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "23"
 android-ndk = "28.2.13676358"
 android-targetSdk = "36"
@@ -33,6 +33,7 @@ sqlite = "2.6.2"
 vlcj = "4.12.1"
 
 [libraries]
+kyant-backdrop = { module = "io.github.kyant0:backdrop", version = "2.0.0" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 junit = { module = "junit:junit", version.ref = "junit" }
