@@ -83,6 +83,12 @@ interface DesktopLyricsPreferencesStore {
     suspend fun setShowDesktopLyrics(enabled: Boolean)
 }
 
+interface DesktopLyricsPositionPreferencesStore {
+    val desktopLyricsPosition: StateFlow<DesktopLyricsPosition?>
+
+    suspend fun setDesktopLyricsPosition(position: DesktopLyricsPosition)
+}
+
 interface MenuBarLyricsControlsPreferencesStore {
     val showMenuBarLyricsControls: StateFlow<Boolean>
 

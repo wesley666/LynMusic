@@ -59,6 +59,8 @@ import top.iwesley.lyn.music.core.model.ConsoleDiagnosticLogger
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_MINIMIZE_WINDOW_ON_CLOSE
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
+import top.iwesley.lyn.music.core.model.DesktopLyricsPosition
+import top.iwesley.lyn.music.core.model.DesktopLyricsPositionPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
@@ -104,6 +106,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.AutoOpenPlayerOnStartupPreferencesStore
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.desktopLyricsPositionOrNull
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
@@ -244,10 +247,14 @@ fun createJvmAppComponent(
             supportsCustomDataLocation = isJvmWindowsOs(osName),
         ),
     )
-    val desktopLyricsPlatformService = JvmDesktopLyricsPlatformService()
-    val desktopLyricsToken = resourceGuard.register { desktopLyricsPlatformService.release() }
     val sharedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val sharedScopeToken = resourceGuard.register { stopJvmAppScope(sharedScope) }
+    val desktopLyricsPlatformService = JvmDesktopLyricsPlatformService(
+        positionPreferencesStore = appPreferencesStore,
+        persistenceScope = sharedScope,
+        logger = logger,
+    )
+    val desktopLyricsToken = resourceGuard.register { desktopLyricsPlatformService.release() }
     val sharedGraph = buildSharedGraph(
         platform = platform,
         database = database,
@@ -426,7 +433,8 @@ internal class JvmLyricsHttpClient : LyricsHttpClient {
 internal class JvmAppPreferencesStore(
     settingsFile: File = defaultJvmSettingsFile(),
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, MenuBarLyricsControlsPreferencesStore,
+    CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, DesktopLyricsPositionPreferencesStore,
+    MenuBarLyricsControlsPreferencesStore,
     DesktopVlcPreferencesStore, LyricsShareFontPreferencesStore, PlayerArtworkStylePreferencesStore,
     LibrarySourceFilterPreferencesStore, WindowClosePreferencesStore, AutoOpenPlayerOnStartupPreferencesStore {
     private val propertiesFile = JvmSettingsPropertiesFile(settingsFile)
@@ -434,6 +442,7 @@ internal class JvmAppPreferencesStore(
     private val mutablePlaybackVolume = MutableStateFlow(readPlaybackVolume())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(readShowCompactPlayerLyrics())
     private val mutableShowDesktopLyrics = MutableStateFlow(readShowDesktopLyrics())
+    private val mutableDesktopLyricsPosition = MutableStateFlow(readDesktopLyricsPosition())
     private val mutableShowMenuBarLyricsControls = MutableStateFlow(readShowMenuBarLyricsControls())
     private val mutableAutoPlayOnStartup = MutableStateFlow(readAutoPlayOnStartup())
     private val mutableAutoOpenPlayerOnStartup = MutableStateFlow(readAutoOpenPlayerOnStartup())
@@ -467,6 +476,8 @@ internal class JvmAppPreferencesStore(
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val showDesktopLyrics: StateFlow<Boolean> = mutableShowDesktopLyrics.asStateFlow()
+    override val desktopLyricsPosition: StateFlow<DesktopLyricsPosition?> =
+        mutableDesktopLyricsPosition.asStateFlow()
     override val showMenuBarLyricsControls: StateFlow<Boolean> = mutableShowMenuBarLyricsControls.asStateFlow()
     override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup.asStateFlow()
     override val autoOpenPlayerOnStartup: StateFlow<Boolean> =
@@ -514,6 +525,27 @@ internal class JvmAppPreferencesStore(
         updateProperties(
             mutate = { setProperty(KEY_SHOW_DESKTOP_LYRICS, enabled.toString()) },
             onPersisted = { mutableShowDesktopLyrics.value = enabled },
+        )
+    }
+
+    override suspend fun setDesktopLyricsPosition(position: DesktopLyricsPosition) {
+        val normalized = desktopLyricsPositionOrNull(
+            centerXFraction = position.centerXFraction,
+            centerYFraction = position.centerYFraction,
+            displayId = position.displayId,
+        ) ?: return
+        updateProperties(
+            mutate = {
+                setProperty(KEY_DESKTOP_LYRICS_POSITION_X, normalized.centerXFraction.toString())
+                setProperty(KEY_DESKTOP_LYRICS_POSITION_Y, normalized.centerYFraction.toString())
+                val displayId = normalized.displayId
+                if (displayId == null) {
+                    remove(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID)
+                } else {
+                    setProperty(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID, displayId)
+                }
+            },
+            onPersisted = { mutableDesktopLyricsPosition.value = normalized },
         )
     }
 
@@ -691,6 +723,15 @@ internal class JvmAppPreferencesStore(
 
     private fun readShowDesktopLyrics(): Boolean {
         return loadProperties().getProperty(KEY_SHOW_DESKTOP_LYRICS)?.toBooleanStrictOrNull() ?: false
+    }
+
+    private fun readDesktopLyricsPosition(): DesktopLyricsPosition? {
+        val properties = loadProperties()
+        return desktopLyricsPositionOrNull(
+            centerXFraction = properties.getProperty(KEY_DESKTOP_LYRICS_POSITION_X)?.toFloatOrNull(),
+            centerYFraction = properties.getProperty(KEY_DESKTOP_LYRICS_POSITION_Y)?.toFloatOrNull(),
+            displayId = properties.getProperty(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID),
+        )
     }
 
     private fun readShowMenuBarLyricsControls(): Boolean {
@@ -3122,6 +3163,9 @@ private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_SHOW_DESKTOP_LYRICS = "show_desktop_lyrics"
+private const val KEY_DESKTOP_LYRICS_POSITION_X = "desktop_lyrics_position_x"
+private const val KEY_DESKTOP_LYRICS_POSITION_Y = "desktop_lyrics_position_y"
+private const val KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID = "desktop_lyrics_position_display_id"
 private const val KEY_SHOW_MENU_BAR_LYRICS_CONTROLS = "show_menu_bar_lyrics_controls"
 private const val KEY_AUTO_PLAY_ON_STARTUP = "auto_play_on_startup"
 private const val KEY_AUTO_OPEN_PLAYER_ON_STARTUP = "auto_open_player_on_startup"

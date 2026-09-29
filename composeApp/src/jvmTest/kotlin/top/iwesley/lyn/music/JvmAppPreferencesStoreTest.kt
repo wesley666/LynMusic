@@ -14,10 +14,79 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.AppThemeId
+import top.iwesley.lyn.music.core.model.DesktopLyricsPosition
 import top.iwesley.lyn.music.platform.JvmAppPreferencesStore
 import top.iwesley.lyn.music.platform.JvmSettingsPropertiesFile
 
 class JvmAppPreferencesStoreTest {
+    @Test
+    fun `valid desktop lyrics position survives a file round trip`() = runTest {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-desktop-lyrics-position")
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties").toFile()
+            val store = JvmAppPreferencesStore(settingsFile)
+
+            assertEquals(null, store.desktopLyricsPosition.value)
+            store.setDesktopLyricsPosition(
+                DesktopLyricsPosition(
+                    centerXFraction = 0.8f,
+                    centerYFraction = 0.1f,
+                    displayId = "secondary-display",
+                ),
+            )
+
+            val reloadedStore = JvmAppPreferencesStore(settingsFile)
+            assertEquals(
+                DesktopLyricsPosition(0.8f, 0.1f, "secondary-display"),
+                reloadedStore.desktopLyricsPosition.value,
+            )
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `invalid desktop lyrics position is treated as missing`() {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-invalid-desktop-lyrics-position")
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties")
+            Files.writeString(
+                settingsFile,
+                "desktop_lyrics_position_x=not-a-number\n" +
+                    "desktop_lyrics_position_y=0.5\n" +
+                    "desktop_lyrics_position_display_id=secondary-display\n",
+            )
+
+            assertEquals(
+                null,
+                JvmAppPreferencesStore(settingsFile.toFile()).desktopLyricsPosition.value,
+            )
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `out of range desktop lyrics position is treated as missing`() {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-out-of-range-desktop-lyrics-position")
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties")
+            Files.writeString(
+                settingsFile,
+                "desktop_lyrics_position_x=1.01\n" +
+                    "desktop_lyrics_position_y=0.5\n" +
+                    "desktop_lyrics_position_display_id=secondary-display\n",
+            )
+
+            assertEquals(
+                null,
+                JvmAppPreferencesStore(settingsFile.toFile()).desktopLyricsPosition.value,
+            )
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `auto open player on startup preference defaults to false and survives a file round trip`() = runTest {
         val temporaryDirectory = Files.createTempDirectory("lynmusic-auto-open-player-preference")

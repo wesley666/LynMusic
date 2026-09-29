@@ -81,6 +81,8 @@ import top.iwesley.lyn.music.core.model.AudioTagSnapshot
 import top.iwesley.lyn.music.core.model.CompactPlayerLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DEFAULT_ANDROID_EXTENSION_DECODER_ENABLED
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
+import top.iwesley.lyn.music.core.model.DesktopLyricsPosition
+import top.iwesley.lyn.music.core.model.DesktopLyricsPositionPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.EmbyCredential
@@ -132,6 +134,7 @@ import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.appDisplayScalePresetOrDefault
 import top.iwesley.lyn.music.core.model.defaultCustomThemeTokens
 import top.iwesley.lyn.music.core.model.defaultThemeTextPalettePreferences
+import top.iwesley.lyn.music.core.model.desktopLyricsPositionOrNull
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.navidromeAudioQualityOrDefault
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
@@ -666,7 +669,8 @@ internal class AndroidCredentialStore(
 internal class AndroidAppPreferencesStore(
     context: Context,
 ) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
-    CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
+    CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, DesktopLyricsPositionPreferencesStore,
+    NavidromeAudioQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
     LyricsShareFontPreferencesStore, PlaybackDecoderPreferencesStore, PlayerArtworkStylePreferencesStore,
     AndroidEqualizerPreferencesStore, AutoOpenPlayerOnStartupPreferencesStore {
     private val preferences: SharedPreferences =
@@ -681,6 +685,7 @@ internal class AndroidAppPreferencesStore(
     private val mutableShowDesktopLyrics = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_DESKTOP_LYRICS, false),
     )
+    private val mutableDesktopLyricsPosition = MutableStateFlow(readDesktopLyricsPosition())
     private val mutableAutoPlayOnStartup = MutableStateFlow(
         preferences.getBoolean(KEY_AUTO_PLAY_ON_STARTUP, false),
     )
@@ -762,6 +767,13 @@ internal class AndroidAppPreferencesStore(
                     mutableShowDesktopLyrics.value = preferences.getBoolean(KEY_SHOW_DESKTOP_LYRICS, false)
                 }
 
+                KEY_DESKTOP_LYRICS_POSITION_X,
+                KEY_DESKTOP_LYRICS_POSITION_Y,
+                KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID,
+                -> {
+                    mutableDesktopLyricsPosition.value = readDesktopLyricsPosition()
+                }
+
                 KEY_NAVIDROME_WIFI_AUDIO_QUALITY -> {
                     mutableNavidromeWifiAudioQuality.value =
                         readNavidromeAudioQuality(KEY_NAVIDROME_WIFI_AUDIO_QUALITY, NavidromeAudioQuality.Original)
@@ -786,6 +798,8 @@ internal class AndroidAppPreferencesStore(
     override val playbackVolume: StateFlow<Float> = mutablePlaybackVolume.asStateFlow()
     override val showCompactPlayerLyrics: StateFlow<Boolean> = mutableShowCompactPlayerLyrics.asStateFlow()
     override val showDesktopLyrics: StateFlow<Boolean> = mutableShowDesktopLyrics.asStateFlow()
+    override val desktopLyricsPosition: StateFlow<DesktopLyricsPosition?> =
+        mutableDesktopLyricsPosition.asStateFlow()
     override val autoPlayOnStartup: StateFlow<Boolean> = mutableAutoPlayOnStartup.asStateFlow()
     override val autoOpenPlayerOnStartup: StateFlow<Boolean> =
         mutableAutoOpenPlayerOnStartup.asStateFlow()
@@ -831,6 +845,39 @@ internal class AndroidAppPreferencesStore(
     override suspend fun setShowDesktopLyrics(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_SHOW_DESKTOP_LYRICS, enabled).apply()
         mutableShowDesktopLyrics.value = enabled
+    }
+
+    override suspend fun setDesktopLyricsPosition(position: DesktopLyricsPosition) {
+        val normalized = desktopLyricsPositionOrNull(
+            centerXFraction = position.centerXFraction,
+            centerYFraction = position.centerYFraction,
+            displayId = position.displayId,
+        ) ?: return
+        preferences.edit()
+            .putFloat(KEY_DESKTOP_LYRICS_POSITION_X, normalized.centerXFraction)
+            .putFloat(KEY_DESKTOP_LYRICS_POSITION_Y, normalized.centerYFraction)
+            .apply {
+                normalized.displayId?.let { displayId ->
+                    putString(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID, displayId)
+                } ?: remove(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID)
+            }
+            .apply()
+        mutableDesktopLyricsPosition.value = normalized
+    }
+
+    private fun readDesktopLyricsPosition(): DesktopLyricsPosition? {
+        val x = runCatching {
+            preferences.takeIf { it.contains(KEY_DESKTOP_LYRICS_POSITION_X) }
+                ?.getFloat(KEY_DESKTOP_LYRICS_POSITION_X, Float.NaN)
+        }.getOrNull()
+        val y = runCatching {
+            preferences.takeIf { it.contains(KEY_DESKTOP_LYRICS_POSITION_Y) }
+                ?.getFloat(KEY_DESKTOP_LYRICS_POSITION_Y, Float.NaN)
+        }.getOrNull()
+        val displayId = runCatching {
+            preferences.getString(KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID, null)
+        }.getOrNull()
+        return desktopLyricsPositionOrNull(x, y, displayId)
     }
 
     override suspend fun setAutoPlayOnStartup(enabled: Boolean) {
@@ -3254,6 +3301,9 @@ private const val KEY_USE_SAMBA_CACHE = "use_samba_cache"
 private const val KEY_PLAYBACK_VOLUME = "playback_volume"
 private const val KEY_SHOW_COMPACT_PLAYER_LYRICS = "show_compact_player_lyrics"
 private const val KEY_SHOW_DESKTOP_LYRICS = "show_desktop_lyrics"
+private const val KEY_DESKTOP_LYRICS_POSITION_X = "desktop_lyrics_position_x"
+private const val KEY_DESKTOP_LYRICS_POSITION_Y = "desktop_lyrics_position_y"
+private const val KEY_DESKTOP_LYRICS_POSITION_DISPLAY_ID = "desktop_lyrics_position_display_id"
 private const val KEY_AUTO_PLAY_ON_STARTUP = "auto_play_on_startup"
 private const val KEY_AUTO_OPEN_PLAYER_ON_STARTUP = "auto_open_player_on_startup"
 private const val KEY_ANDROID_EXTENSION_DECODER_ENABLED = "android_extension_decoder_enabled"
