@@ -3015,7 +3015,9 @@ private fun PlaybackProgress(
     }
     val displayPositionMs = (dragPositionMs ?: snapshot.positionMs).coerceIn(0L, duration)
     val progressFraction = (displayPositionMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-    val showFlowerParticles = !currentPlatformDescriptor.isAndroidTV() && !currentPlatformDescriptor.isAndroidAutomotivePlatform()
+    val platform = currentPlatformDescriptor
+    val showFlowerParticles = platform.capabilities.supportsPlaybackProgressFlowerParticles &&
+        !platform.isAndroidTV() && !platform.isAndroidAutomotivePlatform()
     val particles = remember { mutableStateListOf<ProgressFlowerParticle>() }
     var lastEmissionFraction by remember { mutableStateOf(progressFraction) }
     var lastEmissionNanos by remember { mutableStateOf(0L) }

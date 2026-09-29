@@ -525,6 +525,7 @@ data class PlatformCapabilities(
     val supportsLocalFolderReauthorization: Boolean = false,
     val supportsMacOsWindowCloseBehavior: Boolean = false,
     val supportsCustomDataLocation: Boolean = false,
+    val supportsPlaybackProgressFlowerParticles: Boolean = true,
 )
 
 data class PlatformDescriptor(

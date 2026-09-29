@@ -245,6 +245,7 @@ fun createJvmAppComponent(
             supportsMenuBarLyricsControls = menuBarLyricsControls.isSupported,
             supportsMacOsWindowCloseBehavior = isJvmMacOs(osName),
             supportsCustomDataLocation = isJvmWindowsOs(osName),
+            supportsPlaybackProgressFlowerParticles = false,
         ),
     )
     val sharedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
