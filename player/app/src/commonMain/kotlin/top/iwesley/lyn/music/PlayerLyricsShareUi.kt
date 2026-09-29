@@ -243,9 +243,15 @@ internal fun PlayerLyricsPane(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             if (!compact && !pure) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         state.snapshot.currentDisplayTitle,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.ExtraBold,
                         color = lyricsPrimaryTextColor,
@@ -342,8 +348,10 @@ internal fun PlayerLyricsPane(
                     }
                     LazyColumn(
                         modifier = Modifier
+                            .align(Alignment.TopCenter)
                             .fillMaxHeight()
-                            .widthIn(max = lyricsMaxWidth),
+                            .widthIn(max = lyricsMaxWidth)
+                            .fillMaxWidth(),
                         state = listState,
                         contentPadding = PaddingValues(vertical = centerPadding),
                         verticalArrangement = Arrangement.spacedBy(lyricsLineSpacing),
@@ -406,7 +414,7 @@ internal fun PlayerLyricsPane(
                                             activeColor = animatedColor,
                                             inactiveColor = lyricsSecondaryTextColor.copy(alpha = 0.78f),
                                             style = MaterialTheme.typography.headlineSmall,
-                                            textAlign = TextAlign.Start,
+                                            textAlign = TextAlign.Center,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
@@ -415,7 +423,7 @@ internal fun PlayerLyricsPane(
                                             text = line.text,
                                             style = if (isHighlighted) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
                                             color = animatedColor,
-                                            textAlign = TextAlign.Start,
+                                            textAlign = TextAlign.Center,
                                             fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
@@ -424,7 +432,7 @@ internal fun PlayerLyricsPane(
                                         text = translationText,
                                         style = if (isHighlighted) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
                                         color = lyricsSecondaryTextColor.copy(alpha = if (isHighlighted) 0.9f else 0.72f),
-                                        textAlign = TextAlign.Start,
+                                        textAlign = TextAlign.Center,
                                         fontWeight = FontWeight.Normal,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
@@ -436,7 +444,7 @@ internal fun PlayerLyricsPane(
                                     activeColor = animatedColor,
                                     inactiveColor = lyricsSecondaryTextColor.copy(alpha = 0.78f),
                                     style = MaterialTheme.typography.headlineSmall,
-                                    textAlign = TextAlign.Start,
+                                    textAlign = TextAlign.Center,
                                     fontWeight = FontWeight.Bold,
                                     modifier = lineModifier,
                                 )
@@ -445,7 +453,7 @@ internal fun PlayerLyricsPane(
                                     text = line.text,
                                     style = if (isHighlighted) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
                                     color = animatedColor,
-                                    textAlign = TextAlign.Start,
+                                    textAlign = TextAlign.Center,
                                     fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
                                     modifier = lineModifier,
                                 )
@@ -527,7 +535,7 @@ private fun PlayerLyricsPlainMetadataRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -578,7 +586,7 @@ private fun PlayerLyricsMetadataRow(
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(30.dp),
+        horizontalArrangement = Arrangement.spacedBy(30.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DesktopLyricsMetadataItem(
