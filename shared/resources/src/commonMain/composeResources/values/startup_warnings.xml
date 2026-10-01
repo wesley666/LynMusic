@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_cleanup_failed">The new data location is active, but the old folder could not be cleaned up. Retry in storage settings: %1$s</string>
+    <string name="startup_cleanup_record_ignored">The invalid old-data cleanup record was ignored. No folders were deleted: %1$s</string>
+    <string name="startup_pending_record_cancelled">The damaged data-location change record was safely cancelled. No folders were moved or deleted: %1$s</string>
+    <string name="startup_cleanup_phase_invalid">The old-data cleanup record is damaged: invalid cleanup_phase=%1$s. No folders were deleted.</string>
+    <string name="startup_cleanup_identity_invalid">The old-data cleanup record is damaged: %1$s. No folders were deleted.</string>
+    <string name="startup_cleanup_identity_missing">The cleanup record is missing the folder identity or operation ID</string>
+    <string name="startup_cleanup_identity_value_invalid">Invalid %1$s=%2$s</string>
+    <string name="startup_pending_path_invalid">Migration configuration is damaged: %1$s is missing or is not an absolute path.</string>
+    <string name="startup_pending_field_missing">Migration configuration is damaged: %1$s is missing.</string>
+    <string name="startup_pending_field_invalid">Migration configuration is damaged: invalid %1$s=%2$s.</string>
+    <string name="startup_pending_identity_incomplete">Migration configuration is damaged: the operation identity fields are incomplete.</string>
+    <string name="startup_copy_verification_failed">Migration file verification failed. The active data location has not changed.</string>
+</resources>

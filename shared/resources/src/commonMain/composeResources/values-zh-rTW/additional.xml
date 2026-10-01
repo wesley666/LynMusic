@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="source_navidrome_label">Navidrome 來源</string>
+    <string name="common_available_after_reading">讀取後顯示</string>
+    <string name="common_synced">同步</string>
+    <string name="desktop_lyrics_loading">歌詞加載中...</string>
+    <string name="desktop_lyrics_unavailable">暫無歌詞</string>
+    <string name="app_icon_description">LynMusic 應用圖標</string>
+    <string name="startup_app_starting">LynMusic 正在啓動…</string>
+    <string name="crash_report_title">LynMusic 崩潰報告</string>
+    <string name="common_copied">已複製</string>
+    <string name="common_exit">退出</string>
+    <string name="crash_desktop_report_instructions">LynMusic 遇到未捕獲異常。應用將退出，你可以複製下面的崩潰堆棧給開發者用於排查。</string>
+    <string name="playback_audio_open_failed">無法打開該音訊檔案。</string>
+    <string name="desktop_lyrics_close_description">關閉桌面歌詞</string>
+    <string name="artwork_unavailable_message">沒有可用封面。</string>
+    <string name="equalizer_playback_required">開始播放後可用</string>
+    <string name="equalizer_device_unsupported">當前設備不支持均衡器</string>
+    <string name="equalizer_apply_failed">均衡器應用失敗</string>
+    <string name="cast_playback_failed_notice">投屏播放失敗</string>
+    <string name="cast_control_failed_notice">投屏控制失敗</string>
+    <string name="renderer_waiting_for_cast">等待投屏</string>
+    <string name="tags_avfoundation_read_only_label">AVFoundation · 只讀</string>
+    <string name="source_ios_files_index_label">檔案 App · 原地索引</string>
+    <string name="folder_picker_internal_storage">內建存儲</string>
+    <string name="folder_picker_usb_drive_named">U 盤 %1$s</string>
+    <string name="import_scan_success">%1$s%2$s。</string>
+    <string name="ui_list_separator">，</string>
+    <string name="settings_direct_source">直接請求</string>
+    <string name="settings_workflow_source">工作流程</string>
+    <string name="settings_workflow_json">工作流程 JSON</string>
+    <string name="settings_usertoken">Musicmatch 使用者權杖</string>
+    <string name="settings_api_key">API 金鑰</string>
+    <plurals name="online_source_summary">
+        <item quantity="one">線上模式已啟用，遠端共有 %1$s 首歌曲，未寫入本機曲庫索引。</item>
+        <item quantity="other">線上模式已啟用，遠端共有 %1$s 首歌曲，未寫入本機曲庫索引。</item>
+    </plurals>
+    <string name="lyrics_source_same_name_file">同名歌詞檔案</string>
+    <string name="lyrics_source_song_tags">歌曲標籤</string>
+</resources>

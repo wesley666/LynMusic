@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="folder_picker_manage_files_permission_hint">Allow “Manage all files” to browse internal storage and USB drives and import local music.</string>
+    <string name="folder_picker_storage_permission_hint">Allow storage read and write access to browse internal storage and USB drives and import local music.</string>
+    <string name="folder_picker_audio_type">Audio</string>
+    <string name="folder_picker_folder_unreadable">Cannot read this folder</string>
+    <string name="folder_picker_file_type">File</string>
+    <string name="folder_picker_permission_required_title">File access permission required</string>
+    <string name="folder_picker_folder_type">Folder</string>
+    <string name="folder_picker_grant_permission">Grant permission</string>
+    <string name="folder_picker_local_music_title">Local music</string>
+    <string name="folder_picker_storage_unavailable">No readable storage found</string>
+    <string name="folder_picker_open_folder">Open folder</string>
+    <string name="folder_picker_parent_folder">Parent folder</string>
+    <string name="folder_picker_loading_folder">Reading folder...</string>
+    <string name="folder_picker_storage_selection_hint">Select internal storage or a USB drive</string>
+    <string name="folder_picker_select_storage">Select storage</string>
+    <string name="folder_picker_select_current_folder">Select this folder</string>
+    <string name="folder_picker_storage_label">Storage</string>
+    <string name="folder_picker_folder_empty">This folder is empty</string>
+    <string name="folder_picker_usb_drive_label">USB drive</string>
+</resources>

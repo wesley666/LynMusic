@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -16,6 +22,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.resolveUiString
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.isIosArtworkCacheBackedLocator
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
@@ -42,10 +49,10 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
         suggestedName: String,
     ): Result<LyricsShareSaveResult> = withContext(Dispatchers.Main) {
         runCatching {
-            val image = loadUiImageFromPngBytes(pngBytes) ?: error("无法创建图片。")
+            val image = loadUiImageFromPngBytes(pngBytes) ?: throw UiTextException(uiText(Res.string.lyrics_image_creation_failed))
             val status = requestPhotoAuthorization()
             if (status != PHAuthorizationStatusAuthorized && status != PHAuthorizationStatusLimited) {
-                error("没有相册写入权限。")
+                throw UiTextException(uiText(Res.string.photo_library_write_permission_missing))
             }
             suspendCancellableCoroutine<Unit> { continuation ->
                 PHPhotoLibrary.sharedPhotoLibrary().performChanges(
@@ -57,20 +64,21 @@ class IosLyricsSharePlatformService : LyricsSharePlatformService {
                             continuation.resume(Unit)
                         } else {
                             continuation.resumeWithException(
-                                IllegalStateException(error?.localizedDescription ?: "保存图片失败。"),
+                                error?.localizedDescription?.let { IllegalStateException(it) }
+                                    ?: UiTextException(uiText(Res.string.lyrics_image_save_failed)),
                             )
                         }
                     },
                 )
             }
-            LyricsShareSaveResult(message = "图片已保存到相册")
+            LyricsShareSaveResult(message = uiText(Res.string.lyrics_image_saved_photos))
         }
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = withContext(Dispatchers.Main) {
         runCatching {
             UIPasteboard.generalPasteboard.image = loadUiImageFromPngBytes(pngBytes)
-                ?: error("无法创建图片。")
+                ?: throw UiTextException(uiText(Res.string.lyrics_image_creation_failed))
         }
     }
 
@@ -151,7 +159,7 @@ private fun shouldResolveLyricsShareArtworkThroughCache(normalizedLocator: Strin
 private fun writeTempPng(pngBytes: ByteArray): String {
     val path = NSTemporaryDirectory() + "lynmusic-lyrics-share.png"
     if (!writeIosFileBytes(path, pngBytes)) {
-        error("无法创建临时图片文件。")
+        throw UiTextException(uiText(Res.string.lyrics_temporary_image_creation_failed))
     }
     return path
 }

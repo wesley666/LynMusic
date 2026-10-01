@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.feature.favorites
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -49,7 +57,7 @@ data class FavoritesState(
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
     val canRefreshRemote: Boolean = false,
     val isRefreshing: Boolean = false,
-    val message: String? = null,
+    val message: UiText? = null,
 )
 
 sealed interface FavoritesIntent {
@@ -179,7 +187,7 @@ class FavoritesStore(
                         updateState { it.copy(message = null) }
                     }
                     .onFailure { throwable ->
-                        setMessage("更新喜欢状态失败: ${throwable.message.orEmpty()}")
+                        setMessage(uiText(Res.string.favorites_update_failed, throwable.uiErrorDetail()))
                     }
             }
 
@@ -189,7 +197,7 @@ class FavoritesStore(
                         updateState { it.copy(message = null) }
                     }
                     .onFailure { throwable ->
-                        setMessage("更新喜欢状态失败: ${throwable.message.orEmpty()}")
+                        setMessage(uiText(Res.string.favorites_update_failed, throwable.uiErrorDetail()))
                     }
             }
         }
@@ -218,9 +226,9 @@ class FavoritesStore(
                     it.copy(
                         isRefreshing = false,
                         message = if (manual) {
-                            "刷新喜欢失败: ${throwable.message.orEmpty()}"
+                            uiText(Res.string.favorites_refresh_failed, throwable.uiErrorDetail())
                         } else {
-                            "同步远程喜欢失败: ${throwable.message.orEmpty()}"
+                            uiText(Res.string.favorites_remote_sync_failed, throwable.uiErrorDetail())
                         },
                     )
                 }
@@ -283,7 +291,7 @@ class FavoritesStore(
         }
     }
 
-    private fun setMessage(message: String) {
+    private fun setMessage(message: UiText) {
         updateState { it.copy(message = message) }
     }
 

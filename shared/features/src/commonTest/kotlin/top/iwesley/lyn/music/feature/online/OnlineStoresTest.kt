@@ -15,7 +15,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -61,10 +61,10 @@ class OnlineStoresTest {
 
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
         assertFalse(store.state.value.isLoading)
         assertNull(store.state.value.errorMessage)
-        assertEquals(1, repository.trackCalls)
+        assertLocalizedEquals(1, repository.trackCalls)
         scope.cancel()
     }
 
@@ -84,10 +84,10 @@ class OnlineStoresTest {
 
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
         assertFalse(store.state.value.isLoading)
         assertNull(store.state.value.errorMessage)
-        assertEquals(1, repository.favoriteCalls)
+        assertLocalizedEquals(1, repository.favoriteCalls)
         scope.cancel()
     }
 
@@ -107,10 +107,10 @@ class OnlineStoresTest {
 
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
         assertFalse(store.state.value.isLoading)
         assertNull(store.state.value.errorMessage)
-        assertEquals(1, repository.playlistCalls)
+        assertLocalizedEquals(1, repository.playlistCalls)
         scope.cancel()
     }
 
@@ -131,27 +131,27 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.sourceId)
-        assertEquals(0, importSourceRepository.observeSourcesCalls)
-        assertEquals(0, repository.trackCalls)
-        assertEquals(0, repository.albumCalls)
-        assertEquals(0, repository.artistCalls)
+        assertLocalizedEquals(0, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.trackCalls)
+        assertLocalizedEquals(0, repository.albumCalls)
+        assertLocalizedEquals(0, repository.artistCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.trackCalls)
-        assertEquals(1, repository.albumCalls)
-        assertEquals(1, repository.artistCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.trackCalls)
+        assertLocalizedEquals(1, repository.albumCalls)
+        assertLocalizedEquals(1, repository.artistCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.trackCalls)
-        assertEquals(1, repository.albumCalls)
-        assertEquals(1, repository.artistCalls)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.trackCalls)
+        assertLocalizedEquals(1, repository.albumCalls)
+        assertLocalizedEquals(1, repository.artistCalls)
         scope.cancel()
     }
 
@@ -172,21 +172,21 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.sourceId)
-        assertEquals(0, importSourceRepository.observeSourcesCalls)
-        assertEquals(0, repository.favoriteCalls)
+        assertLocalizedEquals(0, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.favoriteCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.favoriteCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.favoriteCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.favoriteCalls)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.favoriteCalls)
         scope.cancel()
     }
 
@@ -207,21 +207,21 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.sourceId)
-        assertEquals(0, importSourceRepository.observeSourcesCalls)
-        assertEquals(0, repository.playlistCalls)
+        assertLocalizedEquals(0, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.playlistCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.playlistCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.playlistCalls)
 
         store.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(1, importSourceRepository.observeSourcesCalls)
-        assertEquals(1, repository.playlistCalls)
+        assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
+        assertLocalizedEquals(1, repository.playlistCalls)
         scope.cancel()
     }
 
@@ -260,12 +260,12 @@ class OnlineStoresTest {
         playlistsStore.ensureStartedIfRememberedSource()
         advanceUntilIdle()
 
-        assertEquals(0, librarySources.observeSourcesCalls)
-        assertEquals(0, favoritesSources.observeSourcesCalls)
-        assertEquals(0, playlistsSources.observeSourcesCalls)
-        assertEquals(0, repository.trackCalls)
-        assertEquals(0, repository.favoriteCalls)
-        assertEquals(0, repository.playlistCalls)
+        assertLocalizedEquals(0, librarySources.observeSourcesCalls)
+        assertLocalizedEquals(0, favoritesSources.observeSourcesCalls)
+        assertLocalizedEquals(0, playlistsSources.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.trackCalls)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+        assertLocalizedEquals(0, repository.playlistCalls)
         scope.cancel()
     }
 
@@ -311,12 +311,12 @@ class OnlineStoresTest {
         assertNull(preferencesStore.onlineLibrarySourceId.value)
         assertNull(preferencesStore.onlineFavoritesSourceId.value)
         assertNull(preferencesStore.onlinePlaylistsSourceId.value)
-        assertEquals(0, librarySources.observeSourcesCalls)
-        assertEquals(0, favoritesSources.observeSourcesCalls)
-        assertEquals(0, playlistsSources.observeSourcesCalls)
-        assertEquals(0, repository.trackCalls)
-        assertEquals(0, repository.favoriteCalls)
-        assertEquals(0, repository.playlistCalls)
+        assertLocalizedEquals(0, librarySources.observeSourcesCalls)
+        assertLocalizedEquals(0, favoritesSources.observeSourcesCalls)
+        assertLocalizedEquals(0, playlistsSources.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.trackCalls)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+        assertLocalizedEquals(0, repository.playlistCalls)
         scope.cancel()
     }
 
@@ -336,7 +336,7 @@ class OnlineStoresTest {
         store.dispatch(OnlinePlaylistsIntent.CreatePlaylist("New"))
         advanceUntilIdle()
 
-        assertEquals("歌单已创建。", store.state.value.message)
+        assertLocalizedEquals("playlist_created", store.state.value.message)
         assertNull(store.state.value.errorMessage)
 
         repository.playlistsFailure = IllegalStateException("load failed")
@@ -344,7 +344,7 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.message)
-        assertEquals("load failed", store.state.value.errorMessage)
+        assertLocalizedEquals("在线歌单加载失败。\nload failed", store.state.value.errorMessage)
         scope.cancel()
     }
 
@@ -365,13 +365,13 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.message)
-        assertEquals("load failed", store.state.value.errorMessage)
+        assertLocalizedEquals("在线歌单加载失败。\nload failed", store.state.value.errorMessage)
 
         repository.playlistsFailure = null
         store.dispatch(OnlinePlaylistsIntent.CreatePlaylist("New"))
         advanceUntilIdle()
 
-        assertEquals("歌单已创建。", store.state.value.message)
+        assertLocalizedEquals("playlist_created", store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }
@@ -401,8 +401,8 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.sourceId)
-        assertEquals(listOf(ONLINE_SOURCE_ID to "playlist-1"), repository.addTrackCalls)
-        assertEquals("歌曲已加入歌单。", store.state.value.message)
+        assertLocalizedEquals(listOf(ONLINE_SOURCE_ID to "playlist-1"), repository.addTrackCalls)
+        assertLocalizedEquals("playlist_track_added", store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }
@@ -425,7 +425,7 @@ class OnlineStoresTest {
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, preferencesStore.onlinePlaylistsSourceId.value)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, preferencesStore.onlinePlaylistsSourceId.value)
         assertNull(store.state.value.sourceId)
         scope.cancel()
     }
@@ -444,7 +444,7 @@ class OnlineStoresTest {
         )
 
         advanceUntilIdle()
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
 
         store.dispatch(OnlinePlaylistsIntent.SelectSource(sourceId = null))
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
@@ -484,7 +484,7 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertFalse(store.state.value.isLoading)
-        assertEquals("boom", store.state.value.errorMessage)
+        assertLocalizedEquals("在线曲库加载失败。\nboom", store.state.value.errorMessage)
         scope.cancel()
     }
 
@@ -504,10 +504,10 @@ class OnlineStoresTest {
         store.dispatch(OnlineLibraryIntent.SelectSource(ONLINE_SOURCE_ID))
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
-        assertEquals(1, repository.trackCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(1, repository.trackCalls)
         scope.cancel()
     }
 
@@ -552,7 +552,7 @@ class OnlineStoresTest {
         releaseRequests.complete(Unit)
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
         assertFalse(store.state.value.isLoading)
         scope.cancel()
     }
@@ -574,8 +574,8 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(preferencesStore.onlineLibrarySourceId.value)
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
         scope.cancel()
     }
 
@@ -597,7 +597,7 @@ class OnlineStoresTest {
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
         assertNull(store.state.value.sourceId)
         scope.cancel()
     }
@@ -616,7 +616,7 @@ class OnlineStoresTest {
         )
 
         advanceUntilIdle()
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
 
         store.dispatch(OnlineLibraryIntent.SelectSource(sourceId = null))
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
@@ -666,9 +666,9 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
-        assertEquals(navigationSourceId, store.state.value.sourceId)
-        assertEquals("Album 2", store.state.value.knownAlbumItemsById.getValue("album-2").album.title)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, preferencesStore.onlineLibrarySourceId.value)
+        assertLocalizedEquals(navigationSourceId, store.state.value.sourceId)
+        assertLocalizedEquals("Album 2", store.state.value.knownAlbumItemsById.getValue("album-2").album.title)
         scope.cancel()
     }
 
@@ -688,17 +688,17 @@ class OnlineStoresTest {
         store.dispatch(OnlineLibraryIntent.SearchChanged("search"))
         advanceUntilIdle()
 
-        assertEquals(listOf("search-track"), store.state.value.tracks.map { it.id })
-        assertEquals(1, repository.searchCalls)
+        assertLocalizedEquals(listOf("search-track"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(1, repository.searchCalls)
 
         store.dispatch(OnlineLibraryIntent.SearchChanged(""))
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
-        assertEquals(1, repository.trackCalls)
-        assertEquals(1, repository.albumCalls)
-        assertEquals(1, repository.artistCalls)
-        assertEquals(1, repository.searchCalls)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(1, repository.trackCalls)
+        assertLocalizedEquals(1, repository.albumCalls)
+        assertLocalizedEquals(1, repository.artistCalls)
+        assertLocalizedEquals(1, repository.searchCalls)
         scope.cancel()
     }
 
@@ -730,8 +730,8 @@ class OnlineStoresTest {
         store.dispatch(OnlineLibraryIntent.SearchChanged(""))
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1", "track-2"), store.state.value.tracks.map { it.id })
-        assertEquals(2, repository.trackCalls)
+        assertLocalizedEquals(listOf("track-1", "track-2"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(2, repository.trackCalls)
         assertFalse(store.state.value.canLoadMoreTracks)
         scope.cancel()
     }
@@ -758,13 +758,13 @@ class OnlineStoresTest {
         store.dispatch(OnlineLibraryIntent.SearchChanged(""))
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
         searchResult.complete(OnlineLibrarySearchResult(tracks = listOf(sampleTrack(id = "late-search"))))
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
-        assertEquals(1, repository.trackCalls)
-        assertEquals(1, repository.searchCalls)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(1, repository.trackCalls)
+        assertLocalizedEquals(1, repository.searchCalls)
         scope.cancel()
     }
 
@@ -785,8 +785,8 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(preferencesStore.onlineFavoritesSourceId.value)
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
         scope.cancel()
     }
 
@@ -808,7 +808,7 @@ class OnlineStoresTest {
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
         advanceUntilIdle()
 
-        assertEquals(ONLINE_SOURCE_ID, preferencesStore.onlineFavoritesSourceId.value)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, preferencesStore.onlineFavoritesSourceId.value)
         assertNull(store.state.value.sourceId)
         scope.cancel()
     }
@@ -827,7 +827,7 @@ class OnlineStoresTest {
         )
 
         advanceUntilIdle()
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
 
         store.dispatch(OnlineFavoritesIntent.SelectSource(sourceId = null))
         importSourceRepository.emitSources(listOf(onlineSource(), onlineSource("nav-other")))
@@ -872,16 +872,16 @@ class OnlineStoresTest {
         store.dispatch(OnlineFavoritesIntent.SelectSource(ONLINE_SOURCE_ID, persist = false))
         runCurrent()
 
-        assertEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
-        assertEquals(true, store.state.value.isLoading)
-        assertEquals(emptyList(), store.state.value.tracks)
-        assertEquals(1, repository.favoriteCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertLocalizedEquals(true, store.state.value.isLoading)
+        assertLocalizedEquals(emptyList(), store.state.value.tracks)
+        assertLocalizedEquals(1, repository.favoriteCalls)
 
         refreshGate.complete(Unit)
         advanceUntilIdle()
 
         assertFalse(store.state.value.isLoading)
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
         scope.cancel()
     }
 
@@ -907,12 +907,12 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals(null, store.state.value.sourceId)
-        assertEquals(
+        assertLocalizedEquals(null, store.state.value.sourceId)
+        assertLocalizedEquals(
             true,
             store.state.value.favoriteOverridesBySourceId.getValue(ONLINE_SOURCE_ID).getValue("track-added"),
         )
-        assertEquals(emptyList(), store.state.value.tracks)
+        assertLocalizedEquals(emptyList(), store.state.value.tracks)
         scope.cancel()
     }
 
@@ -938,11 +938,11 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             listOf("track-added", "track-1"),
             store.state.value.tracks.map { it.id },
         )
-        assertEquals(
+        assertLocalizedEquals(
             true,
             store.state.value.favoriteOverridesBySourceId.getValue(ONLINE_SOURCE_ID).getValue("track-added"),
         )
@@ -956,8 +956,8 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
-        assertEquals(
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(
             false,
             store.state.value.favoriteOverridesBySourceId.getValue(ONLINE_SOURCE_ID).getValue("track-added"),
         )
@@ -986,7 +986,7 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals("已喜欢。", store.state.value.message)
+        assertLocalizedEquals("favorites_track_added", store.state.value.message)
         assertNull(store.state.value.errorMessage)
 
         repository.setFavoriteFailure = IllegalStateException("favorite failed")
@@ -1000,7 +1000,7 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.message)
-        assertEquals("favorite failed", store.state.value.errorMessage)
+        assertLocalizedEquals("在线喜欢更新失败。\nfavorite failed", store.state.value.errorMessage)
         scope.cancel()
     }
 
@@ -1029,7 +1029,7 @@ class OnlineStoresTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.message)
-        assertEquals("favorite failed", store.state.value.errorMessage)
+        assertLocalizedEquals("在线喜欢更新失败。\nfavorite failed", store.state.value.errorMessage)
 
         repository.setFavoriteFailure = null
         store.dispatch(
@@ -1041,7 +1041,7 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals("已喜欢。", store.state.value.message)
+        assertLocalizedEquals("favorites_track_added", store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }
@@ -1070,8 +1070,8 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertEquals(emptyMap(), store.state.value.favoriteOverridesBySourceId)
-        assertEquals(emptyList(), store.state.value.tracks)
+        assertLocalizedEquals(emptyMap(), store.state.value.favoriteOverridesBySourceId)
+        assertLocalizedEquals(emptyList(), store.state.value.tracks)
         scope.cancel()
     }
 }

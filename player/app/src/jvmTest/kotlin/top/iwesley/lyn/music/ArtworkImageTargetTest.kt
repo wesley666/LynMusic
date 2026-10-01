@@ -19,6 +19,11 @@ import top.iwesley.lyn.music.core.model.buildIosArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 
 class ArtworkImageTargetTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
 
     @Test
     fun `resolver uses project cached file and includes local file version in memory key`() = runBlocking {

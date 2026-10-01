@@ -6,6 +6,8 @@
  */
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -222,7 +224,7 @@ internal fun LiquidGlassDock(
                     .width(tabWidth).height(56.dp).then(selection),
             )
             val icons = listOf(Icons.Rounded.LibraryMusic, Icons.Rounded.FavoriteBorder, Icons.Rounded.Person, Icons.Rounded.MoreHoriz)
-            val labels = listOf("曲库", "收藏", "我的", "更多")
+            val labels = listOf(uiString(Res.string.library_title), uiString(Res.string.favorites_collection_title), uiString(Res.string.navigation_my_music), uiString(Res.string.common_more))
             Row(Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 icons.forEachIndexed { index, icon ->
                     Box(

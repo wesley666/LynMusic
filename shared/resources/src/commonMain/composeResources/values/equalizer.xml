@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="equalizer_no_adjustable_bands">No adjustable bands available</string>
+    <string name="equalizer_disabled_state">Off</string>
+    <string name="equalizer_enabled_state">On</string>
+    <string name="equalizer_waiting_for_playback">Waiting for playback</string>
+</resources>

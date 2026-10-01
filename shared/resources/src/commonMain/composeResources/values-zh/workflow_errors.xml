@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workflow_kind_required">workflow.kind 必须为 "%1$s"。</string>
+    <string name="workflow_value_required">%1$s 不能为空。</string>
+    <string name="workflow_mapping_missing_fields">%1$s 缺少字段：%2$s。</string>
+    <string name="workflow_steps_required">%1$s 至少需要一个步骤。</string>
+    <string name="workflow_payload_path_required">%1$s 最后一步必须提供 payloadPath 或 fallbackPayloadPath。</string>
+    <string name="workflow_json_response_required">%1$s 当前仅支持 JSON 响应。</string>
+    <string name="workflow_template_variables_unknown">%1$s 使用了未定义模板变量：%2$s。</string>
+    <string name="workflow_object_required">%1$s 必须是对象。</string>
+    <string name="workflow_array_required">%1$s 必须是数组。</string>
+    <string name="workflow_value_invalid">字段 %1$s 的值 "%2$s" 不合法。</string>
+    <string name="workflow_string_items_required">%1$s 中存在非字符串值。</string>
+    <string name="workflow_string_required">%1$s 必须是字符串。</string>
+    <string name="workflow_fields_unknown">%1$s 包含未知字段：%2$s。</string>
+    <string name="workflow_source_missing">Workflow 歌词来源 %1$s 不存在。</string>
+    <string name="workflow_lyrics_unavailable">Workflow 歌词来源 %1$s 没有返回可解析歌词。</string>
+    <string name="workflow_artwork_unavailable">Workflow 歌词来源 %1$s 没有可用封面。</string>
+</resources>

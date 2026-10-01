@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="import_scan_summary">Found %1$s, imported %2$s, %3$s</string>
+    <plurals name="import_audio_file_count">
+        <item quantity="one">%1$s audio file</item>
+        <item quantity="other">%1$s audio files</item>
+    </plurals>
+    <plurals name="import_failure_count">
+        <item quantity="one">%1$s failed</item>
+        <item quantity="other">%1$s failed</item>
+    </plurals>
+</resources>

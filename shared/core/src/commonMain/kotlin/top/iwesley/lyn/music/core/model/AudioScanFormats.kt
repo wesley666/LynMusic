@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 private val NON_NAVIDROME_SCANNABLE_AUDIO_EXTENSIONS = setOf(
     "mp3",
     "m4a",
@@ -45,6 +47,7 @@ fun unsupportedAudioImportFailure(relativePath: String): ImportScanFailure {
     return ImportScanFailure(
         relativePath = relativePath,
         reason = UNSUPPORTED_AUDIO_IMPORT_REASON,
+        reasonText = uiText(Res.string.audio_import_unsupported),
     )
 }
 

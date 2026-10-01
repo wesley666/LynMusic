@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="folder_picker_manage_files_permission_hint">授予“管理所有文件”后，可以浏览内置存储和 U 盘目录，用于导入本地音乐。</string>
+    <string name="folder_picker_storage_permission_hint">授予存储读写权限后，可以浏览内置存储和 U 盘目录，用于导入本地音乐。</string>
+    <string name="folder_picker_audio_type">音频</string>
+    <string name="folder_picker_folder_unreadable">无法读取当前目录</string>
+    <string name="folder_picker_file_type">文件</string>
+    <string name="folder_picker_permission_required_title">需要文件管理权限</string>
+    <string name="folder_picker_folder_type">目录</string>
+    <string name="folder_picker_grant_permission">去授权</string>
+    <string name="folder_picker_local_music_title">本地音乐</string>
+    <string name="folder_picker_storage_unavailable">没有找到可读取的存储位置</string>
+    <string name="folder_picker_open_folder">点击进入</string>
+    <string name="folder_picker_parent_folder">上一级</string>
+    <string name="folder_picker_loading_folder">正在读取目录...</string>
+    <string name="folder_picker_storage_selection_hint">请选择内置存储或 U 盘</string>
+    <string name="folder_picker_select_storage">选择存储位置</string>
+    <string name="folder_picker_select_current_folder">选择当前目录</string>
+    <string name="folder_picker_storage_label">存储</string>
+    <string name="folder_picker_folder_empty">当前目录为空</string>
+    <string name="folder_picker_usb_drive_label">U盘</string>
+</resources>

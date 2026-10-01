@@ -8,6 +8,11 @@ import kotlin.test.Test
 import kotlin.test.assertSame
 
 class ArtworkImagePainterStateTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `confirmed missing data ignores retained painter`() {
         assertSame(

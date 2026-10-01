@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import java.awt.Image as AwtImage
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
@@ -22,6 +28,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontKind
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.resolveUiString
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
@@ -48,21 +55,21 @@ class JvmLyricsSharePlatformService(
     ): Result<LyricsShareSaveResult> {
         return runCatching {
             val output = JvmNativeFilePicker.pickSaveFile(
-                title = "保存歌词图片",
+                title = resolveUiString(Res.string.lyrics_save_image_title),
                 suggestedName = ensurePngFileName(suggestedName),
                 defaultExtension = "png",
-            ) ?: error("已取消保存。")
+            ) ?: throw UiTextException(uiText(Res.string.lyrics_image_save_cancelled))
             withContext(Dispatchers.IO) {
                 output.parent?.toFile()?.mkdirs()
                 output.toFile().writeBytes(pngBytes)
             }
-            LyricsShareSaveResult(message = "图片已保存到文件")
+            LyricsShareSaveResult(message = uiText(Res.string.lyrics_image_saved_file))
         }
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = withContext(Dispatchers.Swing) {
         runCatching {
-            val image = ImageIO.read(ByteArrayInputStream(pngBytes)) ?: error("无法读取图片数据。")
+            val image = ImageIO.read(ByteArrayInputStream(pngBytes)) ?: throw UiTextException(uiText(Res.string.lyrics_image_data_unreadable))
             val clipboard = Toolkit.getDefaultToolkit().systemClipboard
             clipboard.setContents(ImageTransferable(image), null)
         }

@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.uiString
+import top.iwesley.lyn.music.displayText
+
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -82,11 +89,6 @@ import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.tv.ui.TvMainTheme
 import top.iwesley.lyn.music.tv.ui.TvMediaBrowserMode
 
-internal enum class TvMediaDetailSource {
-    Library,
-    Favorites,
-}
-
 class TvMediaDetailActivity : TvComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -96,42 +98,46 @@ class TvMediaDetailActivity : TvComponentActivity() {
         var appComponentResult by mutableStateOf(tvAppComponentResult())
 
         setContent {
-            val component = appComponentResult.getOrNull()
-            if (args == null) {
-                TvMainTheme {
-                    TvMediaDetailErrorScreen(
-                        message = "详情参数无效，请返回后重新打开。",
-                        onRetry = null,
-                        onBack = ::finish,
-                    )
+            ProvideUiLanguage {
+                val component = appComponentResult.getOrNull()
+                if (args == null) {
+                    TvMainTheme {
+                        TvMediaDetailErrorScreen(
+                            message = uiString(Res.string.library_detail_invalid_hint),
+                            onRetry = null,
+                            onBack = ::finish,
+                        )
+                    }
+                    return@ProvideUiLanguage
                 }
-                return@setContent
-            }
-            if (component == null) {
-                TvMainTheme {
-                    TvMediaDetailErrorScreen(
-                        message = "组件初始化失败，请检查存储状态后重试。",
-                        onRetry = {
-                            appComponentResult = tvAppComponentResult()
-                        },
-                        onBack = ::finish,
-                    )
+                if (component == null) {
+                    TvMainTheme {
+                        TvMediaDetailErrorScreen(
+                            message = uiString(Res.string.startup_component_initialization_failed),
+                            onRetry = {
+                                appComponentResult = tvAppComponentResult()
+                            },
+                            onBack = ::finish,
+                        )
+                    }
+                    return@ProvideUiLanguage
                 }
-                return@setContent
-            }
 
-            val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
-            ProvideTvMediaDetailDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                TvMediaDetailApp(
-                    component = component,
-                    args = args,
-                    onBack = ::finish,
-                    onOpenPlayer = {
-                        startActivity(TvPlayerActivity.createIntent(this@TvMediaDetailActivity))
-                    },
-                )
+                val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
+                ProvideTvMediaDetailDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                    TvMediaDetailApp(
+                        component = component,
+                        args = args,
+                        onBack = ::finish,
+                        onOpenPlayer = {
+                            startActivity(TvPlayerActivity.createIntent(this@TvMediaDetailActivity))
+                        },
+                    )
+                }
+
+
             }
-        }
+}
     }
 
     companion object {
@@ -142,6 +148,7 @@ class TvMediaDetailActivity : TvComponentActivity() {
             id: String,
             title: String,
             subtitle: String?,
+            subtitleTrackCount: Int? = null,
         ): Intent {
             return Intent(context, TvMediaDetailActivity::class.java).apply {
                 putExtra(EXTRA_SOURCE, source.name)
@@ -149,6 +156,7 @@ class TvMediaDetailActivity : TvComponentActivity() {
                 putExtra(EXTRA_ID, id)
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_SUBTITLE, subtitle)
+                subtitleTrackCount?.let { putExtra(EXTRA_SUBTITLE_TRACK_COUNT, it) }
             }
         }
     }
@@ -253,20 +261,20 @@ private fun TvMediaDetailScreen(
             ) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
-                Text("返回")
+                Text(uiString(Res.string.common_back))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = args.title,
+                    text = tvMediaDetailTitleText(args.mode, args.title).displayText(),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.headlineLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                args.subtitle?.takeIf { it.isNotBlank() }?.let { subtitle ->
+                tvMediaDetailSubtitleText(args.subtitle, args.subtitleTrackCount)?.let { subtitle ->
                     Text(
-                        text = subtitle,
+                        text = subtitle.displayText(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
@@ -275,7 +283,7 @@ private fun TvMediaDetailScreen(
                 }
             }
             Text(
-                text = "${tracks.size} 首歌曲",
+                text = uiString(Res.plurals.common_track_count, (tracks.size).toInt(), tracks.size),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -392,7 +400,7 @@ private fun TvMediaDetailTrackRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" / ").ifBlank { "未知艺人" },
+                    text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" / ").ifBlank { uiString(Res.string.common_unknown_artist) },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -405,7 +413,7 @@ private fun TvMediaDetailTrackRow(
             )
             Icon(
                 imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription = if (isFavorite) "取消喜欢" else "喜欢",
+                contentDescription = if (isFavorite) uiString(Res.string.favorites_remove_track) else uiString(Res.string.favorites_likes_title),
                 tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp),
             )
@@ -470,8 +478,8 @@ private fun TvMediaDetailEmptyPanel(modifier: Modifier = Modifier) {
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("这里没有歌曲", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-            Text("当前专辑或艺人没有可显示的歌曲。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(uiString(Res.string.library_tracks_empty_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(uiString(Res.string.library_detail_tracks_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -498,18 +506,18 @@ private fun TvMediaDetailErrorScreen(
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Text("无法打开详情", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(uiString(Res.string.library_detail_open_failed), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (onRetry != null) {
                     TvButton(onClick = onRetry) {
-                        Text("重试")
+                        Text(uiString(Res.string.common_retry))
                     }
                 }
                 TvOutlinedButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text("返回")
+                    Text(uiString(Res.string.common_back))
                 }
             }
         }
@@ -536,31 +544,15 @@ private fun ProvideTvMediaDetailDensity(
     }
 }
 
-private data class TvMediaDetailArgs(
-    val source: TvMediaDetailSource,
-    val mode: TvMediaBrowserMode,
-    val id: String,
-    val title: String,
-    val subtitle: String?,
-)
-
 private fun Intent.parseTvMediaDetailArgs(): TvMediaDetailArgs? {
-    val source = enumValueOrNull<TvMediaDetailSource>(getStringExtra(EXTRA_SOURCE)) ?: return null
-    val mode = enumValueOrNull<TvMediaBrowserMode>(getStringExtra(EXTRA_MODE)) ?: return null
-    if (mode == TvMediaBrowserMode.Tracks) return null
-    val id = getStringExtra(EXTRA_ID)?.takeIf { it.isNotBlank() } ?: return null
-    val title = getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() } ?: return null
-    return TvMediaDetailArgs(
-        source = source,
-        mode = mode,
-        id = id,
-        title = title,
+    return buildTvMediaDetailArgs(
+        sourceName = getStringExtra(EXTRA_SOURCE),
+        modeName = getStringExtra(EXTRA_MODE),
+        id = getStringExtra(EXTRA_ID),
+        title = getStringExtra(EXTRA_TITLE),
         subtitle = getStringExtra(EXTRA_SUBTITLE),
+        subtitleTrackCount = if (hasExtra(EXTRA_SUBTITLE_TRACK_COUNT)) getIntExtra(EXTRA_SUBTITLE_TRACK_COUNT, 0) else null,
     )
-}
-
-private inline fun <reified T : Enum<T>> enumValueOrNull(value: String?): T? {
-    return enumValues<T>().firstOrNull { it.name == value }
 }
 
 private fun matchesTvAlbumDetail(track: Track, albumId: String): Boolean {
@@ -606,3 +598,4 @@ private const val EXTRA_MODE = "top.iwesley.lyn.music.tv.extra.MEDIA_DETAIL_MODE
 private const val EXTRA_ID = "top.iwesley.lyn.music.tv.extra.MEDIA_DETAIL_ID"
 private const val EXTRA_TITLE = "top.iwesley.lyn.music.tv.extra.MEDIA_DETAIL_TITLE"
 private const val EXTRA_SUBTITLE = "top.iwesley.lyn.music.tv.extra.MEDIA_DETAIL_SUBTITLE"
+private const val EXTRA_SUBTITLE_TRACK_COUNT = "top.iwesley.lyn.music.tv.extra.MEDIA_DETAIL_SUBTITLE_TRACK_COUNT"

@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Component
@@ -23,6 +31,7 @@ import javax.swing.JWindow
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 import javax.swing.Timer
+import javax.swing.ToolTipManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -139,6 +148,21 @@ internal class JvmDesktopLyricsPlatformService(
 private const val DESKTOP_LYRICS_LOG_TAG = "DesktopLyrics"
 
 private class AwtJvmDesktopLyricsOverlayWindow : JvmDesktopLyricsOverlayWindowAdapter {
+    private val languageScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var closeDescription = ""
+    init {
+        languageScope.launch {
+            observeResolvedUiText(flowOf(uiText(Res.string.desktop_lyrics_close_description))) { value, isCurrent ->
+                runOnEdt {
+                    if (isCurrent()) {
+                        closeDescription = value.orEmpty()
+                        closeButton?.toolTipText = closeDescription
+                        closeButton?.accessibleContext?.accessibleDescription = closeDescription
+                    }
+                }
+            }
+        }
+    }
     private var window: JWindow? = null
     private var label: JLabel? = null
     private var panel: RoundedLyricsPanel? = null
@@ -178,6 +202,7 @@ private class AwtJvmDesktopLyricsOverlayWindow : JvmDesktopLyricsOverlayWindowAd
     }
 
     override fun release() {
+        languageScope.cancel()
         runOnEdt {
             finishPositionChange(null)
             hideControlsTimer.stop()
@@ -227,6 +252,8 @@ private class AwtJvmDesktopLyricsOverlayWindow : JvmDesktopLyricsOverlayWindowAd
             window?.isVisible = false
             closeRequestHandler?.invoke()
         }.apply {
+            toolTipText = closeDescription
+            accessibleContext?.accessibleDescription = closeDescription
             addMouseListener(hoverMouseAdapter)
         }
         val panel = RoundedLyricsPanel(nextLabel, nextCloseButton)
@@ -528,7 +555,7 @@ private class CloseOverlayButton(
     private var pressed = false
 
     init {
-        toolTipText = "关闭桌面歌词"
+        ToolTipManager.sharedInstance().registerComponent(this)
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         preferredSize = Dimension(24, 24)
         minimumSize = Dimension(24, 24)
@@ -553,6 +580,7 @@ private class CloseOverlayButton(
             }
         })
     }
+
 
     override fun paintComponent(graphics: Graphics) {
         val g = graphics.create() as Graphics2D

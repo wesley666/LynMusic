@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import android.Manifest
 import android.content.Context
 import android.content.ClipData
@@ -32,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT
+import top.iwesley.lyn.music.core.model.androidLyricsShareBuiltInFontNameText
 import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
@@ -40,12 +47,15 @@ import top.iwesley.lyn.music.core.model.LyricsShareFontKind
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontOption
 import top.iwesley.lyn.music.core.model.LyricsSharePlatformService
+import top.iwesley.lyn.music.core.model.resolveUiString
 import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.UnsupportedLyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
@@ -85,7 +95,7 @@ class AndroidLyricsSharePlatformService(
     ): Result<LyricsShareSaveResult> {
         return runCatching {
             if (!ensureWritePermissionIfNeeded()) {
-                error("没有相册写入权限。")
+                throw UiTextException(uiText(Res.string.photo_library_write_permission_missing))
             }
             withContext(Dispatchers.IO) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -94,7 +104,7 @@ class AndroidLyricsSharePlatformService(
                     saveImageLegacy(pngBytes, suggestedName)
                 }
             }
-            LyricsShareSaveResult(message = "图片已保存到相册")
+            LyricsShareSaveResult(message = uiText(Res.string.lyrics_image_saved_photos))
         }
     }
 
@@ -108,16 +118,16 @@ class AndroidLyricsSharePlatformService(
                 file,
             )
             val clipboard = ContextCompat.getSystemService(context, android.content.ClipboardManager::class.java)
-                ?: error("系统剪贴板不可用。")
-            clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, "歌词分享图片", uri))
+                ?: throw UiTextException(uiText(Res.string.system_clipboard_unavailable))
+            clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, resolveUiString(Res.string.lyrics_image_clipboard), uri))
         }
     }
 
     override suspend fun copyText(text: String): Result<Unit> = withContext(Dispatchers.Main) {
         runCatching {
             val clipboard = ContextCompat.getSystemService(context, android.content.ClipboardManager::class.java)
-                ?: error("系统剪贴板不可用。")
-            clipboard.setPrimaryClip(ClipData.newPlainText("歌词分享文字", text))
+                ?: throw UiTextException(uiText(Res.string.system_clipboard_unavailable))
+            clipboard.setPrimaryClip(ClipData.newPlainText(resolveUiString(Res.string.lyrics_text_clipboard), text))
         }
     }
 
@@ -129,63 +139,73 @@ class AndroidLyricsSharePlatformService(
                 importedFonts + listOf(
                     LyricsShareFontOption(
                         fontKey = "sans-serif",
-                        displayName = "无衬线",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("sans-serif"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         isPrioritized = true,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "sans-serif-medium",
-                        displayName = "无衬线中黑体",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("sans-serif-medium"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         isPrioritized = true,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "sans-serif-black",
-                        displayName = "无衬线重黑体",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("sans-serif-black"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "serif",
-                        displayName = "衬线",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("serif"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "monospace",
-                        displayName = "等宽",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("monospace"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "serif-monospace",
-                        displayName = "衬线等宽",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("serif-monospace"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "sans-serif-condensed",
-                        displayName = "无衬线紧凑体",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("sans-serif-condensed"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "sans-serif-condensed-medium",
-                        displayName = "无衬线紧凑中黑体",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("sans-serif-condensed-medium"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "cursive",
-                        displayName = "Cursive",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("cursive"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
                     LyricsShareFontOption(
                         fontKey = "casual",
-                        displayName = "Casual",
+                        displayName = "",
+                        displayNameText = androidLyricsShareBuiltInFontNameText("casual"),
                         previewText = DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT,
                         kind = LyricsShareFontKind.SYSTEM,
                     ),
@@ -213,10 +233,10 @@ class AndroidLyricsSharePlatformService(
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: error("无法创建图片文件。")
+            ?: throw UiTextException(uiText(Res.string.lyrics_image_file_creation_failed))
         try {
             resolver.openOutputStream(uri)?.use { output -> output.write(pngBytes) }
-                ?: error("无法写入图片文件。")
+                ?: throw UiTextException(uiText(Res.string.lyrics_image_file_write_failed))
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
@@ -282,7 +302,7 @@ class AndroidLyricsSharePlatformService(
             normalizedLocator.startsWith("https://", ignoreCase = true)
     }
 
-    private fun renderLyricsShareBitmap(
+    private suspend fun renderLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
         importedTypeface: Typeface?,
@@ -293,7 +313,7 @@ class AndroidLyricsSharePlatformService(
         }
     }
 
-    private fun renderNoteLyricsShareBitmap(
+    private suspend fun renderNoteLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
         importedTypeface: Typeface?,
@@ -329,7 +349,7 @@ class AndroidLyricsSharePlatformService(
 
         val availableWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2 - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2
         val titleLayout = createTextLayout(
-            text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+            text = resolveUiText(buildLyricsShareTitleArtistLine(model.title, model.artistName), AppLanguageRuntime.effectiveLanguage.value),
             paint = titlePaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,
@@ -467,7 +487,7 @@ class AndroidLyricsSharePlatformService(
         }
     }
 
-    private fun renderArtworkTintLyricsShareBitmap(
+    private suspend fun renderArtworkTintLyricsShareBitmap(
         model: LyricsShareCardModel,
         artworkBitmap: Bitmap?,
         importedTypeface: Typeface?,
@@ -495,7 +515,7 @@ class AndroidLyricsSharePlatformService(
 
         val availableWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2
         val titleLayout = createTextLayout(
-            text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+            text = resolveUiText(buildLyricsShareTitleArtistLine(model.title, model.artistName), AppLanguageRuntime.effectiveLanguage.value),
             paint = titlePaint,
             widthPx = availableWidth,
             alignment = Layout.Alignment.ALIGN_NORMAL,

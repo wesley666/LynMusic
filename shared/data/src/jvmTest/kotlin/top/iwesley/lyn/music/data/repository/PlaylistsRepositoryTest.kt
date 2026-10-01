@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
 import androidx.room.Room
 import io.ktor.http.parseUrl
 import java.nio.file.Files
@@ -20,6 +22,10 @@ import top.iwesley.lyn.music.core.model.LyricsRequest
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiErrorText
 import top.iwesley.lyn.music.core.model.buildEmbySongLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
@@ -34,6 +40,46 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.domain.serializeEmbyCredential
 
 class PlaylistsRepositoryTest {
+
+    @Test
+    fun playlistValidationKeepsResourceDescriptionsAndSavedNames() = runTest {
+        val database = createPlaylistTestDatabase()
+        try {
+            val repository = playlistRepository(database)
+            val saved = repository.createPlaylist("用户保存的中文名称").getOrThrow()
+            val failure = assertNotNull(repository.createPlaylist("用户保存的中文名称").exceptionOrNull())
+            assertTrue(failure is UiTextFailure)
+            val text = failure.uiErrorText()
+            assertEquals("A playlist with this name already exists.", resolveUiText(text, AppLanguage.English))
+            assertEquals("歌单已存在。", resolveUiText(text, AppLanguage.SimplifiedChinese))
+            assertEquals("歌單已存在。", resolveUiText(text, AppLanguage.TraditionalChinese))
+            assertEquals("playlist_already_exists", failure.message)
+            assertEquals("用户保存的中文名称", database.playlistDao().getById(saved.id)?.name)
+            assertEquals(1, database.playlistDao().getAll().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun renameAndEmptyNameFailuresStayLocalizedWithoutChangingPlaylists() = runTest {
+        val database = createPlaylistTestDatabase()
+        try {
+            val repository = playlistRepository(database)
+            val first = repository.createPlaylist("First").getOrThrow()
+            val second = repository.createPlaylist("Second").getOrThrow()
+            val duplicate = assertNotNull(repository.renamePlaylist(second.id, first.name).exceptionOrNull())
+            assertEquals("A playlist with this name already exists.", resolveUiText(duplicate.uiErrorText(), AppLanguage.English))
+            val empty = assertNotNull(repository.createPlaylist("  ").exceptionOrNull())
+            assertEquals("Playlist name cannot be empty.", resolveUiText(empty.uiErrorText(), AppLanguage.English))
+            val missing = assertNotNull(repository.deletePlaylist("missing-id").exceptionOrNull())
+            assertEquals("Playlist does not exist.", resolveUiText(missing.uiErrorText(), AppLanguage.English))
+            assertEquals("Second", database.playlistDao().getById(second.id)?.name)
+            assertEquals(2, database.playlistDao().getAll().size)
+        } finally {
+            database.close()
+        }
+    }
 
     @Test
     fun `create playlist and add local track persists membership`() = runTest {
@@ -937,7 +983,7 @@ class PlaylistsRepositoryTest {
             )
         }
 
-        assertEquals("歌曲已在歌单中。", error.message)
+        assertEquals("playlist_track_already_present", error.message)
         assertEquals(emptyList(), httpClient.requestedUpdateBatches)
         assertEquals(
             listOf("song-existing"),
@@ -1669,6 +1715,74 @@ class PlaylistsRepositoryTest {
         assertTrue(database.playlistTrackDao().getByPlaylistId(playlist.id).isNotEmpty())
         assertTrue(database.playlistRemoteBindingDao().getByPlaylistId(playlist.id).isNotEmpty())
         assertTrue(httpClient.remotePlaylistsByUser.getValue("alpha").containsKey("pl-alpha-1"))
+    }
+}
+
+class PlaylistImportRepositoryUiTextTest {
+    @Test fun onlineBatchAndSingleRetryFailuresKeepResourceAndImportResults() = runTest {
+        val database = createPlaylistTestDatabase()
+        try {
+            seedNavidromeSource(database, "nav-online", "online", "cred", "用户来源", indexMode = "ONLINE")
+            val delegate = RecordingOnlinePlaylistsHttpClient(
+                remotePlaylistsByUser = mutableMapOf("online" to linkedMapOf(
+                    "pl-1" to RemotePlaylistState("pl-1", "用户歌单", mutableListOf()),
+                )),
+                searchResultsByQuery = mutableMapOf(
+                    "成功歌曲 歌手" to listOf(OnlineSearchSongState("song-good", "成功歌曲", "歌手")),
+                    "失败歌曲 歌手" to listOf(OnlineSearchSongState("song-bad", "失败歌曲", "歌手")),
+                ),
+            )
+            val failedBatches = mutableListOf<List<String>>()
+            val client = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+                    val url = requireNotNull(parseUrl(request.url))
+                    val songs = url.parameters.getAll("songIdToAdd").orEmpty()
+                    return if (url.encodedPath.endsWith("/updatePlaylist") && "song-bad" in songs) {
+                        failedBatches += songs
+                        Result.success(LyricsHttpResponse(403, ""))
+                    } else delegate.request(request)
+                }
+            }
+            val repository = NavidromeOnlineRepository(database, MapPlaylistSecureCredentialStore(mutableMapOf("cred" to "pass")), client)
+            val report = repository.importPlaylistText("nav-online", "pl-1", "成功歌曲 - 歌手\n失败歌曲 - 歌手")
+            assertEquals(1, report.addedCount)
+            val issue = report.failedLines.single()
+            assertEquals(2, issue.lineNumber)
+            assertEquals("失败歌曲 - 歌手", issue.rawText)
+            assertEquals("Navidrome updatePlaylist 失败，HTTP 403", issue.message)
+            assertEquals("Navidrome updatePlaylist failed, HTTP 403", resolveUiText(issue.messageUiText(), AppLanguage.English))
+            assertEquals("Navidrome updatePlaylist 失敗，HTTP 403", resolveUiText(issue.messageUiText(), AppLanguage.TraditionalChinese))
+            assertEquals(listOf(listOf("song-good", "song-bad"), listOf("song-bad")), failedBatches)
+            assertEquals(listOf(listOf("song-good")), delegate.requestedUpdateBatches)
+            assertEquals(listOf("song-good"), delegate.remotePlaylistsByUser.getValue("online").getValue("pl-1").songIds)
+            assertEquals(0, report.alreadyExistsCount)
+            assertEquals(0, report.duplicateInputCount)
+        } finally { database.close() }
+    }
+
+    @Test fun localImportKeepsApplicationErrorWithoutAddingFailedTrack() = runTest {
+        val database = createPlaylistTestDatabase()
+        try {
+            seedNavidromeSource(database, "nav", "alpha", "cred", "用户来源")
+            database.trackDao().upsertAll(listOf(navidromeTrackEntity("nav", "song-a1")))
+            val delegate = RecordingPlaylistsHttpClient(remotePlaylistsByUser = mutableMapOf("alpha" to linkedMapOf()))
+            val client = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> =
+                    if (parseUrl(request.url)?.encodedPath?.endsWith("/updatePlaylist") == true) {
+                        Result.success(LyricsHttpResponse(503, ""))
+                    } else delegate.request(request)
+            }
+            val repository = RoomPlaylistRepository(database, MapPlaylistSecureCredentialStore(mutableMapOf("cred" to "pass")), client)
+            val playlist = repository.createPlaylist("用户歌单").getOrThrow()
+            val report = repository.importPlaylistText(playlist.id, "Song song-a1 - Artist nav").getOrThrow()
+            val issue = report.failedLines.single()
+            assertEquals("Navidrome updatePlaylist failed, HTTP 503", resolveUiText(issue.messageUiText(), AppLanguage.English))
+            assertEquals("Navidrome updatePlaylist 失敗，HTTP 503", resolveUiText(issue.messageUiText(), AppLanguage.TraditionalChinese))
+            assertEquals("Song song-a1 - Artist nav", issue.rawText)
+            assertEquals(1, issue.lineNumber)
+            assertEquals(0, report.addedCount)
+            assertTrue(database.playlistTrackDao().getByPlaylistId(playlist.id).isEmpty())
+        } finally { database.close() }
     }
 }
 

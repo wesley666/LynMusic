@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.feature.online
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -61,7 +68,7 @@ data class OnlineLibraryState(
     val canLoadMoreTracks: Boolean = false,
     val canLoadMoreAlbums: Boolean = false,
     val canLoadMoreArtists: Boolean = false,
-    val errorMessage: String? = null,
+    val errorMessage: UiText? = null,
 )
 
 private fun OnlineLibraryRootSnapshot.restoreInto(
@@ -406,7 +413,7 @@ class OnlineLibraryStore(
                     if (!it.isCurrent(sourceId, query) || version != requestVersion) {
                         it
                     } else {
-                        it.copy(isLoading = false, errorMessage = error.message ?: "在线曲库加载失败。")
+                        it.copy(isLoading = false, errorMessage = error.uiErrorText(uiText(Res.string.library_online_load_failed)))
                     }
                 }
             }
@@ -483,7 +490,7 @@ class OnlineLibraryStore(
                     if (!it.isCurrent(sourceId, query) || version != requestVersion) {
                         it
                     } else {
-                        it.copy(isLoadingMoreTracks = false, errorMessage = error.message ?: "加载更多歌曲失败。")
+                        it.copy(isLoadingMoreTracks = false, errorMessage = error.uiErrorText(uiText(Res.string.library_more_tracks_load_failed)))
                     }
                 }
             }
@@ -563,7 +570,7 @@ class OnlineLibraryStore(
                     if (!it.isCurrent(sourceId, query) || version != requestVersion) {
                         it
                     } else {
-                        it.copy(isLoadingMoreAlbums = false, errorMessage = error.message ?: "加载更多专辑失败。")
+                        it.copy(isLoadingMoreAlbums = false, errorMessage = error.uiErrorText(uiText(Res.string.library_more_albums_load_failed)))
                     }
                 }
             }
@@ -643,7 +650,7 @@ class OnlineLibraryStore(
                     if (!it.isCurrent(sourceId, query) || version != requestVersion) {
                         it
                     } else {
-                        it.copy(isLoadingMoreArtists = false, errorMessage = error.message ?: "加载更多艺人失败。")
+                        it.copy(isLoadingMoreArtists = false, errorMessage = error.uiErrorText(uiText(Res.string.library_more_artists_load_failed)))
                     }
                 }
             }
@@ -698,7 +705,7 @@ class OnlineLibraryStore(
                     } else {
                         it.copy(
                             loadingAlbumIds = it.loadingAlbumIds - albumId,
-                            errorMessage = error.message ?: "专辑详情加载失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.library_album_detail_load_failed)),
                         )
                     }
                 }
@@ -758,7 +765,7 @@ class OnlineLibraryStore(
                     } else {
                         it.copy(
                             loadingArtistAlbumIds = it.loadingArtistAlbumIds - artistId,
-                            errorMessage = error.message ?: "艺人详情加载失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.library_artist_detail_load_failed)),
                         )
                     }
                 }
@@ -782,7 +789,7 @@ class OnlineLibraryStore(
         val seed = OnlineAlbumItem(
             album = Album(
                 id = albumId,
-                title = intent.albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: "未知专辑",
+                title = intent.albumTitle?.trim()?.takeIf { it.isNotBlank() } ?: "",
                 artistName = intent.artistName?.trim()?.takeIf { it.isNotBlank() },
             ),
             artworkLocator = intent.artworkLocator?.trim()?.takeIf { it.isNotBlank() },
@@ -800,7 +807,7 @@ class OnlineLibraryStore(
         val seed = OnlineArtistItem(
             artist = Artist(
                 id = artistId,
-                name = intent.artistName?.trim()?.takeIf { it.isNotBlank() } ?: "未知艺人",
+                name = intent.artistName?.trim()?.takeIf { it.isNotBlank() } ?: "",
             ),
             trackCount = null,
             albumCount = null,
@@ -860,8 +867,8 @@ data class OnlineFavoritesState(
     val isLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
     val canLoadMore: Boolean = false,
-    val errorMessage: String? = null,
-    val message: String? = null,
+    val errorMessage: UiText? = null,
+    val message: UiText? = null,
 ) {
     val filteredTracks: List<Track>
         get() {
@@ -1098,7 +1105,7 @@ class OnlineFavoritesStore(
                     } else {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "在线喜欢加载失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.favorites_online_load_failed)),
                             message = null,
                         )
                     }
@@ -1156,7 +1163,7 @@ class OnlineFavoritesStore(
                     } else {
                         it.copy(
                             isLoadingMore = false,
-                            errorMessage = error.message ?: "加载更多喜欢失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.favorites_more_tracks_load_failed)),
                             message = null,
                         )
                     }
@@ -1198,7 +1205,7 @@ class OnlineFavoritesStore(
                             } else {
                                 it.tracks.filterNot { item -> item.id == track.id }
                             },
-                            message = if (favorite) "已喜欢。" else "已取消喜欢。",
+                            message = if (favorite) uiText(Res.string.favorites_track_added) else uiText(Res.string.favorites_track_removed),
                             errorMessage = null,
                         )
                     }
@@ -1212,7 +1219,7 @@ class OnlineFavoritesStore(
                         it
                     } else {
                         it.copy(
-                            errorMessage = error.message ?: "在线喜欢更新失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.favorites_online_update_failed)),
                             message = null,
                         )
                     }
@@ -1247,8 +1254,8 @@ data class OnlinePlaylistsState(
     val isMutating: Boolean = false,
     val isImporting: Boolean = false,
     val playlistImportReport: PlaylistImportReport? = null,
-    val errorMessage: String? = null,
-    val message: String? = null,
+    val errorMessage: UiText? = null,
+    val message: UiText? = null,
 )
 
 sealed interface OnlinePlaylistsIntent {
@@ -1346,13 +1353,13 @@ class OnlinePlaylistsStore(
                 playlistId = intent.playlistId,
                 version = ++detailRequestVersion,
             )
-            is OnlinePlaylistsIntent.CreatePlaylist -> mutate("歌单已创建。") {
+            is OnlinePlaylistsIntent.CreatePlaylist -> mutate(uiText(Res.string.playlist_created)) {
                 repository.createPlaylist(it, intent.name)
             }
-            is OnlinePlaylistsIntent.RenamePlaylist -> mutate("歌单已重命名。") {
+            is OnlinePlaylistsIntent.RenamePlaylist -> mutate(uiText(Res.string.playlist_renamed)) {
                 repository.renamePlaylist(it, intent.playlistId, intent.name)
             }
-            is OnlinePlaylistsIntent.DeletePlaylist -> mutate("歌单已删除。") {
+            is OnlinePlaylistsIntent.DeletePlaylist -> mutate(uiText(Res.string.playlist_deleted)) {
                 repository.deletePlaylist(it, intent.playlistId)
                 detailRequestVersion += 1
                 updateState { current ->
@@ -1364,19 +1371,19 @@ class OnlinePlaylistsStore(
                 }
             }
             is OnlinePlaylistsIntent.CreatePlaylistAndAddTrack -> mutate(
-                successMessage = "歌单已创建并加入歌曲。",
+                successMessage = uiText(Res.string.playlist_created_with_track),
                 sourceId = intent.sourceId,
             ) {
                 val playlist = repository.createPlaylist(it, intent.name)
                 repository.addTrackToPlaylist(it, playlist.id, intent.track)
             }
             is OnlinePlaylistsIntent.AddTrack -> mutate(
-                successMessage = "歌曲已加入歌单。",
+                successMessage = uiText(Res.string.playlist_track_added),
                 sourceId = intent.sourceId,
             ) {
                 repository.addTrackToPlaylist(it, intent.playlistId, intent.track)
             }
-            is OnlinePlaylistsIntent.RemoveTrack -> mutate("歌曲已移除。") {
+            is OnlinePlaylistsIntent.RemoveTrack -> mutate(uiText(Res.string.playlist_track_removed)) {
                 repository.removeTrackFromPlaylist(it, intent.playlistId, intent.index)
             }
             is OnlinePlaylistsIntent.ImportPlaylistText -> importPlaylistText(intent.playlistId, intent.text)
@@ -1502,7 +1509,7 @@ class OnlinePlaylistsStore(
                     } else {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "在线歌单加载失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.playlist_online_list_load_failed)),
                             message = null,
                         )
                     }
@@ -1575,7 +1582,7 @@ class OnlinePlaylistsStore(
                     } else {
                         it.copy(
                             isLoadingDetail = false,
-                            errorMessage = error.message ?: "在线歌单详情加载失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.playlist_online_detail_load_failed)),
                             message = null,
                         )
                     }
@@ -1635,7 +1642,7 @@ class OnlinePlaylistsStore(
                     if (it.sourceId == sourceId) {
                         it.copy(
                             isImporting = false,
-                            errorMessage = error.message ?: "在线歌单导入失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.playlist_online_import_failed)),
                             message = null,
                         )
                     } else {
@@ -1657,7 +1664,7 @@ class OnlinePlaylistsStore(
     }
 
     private suspend fun mutate(
-        successMessage: String,
+        successMessage: UiText,
         sourceId: String? = state.value.sourceId,
         block: suspend (String) -> Unit,
     ) {
@@ -1699,12 +1706,12 @@ class OnlinePlaylistsStore(
                     if (it.sourceId == targetSourceId) {
                         it.copy(
                             isMutating = false,
-                            errorMessage = error.message ?: "在线歌单操作失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.playlist_online_operation_failed)),
                             message = null,
                         )
                     } else {
                         it.copy(
-                            errorMessage = error.message ?: "在线歌单操作失败。",
+                            errorMessage = error.uiErrorText(uiText(Res.string.playlist_online_operation_failed)),
                             message = null,
                         )
                     }

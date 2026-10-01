@@ -14,12 +14,96 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.NetworkConnectionState
 import top.iwesley.lyn.music.core.model.NetworkConnectionType
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.resources.*
 
 class RemoteSourceAddressSelectorTest {
+    @Test
+    fun `offline download http failures retain status through wrapping and translation`() = runTest {
+        for (statusCode in listOf(200, 206, 299)) {
+            checkOfflineDownloadHttpStatus(statusCode)
+        }
+        for (statusCode in listOf(400, 401, 403, 404, 408, 500, 503, 599)) {
+            val failure = assertFailsWith<UiTextException> { checkOfflineDownloadHttpStatus(statusCode) }
+            assertEquals(statusCode, (failure as RemoteSourceHttpFailure).httpStatusCode)
+            val retryable = statusCode == 408 || statusCode in 500..599
+            assertEquals(retryable, isRemoteSourceAddressFallbackAllowed(failure))
+            assertEquals(retryable, isRemoteSourceAddressFallbackAllowed(IllegalStateException("wrapper", failure)))
+            for ((language, expected) in listOf(
+                AppLanguage.English to "Download failed: HTTP $statusCode.",
+                AppLanguage.SimplifiedChinese to "下载失败，HTTP $statusCode。",
+                AppLanguage.TraditionalChinese to "下載失敗，HTTP $statusCode。",
+            )) {
+                assertEquals(expected, resolveUiText(failure.text, language))
+            }
+        }
+    }
+
+    @Test
+    fun `offline download http timeouts and server errors attempt the alternate address`() = runTest {
+        for (statusCode in listOf(408, 500, 503)) {
+            val selector = RemoteSourceAddressSelector(TestNetworkConnectionTypeProvider(NetworkConnectionType.WIFI))
+            val attempts = mutableListOf<RemoteSourceAddressKind>()
+            val result = selector.withAddressFallback(
+                sourceId = TEST_SOURCE_ID,
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { candidate ->
+                attempts += candidate.kind
+                checkOfflineDownloadHttpStatus(if (candidate.kind == RemoteSourceAddressKind.LAN) statusCode else 200)
+                "downloaded"
+            }
+            assertEquals("downloaded", result)
+            assertEquals(listOf(RemoteSourceAddressKind.LAN, RemoteSourceAddressKind.WAN), attempts)
+            assertEquals(RemoteSourceAddressKind.WAN, selector.testOrder().first().kind)
+        }
+    }
+
+    @Test
+    fun `offline download http authorization and client errors do not attempt the alternate address`() = runTest {
+        for (statusCode in listOf(400, 401, 403, 404)) {
+            val selector = RemoteSourceAddressSelector(TestNetworkConnectionTypeProvider(NetworkConnectionType.WIFI))
+            val attempts = mutableListOf<RemoteSourceAddressKind>()
+            assertFailsWith<UiTextException> {
+                selector.withAddressFallback(
+                    sourceId = TEST_SOURCE_ID,
+                    sourceType = ImportSourceType.NAVIDROME,
+                    lanBaseUrl = LAN_URL,
+                    wanBaseUrl = WAN_URL,
+                    normalizeBaseUrl = ::identity,
+                ) { candidate ->
+                    attempts += candidate.kind
+                    checkOfflineDownloadHttpStatus(statusCode)
+                }
+            }
+            assertEquals(listOf(RemoteSourceAddressKind.LAN), attempts)
+        }
+    }
+
+    @Test
+    fun `resource diagnostics never become network classification input`() {
+        assertFalse(isRemoteSourceAddressFallbackAllowed(UiTextException(uiText(Res.string.source_credentials_missing, "network"))))
+        assertFalse(isRemoteSourceAddressFallbackAllowed(UiTextException(uiText(Res.string.source_folder_missing, "/network/connection"))))
+        assertTrue(isRemoteSourceAddressFallbackAllowed(UiTextException(UiText.Raw("HTTP 503"))))
+    }
+
+    @Test
+    fun `classifier terminates for cyclic causes`() {
+        val first = IllegalStateException("codec unsupported")
+        val second = IllegalStateException("wrapper", first)
+        first.initCause(second)
+        assertFalse(isRemoteSourceAddressFallbackAllowed(first))
+    }
 
     @Test
     fun `wifi prefers lan and mobile prefers wan`() {

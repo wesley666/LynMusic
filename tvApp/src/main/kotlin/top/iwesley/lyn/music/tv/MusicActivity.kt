@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.displayText
+import top.iwesley.lyn.music.uiString
+
 import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
@@ -74,18 +81,22 @@ class MusicActivity : TvComponentActivity() {
         TvUpnpRendererService.start(this)
         val component = tvAppComponentResult().getOrNull()
         setContent {
-            ConfigureTvImageLoader()
-            val state by TvUpnpRendererRouter.state.collectAsState()
-            MusicRendererTheme {
-                MusicRendererScreen(
-                    state = state,
-                    lyricsRepository = component?.lyricsRepository,
-                    onPlay = TvUpnpRendererRouter::play,
-                    onPause = TvUpnpRendererRouter::pause,
-                    onSeek = TvUpnpRendererRouter::seekTo,
-                )
+            ProvideUiLanguage {
+                ConfigureTvImageLoader()
+                val state by TvUpnpRendererRouter.state.collectAsState()
+                MusicRendererTheme {
+                    MusicRendererScreen(
+                        state = state,
+                        lyricsRepository = component?.lyricsRepository,
+                        onPlay = TvUpnpRendererRouter::play,
+                        onPause = TvUpnpRendererRouter::pause,
+                        onSeek = TvUpnpRendererRouter::seekTo,
+                    )
+                }
+
+
             }
-        }
+}
     }
 
 
@@ -260,7 +271,7 @@ private fun MusicRendererInfoPanel(
         modifier = modifier.padding(vertical = 6.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        state.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+        (state.errorText?.displayText() ?: state.errorMessage?.takeIf { it.isNotBlank() }?.let { uiString(Res.string.ui_error_with_details, it) })?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.titleMedium,
@@ -271,7 +282,7 @@ private fun MusicRendererInfoPanel(
             )
         }
         Text(
-            text = state.title,
+            text = if (state.hasMedia) state.title else uiString(Res.string.renderer_waiting_for_cast),
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.ExtraBold,
@@ -280,7 +291,7 @@ private fun MusicRendererInfoPanel(
         )
         Text(
             text = listOfNotNull(state.artistName, state.albumTitle).joinToString(" · ")
-                .ifBlank { "来自外部投屏" },
+                .ifBlank { uiString(Res.string.cast_external_session_label) },
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
@@ -390,7 +401,7 @@ private fun MusicRendererBottomBar(
                 } else {
                     Icons.Rounded.PlayArrow
                 },
-                contentDescription = if (state.status == TvRendererPlaybackStatus.Playing) "暂停" else "播放",
+                contentDescription = if (state.status == TvRendererPlaybackStatus.Playing) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(42.dp),
             )

@@ -12,7 +12,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.ImportScanSummary
@@ -51,8 +51,8 @@ class PlaylistsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(listOf("晨跑"), state.playlists.map { it.name })
-        assertEquals("晨跑", state.selectedPlaylist?.name)
+        assertLocalizedEquals(listOf("晨跑"), state.playlists.map { it.name })
+        assertLocalizedEquals("晨跑", state.selectedPlaylist?.name)
         scope.cancel()
     }
 
@@ -68,11 +68,11 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.CreatePlaylistAndAddTrack("通勤", track))
         advanceUntilIdle()
 
-        assertEquals(listOf(track.id), repository.addedTrackIds)
-        assertEquals(listOf("通勤"), store.state.value.playlists.map { it.name })
+        assertLocalizedEquals(listOf(track.id), repository.addedTrackIds)
+        assertLocalizedEquals(listOf("通勤"), store.state.value.playlists.map { it.name })
         val selected = store.state.value.selectedPlaylist
         assertNotNull(selected)
-        assertEquals(listOf(track.id), selected.tracks.map { it.track.id })
+        assertLocalizedEquals(listOf(track.id), selected.tracks.map { it.track.id })
         scope.cancel()
     }
 
@@ -84,19 +84,19 @@ class PlaylistsStoreTest {
         PlaylistsStore(repository, importSources, scope)
 
         advanceUntilIdle()
-        assertEquals(0, repository.refreshCalls)
+        assertLocalizedEquals(0, repository.refreshCalls)
 
         importSources.updateSources(
             listOf(source("nav-1", ImportSourceType.NAVIDROME, "Navidrome")),
         )
         advanceUntilIdle()
-        assertEquals(1, repository.refreshCalls)
+        assertLocalizedEquals(1, repository.refreshCalls)
 
         importSources.updateSources(
             listOf(source("nav-1", ImportSourceType.NAVIDROME, "Navidrome")),
         )
         advanceUntilIdle()
-        assertEquals(1, repository.refreshCalls)
+        assertLocalizedEquals(1, repository.refreshCalls)
 
         importSources.updateSources(
             listOf(
@@ -105,7 +105,7 @@ class PlaylistsStoreTest {
             ),
         )
         advanceUntilIdle()
-        assertEquals(1, repository.refreshCalls)
+        assertLocalizedEquals(1, repository.refreshCalls)
         scope.cancel()
     }
 
@@ -120,7 +120,7 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.CreatePlaylist("重复"))
         advanceUntilIdle()
 
-        assertEquals("歌单已存在", store.state.value.message)
+        assertLocalizedEquals("歌单创建失败。\n歌单已存在", store.state.value.message)
         scope.cancel()
     }
 
@@ -140,10 +140,10 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.DeletePlaylist(playlistId))
         advanceUntilIdle()
 
-        assertEquals(listOf(playlistId), repository.deletedPlaylistIds)
+        assertLocalizedEquals(listOf(playlistId), repository.deletedPlaylistIds)
         assertTrue(store.state.value.playlists.isEmpty())
-        assertEquals(null, store.state.value.selectedPlaylistId)
-        assertEquals(null, store.state.value.selectedPlaylist)
+        assertLocalizedEquals(null, store.state.value.selectedPlaylistId)
+        assertLocalizedEquals(null, store.state.value.selectedPlaylist)
         scope.cancel()
     }
 
@@ -163,7 +163,7 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.DeletePlaylist(playlistId))
         advanceUntilIdle()
 
-        assertEquals("删除失败", store.state.value.message)
+        assertLocalizedEquals("删除歌单失败。\n删除失败", store.state.value.message)
         assertTrue(store.state.value.playlists.isNotEmpty())
         scope.cancel()
     }
@@ -181,7 +181,7 @@ class PlaylistsStoreTest {
         val store = PlaylistsStore(repository, importSources, scope)
 
         advanceUntilIdle()
-        assertEquals(
+        assertLocalizedEquals(
             listOf(
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
@@ -193,15 +193,15 @@ class PlaylistsStoreTest {
 
         store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
         advanceUntilIdle()
-        assertEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
+        assertLocalizedEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
 
         importSources.updateSources(
             listOf(source("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录")),
         )
         advanceUntilIdle()
 
-        assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
-        assertEquals(
+        assertLocalizedEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+        assertLocalizedEquals(
             listOf(
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
@@ -234,7 +234,7 @@ class PlaylistsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             OfflineDownloadStatus.Completed,
             store.state.value.offlineDownloadsByTrackId["track-nav-1"]?.status,
         )
@@ -249,7 +249,7 @@ class PlaylistsStoreTest {
         )
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             OfflineDownloadStatus.Failed,
             store.state.value.offlineDownloadsByTrackId["track-nav-1"]?.status,
         )
@@ -271,10 +271,10 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.ImportPlaylistText(playlistId, "咖啡恋曲 - 旺福"))
         advanceUntilIdle()
 
-        assertEquals(listOf(playlistId to "咖啡恋曲 - 旺福"), repository.importRequests)
-        assertEquals(2, store.state.value.playlistImportReport?.addedCount)
-        assertEquals(false, store.state.value.isImporting)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(listOf(playlistId to "咖啡恋曲 - 旺福"), repository.importRequests)
+        assertLocalizedEquals(2, store.state.value.playlistImportReport?.addedCount)
+        assertLocalizedEquals(false, store.state.value.isImporting)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -289,9 +289,9 @@ class PlaylistsStoreTest {
         store.dispatch(PlaylistsIntent.ImportPlaylistText("missing", "咖啡恋曲 - 旺福"))
         advanceUntilIdle()
 
-        assertEquals("导入失败", store.state.value.message)
-        assertEquals(null, store.state.value.playlistImportReport)
-        assertEquals(false, store.state.value.isImporting)
+        assertLocalizedEquals("歌单导入失败。\n导入失败", store.state.value.message)
+        assertLocalizedEquals(null, store.state.value.playlistImportReport)
+        assertLocalizedEquals(false, store.state.value.isImporting)
         scope.cancel()
     }
 }

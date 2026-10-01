@@ -1,5 +1,15 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.APP_LANGUAGE_PREFERENCE_KEY
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguagePreferencesStore
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.appLanguageOrDefault
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
+
 import androidx.room.Room
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
@@ -32,6 +42,7 @@ import top.iwesley.lyn.music.core.model.EmbyCredential
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
 import top.iwesley.lyn.music.core.model.IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS
 import top.iwesley.lyn.music.core.model.ImportScanReport
+import top.iwesley.lyn.music.core.model.ImportScanWarning
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
 import top.iwesley.lyn.music.core.model.ImportStreamingScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -107,6 +118,7 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSLocale
+import platform.Foundation.preferredLanguages
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
@@ -138,13 +150,13 @@ import platform.darwin.dispatch_get_main_queue
 import platform.posix.memcpy
 
 fun createIosAppComponent(): top.iwesley.lyn.music.LynMusicAppComponent {
+    val appPreferencesStore = IosAppPreferencesStore()
     val database = openLynMusicDatabase(
         Room.databaseBuilder<LynMusicDatabase>(
             name = documentDirectory() + "/lynmusic.db",
         ),
     ).getOrThrow()
     val secureStore = IosKeychainCredentialStore().withSecureInMemoryCache()
-    val appPreferencesStore = IosAppPreferencesStore()
     val networkConnectionTypeProvider = IosNetworkConnectionTypeProvider()
     val remoteSourceAddressSelector = RemoteSourceAddressSelector(networkConnectionTypeProvider)
     val navidromeHttpClient = IosLyricsHttpClient()
@@ -368,11 +380,23 @@ private class IosKeychainCredentialStore : SecureCredentialStore {
     }
 }
 
-private class IosAppPreferencesStore : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
+private class IosAppPreferencesStore : AppLanguagePreferencesStore, PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
     CompactPlayerLyricsPreferencesStore, NavidromeAudioQualityPreferencesStore, LyricsShareFontPreferencesStore,
     PlayerArtworkStylePreferencesStore, LibrarySourceFilterPreferencesStore,
     AutoOpenPlayerOnStartupPreferencesStore {
     private val defaults = NSUserDefaults.standardUserDefaults
+    private val mutableAppLanguage = MutableStateFlow(appLanguageOrDefault(defaults.stringForKey(APP_LANGUAGE_PREFERENCE_KEY)))
+    override val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
+    init {
+        AppLanguageRuntime.install(this, platform.Foundation.NSLocale.preferredLanguages.firstOrNull() as? String ?: "en")
+    }
+    override suspend fun setAppLanguage(language: AppLanguage) {
+        AppLanguageRuntime.updateSystemLanguage(NSLocale.preferredLanguages.firstOrNull() as? String ?: "en")
+        defaults.setObject(language.storageValue, APP_LANGUAGE_PREFERENCE_KEY)
+        mutableAppLanguage.value = language
+        AppLanguageRuntime.update(language)
+    }
+
     private val mutableUseSambaCache = MutableStateFlow(
         if (defaults.objectForKey(KEY_USE_SAMBA_CACHE) == null) false else defaults.boolForKey(KEY_USE_SAMBA_CACHE),
     )
@@ -694,19 +718,35 @@ private class IosImportSourceGateway(
     }
 
     override suspend fun testSamba(draft: SambaSourceDraft) {
-        error("当前 iOS 构建建议通过 Files 连接 SMB。")
+        throw UiTextException(uiText(Res.string.ios_samba_files_recommended))
     }
 
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
-        return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建建议通过 Files 连接 SMB。"))
+        return ImportScanReport(
+            emptyList(),
+            warnings = listOf(
+                ImportScanWarning(
+                    diagnostic = "当前 iOS 构建建议通过 Files 连接 SMB。",
+                    text = uiText(Res.string.ios_samba_files_recommended),
+                ),
+            ),
+        )
     }
 
     override suspend fun testWebDav(draft: WebDavSourceDraft) {
-        error("当前 iOS 构建暂未实现应用内 WebDAV。")
+        throw UiTextException(uiText(Res.string.ios_webdav_not_supported))
     }
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
-        return ImportScanReport(emptyList(), warnings = listOf("当前 iOS 构建暂未实现应用内 WebDAV。"))
+        return ImportScanReport(
+            emptyList(),
+            warnings = listOf(
+                ImportScanWarning(
+                    diagnostic = "当前 iOS 构建暂未实现应用内 WebDAV。",
+                    text = uiText(Res.string.ios_webdav_not_supported),
+                ),
+            ),
+        )
     }
 
     override suspend fun testNavidrome(draft: NavidromeSourceDraft) {

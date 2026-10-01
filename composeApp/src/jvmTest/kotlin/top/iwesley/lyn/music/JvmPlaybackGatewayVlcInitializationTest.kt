@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
 import androidx.room.Room
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -32,6 +34,8 @@ import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.PlaybackLoadToken
 import top.iwesley.lyn.music.core.model.PlaybackPreferencesStore
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
@@ -46,6 +50,32 @@ import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class JvmPlaybackGatewayVlcInitializationTest {
+    @Test fun rejectedMediaLoadKeepsLocalizedErrorForPlayingAndPausedLoads() = runTest {
+        for (playWhenReady in listOf(true, false)) {
+            val database = createVlcGatewayTestDatabase()
+            val runtime = FakeVlcPlaybackRuntime(startSucceeds = false)
+            val gateway = createGateway(database, runtimeDispatcher = UnconfinedTestDispatcher(testScheduler), runtimeInitializer = {
+                JvmVlcRuntimeInitializationResult(runtime, "/auto/vlc/lib", null, "/auto/vlc/lib")
+            })
+            try {
+                runCurrent()
+                val track = sampleVlcGatewayTrack("track-1")
+                gateway.load(track, playWhenReady, startPositionMs = 0L, loadToken = PlaybackLoadToken())
+                waitForStartCalls(runtime)
+                val deadline = System.nanoTime() + 2_000_000_000L
+                while (gateway.state.value.errorText == null && System.nanoTime() < deadline) {
+                    kotlinx.coroutines.yield()
+                    Thread.sleep(10L)
+                }
+                val text = checkNotNull(gateway.state.value.errorText)
+                assertEquals("Failed to access the song: Unable to load media: file:///music/track-1.mp3", resolveUiText(text, AppLanguage.English))
+                assertEquals("访问歌曲失败：无法加载媒体：file:///music/track-1.mp3", resolveUiText(text, AppLanguage.SimplifiedChinese))
+                assertEquals("存取歌曲失敗：無法載入媒體：file:///music/track-1.mp3", resolveUiText(text, AppLanguage.TraditionalChinese))
+                assertEquals(listOf(RuntimeStartCall(track.mediaLocator, playWhenReady)), runtime.startCalls)
+                assertTrue(runtime.seekCalls.isEmpty())
+            } finally { gateway.release(); database.close() }
+        }
+    }
 
     @Test
     fun `gateway creation does not wait for vlc initializer`() = runTest {
@@ -97,7 +127,9 @@ class JvmPlaybackGatewayVlcInitializationTest {
                 loadToken = PlaybackLoadToken(),
             )
 
-            assertEquals("正在初始化 VLC, 用户也可能没有安装 VLC 播放器...", gateway.state.value.errorMessage)
+            assertEquals("playback_vlc_initializing", gateway.state.value.errorMessage)
+            assertEquals("Initializing VLC. VLC may need to be installed.", resolveUiText(checkNotNull(gateway.state.value.errorText), AppLanguage.English))
+            assertEquals("正在初始化 VLC，使用者也可能尚未安裝 VLC 播放器…", resolveUiText(checkNotNull(gateway.state.value.errorText), AppLanguage.TraditionalChinese))
             assertEquals(2_500L, gateway.state.value.positionMs)
             assertTrue(runtime.startCalls.isEmpty())
 
@@ -121,6 +153,7 @@ class JvmPlaybackGatewayVlcInitializationTest {
             advanceUntilIdle()
             assertEquals(listOf(2_500L), runtime.seekCalls)
             assertNull(gateway.state.value.errorMessage)
+            assertNull(gateway.state.value.errorText)
             assertEquals("/auto/vlc/lib", desktopPrefs.desktopVlcAutoDetectedPath.value)
         } finally {
             gateway.release()
@@ -242,8 +275,13 @@ class JvmPlaybackGatewayVlcInitializationTest {
             inactiveGate.complete(unavailableVlcResult())
             advanceUntilIdle()
 
-            assertEquals("未检测到 VLC，请安装或在设置手动选择 VLC 路径。", activeGateway.state.value.errorMessage)
+            assertEquals("playback_vlc_unavailable", activeGateway.state.value.errorMessage)
+            assertEquals("VLC was not detected. Install VLC or choose its path in Settings.",
+                resolveUiText(checkNotNull(activeGateway.state.value.errorText), AppLanguage.English))
+            assertEquals("未偵測到 VLC，請安裝或在設定中手動選擇 VLC 路徑。",
+                resolveUiText(checkNotNull(activeGateway.state.value.errorText), AppLanguage.TraditionalChinese))
             assertNull(inactiveGateway.state.value.errorMessage)
+            assertNull(inactiveGateway.state.value.errorText)
         } finally {
             activeGateway.release()
             inactiveGateway.release()
@@ -526,6 +564,7 @@ private data class RuntimeStartCall(
 private class FakeVlcPlaybackRuntime(
     override val nativeLibraryPath: String? = "/auto/vlc/lib",
     private val nativeCallDelayMs: Long = 0L,
+    private val startSucceeds: Boolean = true,
 ) : JvmVlcPlaybackRuntime {
     val startCalls = mutableListOf<RuntimeStartCall>()
     val seekCalls = mutableListOf<Long>()
@@ -570,12 +609,12 @@ private class FakeVlcPlaybackRuntime(
 
     override fun start(media: JvmVlcPlaybackMedia): Boolean = recordNativeCall {
         startCalls += RuntimeStartCall(media.sourceDescription(), playWhenReady = true)
-        true
+        startSucceeds
     }
 
     override fun startPaused(media: JvmVlcPlaybackMedia): Boolean = recordNativeCall {
         startCalls += RuntimeStartCall(media.sourceDescription(), playWhenReady = false)
-        true
+        startSucceeds
     }
 
     override fun play() = recordNativeCall { Unit }

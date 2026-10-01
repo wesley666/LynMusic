@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.playbackErrorText
+import top.iwesley.lyn.music.displayText
+import top.iwesley.lyn.music.uiDisplayText
+import top.iwesley.lyn.music.uiString
+
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -133,28 +142,32 @@ class TvPlayerActivity : TvComponentActivity() {
         var appComponentResult by mutableStateOf(tvAppComponentResult())
 
         setContent {
-            val component = appComponentResult.getOrNull()
-            if (component == null) {
-                TvMainTheme {
-                    TvPlayerUnavailableScreen(
-                        message = "组件初始化失败，请检查存储状态后重试。",
-                        onRetry = {
-                            appComponentResult = tvAppComponentResult()
-                        },
+            ProvideUiLanguage {
+                val component = appComponentResult.getOrNull()
+                if (component == null) {
+                    TvMainTheme {
+                        TvPlayerUnavailableScreen(
+                            message = uiString(Res.string.startup_component_initialization_failed),
+                            onRetry = {
+                                appComponentResult = tvAppComponentResult()
+                            },
+                            onBack = ::finish,
+                        )
+                    }
+                    return@ProvideUiLanguage
+                }
+
+                val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
+                ProvideTvPlayerDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                    TvPlayerApp(
+                        component = component,
                         onBack = ::finish,
                     )
                 }
-                return@setContent
-            }
 
-            val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
-            ProvideTvPlayerDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                TvPlayerApp(
-                    component = component,
-                    onBack = ::finish,
-                )
+
             }
-        }
+}
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -190,29 +203,24 @@ private fun TvPlayerApp(
 
     val playerState by component.playerStore.state.collectAsState()
     val favoritesState by component.favoritesStore.state.collectAsState()
-    val playbackToastRawMessage = playerState.message?.takeIf { it.isNotBlank() }
+    val playbackToastRawMessage = playerState.message
     val playbackToastTrackId = playerState.snapshot.currentTrack?.id
-    val isPlaybackErrorToast = playbackToastRawMessage == playerState.snapshot.errorMessage
-    var playbackToastMessage by remember { mutableStateOf<String?>(null) }
+    val isPlaybackErrorToast = playbackToastRawMessage != null && playbackToastRawMessage == playerState.snapshot.playbackErrorText()
+    var playbackToastMessage by remember { mutableStateOf<top.iwesley.lyn.music.core.model.UiText?>(null) }
 
     LaunchedEffect(playbackToastTrackId, playbackToastRawMessage, isPlaybackErrorToast) {
         if (playbackToastRawMessage == null) {
             playbackToastMessage = null
             return@LaunchedEffect
         }
-        val displayMessage = if (isPlaybackErrorToast) {
-            formatTvPlaybackErrorToast(playbackToastRawMessage)
-        } else {
-            playbackToastRawMessage
-        }
-        playbackToastMessage = displayMessage
+        playbackToastMessage = playbackToastRawMessage
         Log.w(
             TV_PLAYER_LOG_TAG,
             "tv-player-toast track=${playbackToastTrackId.orEmpty()} playbackError=$isPlaybackErrorToast " +
-                "message=${playbackToastRawMessage.take(TV_PLAYER_LOG_MESSAGE_LIMIT)}",
+                "message=${playbackToastRawMessage.toString().take(TV_PLAYER_LOG_MESSAGE_LIMIT)}",
         )
         kotlinx.coroutines.delay(TV_PLAYER_TOAST_DURATION_MS)
-        if (playbackToastMessage == displayMessage) {
+        if (playbackToastMessage == playbackToastRawMessage) {
             playbackToastMessage = null
         }
         if (playerState.message == playbackToastRawMessage) {
@@ -234,7 +242,7 @@ private fun TvPlayerApp(
             onToggleFavorite = { track ->
                 component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
             },
-            toastMessage = playbackToastMessage,
+            toastMessage = playbackToastMessage?.displayText(),
             onBack = onBack,
         )
     }
@@ -255,7 +263,7 @@ private fun TvPlayerScreen(
     val track = snapshot.currentTrack
     if (track == null) {
         TvPlayerUnavailableScreen(
-            message = "还没有正在播放的歌曲。",
+            message = uiString(Res.string.player_no_current_track),
             onBack = onBack,
         )
         return
@@ -270,14 +278,10 @@ private fun TvPlayerScreen(
         artworkModel = artwork.target,
         artworkCacheVersion = artwork.cacheVersion,
     )
-    val lyricsTitle = remember(
-        snapshot.currentDisplayArtistName,
-        snapshot.currentDisplayTitle,
-        track.title,
-    ) {
+    val lyricsTitle = run {
         val artistName = snapshot.currentDisplayArtistName
             ?.takeIf { it.isNotBlank() }
-            ?: "未知艺人"
+            ?: uiString(Res.string.common_unknown_artist)
         val title = snapshot.currentDisplayTitle.ifBlank { track.title }
         "$artistName $title"
     }
@@ -383,17 +387,11 @@ private fun TvPlayerInfoPane(
     artworkMemoryCacheKey: String?,
     modifier: Modifier = Modifier,
 ) {
-    val audioQuality = remember(
-        track,
-        snapshot.currentPlaybackAudioFormat,
-        snapshot.currentNavidromeAudioQuality,
-    ) {
-        formatTvCurrentPlaybackAudioQuality(
-            track = track,
-            audioFormat = snapshot.currentPlaybackAudioFormat,
-            navidromeQuality = snapshot.currentNavidromeAudioQuality,
-        ) ?: formatTvTrackAudioQuality(track)
-    }
+    val audioQuality = formatTvCurrentPlaybackAudioQuality(
+        track = track,
+        audioFormat = snapshot.currentPlaybackAudioFormat,
+        navidromeQuality = snapshot.currentNavidromeAudioQuality,
+    ) ?: formatTvTrackAudioQuality(track)
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.Center,
@@ -422,14 +420,14 @@ private fun TvPlayerInfoPane(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                text = snapshot.currentDisplayArtistName ?: uiString(Res.string.common_unknown_artist),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = snapshot.currentDisplayAlbumTitle ?: "未知专辑",
+                text = snapshot.currentDisplayAlbumTitle ?: uiString(Res.string.common_unknown_album),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
@@ -547,7 +545,7 @@ private fun TvPlayerBottomControls(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Search,
-                    contentDescription = "搜索歌词",
+                    contentDescription = uiString(Res.string.lyrics_search_action),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -563,12 +561,12 @@ private fun TvPlayerBottomControls(
                 ) {
                     Icon(
                         imageVector = tvPlaybackModeIcon(snapshot.mode),
-                        contentDescription = "播放模式",
+                        contentDescription = uiString(Res.string.player_playback_mode_label),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "上一首")
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = uiString(Res.string.player_previous_track))
                 }
                 IconButton(
                     onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
@@ -576,17 +574,17 @@ private fun TvPlayerBottomControls(
                 ) {
                     Icon(
                         imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                        contentDescription = if (snapshot.isPlaying) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
                         modifier = Modifier.size(36.dp),
                     )
                 }
                 IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "下一首")
+                    Icon(Icons.Rounded.SkipNext, contentDescription = uiString(Res.string.player_next_track))
                 }
                 IconButton(onClick = onToggleFavorite) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        contentDescription = if (isFavorite) "取消喜欢" else "喜欢",
+                        contentDescription = if (isFavorite) uiString(Res.string.favorites_remove_track) else uiString(Res.string.favorites_likes_title),
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -596,7 +594,7 @@ private fun TvPlayerBottomControls(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
-                        contentDescription = "播放列表",
+                        contentDescription = uiString(Res.string.player_playback_list_title),
                         tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
@@ -866,13 +864,13 @@ private fun TvPlayerQueuePanel(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "播放列表",
+                    text = uiString(Res.string.player_playback_list_title),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.ExtraBold,
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Text(
-                    text = "${snapshot.queue.size} 首 · ${tvPlaybackModeLabel(snapshot.mode)}",
+                    text = uiString(Res.plurals.player_queue_summary, (snapshot.queue.size).toInt(), snapshot.queue.size, tvPlaybackModeLabel(snapshot.mode)),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.titleSmall,
                 )
@@ -883,7 +881,7 @@ private fun TvPlayerQueuePanel(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
-                    contentDescription = "关闭播放列表",
+                    contentDescription = uiString(Res.string.player_close_queue),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -891,7 +889,7 @@ private fun TvPlayerQueuePanel(
 
         if (snapshot.queue.isEmpty()) {
             TvPlayerMessagePanel(
-                message = "当前没有播放列表",
+                message = uiString(Res.string.player_queue_empty_title),
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -972,7 +970,7 @@ private fun TvPlayerQueueTrackRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = track.artistName?.takeIf { it.isNotBlank() } ?: "未知艺人",
+                text = track.artistName?.takeIf { it.isNotBlank() } ?: uiString(Res.string.common_unknown_artist),
                 color = Color.White.copy(alpha = if (isFocused) 0.82f else 0.62f),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
@@ -1151,7 +1149,7 @@ private fun TvPlayerUnavailableScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Text(
-                text = "无法打开播放页",
+                text = uiString(Res.string.player_open_failed),
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.headlineSmall,
@@ -1164,20 +1162,21 @@ private fun TvPlayerUnavailableScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (onRetry != null) {
                     TvButton(onClick = onRetry) {
-                        Text("重试")
+                        Text(uiString(Res.string.common_retry))
                     }
                 }
                 TvOutlinedButton(onClick = onBack) {
-                    Text("返回")
+                    Text(uiString(Res.string.common_back))
                 }
             }
         }
     }
 }
 
+@Composable
 private fun formatTvPlaybackErrorToast(message: String): String {
     val normalized = message.trim()
-    if (normalized.isBlank()) return "播放失败。"
+    if (normalized.isBlank()) return uiString(Res.string.player_playback_failed)
     return normalized
 //    if (normalized.startsWith("播放失败")) {
 //        return normalized.take(TV_PLAYER_TOAST_DETAIL_LIMIT)
@@ -1218,11 +1217,12 @@ private fun tvPlaybackModeIcon(mode: PlaybackMode): ImageVector {
     }
 }
 
+@Composable
 private fun tvPlaybackModeLabel(mode: PlaybackMode): String {
     return when (mode) {
-        PlaybackMode.ORDER -> "顺序播放"
-        PlaybackMode.SHUFFLE -> "随机播放"
-        PlaybackMode.REPEAT_ONE -> "单曲循环"
+        PlaybackMode.ORDER -> uiString(Res.string.player_sequential_mode)
+        PlaybackMode.SHUFFLE -> uiString(Res.string.player_shuffle_mode)
+        PlaybackMode.REPEAT_ONE -> uiString(Res.string.player_repeat_one_mode)
     }
 }
 
@@ -1231,6 +1231,7 @@ private fun tvPlaybackProgress(positionMs: Long, durationMs: Long): Float {
     return (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
 }
 
+@Composable
 private fun formatTvCurrentPlaybackAudioQuality(
     track: Track,
     audioFormat: PlaybackAudioFormat?,
@@ -1238,7 +1239,7 @@ private fun formatTvCurrentPlaybackAudioQuality(
 ): String? {
     val navidromeFallbackBitRate = navidromeQuality
         ?.takeIf { parseSubsonicCompatibleSongLocator(track.mediaLocator) != null }
-        ?.let(::formatTvNavidromeBitRateFallback)
+        ?.let { formatTvNavidromeBitRateFallback(it) }
     return listOfNotNull(
         audioFormat?.samplingRateHz?.takeIf { it > 0 }?.let(::formatTvSamplingRate),
         audioFormat?.bitRateBps?.takeIf { it > 0 }?.let(::formatTvPlaybackBitRate) ?: navidromeFallbackBitRate,
@@ -1255,8 +1256,9 @@ private fun formatTvTrackAudioQuality(track: Track): String? {
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
+@Composable
 private fun formatTvNavidromeBitRateFallback(quality: NavidromeAudioQuality): String {
-    return quality.maxBitRateKbps?.let { "${it}kbps" } ?: "原始"
+    return quality.maxBitRateKbps?.let { "${it}kbps" } ?: uiString(Res.string.common_original)
 }
 
 private fun formatTvSamplingRate(samplingRateHz: Int): String {

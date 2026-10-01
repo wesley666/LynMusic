@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
@@ -142,12 +147,15 @@ internal fun libraryHubTabs(selectedTab: AppTab, phoneNavigation: Boolean): List
 internal fun phoneNavigationGroup(tab: AppTab): AppTab =
     if (tab in phoneCollectionTabs) AppTab.Favorites else tab
 
-internal fun phoneLibraryRootLabel(root: LibraryBrowserRootView): String = when (root) {
-    LibraryBrowserRootView.Tracks -> "歌曲"
-    LibraryBrowserRootView.Albums -> "专辑"
-    LibraryBrowserRootView.Artists -> "艺人"
-    LibraryBrowserRootView.Folders -> "文件夹"
+internal fun phoneLibraryRootLabelText(root: LibraryBrowserRootView): UiText = when (root) {
+    LibraryBrowserRootView.Tracks -> uiText(Res.string.library_tracks_title)
+    LibraryBrowserRootView.Albums -> uiText(Res.string.library_albums_title)
+    LibraryBrowserRootView.Artists -> uiText(Res.string.library_artists_title)
+    LibraryBrowserRootView.Folders -> uiText(Res.string.library_folders_title)
 }
+
+@Composable
+internal fun phoneLibraryRootLabel(root: LibraryBrowserRootView): String = phoneLibraryRootLabelText(root).displayText()
 
 internal fun supportsMusicTagsEntry(platform: PlatformDescriptor): Boolean {
     return !platform.isAndroidAutomotivePlatform()
@@ -204,26 +212,32 @@ internal fun mobileLibraryHubTabForPage(page: Int): AppTab {
     return mobileLibraryHubTabs.getOrElse(page) { AppTab.Library }
 }
 
-internal fun mobileLibraryHubTabLabel(tab: AppTab): String {
+internal fun mobileLibraryHubTabLabelText(tab: AppTab): UiText {
     return when (tab) {
-        AppTab.Library -> "曲库"
-        AppTab.Favorites -> "喜欢"
-        AppTab.Playlists -> "歌单"
-        AppTab.My -> "我的"
-        AppTab.Tags -> "音乐标签"
-        AppTab.Sources -> "来源"
-        AppTab.Settings -> "设置"
+        AppTab.Library -> uiText(Res.string.library_title)
+        AppTab.Favorites -> uiText(Res.string.favorites_likes_title)
+        AppTab.Playlists -> uiText(Res.string.playlists_title)
+        AppTab.My -> uiText(Res.string.navigation_my_music)
+        AppTab.Tags -> uiText(Res.string.tags_editor_title)
+        AppTab.Sources -> uiText(Res.string.sources_title)
+        AppTab.Settings -> uiText(Res.string.settings_title)
     }
 }
 
-internal fun mobileLibraryHubSearchPlaceholder(tab: AppTab): String {
+@Composable
+internal fun mobileLibraryHubTabLabel(tab: AppTab): String = mobileLibraryHubTabLabelText(tab).displayText()
+
+internal fun mobileLibraryHubSearchPlaceholderText(tab: AppTab): UiText {
     return when (tab) {
-        AppTab.Library -> "搜索歌曲 / 艺人 / 专辑"
-        AppTab.Favorites -> "搜索喜欢的歌曲 / 艺人 / 专辑"
-        AppTab.Playlists -> "搜索歌单"
-        else -> "搜索"
+        AppTab.Library -> uiText(Res.string.library_search_placeholder)
+        AppTab.Favorites -> uiText(Res.string.favorites_search_placeholder)
+        AppTab.Playlists -> uiText(Res.string.playlists_search_placeholder)
+        else -> uiText(Res.string.common_search)
     }
 }
+
+@Composable
+internal fun mobileLibraryHubSearchPlaceholder(tab: AppTab): String = mobileLibraryHubSearchPlaceholderText(tab).displayText()
 
 internal fun mobileLibraryHubShowsSourceMenu(tab: AppTab): Boolean {
     return tab == AppTab.Library || tab == AppTab.Favorites || tab == AppTab.Playlists
@@ -255,22 +269,24 @@ internal fun mobileLibraryHubRefreshIndicatorVisible(
     return isRefreshing || isMinimumHoldActive
 }
 
+@Composable
 private fun mobileLibraryHubSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部来源"
-        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
+        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
         LibrarySourceFilter.SAMBA -> "Samba"
         LibrarySourceFilter.WEBDAV -> "WebDAV"
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
         LibrarySourceFilter.SUBSONIC -> "Subsonic"
         LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.DOWNLOADED -> "已下载"
+        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
     }
 }
 
+@Composable
 private fun mobileLibraryHubSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部"
+        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
         else -> mobileLibraryHubSourceFilterButtonLabel(filter)
     }
 }
@@ -437,7 +453,7 @@ internal fun MobileShell(
                     }
                 } else NavigationBar(containerColor = shellColors.navContainer) {
                     navigationTabs.forEach { tab ->
-                        val label = if (phoneNavigation && tab == AppTab.Favorites) "收藏" else mobileLibraryHubTabLabel(tab)
+                        val label = if (phoneNavigation && tab == AppTab.Favorites) uiString(Res.string.favorites_collection_title) else mobileLibraryHubTabLabel(tab)
                         NavigationBarItem(
                             selected = if (phoneNavigation) phoneNavigationGroup(selectedTab) == tab
                             else isMobilePrimaryNavigationSelected(selectedTab, tab),
@@ -471,7 +487,7 @@ internal fun MobileShell(
                         icon = {
                             BadgedIcon(
                                 imageVector = Icons.Rounded.MoreHoriz,
-                                contentDescription = "更多",
+                                contentDescription = uiString(Res.string.common_more),
                                 showBadge = showSettingsUpdateBadge,
                                 modifier = Modifier.size(mobileNavIconSize),
                                 iconModifier = Modifier.size(mobileNavIconSize),
@@ -575,8 +591,7 @@ private fun MobileMoreSheet(
     showSettingsUpdateBadge: Boolean,
 ) {
     val shellColors = mainShellColors
-    val items = remember(tabs) {
-        tabs.map { tab ->
+    val items = tabs.map { tab ->
             val icon = when (tab) {
                 AppTab.Tags -> Icons.Rounded.Tune
                 AppTab.Sources -> Icons.Rounded.FolderOpen
@@ -585,7 +600,6 @@ private fun MobileMoreSheet(
             }
             Triple(tab, icon, mobileLibraryHubTabLabel(tab))
         }
-    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -601,7 +615,7 @@ private fun MobileMoreSheet(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                text = "更多",
+                text = uiString(Res.string.common_more),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
             )
@@ -1561,7 +1575,7 @@ private fun MobileLibraryHubTabStrip(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
-                        contentDescription = "更多操作",
+                        contentDescription = uiString(Res.string.common_more_actions),
                     )
                 }
                 MobileLibraryHubActionsDropdownMenu(
@@ -1590,7 +1604,7 @@ private fun MobileLibraryHubTabStrip(
         IconButton(onClick = onSearchClick, enabled = searchEnabled) {
             Icon(
                 imageVector = Icons.Rounded.Search,
-                contentDescription = "搜索",
+                contentDescription = uiString(Res.string.common_search),
             )
         }
     }
@@ -1618,7 +1632,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
             MobileLibraryHubMenuLayer.Root -> {
                 if (batchAction != null) {
                     DropdownMenuItem(
-                        text = { Text("批量操作") },
+                        text = { Text(uiString(Res.string.library_batch_actions)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Checklist,
@@ -1633,7 +1647,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                 }
                 if (sourceMenu != null) {
                     DropdownMenuItem(
-                        text = { Text("来源") },
+                        text = { Text(uiString(Res.string.sources_title)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.FolderOpen,
@@ -1645,7 +1659,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                 }
                 if (sortMenu != null) {
                     DropdownMenuItem(
-                        text = { Text("排序") },
+                        text = { Text(uiString(Res.string.common_sort)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Rounded.Sort,
@@ -1659,7 +1673,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
 
             MobileLibraryHubMenuLayer.Source -> {
                 DropdownMenuItem(
-                    text = { Text("来源") },
+                    text = { Text(uiString(Res.string.sources_title)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -1689,7 +1703,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                 sourceMenu?.onlineSourceOptions.orEmpty().forEach { option ->
                     val isSelected = option.sourceId == sourceMenu?.selectedOnlineSourceId
                     DropdownMenuItem(
-                        text = { Text(option.label) },
+                        text = { Text(option.label.displayText()) },
                         trailingIcon = if (isSelected) {
                             {
                                 Icon(
@@ -1707,7 +1721,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
 
             MobileLibraryHubMenuLayer.Sort -> {
                 DropdownMenuItem(
-                    text = { Text("排序") },
+                    text = { Text(uiString(Res.string.common_sort)) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
@@ -1781,7 +1795,7 @@ private fun MobileLibraryHubSearchBar(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "退出搜索",
+                contentDescription = uiString(Res.string.navigation_exit_search),
             )
         }
         ImeAwareOutlinedTextField(
@@ -1812,7 +1826,7 @@ private fun MobileLibraryHubSearchBar(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Close,
-                contentDescription = if (query.isBlank()) "关闭搜索" else "清空搜索",
+                contentDescription = if (query.isBlank()) uiString(Res.string.navigation_close_search) else uiString(Res.string.search_clear_query),
             )
         }
     }

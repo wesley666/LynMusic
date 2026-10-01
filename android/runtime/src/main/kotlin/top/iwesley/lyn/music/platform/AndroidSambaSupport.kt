@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -29,6 +32,15 @@ import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.parseSambaLocator
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.SambaOperation
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.sambaFailureText
+import top.iwesley.lyn.music.core.model.sambaPlaybackFailureText
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
 internal data class AndroidSambaPlaybackTarget(
@@ -66,7 +78,7 @@ internal suspend fun resolveAndroidSambaPlaybackTarget(
     val samba = parseSambaLocator(track.mediaLocator) ?: return null
     return runCatching {
         val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
-            ?: error("SMB 来源不可用。")
+            ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
         val spec = resolveSambaSourceSpec(
             source = source,
             locatorRelativePath = samba.second,
@@ -97,10 +109,7 @@ internal suspend fun resolveAndroidSambaPlaybackTarget(
             ),
         )
     }.getOrElse { throwable ->
-        throw IllegalStateException(
-            "Samba 直连播放失败: ${throwable.message ?: "未知错误"}",
-            throwable,
-        )
+        throw UiTextException(sambaPlaybackFailureText(throwable), throwable)
     }
 }
 
@@ -137,7 +146,7 @@ private class AndroidSambaDataSource(
         return runCatching {
             val stream = openAndroidSambaStream(context, knownTotalSize)
             if (requestedPosition > stream.totalSize) {
-                throw IOException("请求位置超出文件大小: $requestedPosition > ${stream.totalSize}")
+                throw SambaUiIOException(uiText(Res.string.samba_seek_exceeds_size, requestedPosition, stream.totalSize))
             }
             knownTotalSize = stream.totalSize
             activeStream = stream
@@ -166,7 +175,7 @@ private class AndroidSambaDataSource(
             }
             closeStream()
         }.getOrElse { throwable ->
-            throw throwable.asAndroidSambaPlaybackIOException("打开", context)
+            throw throwable.asAndroidSambaPlaybackIOException(SambaOperation.Open, "${context.endpoint}/${context.remotePath}")
         }
     }
 
@@ -216,7 +225,7 @@ private class AndroidSambaDataSource(
                         "share=${context.shareName} remotePath=${context.remotePath} offset=$currentOffset"
                 }
             }
-            throw throwable.asAndroidSambaPlaybackIOException("读取", context)
+            throw throwable.asAndroidSambaPlaybackIOException(SambaOperation.Read, "${context.endpoint}/${context.remotePath}")
         }
     }
 
@@ -329,18 +338,15 @@ private fun openAndroidSambaStream(
     }
 }
 
-private fun Throwable.asAndroidSambaPlaybackIOException(
-    operation: String,
-    context: AndroidSambaPlaybackContext,
-): IOException {
-    val detail = message?.takeIf { it.isNotBlank() }
-        ?: this::class.simpleName
-        ?: "未知错误"
-    return IOException(
-        "Samba 直连播放失败: ${operation}失败: $detail (${context.endpoint}/${context.remotePath})",
-        this,
-    )
-}
+internal fun Throwable.asAndroidSambaPlaybackIOException(
+    operation: SambaOperation,
+    sourceReference: String,
+): IOException = SambaUiIOException(sambaFailureText(operation, this, sourceReference), this)
+
+internal class SambaUiIOException(
+    override val text: UiText,
+    cause: Throwable? = null,
+) : IOException((text).diagnosticMessage(), cause), UiTextFailure
 
 private const val SAMBA_LOG_TAG = "Samba"
 private const val SAMBA_READ_AHEAD_BYTES = 128 * 1024

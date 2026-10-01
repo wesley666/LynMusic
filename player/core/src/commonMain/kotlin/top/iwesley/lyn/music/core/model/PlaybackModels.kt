@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.flow.StateFlow
 
 enum class PlaybackMode {
@@ -26,6 +28,7 @@ data class PlaybackSnapshot(
     val currentNavidromeAudioQuality: NavidromeAudioQuality? = null,
     val currentPlaybackAudioFormat: PlaybackAudioFormat? = null,
     val errorMessage: String? = null,
+    val errorText: UiText? = null,
 ) {
     val currentTrack: Track?
         get() = queue.getOrNull(currentIndex)
@@ -85,6 +88,20 @@ data class PlaybackGatewayState(
     val completionCount: Long = 0L,
     val errorMessage: String? = null,
     val errorRevision: Long = 0L,
+    val errorText: UiText? = null,
+)
+
+fun PlaybackSnapshot.playbackErrorText(): UiText? = errorText
+    ?: errorMessage?.takeIf { it.isNotBlank() }?.let { uiText(Res.string.ui_error_with_details, UiText.Raw(it)) }
+
+fun PlaybackGatewayState.playbackErrorText(): UiText? = errorText
+    ?: errorMessage?.takeIf { it.isNotBlank() }?.let { uiText(Res.string.ui_error_with_details, UiText.Raw(it)) }
+
+fun playbackLoadFailureText(throwable: Throwable): UiText = uiText(Res.string.playback_access_failed,
+    throwable.uiFailureTextOrNull()
+        ?: throwable.message?.takeIf { it.isNotBlank() }?.let { UiText.Raw(it) }
+        ?: throwable::class.simpleName?.let { UiText.Raw(it) }
+        ?: uiText(Res.string.playback_unknown_error),
 )
 
 class PlaybackLoadToken(

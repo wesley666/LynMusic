@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="lyrics_image_saved_photos">图片已保存到相册</string>
+    <string name="lyrics_image_saved_file">图片已保存到文件</string>
+    <string name="lyrics_save_image_title">保存歌词图片</string>
+    <string name="lyrics_image_clipboard">歌词分享图片</string>
+    <string name="lyrics_text_clipboard">歌词分享文字</string>
+    <string name="font_sans_serif">无衬线</string>
+    <string name="font_serif">衬线</string>
+    <string name="font_monospace">等宽</string>
+    <string name="lyrics_image_unsupported">当前平台暂不支持歌词分享图片。</string>
+    <string name="font_system_unavailable">当前平台暂不支持读取系统字体。</string>
+    <string name="font_import_unsupported">当前平台暂不支持歌词分享字体导入。</string>
+    <string name="font_sans_medium">无衬线中黑体</string>
+    <string name="font_sans_black">无衬线重黑体</string>
+    <string name="font_serif_mono">衬线等宽</string>
+    <string name="font_sans_condensed">无衬线紧凑体</string>
+    <string name="font_sans_condensed_medium">无衬线紧凑中黑体</string>
+    <string name="font_cursive">手写体</string>
+    <string name="font_casual">休闲体</string>
+</resources>

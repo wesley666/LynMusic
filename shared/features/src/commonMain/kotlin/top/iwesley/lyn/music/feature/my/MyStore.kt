@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.feature.my
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
@@ -18,7 +25,7 @@ data class MyState(
     val dailyRecommendationTracks: List<Track> = emptyList(),
     val isGeneratingDailyRecommendation: Boolean = false,
     val isRefreshingNavidrome: Boolean = false,
-    val message: String? = null,
+    val message: UiText? = null,
 )
 
 sealed interface MyIntent {
@@ -133,7 +140,7 @@ class MyStore(
                     updateState {
                         it.copy(
                             isRefreshingNavidrome = false,
-                            message = throwable.message.orEmpty().ifBlank { "远程最近播放同步失败，已显示本地统计。" },
+                            message = throwable.uiErrorText(uiText(Res.string.recent_remote_sync_failed_fallback)),
                         )
                     }
                 }
@@ -152,7 +159,7 @@ class MyStore(
                     updateState {
                         it.copy(
                             isGeneratingDailyRecommendation = false,
-                            message = throwable.message.orEmpty().ifBlank { "每日推荐生成失败，已显示最近播放。" },
+                            message = throwable.uiErrorText(uiText(Res.string.recommendations_generation_failed_fallback)),
                         )
                     }
                 }

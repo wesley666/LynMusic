@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_cleanup_failed">新数据位置已启用，但旧目录清理失败，请在空间管理中重试：%1$s</string>
+    <string name="startup_cleanup_record_ignored">已忽略无效的旧数据清理记录，未删除任何目录：%1$s</string>
+    <string name="startup_pending_record_cancelled">已安全取消损坏的数据位置切换记录，未移动或删除任何目录：%1$s</string>
+    <string name="startup_cleanup_phase_invalid">旧数据清理配置损坏：非法 cleanup_phase=%1$s。未删除任何目录。</string>
+    <string name="startup_cleanup_identity_invalid">旧数据清理配置损坏：%1$s。未删除任何目录。</string>
+    <string name="startup_cleanup_identity_missing">清理记录缺少目录身份或 operation ID</string>
+    <string name="startup_cleanup_identity_value_invalid">非法 %1$s=%2$s</string>
+    <string name="startup_pending_path_invalid">迁移配置损坏：%1$s 缺失或不是绝对路径。</string>
+    <string name="startup_pending_field_missing">迁移配置损坏：%1$s 缺失。</string>
+    <string name="startup_pending_field_invalid">迁移配置损坏：非法 %1$s=%2$s。</string>
+    <string name="startup_pending_identity_incomplete">迁移配置损坏：操作身份字段不完整。</string>
+    <string name="startup_copy_verification_failed">迁移文件校验失败，当前位置未切换。</string>
+</resources>

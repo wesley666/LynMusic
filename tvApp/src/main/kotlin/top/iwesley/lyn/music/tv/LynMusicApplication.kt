@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.tv
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.os.Build
 import android.os.Process
@@ -44,6 +45,7 @@ class LynMusicApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        top.iwesley.lyn.music.platform.initializeAndroidAppLanguage(applicationContext)
         if (isCrashReportProcess()) {
             return
         }
@@ -52,6 +54,11 @@ class LynMusicApplication : Application() {
 
     internal fun getOrCreateAppComponent(): Result<LynMusicAppComponent> {
         return componentStore.getOrCreate()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        top.iwesley.lyn.music.platform.refreshAndroidSystemAppLanguage(newConfig)
     }
 
     internal fun createActivityActionHost(activity: androidx.activity.ComponentActivity): AndroidActivityActionHost {

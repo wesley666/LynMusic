@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -40,7 +46,7 @@ internal class AndroidCastProxyServer(
         }
         server.start(wait = false)
         val port = server.engine.resolvedConnectors().firstOrNull()?.port
-            ?: error("无法获取投屏代理端口。")
+            ?: throw UiTextException(uiText(Res.string.cast_proxy_port_unavailable))
         engine = server
         activePort = port
         logger.info(CAST_PROXY_LOG_TAG) { "server-started port=$port" }

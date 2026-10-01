@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_cast_action">投屏</string>
+    <string name="cast_search_retry_hint">点击重新搜索再试一次</string>
+    <string name="player_connecting_status">正在连接</string>
+    <string name="player_current_quality_label">当前播放音质</string>
+    <string name="player_current_track_badge"> · 当前歌曲</string>
+    <string name="player_sleep_timer_custom_minutes">自定义分钟</string>
+    <string name="common_done">完成</string>
+    <string name="offline_download_failed_status">下载失败</string>
+    <string name="offline_download_to_device">下载到本机</string>
+    <string name="offline_downloading_status">正在下载</string>
+    <string name="cast_same_network_hint">请确认电视和手机在同一网络</string>
+    <string name="lyrics_manual_search_action">手动搜索</string>
+    <string name="cast_devices_empty_title">未发现设备</string>
+    <string name="player_feature_not_enabled">未开启</string>
+    <string name="player_offline_downloads_title">离线下载</string>
+    <string name="player_queue_empty_hint">从曲库或喜欢页播放歌曲后，这里会显示当前队列。</string>
+    <string name="player_playing_track_badge"> · 正在播放</string>
+    <string name="player_playing_status">正在播放</string>
+    <string name="player_preparing_lyrics">正在准备歌词</string>
+    <string name="player_sleep_timer_remaining">剩余 %1$s</string>
+    <string name="player_restoring_playback_title">正在恢复上次播放</string>
+    <string name="cast_search_again_action">重新搜索</string>
+    <string name="cast_searching_devices_status">正在搜索设备</string>
+    <string name="player_sleep_timer_stop_time">选择关闭时间</string>
+    <string name="player_sleep_timer_title">定时关闭</string>
+    <string name="player_sound_settings_title">音效调节</string>
+    <string name="common_start">开始</string>
+    <string name="cast_stop_action">停止投屏</string>
+    <string name="player_restored_queue_empty">当前没有播放队列</string>
+    <string name="player_restoring_playback_description">播放队列和进度会在后台继续加载。</string>
+    <string name="player_sleep_timer_scheduled">已定时 %1$s</string>
+    <string name="player_sleep_timer_disable">关闭定时</string>
+</resources>

@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.platform.nativeUiString as uiString
+
 import android.content.pm.ActivityInfo
 import android.graphics.Color as AndroidColor
 import android.os.Build
@@ -98,39 +104,43 @@ class AndroidEqualizerActivity : ComponentActivity() {
         val activityServices = createAndroidEqualizerActivityServices(this)
         services = activityServices
         setContent {
-            val appDisplayScalePreset by activityServices.appDisplayScalePreset.collectAsState()
-            val selectedTheme by activityServices.selectedTheme.collectAsState()
-            val customThemeTokens by activityServices.customThemeTokens.collectAsState()
-            val textPalettePreferences by activityServices.textPalettePreferences.collectAsState()
-            val themeTokens = remember(selectedTheme, customThemeTokens) {
-                resolveAppThemeTokens(selectedTheme, customThemeTokens)
-            }
-            val textPalette = remember(selectedTheme, textPalettePreferences) {
-                resolveAppThemeTextPalette(selectedTheme, textPalettePreferences)
-            }
-            SideEffect {
-                val systemBarStyle = if (textPalette == AppThemeTextPalette.Black) {
-                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
-                } else {
-                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            ProvideUiLanguage {
+                val appDisplayScalePreset by activityServices.appDisplayScalePreset.collectAsState()
+                val selectedTheme by activityServices.selectedTheme.collectAsState()
+                val customThemeTokens by activityServices.customThemeTokens.collectAsState()
+                val textPalettePreferences by activityServices.textPalettePreferences.collectAsState()
+                val themeTokens = remember(selectedTheme, customThemeTokens) {
+                    resolveAppThemeTokens(selectedTheme, customThemeTokens)
                 }
-                enableEdgeToEdge(
-                    statusBarStyle = systemBarStyle,
-                    navigationBarStyle = systemBarStyle,
-                )
-            }
-            ProvideFixedAndroidEqualizerDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                AndroidEqualizerTheme(
-                    themeTokens = themeTokens,
-                    textPalette = textPalette,
-                ) {
-                    EqualizerActivityScreen(
-                        service = activityServices.equalizerService,
-                        onBack = ::finish,
+                val textPalette = remember(selectedTheme, textPalettePreferences) {
+                    resolveAppThemeTextPalette(selectedTheme, textPalettePreferences)
+                }
+                SideEffect {
+                    val systemBarStyle = if (textPalette == AppThemeTextPalette.Black) {
+                        SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                    }
+                    enableEdgeToEdge(
+                        statusBarStyle = systemBarStyle,
+                        navigationBarStyle = systemBarStyle,
                     )
                 }
+                ProvideFixedAndroidEqualizerDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                    AndroidEqualizerTheme(
+                        themeTokens = themeTokens,
+                        textPalette = textPalette,
+                    ) {
+                        EqualizerActivityScreen(
+                            service = activityServices.equalizerService,
+                            onBack = ::finish,
+                        )
+                    }
+                }
+
+
             }
-        }
+}
     }
 
     override fun onDestroy() {
@@ -251,13 +261,13 @@ private fun EqualizerTopBar(
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(52.dp)) {
                 EqualizerBackIcon(
-                    contentDescription = "返回",
+                    contentDescription = uiString(Res.string.common_back),
                     modifier = Modifier.size(32.dp),
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
             Text(
-                text = "均衡器",
+                text = uiString(Res.string.settings_equalizer_title),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
@@ -290,7 +300,7 @@ private fun EqualizerPresetRow(
                 shape = RoundedCornerShape(999.dp),
             ) {
                 Text(
-                    text = state.selectedPresetName ?: "自定义",
+                    text = state.selectedPresetName ?: uiString(Res.string.common_custom),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -303,7 +313,7 @@ private fun EqualizerPresetRow(
                 DropdownMenuItem(
                     text = {
                         EqualizerPresetMenuText(
-                            text = "自定义",
+                            text = uiString(Res.string.common_custom),
                             selected = state.selectedPresetName == null,
                         )
                     },
@@ -330,10 +340,10 @@ private fun EqualizerPresetRow(
         }
         Text(
             text = when {
-                !state.supported -> "不可用"
-                !state.active -> "等待播放"
-                state.enabled -> "已开启"
-                else -> "已关闭"
+                !state.supported -> uiString(Res.string.common_unavailable)
+                !state.active -> uiString(Res.string.equalizer_waiting_for_playback)
+                state.enabled -> uiString(Res.string.equalizer_enabled_state)
+                else -> uiString(Res.string.equalizer_disabled_state)
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
@@ -409,7 +419,7 @@ private fun EqualizerBands(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = state.errorMessage ?: "当前没有可调节的频段",
+                    text = state.errorMessage?.nativeDisplayText() ?: uiString(Res.string.equalizer_no_adjustable_bands),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -539,9 +549,9 @@ private fun EqualizerFooter(
     Column(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        state.errorMessage?.takeIf { it.isNotBlank() && (!state.supported || !state.active) }?.let { message ->
+        state.errorMessage?.takeIf { !state.supported || !state.active }?.let { message ->
             Text(
-                text = message,
+                text = message.nativeDisplayText(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -557,7 +567,7 @@ private fun EqualizerFooter(
                 enabled = state.active,
                 shape = RoundedCornerShape(999.dp),
             ) {
-                Text("重置")
+                Text(uiString(Res.string.common_reset))
             }
         }
     }

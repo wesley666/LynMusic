@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -133,6 +135,7 @@ data class PlaylistAddTarget(
     val kind: PlaylistKind,
     val updatedAt: Long = 0L,
     val alreadyContainsTrack: Boolean = false,
+    val nameText: UiText? = null,
 )
 
 data class ImportSource(
@@ -161,6 +164,9 @@ data class ImportIndexState(
     val lastScannedAt: Long? = null,
     val lastError: String? = null,
 )
+
+fun ImportIndexState.lastErrorUiText(): UiText? =
+    lastError?.takeIf { it.isNotBlank() }?.let(UiText::Raw)
 
 data class NavidromeLibraryProbe(
     val totalTrackCount: Int?,
@@ -247,11 +253,18 @@ data class ImportedTrackCandidate(
 data class ImportScanFailure(
     val relativePath: String,
     val reason: String,
+    val reasonText: UiText? = null,
+)
+
+/** Transient scan data: the original fallback stays with its optional resource description. */
+data class ImportScanWarning(
+    val diagnostic: String,
+    val text: UiText? = null,
 )
 
 data class ImportScanReport(
     val tracks: List<ImportedTrackCandidate>,
-    val warnings: List<String> = emptyList(),
+    val warnings: List<ImportScanWarning> = emptyList(),
     val discoveredAudioFileCount: Int = tracks.size,
     val failures: List<ImportScanFailure> = emptyList(),
     val totalTrackCount: Int? = null,
@@ -261,7 +274,7 @@ data class ImportScanReport(
 data class ImportStreamingScanReport(
     val discoveredAudioFileCount: Int,
     val importedTrackCount: Int,
-    val warnings: List<String> = emptyList(),
+    val warnings: List<ImportScanWarning> = emptyList(),
     val failures: List<ImportScanFailure> = emptyList(),
     val totalTrackCount: Int? = null,
 )
@@ -319,6 +332,7 @@ data class AudioTagSnapshot(
     val discNumber: Int? = null,
     val embeddedLyrics: String? = null,
     val artworkLocator: String? = null,
+    val tagLabelText: UiText? = null,
 )
 
 data class AudioTagPatch(
@@ -370,7 +384,12 @@ data class LyricsSearchCandidate(
     val durationSeconds: Int? = null,
     val artworkLocator: String? = null,
     val isTrackProvided: Boolean = false,
+    val sourceNameText: UiText? = null,
 )
+
+fun ImportScanFailure.reasonUiText(): UiText = reasonText ?: UiText.Raw(reason)
+
+fun LyricsSearchCandidate.sourceNameUiText(): UiText = sourceNameText ?: UiText.Raw(sourceName)
 
 sealed interface LyricsSourceDefinition {
     val id: String
@@ -666,7 +685,7 @@ interface AudioTagGateway {
 }
 
 object UnsupportedAudioTagGateway : AudioTagGateway {
-    private val error = IllegalStateException("当前平台暂未实现音频标签编辑。")
+    private val error = UiTextException(uiText(Res.string.audio_tags_platform_unsupported))
 
     override suspend fun canEdit(track: Track): Boolean = false
     override suspend fun canWrite(track: Track): Boolean = false
@@ -690,7 +709,7 @@ interface AudioTagEditorPlatformService {
 }
 
 object UnsupportedAudioTagEditorPlatformService : AudioTagEditorPlatformService {
-    private val error = IllegalStateException("当前平台暂不支持选择封面。")
+    private val error = UiTextException(uiText(Res.string.artwork_picker_platform_unsupported))
 
     override suspend fun pickArtworkBytes(): Result<ByteArray?> = Result.failure(error)
 
@@ -702,7 +721,7 @@ interface VlcPathPickerPlatformService {
 }
 
 object UnsupportedVlcPathPickerPlatformService : VlcPathPickerPlatformService {
-    private val error = IllegalStateException("当前平台暂不支持选择 VLC 路径。")
+    private val error = UiTextException(uiText(Res.string.vlc_picker_platform_unsupported))
 
     override suspend fun pickVlcDirectory(): Result<String?> = Result.failure(error)
 }

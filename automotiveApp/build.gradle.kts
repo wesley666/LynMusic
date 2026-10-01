@@ -70,6 +70,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":shared:resources"))
     implementation(project(":android:runtime"))
     implementation(project(":player:app"))
     implementation(libs.androidx.activity.compose)

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiText
+
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -88,6 +92,7 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
+import top.iwesley.lyn.music.feature.tags.tagFormatText
 import top.iwesley.lyn.music.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -147,15 +152,15 @@ fun MusicTagsTab(
                 MusicTagsDiscardChangesDialog(
                     onDismissRequest = { onMusicTagsIntent(MusicTagsIntent.DismissDiscardSelection) },
                     onConfirm = { onMusicTagsIntent(MusicTagsIntent.ConfirmDiscardSelection) },
-                    confirmLabel = "放弃并切换",
+                    confirmLabel = uiString(Res.string.tags_discard_and_switch),
                 )
             }
             if (state.onlineLyricsSearch.isVisible) {
                 LyricsSearchOverlayDialog(
                     state = LyricsSearchDialogState(
-                        headerTitle = "在线搜索歌词",
+                        headerTitle = uiString(Res.string.tags_search_lyrics_online),
                         headerSubtitle = buildString {
-                            append(state.draft.title.ifBlank { state.selectedTrack?.title ?: "当前编辑器" })
+                            append(state.draft.title.ifBlank { state.selectedTrack?.title ?: uiString(Res.string.tags_current_editor_label) })
                             state.draft.artistName.takeIf { it.isNotBlank() }?.let {
                                 append(" · ")
                                 append(it)
@@ -168,11 +173,11 @@ fun MusicTagsTab(
                         hasResult = state.onlineLyricsSearch.hasResult,
                         directResults = state.onlineLyricsSearch.directResults,
                         workflowResults = state.onlineLyricsSearch.workflowResults,
-                        error = state.onlineLyricsSearch.error,
+                        error = state.onlineLyricsSearch.error?.displayText(),
                     ),
                     strings = LyricsSearchDialogStrings(
-                        formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
-                        resultsAppliedSubtitle = "点选任一结果后选择应用方式。",
+                        formSubtitle = uiText(Res.string.lyrics_search_metadata_hint),
+                        resultsAppliedSubtitle = uiText(Res.string.lyrics_apply_result_hint),
                     ),
                     onDismiss = { onMusicTagsIntent(MusicTagsIntent.DismissOnlineLyricsSearch) },
                     onTitleChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsTitleChanged(it)) },
@@ -194,7 +199,7 @@ fun MusicTagsTab(
                         .align(Alignment.BottomCenter)
                         .padding(20.dp),
                 ) {
-                    MusicTagsToast(message = message)
+                    MusicTagsToast(message = message.displayText())
                 }
             }
         }
@@ -275,11 +280,11 @@ private fun MobileMusicTagsLayout(
     ) {
         if (detailTrack == null) {
             MusicTagsHeader(
-                title = "音乐标签",
+                title = uiString(Res.string.tags_editor_title),
                 infoText = if (supportsWrite) {
-                    "已授予文件权限的本地目录支持写回；未授权目录会以只读方式打开。"
+                    uiString(Res.string.tags_folder_write_permission_hint)
                 } else {
-                    "当前设备仅支持查看本地标签。"
+                    uiString(Res.string.tags_device_read_only_hint)
                 },
             )
             MusicTagsTrackPane(
@@ -312,7 +317,7 @@ private fun MobileMusicTagsLayout(
                     overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(onClick = ::requestBackToList) {
-                    Text("返回列表")
+                    Text(uiString(Res.string.tags_back_to_list))
                 }
             }
             MusicTagsEditorPane(
@@ -323,9 +328,9 @@ private fun MobileMusicTagsLayout(
                 readOnlyHint = when {
                     state.isLoadingSelected -> null
                     supportsWrite && !state.canWriteSelected ->
-                        "当前歌曲通过 SAF 只读导入，暂不能保存修改。请在来源页重新扫描并授予“管理所有文件”权限。"
+                        uiString(Res.string.tags_saf_read_only_hint)
 
-                    !supportsWrite -> "当前设备暂不支持写回音频标签。"
+                    !supportsWrite -> uiString(Res.string.tags_device_write_unsupported_hint)
                     else -> null
                 },
                 onMusicTagsIntent = onMusicTagsIntent,
@@ -341,7 +346,7 @@ private fun MobileMusicTagsLayout(
                 onMusicTagsIntent(MusicTagsIntent.ResetDraft)
                 detailTrackId = null
             },
-            confirmLabel = "放弃并返回",
+            confirmLabel = uiString(Res.string.tags_discard_and_go_back),
         )
     }
 }
@@ -355,8 +360,8 @@ private fun MusicTagsDiscardChangesDialog(
     val shellColors = mainShellColors
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        title = { Text("放弃未保存修改？") },
-        text = { Text("当前歌曲的标签还没有保存，切换后这些改动会丢失。") },
+        title = { Text(uiString(Res.string.tags_discard_changes_title)) },
+        text = { Text(uiString(Res.string.tags_switch_discards_changes_hint)) },
         containerColor = shellColors.cardContainer,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -367,7 +372,7 @@ private fun MusicTagsDiscardChangesDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
-                Text("继续编辑")
+                Text(uiString(Res.string.tags_continue_editing))
             }
         },
     )
@@ -377,7 +382,7 @@ private fun MusicTagsDiscardChangesDialog(
 private fun MusicTagsTrackPane(
     state: MusicTagsState,
     showHeader: Boolean = true,
-    headerSubtitle: String? = "仅显示本地文件夹来源。左侧单选歌曲，右侧编辑标签。",
+    headerSubtitle: String? = uiString(Res.string.tags_local_editor_hint),
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onActivateTrack: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -396,20 +401,20 @@ private fun MusicTagsTrackPane(
         ) {
             if (showHeader) {
                 MusicTagsHeader(
-                    title = "本地歌曲",
+                    title = uiString(Res.string.tags_local_tracks_title),
                     subtitle = headerSubtitle,
                 )
             }
             if (state.isLoadingContent) {
                 MusicTagsEmptyState(
-                    title = "正在加载本地歌曲",
-                    body = "本地歌曲列表会在页面显示后继续异步整理，请稍候。",
+                    title = uiString(Res.string.tags_loading_tracks),
+                    body = uiString(Res.string.tags_library_loading_hint),
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (state.tracks.isEmpty()) {
                 MusicTagsEmptyState(
-                    title = "还没有本地歌曲",
-                    body = "先在来源页导入本地文件夹，这里才会出现可编辑的歌曲列表。",
+                    title = uiString(Res.string.tags_tracks_empty_title),
+                    body = uiString(Res.string.tags_local_import_hint),
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -505,8 +510,8 @@ private fun MusicTagsEditorPane(
     ) {
         if (selectedTrack == null) {
             MusicTagsEmptyState(
-                title = "选择一首歌曲",
-                body = "从左侧列表选择本地歌曲后，这里会显示完整标签和封面预览。",
+                title = uiString(Res.string.tags_select_track_title),
+                body = uiString(Res.string.tags_track_selection_hint),
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
@@ -520,7 +525,7 @@ private fun MusicTagsEditorPane(
             ) {
                 if (showHeader) {
                     MusicTagsHeader(
-                        title = if (readOnly) "标签详情" else "标签编辑器",
+                        title = if (readOnly) uiString(Res.string.tags_details_title) else uiString(Res.string.tags_editor_label),
                         subtitle = selectedTrack.relativePath.ifBlank { selectedTrack.mediaLocator },
                     )
                 }
@@ -533,7 +538,7 @@ private fun MusicTagsEditorPane(
                             onClick = { onMusicTagsIntent(MusicTagsIntent.OpenOnlineLyricsSearch) },
                             enabled = !state.isLoadingSelected && !state.isSaving && !state.isRefreshing,
                         ) {
-                            Text("在线搜索")
+                            Text(uiString(Res.string.tags_online_search_title))
                         }
                         Spacer(Modifier.width(8.dp))
                     }
@@ -543,11 +548,11 @@ private fun MusicTagsEditorPane(
                     ) {
                         Icon(Icons.Rounded.Sync, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (state.isRefreshing) "刷新中…" else "刷新")
+                        Text(if (state.isRefreshing) uiString(Res.string.tags_refreshing_progress) else uiString(Res.string.common_refresh))
                     }
                 }
                 if (state.isLoadingSelected) {
-                    MusicTagsNoteCard("正在读取音频标签…")
+                    MusicTagsNoteCard(uiString(Res.string.tags_reading_progress))
                 }
                 if (!state.isLoadingSelected && readOnlyHint != null) {
                     MusicTagsNoteCard(readOnlyHint)
@@ -563,7 +568,7 @@ private fun MusicTagsEditorPane(
                             when {
                                 state.draft.pendingArtworkBytes != null -> LynArtworkImage(
                                     artworkBytes = state.draft.pendingArtworkBytes,
-                                    contentDescription = "新封面预览",
+                                    contentDescription = uiString(Res.string.tags_new_artwork_preview),
                                     modifier = Modifier.fillMaxSize(),
                                     maxDecodeSizePx = ArtworkDecodeSize.Preview,
                                     contentScale = ContentScale.Fit,
@@ -571,7 +576,7 @@ private fun MusicTagsEditorPane(
 
                                 !state.draft.clearArtwork && state.draft.artworkLocator != null -> LynArtworkImage(
                                     artworkLocator = state.draft.artworkLocator,
-                                    contentDescription = "歌曲封面",
+                                    contentDescription = uiString(Res.string.tags_artwork_label),
                                     artworkCacheKey = trackArtworkCacheKey(selectedTrack),
                                     modifier = Modifier.fillMaxSize(),
                                     maxDecodeSizePx = ArtworkDecodeSize.Preview,
@@ -590,21 +595,21 @@ private fun MusicTagsEditorPane(
                         },
                     )
                     MusicTagsField(
-                        label = "标题",
+                        label = uiString(Res.string.common_title),
                         value = state.draft.title,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.TitleChanged(it)) },
                         resetKey = fieldResetKey,
                     )
                     MusicTagsField(
-                        label = "艺术家",
+                        label = uiString(Res.string.tags_artist_label),
                         value = state.draft.artistName,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ArtistChanged(it)) },
                         resetKey = fieldResetKey,
                     )
                     MusicTagsField(
-                        label = "专辑",
+                        label = uiString(Res.string.library_albums_title),
                         value = state.draft.albumTitle,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.AlbumChanged(it)) },
@@ -612,7 +617,7 @@ private fun MusicTagsEditorPane(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         MusicTagsField(
-                            label = "年份",
+                            label = uiString(Res.string.tags_year_label),
                             value = state.draft.year,
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.YearChanged(it)) },
@@ -620,7 +625,7 @@ private fun MusicTagsEditorPane(
                             resetKey = fieldResetKey,
                         )
                         MusicTagsField(
-                            label = "音轨",
+                            label = uiString(Res.string.tags_track_number_label),
                             value = state.draft.trackNumber,
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.TrackNumberChanged(it)) },
@@ -628,7 +633,7 @@ private fun MusicTagsEditorPane(
                             resetKey = fieldResetKey,
                         )
                         MusicTagsField(
-                            label = "光盘编号",
+                            label = uiString(Res.string.tags_disc_number_label),
                             value = state.draft.discNumber,
                             readOnly = readOnly,
                             onValueChange = { onMusicTagsIntent(MusicTagsIntent.DiscNumberChanged(it)) },
@@ -637,14 +642,14 @@ private fun MusicTagsEditorPane(
                         )
                     }
                     MusicTagsField(
-                        label = "流派",
+                        label = uiString(Res.string.tags_genre_label),
                         value = state.draft.genre,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.GenreChanged(it)) },
                         resetKey = fieldResetKey,
                     )
                     MusicTagsField(
-                        label = "注释",
+                        label = uiString(Res.string.tags_comment_label),
                         value = state.draft.comment,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.CommentChanged(it)) },
@@ -652,21 +657,21 @@ private fun MusicTagsEditorPane(
                         resetKey = fieldResetKey,
                     )
                     MusicTagsField(
-                        label = "专辑艺术家",
+                        label = uiString(Res.string.tags_album_artist_label),
                         value = state.draft.albumArtist,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.AlbumArtistChanged(it)) },
                         resetKey = fieldResetKey,
                     )
                     MusicTagsField(
-                        label = "作曲家",
+                        label = uiString(Res.string.tags_composer_label),
                         value = state.draft.composer,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.ComposerChanged(it)) },
                         resetKey = fieldResetKey,
                     )
                     MusicTagsLyricsField(
-                        label = "嵌入歌词",
+                        label = uiString(Res.string.tags_embedded_lyrics_label),
                         value = state.draft.embeddedLyrics,
                         readOnly = readOnly,
                         onValueChange = { onMusicTagsIntent(MusicTagsIntent.EmbeddedLyricsChanged(it)) },
@@ -685,10 +690,10 @@ private fun MusicTagsEditorPane(
                             enabled = !readOnly,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("合辑")
+                        Text(uiString(Res.string.tags_compilation_label))
                     }
                     MusicTagsNoteCard(
-                        "标签格式：${state.rowMetadata[selectedTrack.id]?.tagLabel ?: state.selectedSnapshot?.tagLabel ?: "读取后显示"}",
+                        state.tagFormatText(selectedTrack.id).displayText(),
                     )
                 }
                 if (!readOnly) {
@@ -701,7 +706,7 @@ private fun MusicTagsEditorPane(
                                 onClick = { onMusicTagsIntent(MusicTagsIntent.ResetDraft) },
                                 enabled = state.isDirty && !state.isSaving,
                             ) {
-                                Text("重置")
+                                Text(uiString(Res.string.common_reset))
                             }
                             TextButton(
                                 onClick = { onMusicTagsIntent(MusicTagsIntent.PickArtwork) },
@@ -710,7 +715,7 @@ private fun MusicTagsEditorPane(
                                 Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
                                 if (!compactLayout) {
                                     Spacer(Modifier.width(6.dp))
-                                    Text("更换封面")
+                                    Text(uiString(Res.string.tags_change_artwork))
                                 }
                             }
                             TextButton(
@@ -723,14 +728,14 @@ private fun MusicTagsEditorPane(
                                 Icon(Icons.Rounded.Delete, contentDescription = null)
                                 if (!compactLayout) {
                                     Spacer(Modifier.width(6.dp))
-                                    Text("清除封面")
+                                    Text(uiString(Res.string.tags_clear_artwork))
                                 }
                             }
                             Button(
                                 onClick = { onMusicTagsIntent(MusicTagsIntent.Save) },
                                 enabled = state.canWriteSelected && state.isDirty && !state.isSaving,
                             ) {
-                                Text(if (state.isSaving) "保存中…" else "保存")
+                                Text(if (state.isSaving) uiString(Res.string.tags_saving_progress) else uiString(Res.string.common_save))
                             }
                         }
                     }
@@ -802,7 +807,7 @@ private fun MusicTagsTrackFileCell(
             ) {
                 LynArtworkImage(
                     artworkLocator = track.artworkLocator,
-                    contentDescription = "歌曲封面",
+                    contentDescription = uiString(Res.string.tags_artwork_label),
                     artworkCacheKey = trackArtworkCacheKey(track),
                     modifier = Modifier.fillMaxSize(),
                     maxDecodeSizePx = ArtworkDecodeSize.Thumbnail,
@@ -888,12 +893,12 @@ private fun MusicTagsTableHeader() {
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MusicTagsTableCell("文件名", 180.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("标题", 170.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("艺术家", 150.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("专辑艺术家", 160.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("专辑", 180.dp, fontWeight = FontWeight.Bold)
-            MusicTagsTableCell("光盘编号", 84.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.tags_file_name_label), 180.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.common_title), 170.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.tags_artist_label), 150.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.tags_album_artist_label), 160.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.library_albums_title), 180.dp, fontWeight = FontWeight.Bold)
+            MusicTagsTableCell(uiString(Res.string.tags_disc_number_label), 84.dp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1133,7 +1138,7 @@ private fun MusicTagsHeader(
     infoText: String? = null,
 ) {
     val shellColors = mainShellColors
-    var showInfoDialog by rememberSaveable(title, infoText) { mutableStateOf(false) }
+    var showInfoDialog by rememberSaveable { mutableStateOf(false) }
     val resolvedInfoText = infoText?.takeIf { it.isNotBlank() }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -1150,7 +1155,7 @@ private fun MusicTagsHeader(
                 IconButton(onClick = { showInfoDialog = true }) {
                     Icon(
                         imageVector = Icons.Rounded.Info,
-                        contentDescription = "查看说明",
+                        contentDescription = uiString(Res.string.tags_view_help),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1172,11 +1177,11 @@ private fun MusicTagsHeader(
             containerColor = shellColors.cardContainer,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("${title}说明") },
+            title = { Text(uiString(Res.string.tags_named_field_help, title)) },
             text = { Text(resolvedInfoText) },
             confirmButton = {
                 TextButton(onClick = { showInfoDialog = false }) {
-                    Text("知道了")
+                    Text(uiString(Res.string.common_got_it))
                 }
             },
         )

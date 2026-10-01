@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.os.Build
 import android.os.Process
@@ -15,6 +16,7 @@ import kotlin.system.exitProcess
 class LynMusicApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        top.iwesley.lyn.music.platform.initializeAndroidAppLanguage(applicationContext)
         if (isCrashReportProcess()) {
             return
         }
@@ -24,6 +26,11 @@ class LynMusicApplication : Application() {
     private fun isCrashReportProcess(): Boolean {
         val processName = resolveCurrentProcessName(applicationContext) ?: return false
         return processName == "$packageName:crash"
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        top.iwesley.lyn.music.platform.refreshAndroidSystemAppLanguage(newConfig)
     }
 }
 

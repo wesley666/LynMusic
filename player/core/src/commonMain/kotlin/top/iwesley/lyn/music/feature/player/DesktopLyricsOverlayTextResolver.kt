@@ -1,8 +1,12 @@
 package top.iwesley.lyn.music.feature.player
 
-import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.resources.*
 
-const val DESKTOP_LYRICS_LOADING_TEXT: String = "正在准备歌词"
+import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+
+val DESKTOP_LYRICS_LOADING_TEXT: UiText = uiText(Res.string.player_preparing_lyrics)
 
 fun findDesktopLyricsHighlightedLine(
     lyrics: LyricsDocument?,
@@ -19,7 +23,7 @@ fun resolveDesktopLyricsOverlayText(
     lyrics: LyricsDocument?,
     highlightedLineIndex: Int,
     isLyricsLoading: Boolean,
-): String? {
+): UiText? {
     val lines = lyrics?.lines.orEmpty()
     fun lineTextAt(index: Int): String? {
         return lines.getOrNull(index)
@@ -29,12 +33,12 @@ fun resolveDesktopLyricsOverlayText(
                 text.isNotEmpty() && !isPlayerLyricsStructureTagLine(text)
             }
     }
-    lineTextAt(highlightedLineIndex)?.let { return it }
+    lineTextAt(highlightedLineIndex)?.let { return UiText.Raw(it) }
     for (index in highlightedLineIndex + 1 until lines.size) {
-        lineTextAt(index)?.let { return it }
+        lineTextAt(index)?.let { return UiText.Raw(it) }
     }
     for (index in highlightedLineIndex - 1 downTo 0) {
-        lineTextAt(index)?.let { return it }
+        lineTextAt(index)?.let { return UiText.Raw(it) }
     }
     return if (isLyricsLoading) DESKTOP_LYRICS_LOADING_TEXT else null
 }

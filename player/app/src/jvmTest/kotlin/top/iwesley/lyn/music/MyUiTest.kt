@@ -8,6 +8,11 @@ import top.iwesley.lyn.music.core.model.RecentTrack
 import top.iwesley.lyn.music.core.model.Track
 
 class MyUiTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `recent preview limit is three on mobile and six on desktop`() {
         assertEquals(3, recentPreviewLimit(isMobile = true))

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_search_clear_query">Clear search</string>
+    <string name="recommendations_generating_status">Generating</string>
+    <string name="tv_library_import_hint">Import a local folder, Samba, WebDAV, Navidrome, or Subsonic source. Songs will appear here after scanning.</string>
+    <string name="tv_albums_empty_title">No albums</string>
+    <string name="tv_albums_filter_empty_hint">No albums match the current filter.</string>
+    <string name="tv_artists_empty_title">No artists</string>
+    <string name="tv_artists_filter_empty_hint">No artists match the current filter.</string>
+    <string name="tv_recent_plays_empty_title">No recent plays</string>
+    <string name="tv_player_idle_title">Nothing playing yet</string>
+    <string name="tv_play_all_action">Play all</string>
+    <string name="tv_player_title">Player</string>
+    <plurals name="tv_play_count">
+        <item quantity="one">%1$s play</item>
+        <item quantity="other">%1$s plays</item>
+    </plurals>
+    <string name="tv_recent_albums_title">Recent albums</string>
+    <string name="tv_recent_plays_title">Recent plays</string>
+    <string name="tv_my_music_description">Recent plays and daily recommendations</string>
+    <string name="tv_recommendations_empty_hint">Recommendations will appear once the library has songs.</string>
+    <string name="tv_search_favorites">Search favorites</string>
+    <string name="tv_search_library">Search library</string>
+    <plurals name="tv_search_result_track_count">
+        <item quantity="one">Search “%1$s” · %2$s song</item>
+        <item quantity="other">Search “%1$s” · %2$s songs</item>
+    </plurals>
+    <string name="tv_player_select_track_hint">Select a song to start playback</string>
+    <string name="tv_search_placeholder">Songs / artists / albums</string>
+    <string name="tv_search_empty_hint">Try adjusting your search.</string>
+</resources>

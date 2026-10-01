@@ -22,6 +22,11 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 
 class AppResourceDisposerTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `best effort close attempts every resource and aggregates failures`() = runBlocking {
         val calls = mutableListOf<String>()

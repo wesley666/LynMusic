@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.feature.tags
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
@@ -20,6 +27,7 @@ import top.iwesley.lyn.music.domain.serializeLyricsDocument
 data class MusicTagsRowMetadata(
     val tagLabel: String? = null,
     val albumArtist: String? = null,
+    val tagLabelText: UiText? = null,
 )
 
 sealed interface MusicTagsPendingTrackAction {
@@ -56,7 +64,7 @@ data class MusicTagsLyricsSearchState(
     val hasResult: Boolean = false,
     val directResults: List<LyricsSearchCandidate> = emptyList(),
     val workflowResults: List<WorkflowSongCandidate> = emptyList(),
-    val error: String? = null,
+    val error: UiText? = null,
 )
 
 data class MusicTagsState(
@@ -76,7 +84,7 @@ data class MusicTagsState(
     val onlineLyricsSearch: MusicTagsLyricsSearchState = MusicTagsLyricsSearchState(),
     val pendingTrackAction: MusicTagsPendingTrackAction? = null,
     val showDiscardChangesDialog: Boolean = false,
-    val message: String? = null,
+    val message: UiText? = null,
 ) {
     val selectedTrack: Track?
         get() = tracks.firstOrNull { it.id == selectedTrackId }
@@ -346,7 +354,7 @@ class MusicTagsStore(
         invalidateOnlineLyricsSearch()
         val canEdit = repository.canEdit(track)
         val canWrite = repository.canWrite(track)
-        val result = if (canEdit) repository.readTags(track) else Result.failure(IllegalStateException("当前歌曲不支持标签读取。"))
+        val result = if (canEdit) repository.readTags(track) else Result.failure(top.iwesley.lyn.music.core.model.UiTextException(uiText(Res.string.tags_track_read_unsupported)))
         if (loadVersion != selectedLoadVersion || state.value.selectedTrackId != trackId) return
         result
             .onSuccess { snapshot ->
@@ -375,7 +383,7 @@ class MusicTagsStore(
                         isLoadingSelected = false,
                         isRefreshing = false,
                         rowMetadataLoadingIds = it.rowMetadataLoadingIds - trackId,
-                        message = throwable.message ?: "读取音频标签失败。",
+                        message = throwable.uiErrorText(uiText(Res.string.tags_read_failed)),
                     )
                 }
             }
@@ -406,7 +414,7 @@ class MusicTagsStore(
 
     private suspend fun pickArtwork() {
         if (!state.value.canWriteSelected) {
-            updateState { it.copy(message = "当前平台暂不支持本地标签写回。") }
+            updateState { it.copy(message = uiText(Res.string.tags_platform_write_unsupported)) }
             return
         }
         editorPlatformService.pickArtworkBytes()
@@ -421,7 +429,7 @@ class MusicTagsStore(
                 }
             }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message ?: "选择封面失败。") }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.artwork_selection_failed))) }
             }
     }
 
@@ -460,7 +468,7 @@ class MusicTagsStore(
                         hasResult = false,
                         directResults = emptyList(),
                         workflowResults = emptyList(),
-                        error = "标题不能为空",
+                        error = uiText(Res.string.track_title_required),
                     ),
                 )
             }
@@ -499,7 +507,7 @@ class MusicTagsStore(
                     hasResult = true,
                     directResults = directResult.getOrDefault(emptyList()),
                     workflowResults = workflowResult.getOrDefault(emptyList()),
-                    error = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
+                    error = directResult.exceptionOrNull()?.uiErrorText() ?: workflowResult.exceptionOrNull()?.uiErrorText(),
                 ),
             )
         }
@@ -538,7 +546,7 @@ class MusicTagsStore(
         val resolved = runCatching {
             lyricsRepository.resolveWorkflowSongCandidate(searchTrack, candidate)
         }.getOrElse { throwable ->
-            updateState { it.copy(message = throwable.message ?: "在线歌词获取失败。") }
+            updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.lyrics_online_fetch_failed))) }
             return
         }
         applySearchImport(
@@ -576,8 +584,8 @@ class MusicTagsStore(
                         isDirty = current.selectedSnapshot?.let { nextDraft.isDirtyComparedTo(it) } ?: false,
                         onlineLyricsSearch = MusicTagsLyricsSearchState(),
                         message = artworkImport.failureReason?.let { reason ->
-                            "已写入编辑器，封面导入失败：$reason"
-                        } ?: "已写入编辑器，点击保存可写回文件。",
+                            uiText(Res.string.tags_editor_applied_artwork_import_failed, reason)
+                        } ?: uiText(Res.string.tags_editor_changes_applied),
                     )
                 }
             }
@@ -591,7 +599,7 @@ class MusicTagsStore(
                         draft = nextDraft,
                         isDirty = current.selectedSnapshot?.let { nextDraft.isDirtyComparedTo(it) } ?: false,
                         onlineLyricsSearch = MusicTagsLyricsSearchState(),
-                        message = "歌词已写入编辑器，点击保存可写回文件。",
+                        message = uiText(Res.string.tags_editor_lyrics_applied),
                     )
                 }
             }
@@ -602,7 +610,7 @@ class MusicTagsStore(
                 if (importedArtwork == null) {
                     updateState {
                         it.copy(
-                            message = "封面导入失败：${artworkImport.failureReason ?: "没有可用封面。"}",
+                            message = uiText(Res.string.tags_artwork_import_failed, artworkImport.failureReason ?: uiText(Res.string.artwork_unavailable_message)),
                         )
                     }
                     return
@@ -616,7 +624,7 @@ class MusicTagsStore(
                         draft = nextDraft,
                         isDirty = current.selectedSnapshot?.let { nextDraft.isDirtyComparedTo(it) } ?: false,
                         onlineLyricsSearch = MusicTagsLyricsSearchState(),
-                        message = "封面已写入编辑器，点击保存可写回文件。",
+                        message = uiText(Res.string.tags_editor_artwork_applied),
                     )
                 }
             }
@@ -643,10 +651,10 @@ class MusicTagsStore(
         return editorPlatformService.loadArtworkBytes(normalizedLocator).fold(
             onSuccess = { bytes ->
                 bytes?.takeIf { it.isNotEmpty() }?.let { ImportedArtworkResult(bytes = it) }
-                    ?: ImportedArtworkResult(failureReason = "读取失败。")
+                    ?: ImportedArtworkResult(failureReason = uiText(Res.string.common_read_failed))
             },
             onFailure = { throwable ->
-                ImportedArtworkResult(failureReason = throwable.message ?: "读取失败。")
+                ImportedArtworkResult(failureReason = throwable.uiErrorText(uiText(Res.string.common_read_failed)))
             },
         )
     }
@@ -666,7 +674,7 @@ class MusicTagsStore(
         val current = state.value
         val track = current.selectedTrack ?: return
         if (current.isDirty) {
-            updateState { it.copy(message = "请先保存或重置当前修改后再刷新。") }
+            updateState { it.copy(message = uiText(Res.string.tags_unsaved_changes_refresh_blocked)) }
             return
         }
         updateState { it.copy(isRefreshing = true, message = null) }
@@ -678,7 +686,7 @@ class MusicTagsStore(
                 updateState {
                     it.copy(
                         isRefreshing = false,
-                        message = throwable.message ?: "刷新标签失败。",
+                        message = throwable.uiErrorText(uiText(Res.string.tags_refresh_failed)),
                     )
                 }
             }
@@ -688,7 +696,7 @@ class MusicTagsStore(
         val current = state.value
         val track = current.selectedTrack ?: return
         if (!current.canWriteSelected) {
-            updateState { it.copy(message = "当前平台暂不支持本地标签写回。") }
+            updateState { it.copy(message = uiText(Res.string.tags_platform_write_unsupported)) }
             return
         }
         updateState { it.copy(isSaving = true, message = null) }
@@ -700,7 +708,7 @@ class MusicTagsStore(
                 updateState {
                     it.copy(
                         isSaving = false,
-                        message = throwable.message ?: "标签保存失败。",
+                        message = throwable.uiErrorText(uiText(Res.string.tags_save_failed)),
                     )
                 }
             }
@@ -722,7 +730,7 @@ class MusicTagsStore(
                 canEditSelected = true,
                 canWriteSelected = current.canWriteSelected,
                 rowMetadata = current.rowMetadata + (trackId to result.snapshot.toRowMetadata()),
-                message = "标签已保存。",
+                message = uiText(Res.string.tags_saved),
             )
         }
     }
@@ -742,7 +750,7 @@ class MusicTagsStore(
                 canEditSelected = true,
                 canWriteSelected = current.canWriteSelected,
                 rowMetadata = current.rowMetadata + (trackId to result.snapshot.toRowMetadata()),
-                message = "标签已刷新。",
+                message = uiText(Res.string.tags_refreshed),
             )
         }
     }
@@ -781,7 +789,7 @@ class MusicTagsStore(
 
 private data class ImportedArtworkResult(
     val bytes: ByteArray? = null,
-    val failureReason: String? = null,
+    val failureReason: UiText? = null,
 )
 
 private fun AudioTagSnapshot.toDraft(): MusicTagsDraft {
@@ -808,7 +816,17 @@ private fun AudioTagSnapshot.toRowMetadata(): MusicTagsRowMetadata {
     return MusicTagsRowMetadata(
         tagLabel = tagLabel,
         albumArtist = albumArtist,
+        tagLabelText = tagLabelText,
     )
+}
+
+fun MusicTagsState.tagFormatText(trackId: String): UiText {
+    val row = rowMetadata[trackId]
+    val snapshot = selectedSnapshot?.takeIf { selectedTrackId == trackId }
+    val label = row?.tagLabelText ?: row?.tagLabel?.let { UiText.Raw(it) }
+        ?: snapshot?.tagLabelText ?: snapshot?.tagLabel?.let { UiText.Raw(it) }
+        ?: uiText(Res.string.common_available_after_reading)
+    return uiText(Res.string.tags_format_label, label)
 }
 
 private fun MusicTagsDraft.toPatch(): AudioTagPatch {

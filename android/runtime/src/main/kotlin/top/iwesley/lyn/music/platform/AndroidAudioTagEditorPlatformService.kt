@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
 import android.content.Context
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -7,6 +9,8 @@ import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
@@ -64,9 +68,9 @@ internal class AndroidAudioTagEditorPlatformService(
 
                 else -> {
                     val file = resolveAndroidLocalTrackFile(target)
-                        ?: error("无法读取封面文件。")
+                        ?: throw UiTextException(uiText(Res.string.artwork_file_unreadable))
                     if (!file.exists()) {
-                        error("封面文件不存在。")
+                        throw UiTextException(uiText(Res.string.artwork_file_missing))
                     }
                     file.readBytes()
                 }
@@ -89,6 +93,6 @@ internal class AndroidAudioTagEditorPlatformService(
     private fun readBytes(context: Context, uri: Uri): ByteArray {
         return context.contentResolver.openInputStream(uri)?.use { input ->
             input.readBytes()
-        } ?: error("无法读取所选封面。")
+        } ?: throw UiTextException(uiText(Res.string.artwork_selection_unreadable))
     }
 }

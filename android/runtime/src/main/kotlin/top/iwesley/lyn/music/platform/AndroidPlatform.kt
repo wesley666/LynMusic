@@ -1,5 +1,17 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.audioImportFailure
+import androidx.lifecycle.lifecycleScope
+
+import top.iwesley.lyn.music.core.model.APP_LANGUAGE_PREFERENCE_KEY
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguagePreferencesStore
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.appLanguageOrDefault
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
+
 import android.app.AlertDialog
 import android.app.Activity
 import android.content.BroadcastReceiver
@@ -668,13 +680,23 @@ internal class AndroidCredentialStore(
 
 internal class AndroidAppPreferencesStore(
     context: Context,
-) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
+) : AppLanguagePreferencesStore, PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore, AppDisplayPreferencesStore,
     CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, DesktopLyricsPositionPreferencesStore,
     NavidromeAudioQualityPreferencesStore, LibrarySourceFilterPreferencesStore,
     LyricsShareFontPreferencesStore, PlaybackDecoderPreferencesStore, PlayerArtworkStylePreferencesStore,
     AndroidEqualizerPreferencesStore, AutoOpenPlayerOnStartupPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
+    private val mutableAppLanguage = MutableStateFlow(appLanguageOrDefault(preferences.getString(APP_LANGUAGE_PREFERENCE_KEY, null)))
+    override val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
+    init { AppLanguageRuntime.install(this, java.util.Locale.getDefault().toLanguageTag()) }
+    override suspend fun setAppLanguage(language: AppLanguage) {
+        AppLanguageRuntime.updateSystemLanguage(java.util.Locale.getDefault().toLanguageTag())
+        preferences.edit().putString(APP_LANGUAGE_PREFERENCE_KEY, language.storageValue).apply()
+        mutableAppLanguage.value = language
+        AppLanguageRuntime.update(language)
+    }
+
     private val mutableUseSambaCache = MutableStateFlow(
         preferences.getBoolean(KEY_USE_SAMBA_CACHE, false),
     )
@@ -1251,13 +1273,26 @@ internal class AndroidAudioTagGateway(
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> {
         return runCatching {
             val permissionLabel = directLocalFileAccessPermissionLabel()
+            val permissionText = uiText(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Res.string.tags_android_manage_all_files_permission
+                } else {
+                    Res.string.tags_android_storage_read_write_permission
+                },
+            )
             if (!hasDirectLocalFileAccess(context)) {
-                error("当前文件没有写入权限，请重新导入本地文件夹并授予$permissionLabel。")
+                throw UiTextException(
+                    text = uiText(Res.string.tags_write_permission_reimport_required, permissionText),
+                    diagnosticMessage = "当前文件没有写入权限，请重新导入本地文件夹并授予$permissionLabel。",
+                )
             }
             val localFile = resolveAndroidLocalTrackFile(track.mediaLocator)
                 ?: error("当前歌曲通过 SAF 导入，未获得可写文件访问权限。请在来源页重新扫描并授予$permissionLabel。")
             if (!localFile.isFile || !localFile.canWrite()) {
-                error("当前文件没有写入权限，请确认已授予$permissionLabel。")
+                throw UiTextException(
+                    text = uiText(Res.string.tags_write_permission_required, permissionText),
+                    diagnosticMessage = "当前文件没有写入权限，请确认已授予$permissionLabel。",
+                )
             }
             val artworkDirectory = File(context.cacheDir, "artwork")
             AndroidAudioTagFileSupport.write(
@@ -1406,12 +1441,14 @@ class AndroidLocalFolderPicker(
     private val fallbackPickerLauncher = activity.registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val selection = if (result.resultCode == Activity.RESULT_OK) {
-            AndroidLocalFolderPickerActivity.selectionFromResult(result.data)
-        } else {
-            null
+        activity.lifecycleScope.launch {
+            val selection = if (result.resultCode == Activity.RESULT_OK) {
+                AndroidLocalFolderPickerActivity.selectionFromResult(result.data)
+            } else {
+                null
+            }
+            resumeFolderSelection(selection)
         }
-        resumeFolderSelection(selection)
     }
 
     suspend fun pickLocalFolder(): LocalFolderSelection? {
@@ -1677,7 +1714,7 @@ private class AndroidImportSourceGateway(
 
     override suspend fun testSamba(draft: SambaSourceDraft) {
         val sambaPath = parseSambaPath(draft.path)
-            ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
+            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -1694,7 +1731,7 @@ private class AndroidImportSourceGateway(
                 }
                 val share = session.connectShare(sambaPath.shareName) as DiskShare
                 if (sambaPath.directoryPath.isNotBlank() && !share.folderExists(sambaPath.directoryPath)) {
-                    error("SMB 路径不存在或无法访问。")
+                    throw UiTextException(uiText(Res.string.samba_path_unavailable))
                 }
             }
         }.onSuccess {
@@ -1718,7 +1755,7 @@ private class AndroidImportSourceGateway(
         progressSink: ImportScanProgressSink,
     ): ImportScanReport {
         val sambaPath = parseSambaPath(draft.path)
-            ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
+            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -2052,10 +2089,7 @@ private class AndroidImportSourceGateway(
                                         ),
                                     )
                                 }.onFailure { throwable ->
-                                    failures += ImportScanFailure(
-                                        relativePath = nextRelative,
-                                        reason = scanFailureReason(throwable),
-                                    )
+                                    failures += audioImportFailure(nextRelative, throwable)
                                     logger.warn(LOCAL_IMPORT_LOG_TAG) {
                                         "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
                                     }
@@ -2129,10 +2163,7 @@ private class AndroidImportSourceGateway(
                                         ),
                                     )
                                 }.onFailure { throwable ->
-                                    failures += ImportScanFailure(
-                                        relativePath = nextRelative,
-                                        reason = scanFailureReason(throwable),
-                                    )
+                                    failures += audioImportFailure(nextRelative, throwable)
                                     logger.warn(LOCAL_IMPORT_LOG_TAG) {
                                         "candidate-failed path=$nextRelative reason=${throwable.message.orEmpty()}"
                                     }
@@ -2242,10 +2273,7 @@ private class AndroidImportSourceGateway(
                                 ),
                             )
                         }.onFailure { throwable ->
-                            failures += ImportScanFailure(
-                                relativePath = childRelative,
-                                reason = scanFailureReason(throwable),
-                            )
+                            failures += audioImportFailure(childRelative, throwable)
                         }
                     }
                 }
@@ -2567,17 +2595,6 @@ internal class AndroidPlaybackGateway(
             publishPlayerState()
         }
 
-        private fun Throwable.messageChain(): String {
-            return generateSequence(this) { it.cause }
-                .map { throwable ->
-                    val name = throwable::class.simpleName ?: throwable::class.qualifiedName ?: "Throwable"
-                    val message = throwable.message?.takeIf { it.isNotBlank() }
-                    if (message == null) name else "$name: $message"
-                }
-                .distinct()
-                .joinToString(" -> ")
-        }
-
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             pendingLoadPlayWhenReady = false
             logger.error(PLAYBACK_LOG_TAG, error) {
@@ -2586,14 +2603,7 @@ internal class AndroidPlaybackGateway(
             if (tryApplyRemoteAddressFallback(error)) {
                 return
             }
-            val detail = error.messageChain()
-            mutableState.update {
-                it.copy(
-                    canSeek = false,
-                    errorMessage = detail.ifBlank { "播放器出错" },
-                    errorRevision = it.errorRevision + 1L,
-                )
-            }
+            mutableState.update { it.withAndroidPlaybackFailure(error) }
         }
 
         override fun onPositionDiscontinuity(
@@ -2655,7 +2665,7 @@ internal class AndroidPlaybackGateway(
         player.prepare()
         player.seekTo(retryPositionMs)
         player.playWhenReady = retryPlayWhenReady
-        mutableState.update { it.copy(errorMessage = null) }
+        mutableState.update { it.copy(errorMessage = null, errorText = null) }
         return true
     }
 
@@ -2945,10 +2955,10 @@ internal class AndroidPlaybackGateway(
         )?.let { return Uri.parse(it) }
         val samba = parseSambaLocator(locator) ?: return Uri.parse(locator)
         if (!playbackPreferencesStore.useSambaCache.value) {
-            error("Samba 直连播放失败: Android 预期使用直连 MediaSource，但错误地落入了缓存路径。")
+            throw UiTextException(uiText(Res.string.samba_direct_target_missing))
         }
         val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
-            ?: error("SMB 来源不可用。")
+            ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
         val spec = resolveSambaSourceSpec(
             source = source,
             locatorRelativePath = samba.second,
@@ -3326,12 +3336,6 @@ private const val ENCRYPTED_VALUE_PREFIX = "enc:v1:"
 private const val GCM_IV_LENGTH_BYTES = 12
 private const val GCM_TAG_LENGTH_BITS = 128
 
-private fun scanFailureReason(throwable: Throwable): String {
-    return throwable.message?.takeIf { it.isNotBlank() }
-        ?: throwable::class.simpleName
-        ?: "读取失败。"
-}
-
 private fun buildMetadataLogMessage(
     relativePath: String,
     candidate: top.iwesley.lyn.music.core.model.ImportedTrackCandidate,
@@ -3365,4 +3369,10 @@ private fun String?.toLyricsPreview(maxLength: Int = 80): String {
         .orEmpty()
     if (text.isBlank()) return "none"
     return text.take(maxLength)
+}
+
+/** Load UI language before opening the database, including in the crash process. */
+fun initializeAndroidAppLanguage(context: Context) {
+    AndroidAppPreferencesStore(context.applicationContext)
+    initializeNativeUiStrings(context)
 }

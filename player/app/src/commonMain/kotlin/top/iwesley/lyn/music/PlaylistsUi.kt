@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -99,6 +104,8 @@ import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.repository.PlaylistImportReport
+import top.iwesley.lyn.music.data.repository.PlaylistImportFailedLineIssue
+import top.iwesley.lyn.music.data.repository.messageUiText
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
@@ -122,7 +129,8 @@ fun buildPlaylistAddTargets(
 ): List<PlaylistAddTarget> {
     val likedTarget = PlaylistAddTarget(
         id = SYSTEM_LIKED_PLAYLIST_ID,
-        name = "喜欢",
+        name = "",
+        nameText = uiText(Res.string.favorites_likes_title),
         kind = PlaylistKind.SYSTEM_LIKED,
         updatedAt = Long.MAX_VALUE,
         alreadyContainsTrack = trackId != null && trackId in favoriteTrackIds,
@@ -209,7 +217,7 @@ private fun PlaylistAddAlertDialog(
         textContentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(28.dp),
-        title = { Text("加入歌单") },
+        title = { Text(uiString(Res.string.playlist_add_track)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
@@ -237,7 +245,7 @@ private fun PlaylistAddAlertDialog(
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                         ) {
                             Text(
-                                text = "正在加载歌单目标…",
+                                text = uiString(Res.string.playlists_loading_progress),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -281,7 +289,7 @@ private fun PlaylistAddAlertDialog(
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = target.name,
+                                        text = target.nameText?.displayText() ?: target.name,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (disabled) {
                                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -290,9 +298,9 @@ private fun PlaylistAddAlertDialog(
                                         },
                                     )
                                     Text(
-                                        text = if (disabled) "已存在" else when (target.kind) {
-                                            PlaylistKind.SYSTEM_LIKED -> "加入喜欢"
-                                            PlaylistKind.USER -> "加入普通歌单"
+                                        text = if (disabled) uiString(Res.string.playlist_import_already_added_status) else when (target.kind) {
+                                            PlaylistKind.SYSTEM_LIKED -> uiString(Res.string.playlist_add_to_favorites)
+                                            PlaylistKind.USER -> uiString(Res.string.playlist_add_track_title)
                                         },
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -306,7 +314,7 @@ private fun PlaylistAddAlertDialog(
                 ImeAwareOutlinedTextField(
                     value = newPlaylistName,
                     onValueChange = { newPlaylistName = it },
-                    label = { Text("新建歌单") },
+                    label = { Text(uiString(Res.string.playlist_new_title)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = fieldColors,
@@ -327,7 +335,7 @@ private fun PlaylistAddAlertDialog(
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("新建并加入")
+                    Text(uiString(Res.string.playlist_create_and_add))
                 }
             }
         },
@@ -337,14 +345,14 @@ private fun PlaylistAddAlertDialog(
                 enabled = selectedTarget != null,
             ) {
                 Text(
-                    text = "加入",
+                    text = uiString(Res.string.playlist_add_action),
                     color = if (selectedTarget != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(uiString(Res.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )
@@ -394,7 +402,7 @@ private fun PlaylistAddBottomSheet(
                     .padding(bottom = 18.dp),
             ) {
                 Text(
-                    text = "收藏到歌单",
+                    text = uiString(Res.string.playlist_save_action),
                     style = MaterialTheme.typography.titleLarge.copy(
                         fontSize = 20.sp,
                         lineHeight = 26.sp,
@@ -457,7 +465,7 @@ private fun PlaylistAddBottomSheet(
                 createPlaylistDialogVisible = false
                 onCreatePlaylistAndAdd(name)
             },
-            confirmText = "新建并加入",
+            confirmText = uiString(Res.string.playlist_create_and_add),
         )
     }
 }
@@ -491,7 +499,7 @@ private fun PlaylistAddCreatePlaylistRow(
             )
         }
         Text(
-            text = "新建歌单",
+            text = uiString(Res.string.playlist_new_title),
             style = MaterialTheme.typography.titleMedium.copy(
                 fontSize = 18.sp,
                 lineHeight = 24.sp,
@@ -516,7 +524,7 @@ private fun PlaylistAddLoadingRow() {
     ) {
         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         Text(
-            text = "正在加载歌单目标…",
+            text = uiString(Res.string.playlists_loading_progress),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -532,7 +540,7 @@ private fun PlaylistAddEmptyRow() {
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Text(
-            text = "暂无可加入的歌单",
+            text = uiString(Res.string.playlists_unavailable_title),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -587,7 +595,7 @@ private fun PlaylistAddCompactTargetRow(
             )
         }
         Text(
-            text = target.name,
+            text = target.nameText?.displayText() ?: target.name,
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleMedium.copy(
                 fontSize = 18.sp,
@@ -604,7 +612,7 @@ private fun PlaylistAddCompactTargetRow(
         )
         if (disabled) {
             Text(
-                text = "已添加",
+                text = uiString(Res.string.playlist_import_added_status),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = 14.sp,
@@ -1045,11 +1053,11 @@ private fun PlaylistListPane(
         ) {
             item {
                 PlaylistSectionTitle(
-                    title = "歌单",
+                    title = uiString(Res.string.playlists_title),
                     subtitle = if (isOnlineMode) {
-                        "当前显示 Navidrome 远端歌单，变更会直接同步到服务器。"
+                        uiString(Res.string.playlists_online_sync_hint)
                     } else {
-                        "普通歌单支持本地歌曲和 Subsonic-compatible 歌曲混合收藏。"
+                        uiString(Res.string.playlists_supported_track_types_hint)
                     },
                 )
             }
@@ -1063,7 +1071,7 @@ private fun PlaylistListPane(
                         Icon(Icons.Rounded.Add, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "新建歌单",
+                            text = uiString(Res.string.playlist_new_title),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1073,7 +1081,7 @@ private fun PlaylistListPane(
                             Icon(Icons.Rounded.Sync, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = if (isRefreshing) "同步中" else "同步远端",
+                                text = if (isRefreshing) uiString(Res.string.common_syncing) else uiString(Res.string.playlist_sync_remote_action),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1088,7 +1096,7 @@ private fun PlaylistListPane(
                                 Icon(Icons.Rounded.Tune, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = selectedOnlineSourceLabel
+                                    text = selectedOnlineSourceLabel?.displayText()
                                         ?: playlistSourceFilterButtonLabel(selectedSourceFilter),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -1110,7 +1118,7 @@ private fun PlaylistListPane(
                                 }
                                 onlineSourceOptions.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text(option.label) },
+                                        text = { Text(option.label.displayText()) },
                                         onClick = {
                                             sourceFilterMenuExpanded = false
                                             onOnlineSourceSelected(option.sourceId)
@@ -1125,24 +1133,24 @@ private fun PlaylistListPane(
             if (isLoadingContent) {
                 item {
                     EmptyStateCard(
-                        title = "正在加载歌单",
-                        body = "歌单数据会在页面显示后继续异步整理，请稍候。",
+                        title = uiString(Res.string.playlists_loading_title),
+                        body = uiString(Res.string.playlist_background_indexing_hint),
                     )
                 }
             } else if (playlists.isEmpty()) {
                 item {
                     if (isFilteringByQuery) {
                         EmptyStateCard(
-                            title = "没有匹配的歌单",
-                            body = "试试调整搜索词，或清空搜索后查看全部歌单。",
+                            title = uiString(Res.string.playlists_search_empty_title),
+                            body = uiString(Res.string.playlists_search_empty_hint),
                         )
                     } else {
                         EmptyStateCard(
-                            title = "还没有普通歌单",
+                            title = uiString(Res.string.playlists_local_empty_title),
                             body = if (isOnlineMode) {
-                                "远端还没有普通歌单，可以先新建一个空歌单。"
+                                uiString(Res.string.playlists_remote_empty_hint)
                             } else {
-                                "从播放器把当前歌曲加入歌单，或先新建一个空歌单。"
+                                uiString(Res.string.playlists_create_empty_hint)
                             },
                         )
                     }
@@ -1178,9 +1186,9 @@ private fun PlaylistListPane(
 
         pendingRenamePlaylist?.let { playlist ->
             PlaylistNameDialog(
-                title = "重命名歌单",
+                title = uiString(Res.string.playlist_rename_title),
                 initialName = pendingRenamePlaylistName.ifBlank { playlist.name },
-                confirmText = "保存",
+                confirmText = uiString(Res.string.common_save),
                 onDismiss = {
                     pendingRenamePlaylistId = null
                     pendingRenamePlaylistName = ""
@@ -1285,7 +1293,7 @@ private fun PlaylistSummaryCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${playlist.trackCount} 首歌曲",
+                        uiString(Res.plurals.common_track_count, (playlist.trackCount).toInt(), playlist.trackCount),
                         color = if (selected) {
                             MaterialTheme.colorScheme.onSecondary
                         } else {
@@ -1302,7 +1310,7 @@ private fun PlaylistSummaryCard(
             containerColor = shellColors.navContainer,
         ) {
             DropdownMenuItem(
-                text = { Text("重命名") },
+                text = { Text(uiString(Res.string.playlist_rename_action)) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Edit,
@@ -1314,7 +1322,7 @@ private fun PlaylistSummaryCard(
             DropdownMenuItem(
                 text = {
                     Text(
-                        text = "删除歌单",
+                        text = uiString(Res.string.playlist_delete_title),
                         color = MaterialTheme.colorScheme.error,
                     )
                 },
@@ -1355,27 +1363,27 @@ private fun PlaylistDeleteDialog(
         textContentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(28.dp),
-        title = { Text("删除歌单") },
+        title = { Text(uiString(Res.string.playlist_delete_title)) },
         text = {
             Text(
                 if (isOnlineMode) {
-                    "确认删除远端歌单“$playlistName”吗？删除后会同步到服务器。"
+                    uiString(Res.string.playlist_delete_remote_confirmation, playlistName)
                 } else {
-                    "确认删除“$playlistName”吗？本地和已同步的远端歌单都会一起删除。"
+                    uiString(Res.string.playlist_delete_synced_confirmation, playlistName)
                 },
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text(
-                    text = "删除",
+                    text = uiString(Res.string.common_delete),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(uiString(Res.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )
@@ -1441,16 +1449,16 @@ private fun PlaylistTextImportDialog(
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = "导入歌单",
+                                    text = uiString(Res.string.playlist_import_title),
                                     color = MaterialTheme.colorScheme.onSurface,
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 Text(
                                     text = if (isOnlineMode) {
-                                        "导入到远端歌单“$playlistName”。每行使用“歌名 - 歌手”，会远端搜索 Navidrome 曲库并加入当前远端歌单。"
+                                        uiString(Res.string.playlist_import_remote_hint, playlistName)
                                     } else {
-                                        "导入到“$playlistName”。每行使用“歌名 - 歌手”，只会匹配已有曲库中的歌曲。"
+                                        uiString(Res.string.playlist_import_local_hint, playlistName)
                                     },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -1466,8 +1474,8 @@ private fun PlaylistTextImportDialog(
                                 ImeAwareOutlinedTextField(
                                     value = text,
                                     onValueChange = { text = it },
-                                    label = { Text("导入内容") },
-                                    placeholder = { Text("喜欢你 - BEYOND\n唯一 - 邓紫棋") },
+                                    label = { Text(uiString(Res.string.playlist_import_text_label)) },
+                                    placeholder = { Text(uiString(Res.string.playlist_import_text_example)) },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(18.dp),
                                     minLines = dialogLayout.textFieldLines,
@@ -1482,13 +1490,13 @@ private fun PlaylistTextImportDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 TextButton(onClick = onDismiss) {
-                                    Text("关闭", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(uiString(Res.string.common_close), color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 TextButton(
                                     onClick = { uriHandler.openUri(PlaylistImportAssistantUrl) },
                                 ) {
-                                    Text("助手", color = MaterialTheme.colorScheme.primary)
+                                    Text(uiString(Res.string.playlist_import_assistant_title), color = MaterialTheme.colorScheme.primary)
                                 }
                                 Spacer(Modifier.width(8.dp))
                                 TextButton(
@@ -1496,7 +1504,7 @@ private fun PlaylistTextImportDialog(
                                     enabled = canConfirmPlaylistImport(text, isImporting),
                                 ) {
                                     Text(
-                                        text = if (isImporting) "导入中" else "导入",
+                                        text = if (isImporting) uiString(Res.string.playlist_importing_status) else uiString(Res.string.playlist_import_action),
                                         color = if (canConfirmPlaylistImport(text, isImporting)) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
@@ -1528,23 +1536,21 @@ private fun PlaylistImportReportContent(report: PlaylistImportReport) {
             fontWeight = FontWeight.SemiBold,
         )
         if (report.hasIssues) {
-            PlaylistImportIssueGroup("格式错误", report.malformedLines.map(::formatPlaylistImportLineIssue))
-            PlaylistImportIssueGroup("未匹配", report.notMatchedLines.map(::formatPlaylistImportLineIssue))
+            PlaylistImportIssueGroup(uiString(Res.string.playlist_import_invalid_format_status), report.malformedLines.map { formatPlaylistImportLineIssue(it) })
+            PlaylistImportIssueGroup(uiString(Res.string.playlist_import_no_match_status), report.notMatchedLines.map { formatPlaylistImportLineIssue(it) })
             PlaylistImportIssueGroup(
-                title = "多个匹配",
+                title = uiString(Res.string.playlist_import_multiple_matches_status),
                 lines = report.ambiguousLines.map { issue ->
-                    "第 ${issue.lineNumber} 行：${issue.rawText}（${issue.matchCount} 个匹配）"
+                    uiString(Res.string.playlist_import_line_with_match_count, issue.lineNumber, issue.rawText, issue.matchCount)
                 },
             )
             PlaylistImportIssueGroup(
-                title = "加入失败",
-                lines = report.failedLines.map { issue ->
-                    "第 ${issue.lineNumber} 行：${issue.rawText}（${issue.message}）"
-                },
+                title = uiString(Res.string.playlist_import_failed_status),
+                lines = report.failedLines.map { formatPlaylistImportFailedLineIssue(it) },
             )
             if (report.duplicateInputCount > 0) {
                 Text(
-                    text = "输入内重复：${report.duplicateInputCount} 首",
+                    text = uiString(Res.plurals.playlist_import_input_duplicate_count, (report.duplicateInputCount).toInt(), report.duplicateInputCount),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -1648,28 +1654,38 @@ private fun minDp(first: Dp, second: Dp): Dp = if (first < second) first else se
 
 private fun maxDp(first: Dp, second: Dp): Dp = if (first > second) first else second
 
-internal fun playlistImportReportSummary(report: PlaylistImportReport): String {
-    val parts = mutableListOf("已加入 ${report.addedCount} 首")
+internal fun playlistImportReportSummaryText(report: PlaylistImportReport): UiText {
+    val parts = mutableListOf(uiPlural(Res.plurals.playlist_import_added_track_count, (report.addedCount).toInt(), report.addedCount))
     if (report.alreadyExistsCount > 0) {
-        parts += "已存在 ${report.alreadyExistsCount} 首"
+        parts += uiPlural(Res.plurals.playlist_import_existing_track_count, (report.alreadyExistsCount).toInt(), report.alreadyExistsCount)
     }
     if (report.duplicateInputCount > 0) {
-        parts += "重复 ${report.duplicateInputCount} 首"
+        parts += uiPlural(Res.plurals.playlist_import_duplicate_track_count, (report.duplicateInputCount).toInt(), report.duplicateInputCount)
     }
     val issueCount = report.malformedLines.size +
         report.notMatchedLines.size +
         report.ambiguousLines.size +
         report.failedLines.size
     if (issueCount > 0) {
-        parts += "未导入 $issueCount 行"
+        parts += uiPlural(Res.plurals.playlist_import_failed_line_count, (issueCount).toInt(), issueCount)
     }
-    return parts.joinToString("，")
+    return UiText.Joined(parts, separatorText = uiText(Res.string.ui_list_separator))
 }
 
+@Composable
+internal fun playlistImportReportSummary(report: PlaylistImportReport): String = playlistImportReportSummaryText(report).displayText()
+
+internal fun formatPlaylistImportFailedLineIssueText(issue: PlaylistImportFailedLineIssue): UiText =
+    uiText(Res.string.playlist_import_line_with_reason, issue.lineNumber, issue.rawText, issue.messageUiText())
+
+@Composable
+internal fun formatPlaylistImportFailedLineIssue(issue: PlaylistImportFailedLineIssue): String = formatPlaylistImportFailedLineIssueText(issue).displayText()
+
+@Composable
 private fun formatPlaylistImportLineIssue(
     issue: top.iwesley.lyn.music.data.repository.PlaylistImportLineIssue,
 ): String {
-    return "第 ${issue.lineNumber} 行：${issue.rawText}"
+    return uiString(Res.string.playlist_import_line_label, issue.lineNumber, issue.rawText)
 }
 
 @Composable
@@ -1799,13 +1815,13 @@ private fun PlaylistDetailPane(
                 )
             } else if (isLoadingContent && detail == null) {
                 EmptyStateCard(
-                    title = "正在加载歌单详情",
-                    body = "歌单列表和歌曲内容会在后台继续准备，请稍候。",
+                    title = uiString(Res.string.playlist_detail_loading_title),
+                    body = uiString(Res.string.playlists_background_loading_hint),
                 )
             } else if (detail == null) {
                 EmptyStateCard(
-                    title = "选择一个歌单",
-                    body = "左侧会列出普通歌单，点击后可以查看歌曲并直接播放。",
+                    title = uiString(Res.string.playlist_select_title),
+                    body = uiString(Res.string.playlist_selection_hint),
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1813,12 +1829,12 @@ private fun PlaylistDetailPane(
                         TextButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("返回歌单列表")
+                            Text(uiString(Res.string.playlists_back_to_list))
                         }
                     }
                     PlaylistSectionTitle(
                         title = detail.name,
-                        subtitle = "${detail.tracks.size} 首歌曲",
+                        subtitle = uiString(Res.plurals.common_track_count, (detail.tracks.size).toInt(), detail.tracks.size),
                     )
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -1831,7 +1847,7 @@ private fun PlaylistDetailPane(
                         ) {
                             Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("播放全部")
+                            Text(uiString(Res.string.player_play_all))
                         }
                         if (showImportPlaylistAction) {
                             OutlinedButton(
@@ -1841,7 +1857,7 @@ private fun PlaylistDetailPane(
                                 Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = if (isImportingPlaylist) "导入中" else "导入歌单",
+                                    text = if (isImportingPlaylist) uiString(Res.string.playlist_importing_status) else uiString(Res.string.playlist_import_title),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -1859,7 +1875,7 @@ private fun PlaylistDetailPane(
                     if (selectionMode) {
                         TrackSelectionActionBar(
                             selectedCount = selectedBatchTracks.size,
-                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate),
+                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate).displayText(),
                             allVisibleSelected = allVisibleTracksSelected,
                             hasVisibleTracks = visibleTracks.isNotEmpty(),
                             onToggleSelectAll = {
@@ -1877,14 +1893,14 @@ private fun PlaylistDetailPane(
             detail.tracks.isEmpty() -> item {
                 EmptyStateCard(
                     title = if (hasTracksOutsideFilter) {
-                        "当前来源下没有歌曲"
+                        uiString(Res.string.playlist_source_tracks_empty)
                     } else {
-                        "歌单还是空的"
+                        uiString(Res.string.playlist_empty_title)
                     },
                     body = if (hasTracksOutsideFilter) {
-                        "试试切回“${playlistSourceFilterButtonLabel(LibrarySourceFilter.ALL)}”，或更换其他来源筛选。"
+                        uiString(Res.string.playlist_source_filter_hint, playlistSourceFilterButtonLabel(LibrarySourceFilter.ALL))
                     } else {
-                        "从播放器把当前歌曲加入这里后，就可以直接播放和管理了。"
+                        uiString(Res.string.playlists_add_current_track_hint)
                     },
                 )
             }
@@ -1932,7 +1948,7 @@ private fun PlaylistDetailLoadingContent(
             TextButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
-                Text("返回歌单列表")
+                Text(uiString(Res.string.playlists_back_to_list))
             }
         }
         Card(
@@ -1949,12 +1965,12 @@ private fun PlaylistDetailLoadingContent(
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("正在打开歌单", fontWeight = FontWeight.Bold)
+                    Text(uiString(Res.string.playlist_opening_status), fontWeight = FontWeight.Bold)
                     Text(
                         text = requestedPlaylistName
                             ?.takeIf { it.isNotBlank() }
-                            ?.let { "正在读取“$it”中的歌曲，请稍候。" }
-                            ?: "正在读取歌单中的歌曲，请稍候。",
+                            ?.let { uiString(Res.string.playlist_named_tracks_loading_hint, it) }
+                            ?: uiString(Res.string.playlist_tracks_loading_hint),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1977,22 +1993,24 @@ private fun matchesPlaylistSourceFilter(
     )
 }
 
+@Composable
 private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部来源"
-        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
+        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
         LibrarySourceFilter.SAMBA -> "Samba"
         LibrarySourceFilter.WEBDAV -> "WebDAV"
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
         LibrarySourceFilter.SUBSONIC -> "Subsonic"
         LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.DOWNLOADED -> "已下载"
+        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
     }
 }
 
+@Composable
 private fun playlistSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部"
+        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
         else -> playlistSourceFilterButtonLabel(filter)
     }
 }
@@ -2054,7 +2072,7 @@ private fun PlaylistTrackRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        entry.track.artistName ?: "未知艺人",
+                        entry.track.artistName ?: uiString(Res.string.common_unknown_artist),
                         modifier = Modifier.weight(1f, fill = false),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -2076,7 +2094,7 @@ private fun PlaylistTrackRow(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
-                                contentDescription = "移出歌单",
+                                contentDescription = uiString(Res.string.playlist_remove_track_action),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -2119,9 +2137,9 @@ internal fun playlistTrackTrailingWidth(
 private fun PlaylistNameDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
-    title: String = "新建歌单",
+    title: String = uiString(Res.string.playlist_new_title),
     initialName: String = "",
-    confirmText: String = "创建",
+    confirmText: String = uiString(Res.string.playlist_create_action),
 ) {
     val shellColors = mainShellColors
     var name by rememberSaveable(initialName) { mutableStateOf(initialName) }
@@ -2154,7 +2172,7 @@ private fun PlaylistNameDialog(
             ImeAwareOutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("歌单名称") },
+                label = { Text(uiString(Res.string.playlist_name_label)) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = fieldColors,
@@ -2173,7 +2191,7 @@ private fun PlaylistNameDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(uiString(Res.string.common_cancel), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
     )

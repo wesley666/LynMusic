@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.tv.ui
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiPlural
+
+import top.iwesley.lyn.music.displayText
+import top.iwesley.lyn.music.uiDisplayText
+import top.iwesley.lyn.music.uiString
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -107,6 +115,8 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
 import top.iwesley.lyn.music.tv.TvMediaDetailActivity
 import top.iwesley.lyn.music.tv.TvMediaDetailSource
+import top.iwesley.lyn.music.tv.tvMediaDetailTitleText
+import top.iwesley.lyn.music.tv.tvMediaDetailSubtitleText
 import top.iwesley.lyn.music.tv.TvPlayerActivity
 import top.iwesley.lyn.music.tv.TvSettingsActivity
 
@@ -271,7 +281,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
                 ) {
                     BadgedIcon(
                         imageVector = Icons.Rounded.Settings,
-                        contentDescription = "设置",
+                        contentDescription = uiString(Res.string.settings_title),
                         showBadge = showSettingsUpdateBadge,
                         modifier = Modifier.size(28.dp),
                     )
@@ -282,7 +292,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
         }
         TvDestinationItem(
             destination = TvMainDestination.My,
-            label = "我的",
+            label = uiString(Res.string.navigation_my_music),
             icon = Icons.Rounded.Person,
             selected = selectedDestination == TvMainDestination.My,
             focusRequester = myFocusRequester,
@@ -290,7 +300,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
         )
         TvDestinationItem(
             destination = TvMainDestination.Library,
-            label = "曲库",
+            label = uiString(Res.string.library_title),
             icon = Icons.Rounded.LibraryMusic,
             selected = selectedDestination == TvMainDestination.Library,
             focusRequester = libraryFocusRequester,
@@ -298,7 +308,7 @@ private fun NavigationDrawerScope.TvNavigationRail(
         )
         TvDestinationItem(
             destination = TvMainDestination.Favorites,
-            label = "喜欢",
+            label = uiString(Res.string.favorites_likes_title),
             icon = Icons.Rounded.Favorite,
             selected = selectedDestination == TvMainDestination.Favorites,
             focusRequester = favoritesFocusRequester,
@@ -375,18 +385,18 @@ private fun TvMyScreen(
     ) {
         item {
             TvSectionHeader(
-                title = "我的",
-                subtitle = "最近播放和每日推荐",
+                title = uiString(Res.string.navigation_my_music),
+                subtitle = uiString(Res.string.tv_my_music_description),
                 action = null,
             )
         }
         state.message?.let { message ->
-            item { TvMessagePanel(message = message) }
+            item { TvMessagePanel(message = message.displayText()) }
         }
         item {
             TvFeaturedTracksPanel(
-                title = "每日推荐",
-                subtitle = if (state.isGeneratingDailyRecommendation) "正在生成" else "${dailyTracks.size} 首",
+                title = uiString(Res.string.recommendations_daily_title),
+                subtitle = if (state.isGeneratingDailyRecommendation) uiString(Res.string.recommendations_generating_status) else uiString(Res.plurals.common_track_count_short, (dailyTracks.size).toInt(), dailyTracks.size),
                 icon = Icons.Rounded.Today,
                 tracks = dailyTracks,
                 artworkCacheStore = artworkCacheStore,
@@ -400,7 +410,7 @@ private fun TvMyScreen(
         }
         item {
             TvTrackPreviewPanel(
-                title = "最近播放",
+                title = uiString(Res.string.tv_recent_plays_title),
                 tracks = recentTracks,
                 artworkCacheStore = artworkCacheStore,
                 onPlayTrack = { index -> onIntent(TvMainIntent.PlayTracks(recentTracks, index)) },
@@ -439,9 +449,10 @@ private fun TvLibraryScreen(
 ) {
     val context = LocalContext.current
     TvMediaBrowserScreen(
-        title = "曲库",
-        emptyTitle = "曲库还是空的",
-        emptyBody = "先导入本地文件夹、Samba、WebDAV、Navidrome 或 Subsonic，扫描完成后会出现在这里。",
+        destination = TvMainDestination.Library,
+        title = uiString(Res.string.library_title),
+        emptyTitle = uiString(Res.string.library_empty_title),
+        emptyBody = uiString(Res.string.tv_library_import_hint),
         isLoading = state.isLoadingContent,
         query = state.query,
         mode = tvState.libraryMode,
@@ -464,6 +475,7 @@ private fun TvLibraryScreen(
                     id = detail.id,
                     title = detail.title,
                     subtitle = detail.subtitle,
+                    subtitleTrackCount = detail.subtitleTrackCount,
                 ),
             )
         },
@@ -484,9 +496,10 @@ private fun TvFavoritesScreen(
 ) {
     val context = LocalContext.current
     TvMediaBrowserScreen(
-        title = "喜欢",
-        emptyTitle = "还没有喜欢的歌曲",
-        emptyBody = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
+        destination = TvMainDestination.Favorites,
+        title = uiString(Res.string.favorites_likes_title),
+        emptyTitle = uiString(Res.string.favorites_empty_title),
+        emptyBody = uiString(Res.string.favorites_empty_hint),
         isLoading = state.isLoadingContent,
         query = state.query,
         mode = tvState.favoritesMode,
@@ -509,6 +522,7 @@ private fun TvFavoritesScreen(
                     id = detail.id,
                     title = detail.title,
                     subtitle = detail.subtitle,
+                    subtitleTrackCount = detail.subtitleTrackCount,
                 ),
             )
         },
@@ -520,6 +534,7 @@ private fun TvFavoritesScreen(
 
 @Composable
 private fun TvMediaBrowserScreen(
+    destination: TvMainDestination,
     title: String,
     emptyTitle: String,
     emptyBody: String,
@@ -541,15 +556,15 @@ private fun TvMediaBrowserScreen(
     onToggleFavorite: (Track) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tracksTabFocusRequester = remember(title) { FocusRequester() }
-    val albumsTabFocusRequester = remember(title) { FocusRequester() }
-    val artistsTabFocusRequester = remember(title) { FocusRequester() }
+    val tracksTabFocusRequester = remember(destination) { FocusRequester() }
+    val albumsTabFocusRequester = remember(destination) { FocusRequester() }
+    val artistsTabFocusRequester = remember(destination) { FocusRequester() }
     val currentTabFocusRequester = when (mode) {
         TvMediaBrowserMode.Tracks -> tracksTabFocusRequester
         TvMediaBrowserMode.Albums -> albumsTabFocusRequester
         TvMediaBrowserMode.Artists -> artistsTabFocusRequester
     }
-    val firstListItemFocusRequester = remember(title, mode, detail) { FocusRequester() }
+    val firstListItemFocusRequester = remember(destination, mode, detail) { FocusRequester() }
     val displayedTracks = remember(detail, tracks) {
         when (detail?.mode) {
             TvMediaBrowserMode.Albums -> tracks.filter { track -> matchesAlbumDetail(track, detail.id) }
@@ -563,7 +578,7 @@ private fun TvMediaBrowserScreen(
             buildAlbumArtworkTrackById(tracks)
         }
     }
-    var focusedListIndex by remember(title, mode, detail, tracks) { mutableStateOf<Int?>(null) }
+    var focusedListIndex by remember(destination, mode, detail, tracks) { mutableStateOf<Int?>(null) }
     val topControlsCanFocus = focusedListIndex == null || focusedListIndex == 0
     val searchButtonFocusModifier = Modifier.focusProperties {
         canFocus = topControlsCanFocus
@@ -577,7 +592,7 @@ private fun TvMediaBrowserScreen(
         mode == TvMediaBrowserMode.Artists -> artists.isNotEmpty()
         else -> false
     }
-    LaunchedEffect(title) {
+    LaunchedEffect(destination) {
         if (allowInitialFocus) {
             runCatching { currentTabFocusRequester.requestFocus() }
         }
@@ -587,8 +602,9 @@ private fun TvMediaBrowserScreen(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         TvSectionHeader(
-            title = detail?.title ?: title,
-            subtitle = detail?.subtitle ?: browserSubtitle(query, tracks.size),
+            title = detail?.let { tvMediaDetailTitleText(it.mode, it.title).displayText() } ?: title,
+            subtitle = detail?.let { tvMediaDetailSubtitleText(it.subtitle, it.subtitleTrackCount)?.displayText() }
+                ?: browserSubtitle(query, tracks.size),
             action = {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (query.isNotBlank()) {
@@ -596,7 +612,7 @@ private fun TvMediaBrowserScreen(
                             onClick = onClearSearch,
                             modifier = searchButtonFocusModifier,
                         ) {
-                            Text("清除搜索")
+                            Text(uiString(Res.string.tv_search_clear_query))
                         }
                     }
                     OutlinedButton(
@@ -605,7 +621,7 @@ private fun TvMediaBrowserScreen(
                     ) {
                         Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("搜索")
+                        Text(uiString(Res.string.common_search))
                     }
                 }
             },
@@ -628,8 +644,8 @@ private fun TvMediaBrowserScreen(
                 tracks = displayedTracks,
                 favoriteTrackIds = favoriteTrackIds,
                 artworkCacheStore = artworkCacheStore,
-                emptyTitle = "这里没有歌曲",
-                emptyBody = "当前专辑或艺人没有可显示的歌曲。",
+                emptyTitle = uiString(Res.string.library_tracks_empty_title),
+                emptyBody = uiString(Res.string.library_detail_tracks_empty),
                 onPlayTracks = onPlayTracks,
                 onToggleFavorite = onToggleFavorite,
                 onItemFocused = { focusedListIndex = it },
@@ -644,7 +660,7 @@ private fun TvMediaBrowserScreen(
                 favoriteTrackIds = favoriteTrackIds,
                 artworkCacheStore = artworkCacheStore,
                 emptyTitle = emptyTitle,
-                emptyBody = if (query.isBlank()) emptyBody else "试试调整搜索词。",
+                emptyBody = if (query.isBlank()) emptyBody else uiString(Res.string.tv_search_empty_hint),
                 onPlayTracks = onPlayTracks,
                 onToggleFavorite = onToggleFavorite,
                 onItemFocused = { focusedListIndex = it },
@@ -731,7 +747,7 @@ private fun TvStatsRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         TvStatCard(
-            label = "歌曲",
+            label = uiString(Res.string.library_tracks_title),
             count = trackCount,
             icon = Icons.Rounded.LibraryMusic,
             selected = selectedMode == TvMediaBrowserMode.Tracks,
@@ -742,7 +758,7 @@ private fun TvStatsRow(
             onSelected = { onModeSelected(TvMediaBrowserMode.Tracks) },
         )
         TvStatCard(
-            label = "专辑",
+            label = uiString(Res.string.library_albums_title),
             count = albumCount,
             icon = Icons.Rounded.Album,
             selected = selectedMode == TvMediaBrowserMode.Albums,
@@ -753,7 +769,7 @@ private fun TvStatsRow(
             onSelected = { onModeSelected(TvMediaBrowserMode.Albums) },
         )
         TvStatCard(
-            label = "艺人",
+            label = uiString(Res.string.library_artists_title),
             count = artistCount,
             icon = Icons.Rounded.Person,
             selected = selectedMode == TvMediaBrowserMode.Artists,
@@ -951,7 +967,7 @@ private fun TvTrackRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" / ").ifBlank { "未知艺人" },
+                    text = listOfNotNull(track.artistName, track.albumTitle).joinToString(" / ").ifBlank { uiString(Res.string.common_unknown_artist) },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -964,7 +980,7 @@ private fun TvTrackRow(
             )
             Icon(
                 imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                contentDescription = if (isFavorite) "取消喜欢" else "喜欢",
+                contentDescription = if (isFavorite) uiString(Res.string.favorites_remove_track) else uiString(Res.string.favorites_likes_title),
                 tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp),
             )
@@ -985,7 +1001,7 @@ private fun TvAlbumList(
     modifier: Modifier = Modifier,
 ) {
     if (albums.isEmpty()) {
-        TvEmptyPanel(title = "没有专辑", body = "当前筛选条件下没有专辑。", modifier = modifier)
+        TvEmptyPanel(title = uiString(Res.string.tv_albums_empty_title), body = uiString(Res.string.tv_albums_filter_empty_hint), modifier = modifier)
         return
     }
     LazyColumn(
@@ -1002,8 +1018,8 @@ private fun TvAlbumList(
         itemsIndexed(albums, key = { _, album -> album.id }) { index, album ->
             val artworkTrack = albumArtworkTrackById[album.id]
             TvCollectionRow(
-                title = album.title,
-                subtitle = listOfNotNull(album.artistName, "${album.trackCount} 首").joinToString(" / "),
+                title = album.title.ifBlank { uiString(Res.string.common_unknown_album) },
+                subtitle = listOfNotNull(album.artistName, uiString(Res.plurals.common_track_count_short, (album.trackCount).toInt(), album.trackCount)).joinToString(" / "),
                 icon = Icons.Rounded.Album,
                 artworkLocator = artworkTrack?.artworkLocator,
                 artworkCacheKey = artworkTrack?.let(::trackArtworkCacheKey),
@@ -1037,7 +1053,7 @@ private fun TvArtistList(
     modifier: Modifier = Modifier,
 ) {
     if (artists.isEmpty()) {
-        TvEmptyPanel(title = "没有艺人", body = "当前筛选条件下没有艺人。", modifier = modifier)
+        TvEmptyPanel(title = uiString(Res.string.tv_artists_empty_title), body = uiString(Res.string.tv_artists_filter_empty_hint), modifier = modifier)
         return
     }
     LazyColumn(
@@ -1053,8 +1069,8 @@ private fun TvArtistList(
     ) {
         itemsIndexed(artists, key = { _, artist -> artist.id }) { index, artist ->
             TvCollectionRow(
-                title = artist.name,
-                subtitle = "${artist.trackCount} 首",
+                title = artist.name.ifBlank { uiString(Res.string.common_unknown_artist) },
+                subtitle = uiString(Res.plurals.common_track_count_short, (artist.trackCount).toInt(), artist.trackCount),
                 icon = Icons.Rounded.Person,
                 artworkLocator = null,
                 artworkCacheKey = null,
@@ -1068,7 +1084,7 @@ private fun TvArtistList(
                             mode = TvMediaBrowserMode.Artists,
                             id = artist.id,
                             title = artist.name,
-                            subtitle = "${artist.trackCount} 首歌曲",
+                            subtitleTrackCount = artist.trackCount,
                         ),
                     )
                 },
@@ -1199,11 +1215,11 @@ private fun TvFeaturedTracksPanel(
                 ),
                 border = BorderStroke(1.dp, if (displayedTracks.isNotEmpty()) playAllColor else playAllDisabledColor),
             ) {
-                Text("全部播放")
+                Text(uiString(Res.string.tv_play_all_action))
             }
         }
         if (displayedTracks.isEmpty()) {
-            Text("曲库有歌曲后会生成推荐。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(uiString(Res.string.tv_recommendations_empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyRow(
                 modifier = Modifier.fillMaxWidth().focusGroup(),
@@ -1240,7 +1256,7 @@ private fun TvTrackPreviewPanel(
             style = MaterialTheme.typography.titleLarge,
         )
         if (tracks.isEmpty()) {
-            TvMessagePanel(message = "暂无最近播放")
+            TvMessagePanel(message = uiString(Res.string.tv_recent_plays_empty_title))
         } else {
             tracks.take(6).forEachIndexed { index, track ->
                 TvTrackRow(
@@ -1300,7 +1316,7 @@ private fun TvSmallTrackCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                track.artistName.orEmpty().ifBlank { "未知艺人" },
+                track.artistName.orEmpty().ifBlank { uiString(Res.string.common_unknown_artist) },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1317,13 +1333,13 @@ private fun TvRecentAlbumsPanel(
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            "最近专辑",
+            uiString(Res.string.tv_recent_albums_title),
             color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleLarge,
         )
         if (albums.isEmpty()) {
-            TvMessagePanel(message = "暂无最近播放专辑")
+            TvMessagePanel(message = uiString(Res.string.recent_albums_empty_title))
         } else {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
@@ -1338,14 +1354,14 @@ private fun TvRecentAlbumsPanel(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             TvIconBox(icon = Icons.Rounded.Album, modifier = Modifier.size(54.dp))
                             Text(
-                                recentAlbum.album.title,
+                                recentAlbum.album.title.ifBlank { uiString(Res.string.common_unknown_album) },
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Text(
-                                recentAlbum.album.artistName.orEmpty().ifBlank { "${recentAlbum.playCount} 次播放" },
+                                recentAlbum.album.artistName.orEmpty().ifBlank { uiString(Res.plurals.tv_play_count, (recentAlbum.playCount).toInt(), recentAlbum.playCount) },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -1416,14 +1432,14 @@ private fun TvSideNowPlayingCollapsed(
         ) {
             Icon(
                 imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                contentDescription = if (snapshot.isPlaying) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
             )
         }
         IconButton(
             onClick = onOpenPlayer,
             modifier = Modifier.size(48.dp),
         ) {
-            Icon(Icons.Rounded.Fullscreen, contentDescription = "播放界面")
+            Icon(Icons.Rounded.Fullscreen, contentDescription = uiString(Res.string.tv_player_title))
         }
     }
 }
@@ -1458,14 +1474,14 @@ private fun TvSideNowPlayingExpanded(
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = snapshot.currentDisplayTitle.ifBlank { "还没有播放" },
+                    text = snapshot.currentDisplayTitle.ifBlank { uiString(Res.string.tv_player_idle_title) },
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = snapshot.currentDisplayArtistName.orEmpty().ifBlank { "选择歌曲后开始播放" },
+                    text = snapshot.currentDisplayArtistName.orEmpty().ifBlank { uiString(Res.string.tv_player_select_track_hint) },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1489,19 +1505,19 @@ private fun TvSideNowPlayingExpanded(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }) {
-                Icon(Icons.Rounded.SkipPrevious, contentDescription = "上一首")
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = uiString(Res.string.player_previous_track))
             }
             IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }) {
                 Icon(
                     imageVector = if (snapshot.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                    contentDescription = if (snapshot.isPlaying) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
                 )
             }
             IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }) {
-                Icon(Icons.Rounded.SkipNext, contentDescription = "下一首")
+                Icon(Icons.Rounded.SkipNext, contentDescription = uiString(Res.string.player_next_track))
             }
             IconButton(onClick = onOpenPlayer) {
-                Icon(Icons.Rounded.Fullscreen, contentDescription = "播放界面")
+                Icon(Icons.Rounded.Fullscreen, contentDescription = uiString(Res.string.tv_player_title))
             }
         }
     }
@@ -1572,28 +1588,28 @@ private fun TvSearchDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (state.target == TvSearchTarget.Library) "搜索曲库" else "搜索喜欢")
+            Text(if (state.target == TvSearchTarget.Library) uiString(Res.string.tv_search_library) else uiString(Res.string.tv_search_favorites))
         },
         text = {
             OutlinedTextField(
                 value = state.text,
                 onValueChange = onTextChanged,
                 singleLine = true,
-                label = { Text("歌曲 / 艺人 / 专辑") },
+                label = { Text(uiString(Res.string.tv_search_placeholder)) },
             )
         },
         confirmButton = {
             Button(onClick = onSubmit) {
-                Text("搜索")
+                Text(uiString(Res.string.common_search))
             }
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onClear) {
-                    Text("清空")
+                    Text(uiString(Res.string.common_clear))
                 }
                 TextButton(onClick = onDismiss) {
-                    Text("取消")
+                    Text(uiString(Res.string.common_cancel))
                 }
             }
         },
@@ -1647,11 +1663,12 @@ private fun TvMessagePanel(
     }
 }
 
+@Composable
 private fun browserSubtitle(query: String, trackCount: Int): String {
     return if (query.isBlank()) {
-        "$trackCount 首歌曲"
+        uiString(Res.plurals.common_track_count, (trackCount).toInt(), trackCount)
     } else {
-        "搜索 \"$query\" · $trackCount 首歌曲"
+        uiPlural(Res.plurals.tv_search_result_track_count, trackCount, query, trackCount).displayText()
     }
 }
 

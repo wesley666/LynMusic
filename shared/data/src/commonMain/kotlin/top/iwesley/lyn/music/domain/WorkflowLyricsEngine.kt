@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
 import io.ktor.http.encodeURLParameter
 import kotlin.io.encoding.Base64
 import kotlin.random.Random
@@ -73,7 +78,7 @@ fun parseWorkflowLyricsSourceConfig(rawJson: String): WorkflowLyricsSourceConfig
     val root = workflowJson.parseToJsonElement(rawJson.trim()).jsonObjectOrThrow("workflow root")
     ensureAllowedKeys(root, TOP_LEVEL_KEYS, "workflow")
     val kind = root.requiredString("kind", "workflow")
-    require(kind == WORKFLOW_KIND) { "workflow.kind 必须为 \"$WORKFLOW_KIND\"。" }
+    requireUi(kind == WORKFLOW_KIND) { uiText(Res.string.workflow_kind_required, WORKFLOW_KIND) }
     val search = root.requiredObject("search", "workflow").toWorkflowSearchConfig()
     val selection = root["selection"]?.jsonObjectOrThrow("workflow.selection")?.toWorkflowSelectionConfig() ?: WorkflowSelectionConfig()
     val enrichment = root["enrichment"]?.jsonObjectOrThrow("workflow.enrichment")?.toWorkflowCandidateEnrichmentConfig()
@@ -125,17 +130,17 @@ fun rewriteWorkflowLyricsSourceEnabled(
 }
 
 fun validateWorkflowLyricsSourceConfig(config: WorkflowLyricsSourceConfig) {
-    require(config.id.isNotBlank()) { "workflow.id 不能为空。" }
-    require(config.name.isNotBlank()) { "workflow.name 不能为空。" }
-    require(config.search.request.url.isNotBlank()) { "workflow.search.url 不能为空。" }
-    require(config.search.resultPath.isNotBlank()) { "workflow.search.resultPath 不能为空。" }
-    require(config.search.mapping.isNotEmpty()) { "workflow.search.mapping 不能为空。" }
+    requireUi(config.id.isNotBlank()) { uiText(Res.string.workflow_value_required, "workflow.id") }
+    requireUi(config.name.isNotBlank()) { uiText(Res.string.workflow_value_required, "workflow.name") }
+    requireUi(config.search.request.url.isNotBlank()) { uiText(Res.string.workflow_value_required, "workflow.search.url") }
+    requireUi(config.search.resultPath.isNotBlank()) { uiText(Res.string.workflow_value_required, "workflow.search.resultPath") }
+    requireUi(config.search.mapping.isNotEmpty()) { uiText(Res.string.workflow_value_required, "workflow.search.mapping") }
     val missingKeys = REQUIRED_SEARCH_MAPPING_KEYS - config.search.mapping.keys
-    require(missingKeys.isEmpty()) { "workflow.search.mapping 缺少字段: ${missingKeys.joinToString(", ")}。" }
-    require(config.lyrics.steps.isNotEmpty()) { "workflow.lyrics.steps 至少需要一个步骤。" }
+    requireUi(missingKeys.isEmpty()) { uiText(Res.string.workflow_mapping_missing_fields, "workflow.search.mapping", missingKeys.joinToString(", ")) }
+    requireUi(config.lyrics.steps.isNotEmpty()) { uiText(Res.string.workflow_steps_required, "workflow.lyrics.steps") }
     val lastStep = config.lyrics.steps.last()
-    require(lastStep.payloadPath?.isNotBlank() == true || lastStep.fallbackPayloadPath?.isNotBlank() == true) {
-        "workflow.lyrics.steps 最后一步必须提供 payloadPath 或 fallbackPayloadPath。"
+    requireUi(lastStep.payloadPath?.isNotBlank() == true || lastStep.fallbackPayloadPath?.isNotBlank() == true) {
+        uiText(Res.string.workflow_payload_path_required, "workflow.lyrics.steps")
     }
     validateWorkflowTemplateVariables(config)
 }
@@ -215,8 +220,8 @@ fun extractWorkflowSongCandidates(
     config: WorkflowLyricsSourceConfig,
     payload: String,
 ): List<WorkflowSongCandidate> {
-    require(config.search.request.responseFormat == LyricsResponseFormat.JSON) {
-        "workflow.search.responseFormat 当前仅支持 JSON。"
+    requireUi(config.search.request.responseFormat == LyricsResponseFormat.JSON) {
+        uiText(Res.string.workflow_json_response_required, "workflow.search.responseFormat")
     }
     val root = workflowJson.parseToJsonElement(payload)
     val items = extractJsonValues(root, config.search.resultPath)
@@ -545,8 +550,8 @@ private fun validatePlaceholders(
         .flatMap(::extractTemplateVariables)
         .distinct()
         .filter { it !in allowedVariables }
-    require(unknownVariables.isEmpty()) {
-        "$context 使用了未定义模板变量: ${unknownVariables.joinToString(", ")}。"
+    requireUi(unknownVariables.isEmpty()) {
+        uiText(Res.string.workflow_template_variables_unknown, context, unknownVariables.joinToString(", "))
     }
 }
 
@@ -698,8 +703,8 @@ private fun extractWorkflowCapture(
     context: String,
 ): Map<String, String> {
     if (capture.isEmpty()) return emptyMap()
-    require(responseFormat == LyricsResponseFormat.JSON) {
-        "$context 当前仅支持 JSON 响应。"
+    requireUi(responseFormat == LyricsResponseFormat.JSON) {
+        uiText(Res.string.workflow_json_response_required, context)
     }
     val root = workflowJson.parseToJsonElement(payload)
     return capture.mapValues { (_, path) ->
@@ -740,19 +745,19 @@ private fun extractXmlTagValue(xml: String, tag: String): String? {
 }
 
 private fun JsonElement.jsonObjectOrThrow(context: String): JsonObject {
-    return this as? JsonObject ?: error("$context 必须是对象。")
+    return this as? JsonObject ?: throw UiTextException(uiText(Res.string.workflow_object_required, context))
 }
 
 private fun JsonObject.requiredObject(key: String, context: String): JsonObject {
-    return getValue(key).jsonObjectOrThrow("$context.$key")
+    return (this[key] ?: throw UiTextException(uiText(Res.string.workflow_value_required, "$context.$key"))).jsonObjectOrThrow("$context.$key")
 }
 
 private fun JsonObject.requiredArray(key: String, context: String): JsonArray {
-    return getValue(key) as? JsonArray ?: error("$context.$key 必须是数组。")
+    return this[key] as? JsonArray ?: throw UiTextException(uiText(Res.string.workflow_array_required, "$context.$key"))
 }
 
 private fun JsonObject.requiredString(key: String, context: String): String {
-    return stringOrNull(key)?.takeIf { it.isNotBlank() } ?: error("$context.$key 不能为空。")
+    return stringOrNull(key)?.takeIf { it.isNotBlank() } ?: throw UiTextException(uiText(Res.string.workflow_value_required, "$context.$key"))
 }
 
 private fun JsonObject.stringOrNull(key: String): String? {
@@ -766,15 +771,15 @@ private fun JsonObject.stringOrDefault(key: String, default: String): String {
 private inline fun <reified T : Enum<T>> JsonObject.enumOrDefault(key: String, default: T): T {
     val raw = stringOrNull(key) ?: return default
     return enumValues<T>().firstOrNull { enumMatchesAlias(it.name, raw) }
-        ?: error("字段 $key 的值 \"$raw\" 不合法。")
+        ?: throw UiTextException(uiText(Res.string.workflow_value_invalid, key, raw))
 }
 
 private inline fun <reified T : Enum<T>> JsonObject.enumListOrEmpty(key: String): List<T> {
     val array = this[key] as? JsonArray ?: return emptyList()
     return array.map { item ->
-        val raw = (item as? JsonPrimitive)?.contentOrNull ?: error("$key 中存在非字符串值。")
+        val raw = (item as? JsonPrimitive)?.contentOrNull ?: throw UiTextException(uiText(Res.string.workflow_string_items_required, key))
         enumValues<T>().firstOrNull { enumMatchesAlias(it.name, raw) }
-            ?: error("字段 $key 中的值 \"$raw\" 不合法。")
+            ?: throw UiTextException(uiText(Res.string.workflow_value_invalid, key, raw))
     }
 }
 
@@ -791,13 +796,13 @@ private fun JsonObject.doubleOrDefault(key: String, default: Double): Double {
 }
 
 private fun JsonObject.requiredStringMap(key: String, context: String): Map<String, String> {
-    return stringMapOrEmpty(key, context).takeIf { it.isNotEmpty() } ?: error("$context.$key 不能为空。")
+    return stringMapOrEmpty(key, context).takeIf { it.isNotEmpty() } ?: throw UiTextException(uiText(Res.string.workflow_value_required, "$context.$key"))
 }
 
 private fun JsonObject.stringMapOrEmpty(key: String, context: String): Map<String, String> {
     val obj = this[key] as? JsonObject ?: return emptyMap()
     return obj.mapValues { (field, value) ->
-        (value as? JsonPrimitive)?.contentOrNull ?: error("$context.$key.$field 必须是字符串。")
+        (value as? JsonPrimitive)?.contentOrNull ?: throw UiTextException(uiText(Res.string.workflow_string_required, "$context.$key.$field"))
     }
 }
 
@@ -807,8 +812,8 @@ private fun ensureAllowedKeys(
     context: String,
 ) {
     val unexpected = jsonObject.keys - allowedKeys
-    require(unexpected.isEmpty()) {
-        "$context 包含未知字段: ${unexpected.joinToString(", ")}。"
+    requireUi(unexpected.isEmpty()) {
+        uiText(Res.string.workflow_fields_unknown, context, unexpected.joinToString(", "))
     }
 }
 

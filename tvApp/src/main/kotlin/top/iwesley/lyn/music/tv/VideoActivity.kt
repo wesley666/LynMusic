@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
 import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
@@ -38,15 +40,19 @@ class VideoActivity : TvComponentActivity() {
         super.onCreate(savedInstanceState)
         TvUpnpRendererService.start(this)
         setContent {
-            val state by TvUpnpRendererRouter.state.collectAsState()
-            val player by playbackSession.player.collectAsState()
-            VideoRendererTheme {
-                VideoRendererScreen(
-                    player = player,
-                    state = state,
-                )
+            ProvideUiLanguage {
+                val state by TvUpnpRendererRouter.state.collectAsState()
+                val player by playbackSession.player.collectAsState()
+                VideoRendererTheme {
+                    VideoRendererScreen(
+                        player = player,
+                        state = state,
+                    )
+                }
+
+
             }
-        }
+}
     }
 
 

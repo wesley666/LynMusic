@@ -1,0 +1,9 @@
+"language_title" = "Language";
+"language_follow_system" = "Follow system";
+"mac_no_file" = "No file selected";
+"mac_open_file" = "Open local file";
+"mac_volume" = "Volume";
+"mac_seek_unsupported" = "This song may be transcoding. Seeking is unavailable.";
+"play" = "Play";
+"pause" = "Pause";
+"position" = "Playback position";

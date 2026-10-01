@@ -1,0 +1,9 @@
+"language_title" = "語言";
+"language_follow_system" = "跟隨系統";
+"mac_no_file" = "未選擇檔案";
+"mac_open_file" = "開啟本機檔案";
+"mac_volume" = "音量";
+"mac_seek_unsupported" = "歌曲可能正在轉碼，不支援快轉。";
+"play" = "播放";
+"pause" = "暫停";
+"position" = "播放進度";

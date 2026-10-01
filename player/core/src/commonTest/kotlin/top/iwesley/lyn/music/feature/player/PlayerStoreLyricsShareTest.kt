@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -14,6 +16,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -33,6 +36,10 @@ import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.repository.AppliedLyricsResult
@@ -43,6 +50,101 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStoreLyricsShareTest {
+    @Test
+    fun builtinFontLanguageChangesBeforeLazyLoadKeepSelectionAndPreviewRequests() = runTest {
+        val previousLanguage = AppLanguageRuntime.appLanguage.value
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val track = sampleTrack("track-1", "用户歌曲")
+            val snapshot = PlaybackSnapshot(queue = listOf(track), currentIndex = 0, positionMs = 1_500L)
+            val playback = FakeLyricsSharePlaybackRepository(snapshot)
+            val preferences = FakeLyricsShareFontPreferencesStore("sans-serif")
+            val service = FakeLyricsSharePlatformService()
+            val store = PlayerStore(
+                playbackRepository = playback, lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+                storeScope = scope, lyricsSharePlatformService = service, lyricsShareFontPreferencesStore = preferences,
+            )
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.OpenLyricsShare)
+            advanceUntilIdle()
+            val state = store.state.value
+            assertTrue(state.availableLyricsShareFonts.isEmpty())
+            assertEquals("sans-serif", state.selectedLyricsShareFontKey)
+            assertEquals(1, service.buildPreviewCalls)
+            listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese, AppLanguage.English)
+                .forEach { language ->
+                    AppLanguageRuntime.update(language)
+                    advanceUntilIdle()
+                    assertEquals(state, store.state.value)
+                    assertEquals(snapshot, playback.snapshot.value)
+                    assertEquals("sans-serif", preferences.selectedLyricsShareFontKey.value)
+                    assertEquals(0, service.listAvailableFontFamiliesCalls)
+                    assertEquals(1, service.buildPreviewCalls)
+                }
+        } finally {
+            AppLanguageRuntime.update(previousLanguage)
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun normalizedFontDescriptorsFollowLanguageWithoutReloadingOrChangingShareState() = runTest {
+        val previousLanguage = AppLanguageRuntime.appLanguage.value
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val track = sampleTrack("track-1", "第一首")
+            val snapshot = PlaybackSnapshot(queue = listOf(track), currentIndex = 0, positionMs = 1_500L)
+            val playback = FakeLyricsSharePlaybackRepository(snapshot)
+            val preferences = FakeLyricsShareFontPreferencesStore()
+            val serif = LyricsShareFontOption(
+                fontKey = " serif ", displayName = "", previewText = "你好 Hello", isPrioritized = true,
+                displayNameText = uiText(Res.string.font_serif),
+            )
+            val imported = LyricsShareFontOption(
+                fontKey = " imported:abc123 ", displayName = " 用户字体 ", previewText = "",
+                kind = LyricsShareFontKind.IMPORTED, fontFilePath = " /tmp/用户字体.ttf ",
+            )
+            val service = FakeLyricsSharePlatformService(fontListResult = Result.success(listOf(
+                serif, imported, serif.copy(fontKey = "SERIF"), serif.copy(fontKey = " "),
+            )))
+            val store = PlayerStore(
+                playbackRepository = playback, lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+                storeScope = scope, lyricsSharePlatformService = service, lyricsShareFontPreferencesStore = preferences,
+            )
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.OpenLyricsShare)
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.RequestLyricsShareFonts)
+            advanceUntilIdle()
+            val state = store.state.value
+            val fonts = state.availableLyricsShareFonts
+            assertEquals(listOf("serif", "imported:abc123"), fonts.map { it.fontKey })
+            assertEquals(serif.displayNameText, fonts.first().displayNameText)
+            assertTrue(fonts.first().isPrioritized)
+            assertEquals("你好 Hello", fonts.first().previewText)
+            assertEquals("用户字体", fonts.last().displayName)
+            assertEquals("/tmp/用户字体.ttf", fonts.last().fontFilePath)
+            assertEquals("serif", state.selectedLyricsShareFontKey)
+            val selectedPreference = preferences.selectedLyricsShareFontKey.value
+            val previewCount = service.buildPreviewCalls
+            listOf(
+                AppLanguage.English to "Serif", AppLanguage.SimplifiedChinese to "衬线",
+                AppLanguage.TraditionalChinese to "襯線", AppLanguage.English to "Serif",
+            ).forEach { (language, name) ->
+                AppLanguageRuntime.update(language)
+                advanceUntilIdle()
+                assertEquals(name, resolveUiText(requireNotNull(fonts.first().displayNameText), AppLanguageRuntime.effectiveLanguage.value))
+                assertEquals(state, store.state.value)
+                assertEquals(snapshot, playback.snapshot.value)
+                assertEquals(selectedPreference, preferences.selectedLyricsShareFontKey.value)
+                assertEquals(1, service.listAvailableFontFamiliesCalls)
+                assertEquals(previewCount, service.buildPreviewCalls)
+            }
+        } finally {
+            AppLanguageRuntime.update(previousLanguage)
+            scope.cancel()
+        }
+    }
 
     @Test
     fun `open lyrics share preselects highlighted line and builds preview`() = runTest {
@@ -72,13 +174,13 @@ class PlayerStoreLyricsShareTest {
         val state = store.state.value
         assertTrue(state.isLyricsShareVisible)
         assertFalse(state.supportsLyricsShareFontSelection)
-        assertEquals(setOf(0), state.selectedLyricsLineIndices)
-        assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
-        assertEquals(trackArtworkCacheKey(track), state.shareCardModel?.artworkCacheKey)
-        assertEquals(trackArtworkCacheKey(track), shareService.lastPreviewModel?.artworkCacheKey)
-        assertEquals(1, shareService.buildPreviewCalls)
-        assertEquals(FakeLyricsSharePlatformService.previewBytes.toList(), state.sharePreviewBytes?.toList())
-        assertEquals(setOf(0), state.sharePreviewSelection)
+        assertLocalizedEquals(setOf(0), state.selectedLyricsLineIndices)
+        assertLocalizedEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertLocalizedEquals(trackArtworkCacheKey(track), state.shareCardModel?.artworkCacheKey)
+        assertLocalizedEquals(trackArtworkCacheKey(track), shareService.lastPreviewModel?.artworkCacheKey)
+        assertLocalizedEquals(1, shareService.buildPreviewCalls)
+        assertLocalizedEquals(FakeLyricsSharePlatformService.previewBytes.toList(), state.sharePreviewBytes?.toList())
+        assertLocalizedEquals(setOf(0), state.sharePreviewSelection)
         assertTrue(state.hasFreshSharePreview)
         scope.cancel()
     }
@@ -106,9 +208,9 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(setOf(1), state.selectedLyricsLineIndices)
-        assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
-        assertEquals(1, shareService.buildPreviewCalls)
+        assertLocalizedEquals(setOf(1), state.selectedLyricsLineIndices)
+        assertLocalizedEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertLocalizedEquals(1, shareService.buildPreviewCalls)
         scope.cancel()
     }
 
@@ -137,9 +239,9 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(setOf(1), state.selectedLyricsLineIndices)
-        assertEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
-        assertEquals(1, shareService.buildPreviewCalls)
+        assertLocalizedEquals(setOf(1), state.selectedLyricsLineIndices)
+        assertLocalizedEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
+        assertLocalizedEquals(1, shareService.buildPreviewCalls)
         scope.cancel()
     }
 
@@ -168,10 +270,10 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.ToggleLyricsLineSelection(1))
         advanceUntilIdle()
 
-        assertEquals(setOf(0, 1), store.state.value.selectedLyricsLineIndices)
-        assertEquals(listOf("第一句", "第二句"), store.state.value.shareCardModel?.lyricsLines)
-        assertEquals(2, shareService.buildPreviewCalls)
-        assertEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
+        assertLocalizedEquals(setOf(0, 1), store.state.value.selectedLyricsLineIndices)
+        assertLocalizedEquals(listOf("第一句", "第二句"), store.state.value.shareCardModel?.lyricsLines)
+        assertLocalizedEquals(2, shareService.buildPreviewCalls)
+        assertLocalizedEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
         assertTrue(store.state.value.hasFreshSharePreview)
         scope.cancel()
     }
@@ -212,15 +314,15 @@ class PlayerStoreLyricsShareTest {
         runCurrent()
 
         assertTrue(store.state.value.isShareRendering)
-        assertEquals(previousPreview?.toList(), store.state.value.sharePreviewBytes?.toList())
-        assertEquals(setOf(0), store.state.value.sharePreviewSelection)
+        assertLocalizedEquals(previousPreview?.toList(), store.state.value.sharePreviewBytes?.toList())
+        assertLocalizedEquals(setOf(0), store.state.value.sharePreviewSelection)
         assertFalse(store.state.value.hasFreshSharePreview)
 
         delayedPreview.complete(Result.success(byteArrayOf(0x09, 0x08, 0x07, 0x06)))
         advanceUntilIdle()
 
-        assertEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
-        assertEquals(byteArrayOf(0x09, 0x08, 0x07, 0x06).toList(), store.state.value.sharePreviewBytes?.toList())
+        assertLocalizedEquals(setOf(0, 1), store.state.value.sharePreviewSelection)
+        assertLocalizedEquals(byteArrayOf(0x09, 0x08, 0x07, 0x06).toList(), store.state.value.sharePreviewBytes?.toList())
         assertTrue(store.state.value.hasFreshSharePreview)
         scope.cancel()
     }
@@ -257,12 +359,12 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
-        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.sharePreviewTemplate)
-        assertEquals(LyricsShareTemplate.ARTWORK_TINT, shareService.lastPreviewModel?.template)
-        assertEquals(byteArrayOf(0x05, 0x06, 0x07).toList(), state.sharePreviewBytes?.toList())
+        assertLocalizedEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
+        assertLocalizedEquals(LyricsShareTemplate.ARTWORK_TINT, state.sharePreviewTemplate)
+        assertLocalizedEquals(LyricsShareTemplate.ARTWORK_TINT, shareService.lastPreviewModel?.template)
+        assertLocalizedEquals(byteArrayOf(0x05, 0x06, 0x07).toList(), state.sharePreviewBytes?.toList())
         assertTrue(state.hasFreshSharePreview)
-        assertEquals(2, shareService.buildPreviewCalls)
+        assertLocalizedEquals(2, shareService.buildPreviewCalls)
         scope.cancel()
     }
 
@@ -310,11 +412,11 @@ class PlayerStoreLyricsShareTest {
         assertTrue(state.supportsLyricsShareFontSelection)
         assertTrue(state.availableLyricsShareFonts.isEmpty())
         assertNull(state.lyricsShareFontsError)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
-        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
-        assertEquals(1, shareService.buildPreviewCalls)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, shareService.buildPreviewCalls)
         scope.cancel()
     }
 
@@ -357,14 +459,14 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(importedFontKey, state.selectedLyricsShareFontKey)
-        assertEquals("霞鹜文楷", state.selectedLyricsShareFontDisplayName)
-        assertEquals(importedFontKey, state.shareCardModel?.fontKey)
-        assertEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
-        assertEquals(importedFontKey, fontPreferencesStore.selectedLyricsShareFontKey.value)
-        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
-        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
-        assertEquals(1, fontLibrary.listImportedFontsCalls)
+        assertLocalizedEquals(importedFontKey, state.selectedLyricsShareFontKey)
+        assertLocalizedEquals("霞鹜文楷", state.selectedLyricsShareFontDisplayName)
+        assertLocalizedEquals(importedFontKey, state.shareCardModel?.fontKey)
+        assertLocalizedEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals(importedFontKey, fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertLocalizedEquals(1, fontLibrary.listImportedFontsCalls)
         scope.cancel()
     }
 
@@ -396,14 +498,14 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
         assertNull(state.selectedLyricsShareFontDisplayName)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
         assertNull(fontPreferencesStore.selectedLyricsShareFontKey.value)
-        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
-        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
-        assertEquals(0, fontLibrary.listImportedFontsCalls)
+        assertLocalizedEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertLocalizedEquals(0, fontLibrary.listImportedFontsCalls)
         scope.cancel()
     }
 
@@ -438,13 +540,13 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(importedFontKey, state.selectedLyricsShareFontKey)
-        assertEquals("文件名", state.selectedLyricsShareFontDisplayName)
-        assertEquals(importedFontKey, state.shareCardModel?.fontKey)
-        assertEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
-        assertEquals(0, shareService.listAvailableFontFamiliesCalls)
-        assertEquals(1, fontLibrary.resolveImportedFontPathCalls)
-        assertEquals(1, fontLibrary.listImportedFontsCalls)
+        assertLocalizedEquals(importedFontKey, state.selectedLyricsShareFontKey)
+        assertLocalizedEquals("文件名", state.selectedLyricsShareFontDisplayName)
+        assertLocalizedEquals(importedFontKey, state.shareCardModel?.fontKey)
+        assertLocalizedEquals(importedFontKey, shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals(0, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, fontLibrary.resolveImportedFontPathCalls)
+        assertLocalizedEquals(1, fontLibrary.listImportedFontsCalls)
         scope.cancel()
     }
 
@@ -491,15 +593,15 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(listOf("imported:abc123", "PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.fontKey })
-        assertEquals(listOf("你好 Hello", "你好", "Hello", "Hello"), state.availableLyricsShareFonts.map { it.previewText })
-        assertEquals("/tmp/abc123__Imported Font.ttf", state.availableLyricsShareFonts.first().fontFilePath)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, fontPreferencesStore.selectedLyricsShareFontKey.value)
-        assertEquals(1, shareService.listAvailableFontFamiliesCalls)
-        assertEquals(1, shareService.buildPreviewCalls)
+        assertLocalizedEquals(listOf("imported:abc123", "PingFang SC", "Serif", "Arial"), state.availableLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals(listOf("你好 Hello", "你好", "Hello", "Hello"), state.availableLyricsShareFonts.map { it.previewText })
+        assertLocalizedEquals("/tmp/abc123__Imported Font.ttf", state.availableLyricsShareFonts.first().fontFilePath)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.selectedLyricsShareFontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, state.shareCardModel?.fontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals(1, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, shareService.buildPreviewCalls)
         scope.cancel()
     }
 
@@ -531,7 +633,7 @@ class PlayerStoreLyricsShareTest {
 
         assertTrue(store.state.value.isLyricsShareFontsLoading)
         assertNull(store.state.value.lyricsShareFontsError)
-        assertEquals(1, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, shareService.listAvailableFontFamiliesCalls)
 
         delayedFonts.complete(
             Result.success(
@@ -544,7 +646,7 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         assertFalse(store.state.value.isLyricsShareFontsLoading)
-        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
         scope.cancel()
     }
 
@@ -584,12 +686,12 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("PingFang SC", state.selectedLyricsShareFontKey)
-        assertEquals("PingFang SC", state.shareCardModel?.fontKey)
-        assertEquals("PingFang SC", state.sharePreviewFontKey)
-        assertEquals("PingFang SC", shareService.lastPreviewModel?.fontKey)
-        assertEquals("PingFang SC", fontPreferencesStore.selectedLyricsShareFontKey.value)
-        assertEquals(2, shareService.buildPreviewCalls)
+        assertLocalizedEquals("PingFang SC", state.selectedLyricsShareFontKey)
+        assertLocalizedEquals("PingFang SC", state.shareCardModel?.fontKey)
+        assertLocalizedEquals("PingFang SC", state.sharePreviewFontKey)
+        assertLocalizedEquals("PingFang SC", shareService.lastPreviewModel?.fontKey)
+        assertLocalizedEquals("PingFang SC", fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals(2, shareService.buildPreviewCalls)
         assertTrue(state.hasFreshSharePreview)
         scope.cancel()
     }
@@ -627,8 +729,8 @@ class PlayerStoreLyricsShareTest {
         serifStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("Serif", serifStore.state.value.selectedLyricsShareFontKey)
-        assertEquals("Serif", serifPrefs.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals("Serif", serifStore.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals("Serif", serifPrefs.selectedLyricsShareFontKey.value)
 
         val firstAvailablePrefs = FakeLyricsShareFontPreferencesStore("Missing Font")
         val firstAvailableStore = PlayerStore(
@@ -658,8 +760,8 @@ class PlayerStoreLyricsShareTest {
         firstAvailableStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("PingFang SC", firstAvailableStore.state.value.selectedLyricsShareFontKey)
-        assertEquals("PingFang SC", firstAvailablePrefs.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals("PingFang SC", firstAvailableStore.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals("PingFang SC", firstAvailablePrefs.selectedLyricsShareFontKey.value)
         scope.cancel()
     }
 
@@ -694,9 +796,9 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals(listOf("Serif"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
+        assertLocalizedEquals(listOf("Serif"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals("Serif", store.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
 
         shareService.fontListResult = Result.success(
             listOf(
@@ -708,14 +810,14 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
+        assertLocalizedEquals("Serif", store.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals("Serif", store.state.value.selectedLyricsShareFontDisplayName)
 
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals(listOf("Serif", "New Font"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
-        assertEquals(2, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(listOf("Serif", "New Font"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals(2, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
     }
 
@@ -764,9 +866,9 @@ class PlayerStoreLyricsShareTest {
 
         assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
         assertFalse(store.state.value.isLyricsShareFontsLoading)
-        assertEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, store.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals(DEFAULT_LYRICS_SHARE_FONT_KEY, store.state.value.selectedLyricsShareFontKey)
         assertNull(store.state.value.selectedLyricsShareFontDisplayName)
-        assertEquals(1, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
     }
 
@@ -800,10 +902,10 @@ class PlayerStoreLyricsShareTest {
         val state = store.state.value
         assertTrue(state.availableLyricsShareFonts.isEmpty())
         assertFalse(state.isLyricsShareFontsLoading)
-        assertEquals("读取系统字体失败", state.lyricsShareFontsError)
+        assertLocalizedEquals("读取系统字体失败", state.lyricsShareFontsError)
         assertNull(state.shareMessage)
         assertTrue(state.sharePreviewBytes?.isNotEmpty() == true)
-        assertEquals(1, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(1, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
     }
 
@@ -834,7 +936,7 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("读取系统字体失败", store.state.value.lyricsShareFontsError)
+        assertLocalizedEquals("读取系统字体失败", store.state.value.lyricsShareFontsError)
         assertNull(store.state.value.shareMessage)
         assertTrue(store.state.value.sharePreviewBytes?.isNotEmpty() == true)
         assertTrue(store.state.value.availableLyricsShareFonts.isEmpty())
@@ -842,13 +944,13 @@ class PlayerStoreLyricsShareTest {
 
         store.dispatch(PlayerIntent.CopyLyricsShareImage)
         advanceUntilIdle()
-        assertEquals(1, shareService.copyImageCalls)
-        assertEquals("图片已复制", store.state.value.shareMessage)
+        assertLocalizedEquals(1, shareService.copyImageCalls)
+        assertLocalizedEquals("图片已复制", store.state.value.shareMessage)
 
         store.dispatch(PlayerIntent.SaveLyricsShareImage)
         advanceUntilIdle()
-        assertEquals(1, shareService.saveImageCalls)
-        assertEquals("图片已保存到文件", store.state.value.shareMessage)
+        assertLocalizedEquals(1, shareService.saveImageCalls)
+        assertLocalizedEquals("图片已保存到文件", store.state.value.shareMessage)
         scope.cancel()
     }
 
@@ -880,7 +982,7 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals("读取系统字体失败", store.state.value.lyricsShareFontsError)
+        assertLocalizedEquals("读取系统字体失败", store.state.value.lyricsShareFontsError)
 
         shareService.fontListResult = Result.success(
             listOf(
@@ -891,10 +993,10 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
 
-        assertEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
-        assertEquals("Serif", store.state.value.selectedLyricsShareFontKey)
+        assertLocalizedEquals(listOf("Serif", "PingFang SC"), store.state.value.availableLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals("Serif", store.state.value.selectedLyricsShareFontKey)
         assertNull(store.state.value.lyricsShareFontsError)
-        assertEquals(2, shareService.listAvailableFontFamiliesCalls)
+        assertLocalizedEquals(2, shareService.listAvailableFontFamiliesCalls)
         scope.cancel()
     }
 
@@ -936,7 +1038,7 @@ class PlayerStoreLyricsShareTest {
         val state = store.state.value
         assertFalse(state.isLyricsShareVisible)
         assertTrue(state.selectedLyricsLineIndices.isEmpty())
-        assertEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
+        assertLocalizedEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
         assertNull(state.shareCardModel)
         assertNull(state.sharePreviewBytes)
         scope.cancel()
@@ -966,20 +1068,20 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.SaveLyricsShareImage)
         advanceUntilIdle()
 
-        assertEquals("请先选择至少一句歌词", store.state.value.shareMessage)
-        assertEquals(0, shareService.saveImageCalls)
+        assertLocalizedEquals("请先选择至少一句歌词", store.state.value.shareMessage)
+        assertLocalizedEquals(0, shareService.saveImageCalls)
 
         store.dispatch(PlayerIntent.CopyLyricsShareImage)
         advanceUntilIdle()
 
-        assertEquals("请先选择至少一句歌词", store.state.value.shareMessage)
-        assertEquals(0, shareService.copyImageCalls)
+        assertLocalizedEquals("请先选择至少一句歌词", store.state.value.shareMessage)
+        assertLocalizedEquals(0, shareService.copyImageCalls)
 
         store.dispatch(PlayerIntent.CopyLyricsShareText)
         advanceUntilIdle()
 
-        assertEquals("请先选择至少一句歌词", store.state.value.shareMessage)
-        assertEquals(0, shareService.copyTextCalls)
+        assertLocalizedEquals("请先选择至少一句歌词", store.state.value.shareMessage)
+        assertLocalizedEquals(0, shareService.copyTextCalls)
         scope.cancel()
     }
 
@@ -1010,10 +1112,10 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.CopyLyricsShareText)
         advanceUntilIdle()
 
-        assertEquals(1, shareService.copyTextCalls)
-        assertEquals("第一句\n第二句", shareService.lastCopiedText)
-        assertEquals("文字已复制", store.state.value.shareMessage)
-        assertEquals(0, shareService.copyImageCalls)
+        assertLocalizedEquals(1, shareService.copyTextCalls)
+        assertLocalizedEquals("第一句\n第二句", shareService.lastCopiedText)
+        assertLocalizedEquals("文字已复制", store.state.value.shareMessage)
+        assertLocalizedEquals(0, shareService.copyImageCalls)
         scope.cancel()
     }
 
@@ -1043,8 +1145,8 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.CopyLyricsShareText)
         advanceUntilIdle()
 
-        assertEquals(1, shareService.copyTextCalls)
-        assertEquals("复制文字失败: clipboard unavailable", store.state.value.shareMessage)
+        assertLocalizedEquals(1, shareService.copyTextCalls)
+        assertLocalizedEquals("复制文字失败: clipboard unavailable", store.state.value.shareMessage)
         scope.cancel()
     }
 
@@ -1072,7 +1174,7 @@ class PlayerStoreLyricsShareTest {
         store.dispatch(PlayerIntent.OpenLyricsShare)
         advanceUntilIdle()
 
-        assertTrue(store.state.value.sharePreviewError?.contains("boom") == true)
+        assertTrue(store.state.value.sharePreviewError?.let { top.iwesley.lyn.music.core.model.resolveUiText(it, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese) }?.contains("boom") == true)
         assertNull(store.state.value.sharePreviewBytes)
         scope.cancel()
     }
@@ -1100,13 +1202,13 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
         store.dispatch(PlayerIntent.CopyLyricsShareImage)
         advanceUntilIdle()
-        assertEquals(1, shareService.copyImageCalls)
-        assertEquals("图片已复制", store.state.value.shareMessage)
+        assertLocalizedEquals(1, shareService.copyImageCalls)
+        assertLocalizedEquals("图片已复制", store.state.value.shareMessage)
 
         store.dispatch(PlayerIntent.SaveLyricsShareImage)
         advanceUntilIdle()
-        assertEquals(1, shareService.saveImageCalls)
-        assertEquals("图片已保存到文件", store.state.value.shareMessage)
+        assertLocalizedEquals(1, shareService.saveImageCalls)
+        assertLocalizedEquals("图片已保存到文件", store.state.value.shareMessage)
         scope.cancel()
     }
 
@@ -1240,7 +1342,7 @@ private class FakeLyricsShareRepository(
 private class FakeLyricsSharePlatformService(
     private val previewResult: Result<ByteArray> = Result.success(previewBytes),
     private val previewResults: ArrayDeque<PreviewResponse> = ArrayDeque(),
-    private val saveResult: Result<LyricsShareSaveResult> = Result.success(LyricsShareSaveResult("图片已保存到文件")),
+    private val saveResult: Result<LyricsShareSaveResult> = Result.success(LyricsShareSaveResult(top.iwesley.lyn.music.core.model.uiText(Res.string.lyrics_image_saved_file))),
     private val copyResult: Result<Unit> = Result.success(Unit),
     private val copyTextResult: Result<Unit> = Result.success(Unit),
     private val fontListResult: Result<List<LyricsShareFontOption>> = Result.success(emptyList()),
@@ -1273,13 +1375,13 @@ private class FakeLyricsSharePlatformService(
 
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> {
         saveImageCalls += 1
-        assertEquals(previewBytes.toList(), pngBytes.toList())
+        assertLocalizedEquals(previewBytes.toList(), pngBytes.toList())
         return saveResult
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> {
         copyImageCalls += 1
-        assertEquals(previewBytes.toList(), pngBytes.toList())
+        assertLocalizedEquals(previewBytes.toList(), pngBytes.toList())
         return copyResult
     }
 
@@ -1310,7 +1412,7 @@ private class FakeReloadableLyricsSharePlatformService(
     }
 
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> {
-        return Result.success(LyricsShareSaveResult("图片已保存到文件"))
+        return Result.success(LyricsShareSaveResult(top.iwesley.lyn.music.core.model.uiText(Res.string.lyrics_image_saved_file)))
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> {
@@ -1337,7 +1439,7 @@ private class FakeDeferredFontLookupLyricsSharePlatformService(
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = previewResult
 
     override suspend fun saveImage(pngBytes: ByteArray, suggestedName: String): Result<LyricsShareSaveResult> {
-        return Result.success(LyricsShareSaveResult("图片已保存到文件"))
+        return Result.success(LyricsShareSaveResult(top.iwesley.lyn.music.core.model.uiText(Res.string.lyrics_image_saved_file)))
     }
 
     override suspend fun copyImage(pngBytes: ByteArray): Result<Unit> = Result.success(Unit)

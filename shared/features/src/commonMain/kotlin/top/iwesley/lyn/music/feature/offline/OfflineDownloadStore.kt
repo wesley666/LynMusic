@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.feature.offline
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -20,7 +28,7 @@ data class OfflineDownloadState(
     val availableSpaceBytes: Long? = null,
     val availableSpaceLoading: Boolean = false,
     val activeBatchDownload: ActiveBatchDownloadState? = null,
-    val message: String? = null,
+    val message: UiText? = null,
 )
 
 data class ActiveBatchDownloadState(
@@ -47,7 +55,7 @@ sealed interface OfflineDownloadIntent {
 
     data class Cancel(val trackId: String) : OfflineDownloadIntent
     data class Delete(val trackId: String) : OfflineDownloadIntent
-    data class ShowMessage(val message: String) : OfflineDownloadIntent
+    data class ShowMessage(val message: UiText) : OfflineDownloadIntent
     data object CancelActiveBatchDownload : OfflineDownloadIntent
     data object RefreshAvailableSpace : OfflineDownloadIntent
     data object ClearMessage : OfflineDownloadIntent
@@ -92,12 +100,12 @@ class OfflineDownloadStore(
         quality: NavidromeAudioQuality,
     ) {
         if (batchDownloadJob?.isActive == true) {
-            updateState { state -> state.copy(message = "批量下载正在进行。") }
+            updateState { state -> state.copy(message = uiText(Res.string.offline_batch_already_running)) }
             return
         }
         val uniqueTracks = tracks.distinctBy { it.id }
         if (uniqueTracks.isEmpty()) {
-            updateState { state -> state.copy(message = "请选择要下载的歌曲。") }
+            updateState { state -> state.copy(message = uiText(Res.string.offline_track_selection_required)) }
             return
         }
         val currentDownloads = state.value.downloadsByTrackId
@@ -194,12 +202,12 @@ class OfflineDownloadStore(
         jobsByTrackId[track.id] = storeScope.launch {
             repository.download(track, quality)
                 .onSuccess {
-                    updateState { state -> state.copy(message = "离线下载完成：${track.title}") }
+                    updateState { state -> state.copy(message = uiText(Res.string.offline_download_completed, track.title)) }
                 }
                 .onFailure { throwable ->
                     if (throwable is CancellationException) throw throwable
                     updateState { state ->
-                        state.copy(message = throwable.message ?: "离线下载失败。")
+                        state.copy(message = throwable.uiErrorText(uiText(Res.string.offline_download_failed_notice)))
                     }
                 }
             jobsByTrackId.remove(track.id)
@@ -209,7 +217,7 @@ class OfflineDownloadStore(
     private suspend fun cancelDownload(trackId: String) {
         jobsByTrackId.remove(trackId)?.cancel()
         repository.cancelDownload(trackId)
-        updateState { it.copy(message = "已取消离线下载。") }
+        updateState { it.copy(message = uiText(Res.string.offline_download_cancelled)) }
     }
 
     private suspend fun cancelActiveBatchDownload() {
@@ -229,7 +237,7 @@ class OfflineDownloadStore(
         updateState {
             it.copy(
                 activeBatchDownload = null,
-                message = "已取消批量下载。",
+                message = uiText(Res.string.offline_batch_cancelled),
             )
         }
     }
@@ -237,10 +245,10 @@ class OfflineDownloadStore(
     private suspend fun deleteDownload(trackId: String) {
         repository.deleteDownload(trackId)
             .onSuccess {
-                updateState { state -> state.copy(message = "离线音乐已删除。") }
+                updateState { state -> state.copy(message = uiText(Res.string.offline_music_deleted)) }
             }
             .onFailure { throwable ->
-                updateState { state -> state.copy(message = throwable.message ?: "离线音乐删除失败。") }
+                updateState { state -> state.copy(message = throwable.uiErrorText(uiText(Res.string.offline_music_delete_failed))) }
             }
     }
 
@@ -278,15 +286,15 @@ internal fun batchDownloadSummaryMessage(
     successCount: Int,
     failureCount: Int,
     skippedCount: Int,
-): String {
+): UiText {
     val parts = buildList {
-        if (successCount > 0) add("成功 $successCount 首")
-        if (failureCount > 0) add("失败 $failureCount 首")
-        if (skippedCount > 0) add("跳过 $skippedCount 首")
+        if (successCount > 0) add(uiPlural(Res.plurals.offline_completed_track_count, (successCount).toInt(), successCount))
+        if (failureCount > 0) add(uiPlural(Res.plurals.offline_failed_track_count, (failureCount).toInt(), failureCount))
+        if (skippedCount > 0) add(uiPlural(Res.plurals.offline_skipped_track_count, (skippedCount).toInt(), skippedCount))
     }
     return if (parts.isEmpty()) {
-        "没有需要下载的歌曲。"
+        uiText(Res.string.offline_no_tracks_required)
     } else {
-        "批量下载完成：${parts.joinToString("，")}。"
+        uiText(Res.string.offline_batch_completed_summary, UiText.Joined(parts, separatorText = uiText(Res.string.ui_list_separator)))
     }
 }

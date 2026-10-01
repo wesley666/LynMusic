@@ -7,6 +7,11 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 
 class PlayerBackgroundArtworkLogicTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `background artwork is hidden when platform does not support blur`() {
         assertFalse(

@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -209,14 +211,14 @@ private fun DailyRecommendationCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = "每日推荐",
+                    text = uiString(Res.string.recommendations_daily_title),
                     modifier = Modifier.weight(1f),
                     color = titleColor,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "查看全部 >",
+                    text = uiString(Res.string.recent_view_all_action),
                     color = mutedColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -224,10 +226,10 @@ private fun DailyRecommendationCard(
                 )
             }
             when {
-                isLoading -> RecentLoadingRow(text = "正在生成每日推荐")
+                isLoading -> RecentLoadingRow(text = uiString(Res.string.recommendations_generating_description))
                 tracks.isEmpty() -> InlineEmptyState(
-                    title = "暂无每日推荐",
-                    body = "曲库有歌曲后会生成今日推荐。",
+                    title = uiString(Res.string.recommendations_empty_title),
+                    body = uiString(Res.string.recommendations_empty_hint),
                 )
                 compact -> DailyRecommendationMobileCarousel(
                     tracks = tracks,
@@ -326,7 +328,7 @@ private fun DailyRecommendationCarouselCard(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = track.artistName ?: "未知艺人",
+                text = track.artistName ?: uiString(Res.string.common_unknown_artist),
                 color = Color.White.copy(alpha = 0.82f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -467,7 +469,7 @@ private fun DailyRecommendationPreviewTrackRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                text = track.artistName ?: "未知艺人",
+                text = track.artistName ?: uiString(Res.string.common_unknown_artist),
                 color = mutedColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -538,8 +540,8 @@ private fun DailyRecommendationDetail(
                 MyDetailBackButton(onBack = onBack)
                 Box(modifier = Modifier.weight(1f)) {
                     SectionTitle(
-                        title = "每日推荐",
-                        subtitle = if (tracks.isEmpty()) "今日歌单" else "${tracks.size} 首",
+                        title = uiString(Res.string.recommendations_daily_title),
+                        subtitle = if (tracks.isEmpty()) uiString(Res.string.recommendations_today_playlist) else uiString(Res.plurals.common_track_count_short, (tracks.size).toInt(), tracks.size),
                     )
                 }
                 OutlinedButton(
@@ -552,7 +554,7 @@ private fun DailyRecommendationDetail(
                         modifier = Modifier.size(18.dp),
                     )
                     Text(
-                        text = "播放全部",
+                        text = uiString(Res.string.player_play_all),
                         modifier = Modifier.padding(start = 8.dp),
                     )
                 }
@@ -566,11 +568,11 @@ private fun DailyRecommendationDetail(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         if (isLoading) {
-                            RecentLoadingRow(text = "正在生成每日推荐")
+                            RecentLoadingRow(text = uiString(Res.string.recommendations_generating_description))
                         } else {
                             InlineEmptyState(
-                                title = "暂无每日推荐",
-                                body = "曲库有歌曲后会生成今日推荐。",
+                                title = uiString(Res.string.recommendations_empty_title),
+                                body = uiString(Res.string.recommendations_empty_hint),
                             )
                         }
                     }
@@ -608,8 +610,8 @@ private fun RecentTracksDetail(
     ) {
         item {
             MyDetailHeader(
-                title = "最近播放歌曲",
-                subtitle = if (recentTracks.isEmpty()) "" else "${recentTracks.size} 首",
+                title = uiString(Res.string.recent_tracks_title),
+                subtitle = if (recentTracks.isEmpty()) "" else uiString(Res.plurals.common_track_count_short, (recentTracks.size).toInt(), recentTracks.size),
                 onBack = onBack,
             )
         }
@@ -617,8 +619,8 @@ private fun RecentTracksDetail(
             isLoading -> item { RecentLoadingRow() }
             recentTracks.isEmpty() -> item {
                 InlineEmptyState(
-                    title = "暂无最近播放歌曲",
-                    body = "播放达到统计阈值后会显示在这里。",
+                    title = uiString(Res.string.recent_tracks_empty_title),
+                    body = uiString(Res.string.recent_tracks_empty_hint),
                 )
             }
             else -> itemsIndexed(recentTracks, key = { _, recentTrack -> recentTrack.track.id }) { index, recentTrack ->
@@ -652,8 +654,8 @@ private fun RecentAlbumsDetail(
     ) {
         item {
             MyDetailHeader(
-                title = "最近播放专辑",
-                subtitle = if (recentAlbums.isEmpty()) "" else "${recentAlbums.size} 张",
+                title = uiString(Res.string.recent_albums_title),
+                subtitle = if (recentAlbums.isEmpty()) "" else uiString(Res.plurals.recent_album_count, (recentAlbums.size).toInt(), recentAlbums.size),
                 onBack = onBack,
             )
         }
@@ -661,8 +663,8 @@ private fun RecentAlbumsDetail(
             isLoading -> item { RecentLoadingRow() }
             recentAlbums.isEmpty() -> item {
                 InlineEmptyState(
-                    title = "暂无最近播放专辑",
-                    body = "播放专辑内歌曲后会显示在这里。",
+                    title = uiString(Res.string.recent_albums_empty_title),
+                    body = uiString(Res.string.recent_albums_empty_hint),
                 )
             }
             else -> items(recentAlbums, key = { recentAlbum -> recentAlbum.album.id }) { recentAlbum ->
@@ -703,7 +705,7 @@ private fun MyDetailBackButton(
     IconButton(onClick = onBack) {
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-            contentDescription = "返回",
+            contentDescription = uiString(Res.string.common_back),
             modifier = Modifier.size(24.dp),
         )
     }
@@ -724,16 +726,16 @@ private fun RecentTracksSection(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         RecentSectionHeader(
-            title = "最近播放歌曲",
-            subtitle = if (recentTracks.isEmpty()) "" else "${recentTracks.size} 首",
+            title = uiString(Res.string.recent_tracks_title),
+            subtitle = if (recentTracks.isEmpty()) "" else uiString(Res.plurals.common_track_count_short, (recentTracks.size).toInt(), recentTracks.size),
             showViewAll = !isLoading && recentTracks.isNotEmpty(),
             onViewAll = onViewAll,
         )
         when {
             isLoading -> RecentLoadingRow()
             recentTracks.isEmpty() -> InlineEmptyState(
-                title = "暂无最近播放歌曲",
-                body = "播放达到统计阈值后会显示在这里。",
+                title = uiString(Res.string.recent_tracks_empty_title),
+                body = uiString(Res.string.recent_tracks_empty_hint),
             )
             isMobile -> previewTracks.forEachIndexed { index, recentTrack ->
                 RecentTrackRow(
@@ -849,16 +851,16 @@ private fun RecentAlbumsSection(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         RecentSectionHeader(
-            title = "最近播放专辑",
-            subtitle = if (recentAlbums.isEmpty()) "" else "${recentAlbums.size} 张",
+            title = uiString(Res.string.recent_albums_title),
+            subtitle = if (recentAlbums.isEmpty()) "" else uiString(Res.plurals.recent_album_count, (recentAlbums.size).toInt(), recentAlbums.size),
             showViewAll = !isLoading && recentAlbums.isNotEmpty(),
             onViewAll = onViewAll,
         )
         when {
             isLoading -> RecentLoadingRow()
             recentAlbums.isEmpty() -> InlineEmptyState(
-                title = "暂无最近播放专辑",
-                body = "播放专辑内歌曲后会显示在这里。",
+                title = uiString(Res.string.recent_albums_empty_title),
+                body = uiString(Res.string.recent_albums_empty_hint),
             )
             isMobile -> previewAlbums.forEach { recentAlbum ->
                 RecentAlbumRow(
@@ -894,7 +896,7 @@ private fun RecentSectionHeader(
         }
         if (showViewAll) {
             Text(
-                text = "查看全部 >",
+                text = uiString(Res.string.recent_view_all_action),
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(onClick = onViewAll)
@@ -1062,7 +1064,7 @@ private fun RecentAlbumRow(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "${recentAlbum.album.trackCount} 首",
+                text = uiString(Res.plurals.common_track_count_short, (recentAlbum.album.trackCount).toInt(), recentAlbum.album.trackCount),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -1161,13 +1163,13 @@ private fun RecentAlbumText(
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text(
-            text = recentAlbum.album.title,
+            text = recentAlbum.album.title.ifBlank { uiString(Res.string.common_unknown_album) },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = recentAlbum.album.artistName ?: "未知艺人",
+            text = recentAlbum.album.artistName ?: uiString(Res.string.common_unknown_artist),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1184,7 +1186,7 @@ private fun RecentAlbumText(
 }
 
 @Composable
-private fun RecentLoadingRow(text: String = "正在加载最近播放") {
+private fun RecentLoadingRow(text: String = uiString(Res.string.recent_plays_loading)) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1225,6 +1227,7 @@ private fun InlineEmptyState(
     }
 }
 
+@Composable
 private fun buildRecentTrackSubtitle(
     track: Track,
     recentTrack: RecentTrack,
@@ -1232,8 +1235,9 @@ private fun buildRecentTrackSubtitle(
     return "${buildTrackMetadataSubtitle(track)} · ${formatRecentStats(recentTrack.playCount, recentTrack.lastPlayedAt)}"
 }
 
+@Composable
 private fun buildTrackMetadataSubtitle(track: Track): String {
-    val artist = track.artistName ?: "未知艺人"
+    val artist = track.artistName ?: uiString(Res.string.common_unknown_artist)
     val album = track.albumTitle?.takeIf { it.isNotBlank() }
     return if (album == null) artist else "$artist · $album"
 }
@@ -1253,15 +1257,17 @@ internal fun dailyRecommendationCarouselItems(
     tracks: List<Track>,
 ): List<Track> = tracks.take(DAILY_RECOMMENDATION_CAROUSEL_LIMIT)
 
+@Composable
 private fun buildRecentAlbumSubtitle(recentAlbum: RecentAlbum): String {
     return formatRecentStats(recentAlbum.playCount, recentAlbum.lastPlayedAt)
 }
 
+@Composable
 private fun formatRecentStats(
     playCount: Int,
     lastPlayedAt: Long,
 ): String {
-    return "播放 ${playCount.coerceAtLeast(1)} 次 · ${formatRecentPlayedAt(lastPlayedAt)}"
+    return uiString(Res.plurals.recent_track_play_summary, (playCount.coerceAtLeast(1)).toInt(), playCount.coerceAtLeast(1), formatRecentPlayedAt(lastPlayedAt))
 }
 
 private fun formatRecentPlayedAt(lastPlayedAt: Long): String {

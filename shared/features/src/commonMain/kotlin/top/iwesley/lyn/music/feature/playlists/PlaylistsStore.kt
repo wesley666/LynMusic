@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.feature.playlists
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
@@ -35,7 +42,7 @@ data class PlaylistsState(
     val isRefreshing: Boolean = false,
     val isImporting: Boolean = false,
     val playlistImportReport: PlaylistImportReport? = null,
-    val message: String? = null,
+    val message: UiText? = null,
 )
 
 sealed interface PlaylistsIntent {
@@ -189,7 +196,7 @@ class PlaylistsStore(
                 updateState { it.copy(message = null) }
             }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "歌单创建失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_create_failed))) }
             }
     }
 
@@ -204,14 +211,14 @@ class PlaylistsStore(
                     playlistRepository.addTrackToPlaylist(summary.id, track)
                         .onSuccess { updateState { it.copy(message = null) } }
                         .onFailure { throwable ->
-                            updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "加入歌单失败。" }) }
+                            updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_add_track_failed))) }
                         }
                 } else {
                     updateState { it.copy(message = null) }
                 }
             }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "歌单创建失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_create_failed))) }
             }
     }
 
@@ -219,7 +226,7 @@ class PlaylistsStore(
         playlistRepository.renamePlaylist(playlistId, name)
             .onSuccess { updateState { it.copy(message = null) } }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "歌单重命名失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_rename_failed))) }
             }
     }
 
@@ -230,7 +237,7 @@ class PlaylistsStore(
         playlistRepository.addTrackToPlaylist(playlistId, track)
             .onSuccess { updateState { it.copy(message = null) } }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "加入歌单失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_add_track_failed))) }
             }
     }
 
@@ -254,7 +261,7 @@ class PlaylistsStore(
                     it.copy(
                         isImporting = false,
                         playlistImportReport = null,
-                        message = throwable.message.orEmpty().ifBlank { "歌单导入失败。" },
+                        message = throwable.uiErrorText(uiText(Res.string.playlist_import_failed)),
                     )
                 }
             }
@@ -264,7 +271,7 @@ class PlaylistsStore(
         playlistRepository.deletePlaylist(playlistId)
             .onSuccess { updateState { it.copy(message = null) } }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "删除歌单失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_delete_failed))) }
             }
     }
 
@@ -275,7 +282,7 @@ class PlaylistsStore(
         playlistRepository.removeTrackFromPlaylist(playlistId, trackId)
             .onSuccess { updateState { it.copy(message = null) } }
             .onFailure { throwable ->
-                updateState { it.copy(message = throwable.message.orEmpty().ifBlank { "移出歌单失败。" }) }
+                updateState { it.copy(message = throwable.uiErrorText(uiText(Res.string.playlist_remove_track_failed))) }
             }
     }
 
@@ -289,7 +296,7 @@ class PlaylistsStore(
                 updateState {
                     it.copy(
                         isRefreshing = false,
-                        message = throwable.message.orEmpty().ifBlank { "歌单同步失败。" },
+                        message = throwable.uiErrorText(uiText(Res.string.playlist_sync_failed)),
                     )
                 }
             }

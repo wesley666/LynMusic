@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+
 import java.nio.file.Files
 import java.nio.file.Path
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
@@ -31,11 +36,11 @@ internal fun normalizeDesktopVlcSelection(
     return candidate.takeIf { containsDesktopVlcLibraries(it, osName, listEntries) }
 }
 
-internal fun desktopVlcInvalidSelectionMessage(osName: String = System.getProperty("os.name")): String {
+internal fun desktopVlcInvalidSelectionMessage(osName: String = System.getProperty("os.name")): UiText {
     return if (isDesktopMacOs(osName)) {
-        "请选择 VLC.app，或直接选择包含 libvlc.dylib 和 libvlccore.dylib 的目录。"
+        uiText(Res.string.desktop_vlc_selection_macos)
     } else {
-        "请选择包含 libvlc 和 libvlccore 的 VLC 安装目录。"
+        uiText(Res.string.desktop_vlc_selection)
     }
 }
 

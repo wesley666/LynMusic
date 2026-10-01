@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -42,7 +45,15 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
-import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.WebDavOperation
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.webDavHttpFailureText
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
@@ -132,12 +143,12 @@ internal fun testAndroidWebDavConnection(
         val resource = session.sardine.list(session.rootUrl.ensureTrailingSlash(), 0)
             .filterIsInstance<DavResource>()
             .firstOrNull()
-            ?: error("WebDAV 根目录不可访问。")
+            ?: throw UiTextException(uiText(Res.string.webdav_root_inaccessible))
         if (!resource.isDirectory) {
-            error("WebDAV 根 URL 不是目录。")
+            throw UiTextException(uiText(Res.string.webdav_root_not_directory))
         }
     } catch (throwable: Throwable) {
-        throw throwable.asAndroidWebDavIOException("测试连接", session.authEnabled)
+        throw throwable.asAndroidWebDavIOException(WebDavOperation.TestConnection, session.authEnabled)
     }
 }
 
@@ -195,7 +206,7 @@ internal suspend fun readAndroidWebDavSameNameLyrics(
         callFactory = session.client,
         requestUrl = requestUrl,
         authEnabled = session.authEnabled,
-        operation = "读取同名歌词",
+        operation = WebDavOperation.ReadLyrics,
     ) ?: return null
     if (bytes.isEmpty() || bytes.size > SAME_NAME_LRC_MAX_BYTES) return null
     logger.debug(WEBDAV_LOG_TAG) {
@@ -227,7 +238,7 @@ private fun collectAndroidWebDavTracks(
         session.sardine.list(directoryUrl, 1)
             .filterIsInstance<DavResource>()
     } catch (throwable: Throwable) {
-        throw throwable.asAndroidWebDavIOException("扫描", session.authEnabled)
+        throw throwable.asAndroidWebDavIOException(WebDavOperation.Scan, session.authEnabled)
     }
 
     resources.forEach { resource ->
@@ -424,7 +435,7 @@ private fun readAndroidWebDavRemoteMetadata(
         startByte = 0L,
         length = initialHeadBytes,
         authEnabled = authEnabled,
-        operation = "标签探测",
+        operation = WebDavOperation.ProbeMetadata,
     )
     val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
     if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
@@ -445,7 +456,7 @@ private fun readAndroidWebDavRemoteMetadata(
             startByte = 0L,
             length = expandedHeadBytes,
             authEnabled = authEnabled,
-            operation = "标签探测",
+            operation = WebDavOperation.ProbeMetadata,
         )
         logger.debug(WEBDAV_LOG_TAG) {
             "metadata-range-expand source=$sourceId url=$requestUrl bytes=${headBytes.size}"
@@ -469,7 +480,7 @@ private fun readAndroidWebDavRemoteMetadata(
                 startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
                 length = requestedTailBytes,
                 authEnabled = authEnabled,
-                operation = "标签探测",
+                operation = WebDavOperation.ProbeMetadata,
                 allowFullResponseFallback = false,
             )
         }
@@ -492,7 +503,7 @@ private fun downloadAndroidWebDavRange(
     startByte: Long,
     length: Int,
     authEnabled: Boolean,
-    operation: String,
+    operation: WebDavOperation,
     allowFullResponseFallback: Boolean = true,
 ): ByteArray {
     if (length <= 0) return ByteArray(0)
@@ -510,8 +521,8 @@ private fun downloadAndroidWebDavRange(
     val response = callFactory.newCall(request).execute()
     return response.use { activeResponse ->
         if (!activeResponse.isSuccessful) {
-            throw IOException(
-                describeWebDavHttpFailure(
+            throw WebDavUiIOException(
+                webDavHttpFailureText(
                     operation = operation,
                     statusCode = activeResponse.code,
                     authSent = authEnabled,
@@ -534,7 +545,7 @@ private fun downloadAndroidWebDavOptionalFile(
     callFactory: Call.Factory,
     requestUrl: String,
     authEnabled: Boolean,
-    operation: String,
+    operation: WebDavOperation,
 ): ByteArray? {
     val requestedLength = (SAME_NAME_LRC_MAX_BYTES + 1L).toInt()
     val request = Request.Builder()
@@ -547,8 +558,8 @@ private fun downloadAndroidWebDavOptionalFile(
         when {
             activeResponse.code == 404 -> null
             activeResponse.isSuccessful -> readUpTo(activeResponse.body.byteStream(), requestedLength)
-            else -> throw IOException(
-                describeWebDavHttpFailure(
+            else -> throw WebDavUiIOException(
+                webDavHttpFailureText(
                     operation = operation,
                     statusCode = activeResponse.code,
                     authSent = authEnabled,
@@ -573,7 +584,7 @@ private fun readUpTo(
     return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
 }
 
-private fun skipAndroidWebDavBytes(
+internal fun skipAndroidWebDavBytes(
     stream: InputStream,
     target: Long,
 ) {
@@ -581,7 +592,7 @@ private fun skipAndroidWebDavBytes(
     while (skipped < target) {
         val delta = stream.skip(target - skipped)
         if (delta <= 0L) {
-            throw EOFException("Unable to skip to requested WebDAV position $target")
+            throw WebDavUiEOFException(target)
         }
         skipped += delta
     }
@@ -605,14 +616,14 @@ private fun storeAndroidWebDavArtwork(
     return target.absolutePath
 }
 
-private fun Throwable.asAndroidWebDavIOException(
-    operation: String,
+internal fun Throwable.asAndroidWebDavIOException(
+    operation: WebDavOperation,
     authEnabled: Boolean,
 ): IOException {
     val statusCode = reflectStatusCode()
     if (statusCode != null) {
-        return IOException(
-            describeWebDavHttpFailure(
+        return WebDavUiIOException(
+            webDavHttpFailureText(
                 operation = operation,
                 statusCode = statusCode,
                 authSent = authEnabled,
@@ -624,8 +635,8 @@ private fun Throwable.asAndroidWebDavIOException(
     return if (this is IOException) {
         this
     } else {
-        IOException(
-            "WebDAV $operation 失败: ${message ?: this::class.simpleName.orEmpty()}",
+        WebDavUiIOException(
+            uiErrorText(uiText(Res.string.webdav_operation_failed, operation.text)),
             this,
         )
     }
@@ -700,9 +711,9 @@ private class WebDavOkHttpDataSource(
             val challenge = response.header("WWW-Authenticate").orEmpty()
             val detail = challenge.ifBlank { response.message }
             response.close()
-            throw IOException(
-                describeWebDavHttpFailure(
-                    operation = "播放",
+            throw WebDavUiIOException(
+                webDavHttpFailureText(
+                    operation = WebDavOperation.Playback,
                     statusCode = response.code,
                     authSent = authEnabled,
                     serverDetail = detail,
@@ -711,7 +722,7 @@ private class WebDavOkHttpDataSource(
         }
         val stream = response.body.byteStream()
         if (dataSpec.position > 0L && response.code == 200) {
-            skipFully(stream, dataSpec.position)
+            skipAndroidWebDavBytes(stream, dataSpec.position)
         }
         this.response = response
         this.inputStream = stream
@@ -762,14 +773,15 @@ private class WebDavOkHttpDataSource(
         }
     }
 
-    private fun skipFully(stream: InputStream, target: Long) {
-        var skipped = 0L
-        while (skipped < target) {
-            val delta = stream.skip(target - skipped)
-            if (delta <= 0L) {
-                throw EOFException("Unable to skip to requested WebDAV position $target")
-            }
-            skipped += delta
-        }
-    }
 }
+
+internal class WebDavUiEOFException(val position: Long) :
+    EOFException("Unable to skip to requested WebDAV position $position"), UiTextFailure {
+    override val text: UiText = uiText(Res.string.webdav_seek_position_unavailable, position)
+}
+
+/** Retains IOException-based retry behavior while preserving a UI description. */
+internal class WebDavUiIOException(
+    override val text: UiText,
+    cause: Throwable? = null,
+) : IOException((text).diagnosticMessage(), cause), UiTextFailure

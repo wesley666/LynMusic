@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_close_search">Close search</string>
+    <string name="navigation_exit_search">Exit search</string>
+    <string name="favorites_search_placeholder">Search favorite songs / artists / albums</string>
+    <string name="playlists_search_placeholder">Search playlists</string>
+    <string name="common_sort">Sort</string>
+</resources>

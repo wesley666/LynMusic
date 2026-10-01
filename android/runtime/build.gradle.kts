@@ -7,6 +7,7 @@ plugins {
 }
 
 android {
+    testOptions { unitTests.isIncludeAndroidResources = true }
     namespace = "top.iwesley.lyn.music.android.runtime"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
@@ -31,6 +32,8 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(libs.robolectric)
+    implementation(project(":shared:resources"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 
     api(project(":cast:api"))
@@ -65,4 +68,5 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_cast_action">Cast</string>
+    <string name="cast_search_retry_hint">Click Search again to retry</string>
+    <string name="player_connecting_status">Connecting</string>
+    <string name="player_current_quality_label">Current playback quality</string>
+    <string name="player_current_track_badge"> · Current song</string>
+    <string name="player_sleep_timer_custom_minutes">Custom minutes</string>
+    <string name="common_done">Done</string>
+    <string name="offline_download_failed_status">Download failed</string>
+    <string name="offline_download_to_device">Download to this device</string>
+    <string name="offline_downloading_status">Downloading</string>
+    <string name="cast_same_network_hint">Make sure your TV and phone are on the same network</string>
+    <string name="lyrics_manual_search_action">Manual search</string>
+    <string name="cast_devices_empty_title">No devices found</string>
+    <string name="player_feature_not_enabled">Not enabled</string>
+    <string name="player_offline_downloads_title">Offline downloads</string>
+    <string name="player_queue_empty_hint">Play a song from the library or favorites to see the current queue here.</string>
+    <string name="player_playing_track_badge"> · Playing</string>
+    <string name="player_playing_status">Playing</string>
+    <string name="player_preparing_lyrics">Preparing lyrics</string>
+    <string name="player_sleep_timer_remaining">%1$s remaining</string>
+    <string name="player_restoring_playback_title">Restoring last playback</string>
+    <string name="cast_search_again_action">Search again</string>
+    <string name="cast_searching_devices_status">Searching for devices</string>
+    <string name="player_sleep_timer_stop_time">Select stop time</string>
+    <string name="player_sleep_timer_title">Sleep timer</string>
+    <string name="player_sound_settings_title">Sound settings</string>
+    <string name="common_start">Start</string>
+    <string name="cast_stop_action">Stop casting</string>
+    <string name="player_restored_queue_empty">The play queue is empty</string>
+    <string name="player_restoring_playback_description">The queue and playback position are loading in the background.</string>
+    <string name="player_sleep_timer_scheduled">Timer set for %1$s</string>
+    <string name="player_sleep_timer_disable">Turn off timer</string>
+</resources>

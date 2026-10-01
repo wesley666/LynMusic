@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -21,6 +22,7 @@ import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
 import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
+import top.iwesley.lyn.music.core.model.ImportScanWarning
 import top.iwesley.lyn.music.core.model.ImportStreamingScanReport
 import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
@@ -44,8 +46,143 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.domain.EMBY_DEVICE_ID_CREDENTIAL_KEY
 import top.iwesley.lyn.music.domain.serializeEmbyCredential
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.lastErrorUiText
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.resources.*
 
 class ImportSourceRepositoryTest {
+    @Test
+    fun `normal and streaming warnings keep save-time language after reopening without repeating scans`() = runTest {
+        val previous = AppLanguageRuntime.appLanguage.value
+        try {
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                for (streaming in listOf(false, true)) {
+                    AppLanguageRuntime.update(language)
+                    val dbPath = Files.createTempFile("lynmusic-scan-warnings", ".db")
+                    fun openDatabase() = buildLynMusicDatabase(Room.databaseBuilder<LynMusicDatabase>(name = dbPath.absolutePathString()))
+                    var database = openDatabase()
+                    try {
+                        val id = if (streaming) "nav-1" else "local-1"
+                        val credentials = ImportTestSecureCredentialStore()
+                        credentials.put("credential", "password")
+                        val source = if (streaming) {
+                            navidromeSourceEntity(id, "https://server.example", username = "u", credentialKey = "credential")
+                        } else importSourceEntity(id, ImportSourceType.LOCAL_FOLDER, "用户来源", "/用户目录")
+                        database.importSourceDao().upsert(source)
+                        val rawDetail = "服务端中文详情 %1\$s"
+                        val description = uiText(Res.string.source_account_no_syncable_tracks, "Navidrome")
+                        val warnings = listOf(
+                            ImportScanWarning("当前 Navidrome 账号下没有可同步的歌曲。", description),
+                            ImportScanWarning(rawDetail),
+                        )
+                        val expected = resolveUiText(description, language) + "\n" + rawDetail
+                        val report = ImportScanReport(
+                            tracks = listOf(ImportedTrackCandidate("用户歌曲", mediaLocator = "file:///用户目录/Song.flac", relativePath = "Song.flac")),
+                            warnings = warnings, discoveredAudioFileCount = 2,
+                        )
+                        val gateway = RecordingImportSourceGateway(scanReport = report)
+                        val repository = createRepository(database, gateway, credentials)
+                        val summary = assertNotNull(repository.rescanSource(id).getOrThrow())
+                        assertEquals(2, summary.discoveredAudioFileCount)
+                        assertEquals(1, summary.importedTrackCount)
+                        assertEquals(expected, database.importIndexStateDao().getBySourceId(id)?.lastError)
+                        val scanCalls = gateway.localFolderScanCount + gateway.navidromeStreamingScanCount
+                        assertEquals(1, scanCalls)
+                        database.close()
+                        database = openDatabase()
+                        val reopened = createRepository(database, secureCredentialStore = credentials)
+                        val state = assertNotNull(reopened.observeSources().first().single().indexState)
+                        assertEquals(expected, state.lastError)
+                        val text = assertNotNull(state.lastErrorUiText())
+                        for (next in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese, AppLanguage.English)) {
+                            AppLanguageRuntime.update(next)
+                            assertEquals(expected, resolveUiText(text, next))
+                            assertEquals(expected, database.importIndexStateDao().getBySourceId(id)?.lastError)
+                            assertEquals(1, database.trackDao().count())
+                            assertEquals(scanCalls, gateway.localFolderScanCount + gateway.navidromeStreamingScanCount)
+                        }
+                        assertTrue(reopened.rescanSource(id).isSuccess)
+                        assertNull(reopened.observeSources().first().single().indexState?.lastError)
+                    } finally {
+                        database.close()
+                        Files.deleteIfExists(dbPath)
+                    }
+                }
+            }
+        } finally { AppLanguageRuntime.update(previous) }
+    }
+
+    @Test
+    fun `scan error keeps save-time language after reopening database and clears after success`() = runTest {
+        val previous = AppLanguageRuntime.appLanguage.value
+        try {
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                AppLanguageRuntime.update(language)
+                val dbPath = Files.createTempFile("lynmusic-scan-error", ".db")
+                fun openDatabase() = buildLynMusicDatabase(Room.databaseBuilder<LynMusicDatabase>(name = dbPath.absolutePathString()))
+                var database = openDatabase()
+                try {
+                    val path = "/用户目录/missing %1\$s"
+                    database.importSourceDao().upsert(importSourceEntity("local-1", ImportSourceType.LOCAL_FOLDER, "用户来源", path))
+                    database.trackDao().upsertAll(listOf(trackEntity("old-track", "local-1", "用户歌曲")))
+                    database.importIndexStateDao().upsert(top.iwesley.lyn.music.data.db.ImportIndexStateEntity(
+                        sourceId = "local-1", trackCount = 7, remoteTrackCount = 9, lastScannedAt = 42L, lastError = null,
+                    ))
+                    val description = uiText(Res.string.source_folder_missing, path)
+                    val expected = resolveUiText(description, language)
+                    val failure = IllegalStateException("wrapper diagnostic", UiTextException(description))
+                    val repository = createRepository(database, RecordingImportSourceGateway(localFolderScanHandler = { _, _ -> throw failure }))
+                    assertSame(failure, repository.rescanSource("local-1").exceptionOrNull())
+                    assertEquals(listOf("old-track"), database.trackDao().getBySourceId("local-1").map { it.id })
+                    assertEquals(expected, database.importIndexStateDao().getBySourceId("local-1")?.lastError)
+                    database.close()
+                    database = openDatabase()
+                    val reopened = createRepository(database)
+                    val state = assertNotNull(reopened.observeSources().first().single().indexState)
+                    assertEquals(expected, state.lastError)
+                    assertEquals(7, state.trackCount)
+                    assertEquals(9, state.remoteTrackCount)
+                    assertEquals(42L, state.lastScannedAt)
+                    val text = assertNotNull(state.lastErrorUiText())
+                    for (next in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese, AppLanguage.English)) {
+                        AppLanguageRuntime.update(next)
+                        assertEquals(expected, resolveUiText(text, next))
+                        assertEquals(expected, database.importIndexStateDao().getBySourceId("local-1")?.lastError)
+                    }
+                    assertTrue(reopened.rescanSource("local-1").isSuccess)
+                    val successful = assertNotNull(reopened.observeSources().first().single().indexState)
+                    assertNull(successful.lastError)
+                    assertNull(successful.lastErrorUiText())
+                } finally {
+                    database.close()
+                    Files.deleteIfExists(dbPath)
+                }
+            }
+        } finally { AppLanguageRuntime.update(previous) }
+    }
+
+    @Test
+    fun `historical scan diagnostics are read without modifying database content`() = runTest {
+        val database = createImportTestDatabase()
+        try {
+            val original = "历史诊断 source_folder_missing(arg1=/用户目录)"
+            database.importSourceDao().upsert(importSourceEntity("local-1", ImportSourceType.LOCAL_FOLDER, "用户来源", "/music"))
+            database.importIndexStateDao().upsert(top.iwesley.lyn.music.data.db.ImportIndexStateEntity(
+                sourceId = "local-1", trackCount = 4, remoteTrackCount = null, lastScannedAt = 11L, lastError = original,
+            ))
+            val state = assertNotNull(createRepository(database).observeSources().first().single().indexState)
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                assertEquals(original, resolveUiText(assertNotNull(state.lastErrorUiText()), language))
+            }
+            assertEquals(original, database.importIndexStateDao().getBySourceId("local-1")?.lastError)
+        } finally { database.close() }
+    }
+
 
     @Test
     fun `add source rejects duplicate names ignoring case and whitespace`() = runTest {
@@ -69,7 +206,7 @@ class ImportSourceRepositoryTest {
             ),
         )
 
-        assertEquals("音乐源名称已存在。", result.exceptionOrNull()?.message)
+        assertEquals("source_name_already_exists", result.exceptionOrNull()?.message)
         assertEquals(1, database.importSourceDao().getAll().size)
     }
 
@@ -94,7 +231,7 @@ class ImportSourceRepositoryTest {
 
         val result = repository.importLocalFolder()
 
-        assertEquals("该本地文件夹已导入。", result.exceptionOrNull()?.message)
+        assertEquals("source_local_folder_already_imported", result.exceptionOrNull()?.message)
         assertEquals(1, database.importSourceDao().getAll().size)
         assertEquals(0, gateway.localFolderScanCount)
     }
@@ -119,7 +256,7 @@ class ImportSourceRepositoryTest {
 
         val result = createRepository(database, gateway).importLocalFolder()
 
-        assertEquals("该本地文件夹已导入。", result.exceptionOrNull()?.message)
+        assertEquals("source_local_folder_already_imported", result.exceptionOrNull()?.message)
         assertEquals(0, gateway.localFolderScanCount)
     }
 
@@ -206,7 +343,7 @@ class ImportSourceRepositoryTest {
 
         val result = createRepository(database, gateway).reauthorizeLocalFolder("local-1")
 
-        assertEquals("该本地文件夹已导入。", result.exceptionOrNull()?.message)
+        assertEquals("source_local_folder_already_imported", result.exceptionOrNull()?.message)
         assertEquals("old-reference", database.importSourceDao().getById("local-1")?.rootReference)
         assertEquals(0, gateway.localFolderScanCount)
     }
@@ -230,8 +367,7 @@ class ImportSourceRepositoryTest {
 
         val result = createRepository(database, gateway).reauthorizeLocalFolder("local-1")
 
-        assertEquals(
-            "所选文件夹与原来源不一致；如需更换目录，请新建来源。",
+        assertEquals("source_local_folder_mismatch",
             result.exceptionOrNull()?.message,
         )
         val source = assertNotNull(database.importSourceDao().getById("local-1"))
@@ -508,7 +644,7 @@ class ImportSourceRepositoryTest {
             ),
         )
 
-        assertEquals("音乐源名称已存在。", result.exceptionOrNull()?.message)
+        assertEquals("source_name_already_exists", result.exceptionOrNull()?.message)
         assertEquals(1, database.importSourceDao().getAll().size)
     }
 
@@ -814,8 +950,7 @@ class ImportSourceRepositoryTest {
         )
 
         assertTrue(result.isFailure)
-        assertEquals(
-            "Navidrome 在线模式需要服务器支持 native 歌曲分页接口。",
+        assertEquals("source_online_paging_required",
             result.exceptionOrNull()?.message,
         )
         val stored = assertNotNull(database.importSourceDao().getById("nav-1"))
@@ -916,8 +1051,7 @@ class ImportSourceRepositoryTest {
         val result = repository.rescanSource("nav-1")
 
         assertTrue(result.isFailure)
-        assertEquals(
-            "Navidrome 在线模式需要服务器支持 native 歌曲分页接口。",
+        assertEquals("source_online_paging_required",
             result.exceptionOrNull()?.message,
         )
         val stored = assertNotNull(database.importSourceDao().getById("nav-1"))
@@ -971,7 +1105,7 @@ class ImportSourceRepositoryTest {
             keepExistingCredentialWhenBlankCredential = true,
         )
 
-        assertEquals("Subsonic 来源切换鉴权方式后需要重新填写 API Key。", result.exceptionOrNull()?.message)
+        assertEquals("source_authentication_changed_api_key", result.exceptionOrNull()?.message)
         assertEquals(0, gateway.subsonicScanCount)
         assertNull(gateway.lastSubsonicScanDraft)
         val unchanged = assertNotNull(database.importSourceDao().getById("sub-1"))

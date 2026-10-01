@@ -7,6 +7,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AndroidBackNavigationTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `library browser prioritizes album detail over artist detail`() {
         assertEquals(

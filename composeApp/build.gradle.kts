@@ -105,6 +105,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
+            implementation(project(":shared:resources"))
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))

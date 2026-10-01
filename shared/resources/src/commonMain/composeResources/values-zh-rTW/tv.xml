@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_search_clear_query">清除搜索</string>
+    <string name="recommendations_generating_status">正在生成</string>
+    <string name="tv_library_import_hint">先匯入本機資料夾、Samba、WebDAV、Navidrome 或 Subsonic，掃描完成後會出現在這裡。</string>
+    <string name="tv_albums_empty_title">沒有專輯</string>
+    <string name="tv_albums_filter_empty_hint">當前篩選條件下沒有專輯。</string>
+    <string name="tv_artists_empty_title">沒有藝人</string>
+    <string name="tv_artists_filter_empty_hint">當前篩選條件下沒有藝人。</string>
+    <string name="tv_recent_plays_empty_title">暫無最近播放</string>
+    <string name="tv_player_idle_title">還沒有播放</string>
+    <string name="tv_play_all_action">全部播放</string>
+    <string name="tv_player_title">播放界面</string>
+    <plurals name="tv_play_count">
+        <item quantity="one">%1$s 次播放</item>
+        <item quantity="other">%1$s 次播放</item>
+    </plurals>
+    <string name="tv_recent_albums_title">最近專輯</string>
+    <string name="tv_recent_plays_title">最近播放</string>
+    <string name="tv_my_music_description">最近播放和每日推薦</string>
+    <string name="tv_recommendations_empty_hint">曲庫有歌曲後會生成推薦。</string>
+    <string name="tv_search_favorites">搜索喜歡</string>
+    <string name="tv_search_library">搜索曲庫</string>
+    <plurals name="tv_search_result_track_count">
+        <item quantity="one">搜索 "%1$s" · %2$s 首歌曲</item>
+        <item quantity="other">搜索 "%1$s" · %2$s 首歌曲</item>
+    </plurals>
+    <string name="tv_player_select_track_hint">選擇歌曲後開始播放</string>
+    <string name="tv_search_placeholder">歌曲 / 藝人 / 專輯</string>
+    <string name="tv_search_empty_hint">試試調整搜索詞。</string>
+</resources>

@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.uiString
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -25,37 +30,41 @@ import top.iwesley.lyn.music.ui.LynMusicTheme
 internal fun JvmDesktopStartingScreen(
     modifier: Modifier = Modifier,
 ) {
-    LynMusicTheme {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(Color.White),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+    ProvideUiLanguage {
+        LynMusicTheme {
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(Color.White),
+                contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    painter = painterResource("desktop-icon.png"),
-                    contentDescription = "LynMusic 应用图标",
-                    modifier = Modifier
-                        .size(128.dp)
-                        .clip(RoundedCornerShape(28.dp)),
-                )
-                Text(
-                    text = "LynMusic 正在启动…",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = StartupContentColor,
-                )
-                CircularProgressIndicator(
-                    modifier = Modifier.size(30.dp),
-                    color = StartupContentColor,
-                    strokeWidth = 3.dp,
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    Image(
+                        painter = painterResource("desktop-icon.png"),
+                        contentDescription = uiString(Res.string.app_icon_description),
+                        modifier = Modifier
+                            .size(128.dp)
+                            .clip(RoundedCornerShape(28.dp)),
+                    )
+                    Text(
+                        text = uiString(Res.string.startup_app_starting),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = StartupContentColor,
+                    )
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(30.dp),
+                        color = StartupContentColor,
+                        strokeWidth = 3.dp,
+                    )
+                }
             }
         }
+
+
     }
 }
 

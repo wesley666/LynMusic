@@ -1,7 +1,14 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.artistSummaryLabel
+import top.iwesley.lyn.music.testing.navidromeDownloadMenuLabel
+import top.iwesley.lyn.music.testing.offlineAvailableSpaceLabel
+import top.iwesley.lyn.music.testing.compactPlayerOfflineDownloadStatusLabel
+
+import kotlinx.coroutines.test.runTest
+
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -27,60 +34,65 @@ import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 import top.iwesley.lyn.music.feature.offline.ActiveBatchDownloadState
 
 class AppCommonUiLogicTest {
-    @Test
-    fun `queue drawer slide offset follows drawer side`() {
-        assertEquals(-420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.Start, 420))
-        assertEquals(420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.End, 420))
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
     }
 
     @Test
-    fun `navidrome menu labels current offline quality`() {
+    fun `queue drawer slide offset follows drawer side`() = runTest {
+        assertLocalizedEquals(-420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.Start, 420))
+        assertLocalizedEquals(420, queueDrawerHorizontalSlideOffset(QueueDrawerSide.End, 420))
+    }
+
+    @Test
+    fun `navidrome menu labels current offline quality`() = runTest {
         val download = completedDownload(quality = NavidromeAudioQuality.Kbps192)
 
         assertTrue(isCurrentOfflineDownloadQuality(download, NavidromeAudioQuality.Kbps192))
-        assertEquals("已下载 192 kbps", navidromeDownloadMenuLabel(NavidromeAudioQuality.Kbps192, download))
-        assertEquals("重新下载 320 kbps", navidromeDownloadMenuLabel(NavidromeAudioQuality.Kbps320, download))
+        assertLocalizedEquals("已下载 192 kbps", navidromeDownloadMenuLabel(NavidromeAudioQuality.Kbps192, download))
+        assertLocalizedEquals("重新下载 320 kbps", navidromeDownloadMenuLabel(NavidromeAudioQuality.Kbps320, download))
     }
 
     @Test
-    fun `navidrome menu does not mark completed record without local file as downloaded`() {
+    fun `navidrome menu does not mark completed record without local file as downloaded`() = runTest {
         val download = completedDownload(
             quality = NavidromeAudioQuality.Original,
             localMediaLocator = null,
         )
 
         assertFalse(isCurrentOfflineDownloadQuality(download, NavidromeAudioQuality.Original))
-        assertEquals("重新下载 原始音质", navidromeDownloadMenuLabel(NavidromeAudioQuality.Original, download))
+        assertLocalizedEquals("重新下载 原始音质", navidromeDownloadMenuLabel(NavidromeAudioQuality.Original, download))
     }
 
     @Test
-    fun `navidrome menu labels missing download as download action`() {
-        assertEquals("下载 原始音质", navidromeDownloadMenuLabel(NavidromeAudioQuality.Original, null))
+    fun `navidrome menu labels missing download as download action`() = runTest {
+        assertLocalizedEquals("下载 原始音质", navidromeDownloadMenuLabel(NavidromeAudioQuality.Original, null))
     }
 
     @Test
-    fun `compact player offline download status labels download states`() {
-        assertEquals("下载到本机", compactPlayerOfflineDownloadStatusLabel(null))
-        assertEquals(
+    fun `compact player offline download status labels download states`() = runTest {
+        assertLocalizedEquals("下载到本机", compactPlayerOfflineDownloadStatusLabel(null))
+        assertLocalizedEquals(
             "正在下载",
             compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Pending)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             "正在下载",
             compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Downloading)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             "已离线",
             compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Completed)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             "下载失败",
             compactPlayerOfflineDownloadStatusLabel(completedDownload(status = OfflineDownloadStatus.Failed)),
         )
     }
 
     @Test
-    fun `secondary toast shows online favorite error before playlist success`() {
+    fun `secondary toast shows online favorite error before playlist success`() = runTest {
         val message = secondaryToastMessage(
             onlineFavoritesErrorMessage = "在线收藏失败",
             onlinePlaylistsErrorMessage = null,
@@ -89,11 +101,11 @@ class AppCommonUiLogicTest {
             onlinePlaylistsMessage = null,
         )
 
-        assertEquals("在线收藏失败", message)
+        assertLocalizedEquals("在线收藏失败", message)
     }
 
     @Test
-    fun `secondary toast includes online favorite success message`() {
+    fun `secondary toast includes online favorite success message`() = runTest {
         val message = secondaryToastMessage(
             onlineFavoritesErrorMessage = null,
             onlinePlaylistsErrorMessage = null,
@@ -102,11 +114,11 @@ class AppCommonUiLogicTest {
             onlinePlaylistsMessage = "在线歌单已更新",
         )
 
-        assertEquals("已收藏", message)
+        assertLocalizedEquals("已收藏", message)
     }
 
     @Test
-    fun `secondary toast returns null without secondary messages`() {
+    fun `secondary toast returns null without secondary messages`() = runTest {
         assertNull(
             secondaryToastMessage(
                 onlineFavoritesErrorMessage = null,
@@ -119,7 +131,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `passive online library intents do not require store startup`() {
+    fun `passive online library intents do not require store startup`() = runTest {
         val clearSource = OnlineLibraryIntent.SelectSource(sourceId = null)
         val temporaryClearSource = OnlineLibraryIntent.SelectSource(sourceId = null, persist = false)
 
@@ -151,7 +163,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `passive online favorites intents do not require store startup`() {
+    fun `passive online favorites intents do not require store startup`() = runTest {
         val clearSource = OnlineFavoritesIntent.SelectSource(sourceId = null)
         val temporaryClearSource = OnlineFavoritesIntent.SelectSource(sourceId = null, persist = false)
 
@@ -177,7 +189,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `passive online playlists intents do not require store startup`() {
+    fun `passive online playlists intents do not require store startup`() = runTest {
         val clearSource = OnlinePlaylistsIntent.SelectSource(sourceId = null)
         val temporaryClearSource = OnlinePlaylistsIntent.SelectSource(sourceId = null, persist = false)
 
@@ -206,7 +218,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `library tab online mode does not show favorites message fallback`() {
+    fun `library tab online mode does not show favorites message fallback`() = runTest {
         assertNull(
             libraryTabBrowserMessage(
                 isOnlineMode = true,
@@ -214,7 +226,7 @@ class AppCommonUiLogicTest {
                 favoritesMessage = "喜欢刷新失败",
             ),
         )
-        assertEquals(
+        assertLocalizedEquals(
             "在线曲库加载失败",
             libraryTabBrowserMessage(
                 isOnlineMode = true,
@@ -225,8 +237,8 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `library tab local mode keeps favorites message fallback`() {
-        assertEquals(
+    fun `library tab local mode keeps favorites message fallback`() = runTest {
+        assertLocalizedEquals(
             "本地收藏已更新",
             libraryTabBrowserMessage(
                 isOnlineMode = false,
@@ -237,40 +249,40 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `library tab dismiss target follows current mode`() {
-        assertEquals(
+    fun `library tab dismiss target follows current mode`() = runTest {
+        assertLocalizedEquals(
             LibraryTabMessageDismissTarget.OnlineLibrary,
             libraryTabMessageDismissTarget(isOnlineMode = true),
         )
-        assertEquals(
+        assertLocalizedEquals(
             LibraryTabMessageDismissTarget.Favorites,
             libraryTabMessageDismissTarget(isOnlineMode = false),
         )
     }
 
     @Test
-    fun `artist summary label hides unknown online counts instead of showing zero`() {
-        assertEquals("在线艺人", artistSummaryLabel(trackCount = null, albumCount = null))
-        assertEquals("12 首歌曲", artistSummaryLabel(trackCount = 12, albumCount = null))
-        assertEquals("3 张专辑", artistSummaryLabel(trackCount = null, albumCount = 3))
-        assertEquals("12 首歌曲 · 3 张专辑", artistSummaryLabel(trackCount = 12, albumCount = 3))
+    fun `artist summary label hides unknown online counts instead of showing zero`() = runTest {
+        assertLocalizedEquals("在线艺人", artistSummaryLabel(trackCount = null, albumCount = null))
+        assertLocalizedEquals("12 首歌曲", artistSummaryLabel(trackCount = 12, albumCount = null))
+        assertLocalizedEquals("3 张专辑", artistSummaryLabel(trackCount = null, albumCount = 3))
+        assertLocalizedEquals("12 首歌曲 · 3 张专辑", artistSummaryLabel(trackCount = 12, albumCount = 3))
     }
 
     @Test
-    fun `offline download row indicator maps download states`() {
-        assertEquals(
+    fun `offline download row indicator maps download states`() = runTest {
+        assertLocalizedEquals(
             OfflineDownloadRowIndicatorState.Downloading,
             offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Pending)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             OfflineDownloadRowIndicatorState.Downloading,
             offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Downloading)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             OfflineDownloadRowIndicatorState.Downloaded,
             offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Completed)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             null,
             offlineDownloadRowIndicatorState(
                 completedDownload(
@@ -279,25 +291,25 @@ class AppCommonUiLogicTest {
                 ),
             ),
         )
-        assertEquals(
+        assertLocalizedEquals(
             null,
             offlineDownloadRowIndicatorState(completedDownload(status = OfflineDownloadStatus.Failed)),
         )
-        assertEquals(null, offlineDownloadRowIndicatorState(null))
+        assertLocalizedEquals(null, offlineDownloadRowIndicatorState(null))
     }
 
     @Test
-    fun `offline available space labels loading unknown and gigabytes`() {
-        assertEquals("计算中", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = true))
-        assertEquals("未知", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = false))
-        assertEquals("0.0 GB", formatOfflineAvailableSpaceGb(0L))
-        assertEquals("0.5 GB", formatOfflineAvailableSpaceGb(512L * 1024L * 1024L))
-        assertEquals("2.0 GB", formatOfflineAvailableSpaceGb(2L * 1024L * 1024L * 1024L))
-        assertEquals("1.2 GB", formatOfflineAvailableSpaceGb(1_288_490_188L))
+    fun `offline available space labels loading unknown and gigabytes`() = runTest {
+        assertLocalizedEquals("计算中", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = true))
+        assertLocalizedEquals("未知", offlineAvailableSpaceLabel(availableSpaceBytes = null, loading = false))
+        assertLocalizedEquals("0.0 GB", formatOfflineAvailableSpaceGb(0L))
+        assertLocalizedEquals("0.5 GB", formatOfflineAvailableSpaceGb(512L * 1024L * 1024L))
+        assertLocalizedEquals("2.0 GB", formatOfflineAvailableSpaceGb(2L * 1024L * 1024L * 1024L))
+        assertLocalizedEquals("1.2 GB", formatOfflineAvailableSpaceGb(1_288_490_188L))
     }
 
     @Test
-    fun `offline batch download status summary shows determinate total size`() {
+    fun `offline batch download status summary shows determinate total size`() = runTest {
         val summary = offlineBatchDownloadStatusSummary(
             activeBatchDownload = ActiveBatchDownloadState(
                 trackIds = listOf("first", "second"),
@@ -310,12 +322,12 @@ class AppCommonUiLogicTest {
             ),
         )
 
-        assertEquals("正在批量下载 1/2 首 · 1.0 MB / 3.0 MB", summary?.label)
-        assertEquals(0.33333334f, summary?.progress)
+        assertLocalizedEquals("正在批量下载 1/2 首 · 1.0 MB / 3.0 MB", summary?.label)
+        assertLocalizedEquals(0.33333334f, summary?.progress)
     }
 
     @Test
-    fun `offline batch download status summary shows approximate and unknown sizes`() {
+    fun `offline batch download status summary shows approximate and unknown sizes`() = runTest {
         val approximate = offlineBatchDownloadStatusSummary(
             activeBatchDownload = ActiveBatchDownloadState(
                 trackIds = listOf("nav"),
@@ -336,41 +348,41 @@ class AppCommonUiLogicTest {
             ),
         )
 
-        assertEquals("正在批量下载 0/1 首 · 0 B / 约 2.3 MB", approximate?.label)
-        assertEquals(0f, approximate?.progress)
-        assertEquals("正在批量下载 0/2 首 · 已下载 512.0 KB · 1 首未知", unknown?.label)
+        assertLocalizedEquals("正在批量下载 0/1 首 · 0 B / 约 2.3 MB", approximate?.label)
+        assertLocalizedEquals(0f, approximate?.progress)
+        assertLocalizedEquals("正在批量下载 0/2 首 · 已下载 512.0 KB · 1 首未知", unknown?.label)
         assertNull(unknown?.progress)
         assertNull(offlineBatchDownloadStatusSummary(null, emptyMap()))
     }
 
     @Test
-    fun `track selection helpers toggle prune and select visible tracks`() {
+    fun `track selection helpers toggle prune and select visible tracks`() = runTest {
         val first = sampleTrack("first")
         val second = sampleTrack("second")
         val third = sampleTrack("third")
 
-        assertEquals(listOf("first"), toggleTrackSelection(emptyList(), "first"))
-        assertEquals(emptyList(), toggleTrackSelection(listOf("first"), "first"))
-        assertEquals(
+        assertLocalizedEquals(listOf("first"), toggleTrackSelection(emptyList(), "first"))
+        assertLocalizedEquals(emptyList(), toggleTrackSelection(listOf("first"), "first"))
+        assertLocalizedEquals(
             listOf("first", "second"),
             toggleAllVisibleTrackSelection(listOf("first"), listOf(first, second)),
         )
-        assertEquals(
+        assertLocalizedEquals(
             emptyList(),
             toggleAllVisibleTrackSelection(listOf("first", "second"), listOf(first, second)),
         )
-        assertEquals(listOf("second"), pruneSelectedTrackIds(listOf("first", "second"), listOf(second, third)))
-        assertEquals(listOf(second), selectedTracksInVisibleOrder(listOf(first, second), listOf("second")))
+        assertLocalizedEquals(listOf("second"), pruneSelectedTrackIds(listOf("first", "second"), listOf(second, third)))
+        assertLocalizedEquals(listOf(second), selectedTracksInVisibleOrder(listOf(first, second), listOf("second")))
     }
 
     @Test
-    fun `detects navidrome tracks for batch quality selection`() {
+    fun `detects navidrome tracks for batch quality selection`() = runTest {
         assertTrue(hasNavidromeTracks(listOf(sampleNavidromeTrack("nav"))))
         assertFalse(hasNavidromeTracks(listOf(sampleTrack("local"))))
     }
 
     @Test
-    fun `player favorite binding uses online remote favorite hint`() {
+    fun `player favorite binding uses online remote favorite hint`() = runTest {
         val track = sampleNavidromeTrack("nav").copy(remoteFavoriteHint = true)
 
         val binding = playerFavoriteBinding(
@@ -381,13 +393,13 @@ class AppCommonUiLogicTest {
         )
 
         assertTrue(binding.isFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
         assertTrue(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
     }
 
     @Test
-    fun `player favorite binding override wins over online hint`() {
+    fun `player favorite binding override wins over online hint`() = runTest {
         val track = sampleNavidromeTrack("nav").copy(remoteFavoriteHint = true)
 
         val binding = playerFavoriteBinding(
@@ -402,13 +414,13 @@ class AppCommonUiLogicTest {
         )
 
         assertFalse(binding.isFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
         assertTrue(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
     }
 
     @Test
-    fun `player favorite binding allows toggling online loading gap as unknown`() {
+    fun `player favorite binding allows toggling online loading gap as unknown`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -425,11 +437,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertFalse(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding allows toggling unselected online favorites source as unknown`() {
+    fun `player favorite binding allows toggling unselected online favorites source as unknown`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -442,11 +454,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertFalse(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding allows toggling mismatched online favorites source as unknown`() {
+    fun `player favorite binding allows toggling mismatched online favorites source as unknown`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -459,11 +471,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertFalse(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding allows toggling paginated online favorites as unknown`() {
+    fun `player favorite binding allows toggling paginated online favorites as unknown`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -480,11 +492,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertFalse(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding allows toggling loading more online favorites as unknown`() {
+    fun `player favorite binding allows toggling loading more online favorites as unknown`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -502,11 +514,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertFalse(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding treats fully loaded online absence as known`() {
+    fun `player favorite binding treats fully loaded online absence as known`() = runTest {
         val track = sampleNavidromeTrack("nav")
 
         val binding = playerFavoriteBinding(
@@ -525,11 +537,11 @@ class AppCommonUiLogicTest {
         assertFalse(binding.isFavorite)
         assertTrue(binding.isFavoriteKnown)
         assertTrue(binding.canToggleFavorite)
-        assertEquals("source-1", binding.onlineSourceId)
+        assertLocalizedEquals("source-1", binding.onlineSourceId)
     }
 
     @Test
-    fun `player favorite binding keeps local favorites independent of online overrides`() {
+    fun `player favorite binding keeps local favorites independent of online overrides`() = runTest {
         val track = sampleTrack("local")
 
         val binding = playerFavoriteBinding(
@@ -550,7 +562,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `batch selection request only handles new usable keys`() {
+    fun `batch selection request only handles new usable keys`() = runTest {
         assertFalse(
             shouldHandleBatchSelectionRequest(
                 requestKey = 0,
@@ -594,7 +606,7 @@ class AppCommonUiLogicTest {
     }
 
     @Test
-    fun `batch download size estimate sums non navidrome source sizes`() {
+    fun `batch download size estimate sums non navidrome source sizes`() = runTest {
         val tracks = listOf(
             sampleWebDavTrack("first", sizeBytes = 1L * 1024L * 1024L),
             sampleWebDavTrack("second", sizeBytes = 2L * 1024L * 1024L),
@@ -602,13 +614,13 @@ class AppCommonUiLogicTest {
 
         val estimate = estimateBatchDownloadSize(tracks, emptyMap())
 
-        assertEquals(3L * 1024L * 1024L, estimate.totalBytes)
-        assertEquals(0, estimate.unknownCount)
-        assertEquals("3.0 MB", batchDownloadSizeEstimateLabel(estimate))
+        assertLocalizedEquals(3L * 1024L * 1024L, estimate.totalBytes)
+        assertLocalizedEquals(0, estimate.unknownCount)
+        assertLocalizedEquals("3.0 MB", batchDownloadSizeEstimateLabel(estimate))
     }
 
     @Test
-    fun `batch download size estimate uses selected navidrome quality`() {
+    fun `batch download size estimate uses selected navidrome quality`() = runTest {
         val track = sampleNavidromeTrack(
             id = "nav",
             sizeBytes = 5L * 1024L * 1024L,
@@ -618,16 +630,16 @@ class AppCommonUiLogicTest {
         val originalEstimate = estimateBatchDownloadSize(listOf(track), emptyMap(), NavidromeAudioQuality.Original)
         val transcodedEstimate = estimateBatchDownloadSize(listOf(track), emptyMap(), NavidromeAudioQuality.Kbps320)
 
-        assertEquals(5L * 1024L * 1024L, originalEstimate.totalBytes)
+        assertLocalizedEquals(5L * 1024L * 1024L, originalEstimate.totalBytes)
         assertFalse(originalEstimate.approximate)
-        assertEquals("5.0 MB", batchDownloadSizeEstimateLabel(originalEstimate))
-        assertEquals(2_400_000L, transcodedEstimate.totalBytes)
+        assertLocalizedEquals("5.0 MB", batchDownloadSizeEstimateLabel(originalEstimate))
+        assertLocalizedEquals(2_400_000L, transcodedEstimate.totalBytes)
         assertTrue(transcodedEstimate.approximate)
-        assertEquals("约 2.3 MB", batchDownloadSizeEstimateLabel(transcodedEstimate))
+        assertLocalizedEquals("约 2.3 MB", batchDownloadSizeEstimateLabel(transcodedEstimate))
     }
 
     @Test
-    fun `batch download size estimate skips completed matching quality`() {
+    fun `batch download size estimate skips completed matching quality`() = runTest {
         val nav = sampleNavidromeTrack("nav", durationMs = 60_000L)
         val webDav = sampleWebDavTrack("webdav", sizeBytes = 3L * 1024L * 1024L)
         val downloads = mapOf(
@@ -646,40 +658,40 @@ class AppCommonUiLogicTest {
             quality = NavidromeAudioQuality.Kbps320,
         )
 
-        assertEquals("无需下载", batchDownloadSizeEstimateLabel(matchingEstimate))
-        assertEquals(2, matchingEstimate.skippedCount)
-        assertEquals("约 2.3 MB", batchDownloadSizeEstimateLabel(replacementEstimate))
-        assertEquals(1, replacementEstimate.skippedCount)
+        assertLocalizedEquals("无需下载", batchDownloadSizeEstimateLabel(matchingEstimate))
+        assertLocalizedEquals(2, matchingEstimate.skippedCount)
+        assertLocalizedEquals("约 2.3 MB", batchDownloadSizeEstimateLabel(replacementEstimate))
+        assertLocalizedEquals(1, replacementEstimate.skippedCount)
     }
 
     @Test
-    fun `batch download size estimate reports unknown sizes`() {
+    fun `batch download size estimate reports unknown sizes`() = runTest {
         val known = sampleWebDavTrack("known", sizeBytes = 1L * 1024L * 1024L)
         val unknown = sampleWebDavTrack("unknown", sizeBytes = 0L)
         val unknownOnly = estimateBatchDownloadSize(listOf(unknown), emptyMap())
 
         val mixedEstimate = estimateBatchDownloadSize(listOf(known, unknown), emptyMap())
 
-        assertEquals("未知", batchDownloadSizeEstimateLabel(unknownOnly))
-        assertEquals("1.0 MB + 1 首未知", batchDownloadSizeEstimateLabel(mixedEstimate))
+        assertLocalizedEquals("未知", batchDownloadSizeEstimateLabel(unknownOnly))
+        assertLocalizedEquals("1.0 MB + 1 首未知", batchDownloadSizeEstimateLabel(mixedEstimate))
     }
 
     @Test
-    fun `batch download space check requires one gigabyte reserve`() {
+    fun `batch download space check requires one gigabyte reserve`() = runTest {
         val estimate = estimateBatchDownloadSize(
             tracks = listOf(sampleWebDavTrack("first", sizeBytes = 512L * 1024L * 1024L)),
             downloadsByTrackId = emptyMap(),
         )
 
-        assertEquals(
+        assertLocalizedEquals(
             "存储空间不足：预计下载 512.0 MB，需预留 1.0 GB，可用 1.0 GB。",
             batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = 1L * 1024L * 1024L * 1024L),
         )
-        assertEquals(
+        assertLocalizedEquals(
             null,
             batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = 1536L * 1024L * 1024L),
         )
-        assertEquals(null, batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = null))
+        assertLocalizedEquals(null, batchDownloadInsufficientSpaceMessage(estimate, availableSpaceBytes = null))
     }
 
     private fun completedDownload(

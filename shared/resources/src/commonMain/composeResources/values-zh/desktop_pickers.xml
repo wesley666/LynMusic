@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_picker_artwork_title">选择图片文件</string>
+    <string name="desktop_picker_image_files">图片文件</string>
+    <string name="desktop_picker_font_title">导入歌词分享字体</string>
+    <string name="desktop_picker_font_files">字体文件</string>
+    <string name="desktop_picker_music_folder_title">选择本地音乐文件夹</string>
+    <string name="desktop_picker_data_location_title">选择 LynMusic 数据位置</string>
+</resources>

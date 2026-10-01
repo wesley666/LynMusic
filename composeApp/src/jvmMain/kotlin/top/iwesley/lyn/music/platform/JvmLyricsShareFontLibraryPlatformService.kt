@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.resolveUiString
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.UiTextException
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
@@ -32,15 +38,15 @@ class JvmLyricsShareFontLibraryPlatformService(
         runCatching {
             rootDirectory.mkdirs()
             val selectedPath = JvmNativeFilePicker.pickOpenFile(
-                title = "导入歌词分享字体",
+                title = resolveUiString(Res.string.desktop_picker_font_title),
                 extensionFilter = JvmFileExtensionFilter(
-                    description = "字体文件",
+                    description = resolveUiString(Res.string.desktop_picker_font_files),
                     rawExtensions = listOf("ttf", "otf"),
                 ),
             ) ?: return@runCatching null
             val originalFile = selectedPath.toFile()
             val extension = normalizeImportedLyricsShareFontExtension(originalFile.name)
-                ?: error("仅支持导入 .ttf 或 .otf 字体。")
+                ?: throw UiTextException(uiText(Res.string.font_import_format_unsupported))
             val bytes = Files.readAllBytes(selectedPath)
             val contentHash = sha256Hex(bytes)
             val sanitizedOriginalName = sanitizeImportedLyricsShareFontName(originalFile.nameWithoutExtension)
@@ -62,7 +68,7 @@ class JvmLyricsShareFontLibraryPlatformService(
         runCatching {
             val file = resolveImportedFontFile(fontKey) ?: return@runCatching Unit
             if (file.exists() && !file.delete()) {
-                error("删除字体文件失败。")
+                throw UiTextException(uiText(Res.string.font_file_delete_failed))
             }
         }
     }
@@ -96,8 +102,8 @@ class JvmLyricsShareFontLibraryPlatformService(
     }
 }
 
-private fun validateJvmImportedFontFile(file: File) {
-    checkNotNull(FontMgr.default.makeFromFile(file.absolutePath)) { "无法加载所选字体文件。" }
+internal fun validateJvmImportedFontFile(file: File) {
+    checkUi(FontMgr.default.makeFromFile(file.absolutePath) != null) { uiText(Res.string.lyrics_font_file_unreadable) }
 }
 
 private data class ImportedLyricsShareFontFileMetadata(

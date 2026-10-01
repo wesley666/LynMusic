@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="equalizer_no_adjustable_bands">当前没有可调节的频段</string>
+    <string name="equalizer_disabled_state">已关闭</string>
+    <string name="equalizer_enabled_state">已开启</string>
+    <string name="equalizer_waiting_for_playback">等待播放</string>
+</resources>

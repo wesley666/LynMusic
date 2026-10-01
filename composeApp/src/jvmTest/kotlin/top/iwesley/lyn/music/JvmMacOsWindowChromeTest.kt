@@ -74,7 +74,7 @@ class JvmMacOsWindowChromeTest {
         assertFalse(
             shouldAllowDesktopWindowClose(
                 JvmDesktopStartupState.Preparing(
-                    JvmDataLocationProgress("正在准备数据"),
+                    JvmDataLocationProgress(top.iwesley.lyn.music.core.model.UiText.Raw("正在准备数据")),
                 ),
             ),
         )

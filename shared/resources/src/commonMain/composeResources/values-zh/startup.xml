@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_cancel_location_change">取消切换</string>
+    <string name="startup_copy_error_logs">复制错误日志</string>
+    <string name="startup_location_change_failed">数据位置切换失败</string>
+    <string name="startup_database_version_recovery_hint">数据库版本不兼容，请升级到最新版本或恢复备份</string>
+    <string name="startup_preparation_wait_hint">请勿关闭应用。数据准备完成后将自动进入 LynMusic。</string>
+    <string name="startup_logs_copied">已复制日志</string>
+    <string name="startup_active_folder_recovery_hint">当前活动数据目录不可用。请恢复磁盘或目录后重试；应用不会自动改用其他目录。</string>
+    <string name="startup_location_change_retry_hint">当前位置尚未切换。你可以排查磁盘空间或权限后重试，也可以安全取消本次切换。</string>
+    <string name="startup_database_version_data_preserved">当前版本无法打开本地数据库。为避免数据丢失，应用没有清空数据库。</string>
+</resources>

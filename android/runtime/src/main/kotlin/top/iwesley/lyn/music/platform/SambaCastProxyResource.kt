@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -18,6 +20,12 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
+import top.iwesley.lyn.music.data.db.ImportSourceEntity
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
+
+internal fun requireEnabledSambaCastSource(source: ImportSourceEntity?): ImportSourceEntity =
+    source?.takeIf { it.enabled } ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
 
 internal class SambaCastProxyResource private constructor(
     private val context: SambaCastProxyContext,
@@ -74,8 +82,7 @@ internal class SambaCastProxyResource private constructor(
             logger: DiagnosticLogger,
         ): SambaCastProxyResource? {
             val samba = parseSambaLocator(track.mediaLocator) ?: return null
-            val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
-                ?: error("SMB 来源不可用。")
+            val source = requireEnabledSambaCastSource(database.importSourceDao().getById(samba.first))
             val spec = resolveSambaSourceSpec(
                 source = source,
                 locatorRelativePath = samba.second,

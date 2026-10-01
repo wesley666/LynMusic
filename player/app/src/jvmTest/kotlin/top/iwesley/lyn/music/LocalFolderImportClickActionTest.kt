@@ -7,6 +7,11 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 
 class LocalFolderImportClickActionTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `system folder manager option uses automatic picker flow`() {
         assertEquals(LocalFolderPickerMode.Automatic, localFolderPickerDialogSystemMode())

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.testing.sleepTimerStatusText
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,8 +16,13 @@ import top.iwesley.lyn.music.domain.EnhancedLyricsPresentation
 import top.iwesley.lyn.music.feature.player.SleepTimerState
 
 class PlayerLyricsDisplayFilteringTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
-    fun `lyrics empty state waits for lookup completion`() {
+    fun `lyrics empty state waits for lookup completion`() = runTest {
         assertFalse(
             shouldShowPlayerLyricsEmptyState(
                 isLyricsLoading = true,
@@ -41,7 +50,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `lyrics empty state shows when completed lyrics have no visible lines`() {
+    fun `lyrics empty state shows when completed lyrics have no visible lines`() = runTest {
         val structureOnlyLyrics = syncedLyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
             LyricsLine(timestampMs = 2_000L, text = "[Chorus]"),
@@ -58,7 +67,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `lyrics empty state is hidden when visible lyrics exist`() {
+    fun `lyrics empty state is hidden when visible lyrics exist`() = runTest {
         val lyrics = syncedLyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "第一句"),
         )
@@ -74,7 +83,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `build visible lyrics lines filters structure tags and keeps raw indices aligned`() {
+    fun `build visible lyrics lines filters structure tags and keeps raw indices aligned`() = runTest {
         val lyrics = syncedLyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
             LyricsLine(timestampMs = 2_000L, text = "第一句"),
@@ -98,7 +107,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `visible highlighted index skips hidden structure tags`() {
+    fun `visible highlighted index skips hidden structure tags`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
@@ -115,7 +124,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `visible lyrics scroll target respects synced and plain lyrics behavior after filtering`() {
+    fun `visible lyrics scroll target respects synced and plain lyrics behavior after filtering`() = runTest {
         val syncedLyrics = syncedLyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "[Verse]"),
             LyricsLine(timestampMs = 2_000L, text = "第一句"),
@@ -145,7 +154,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `first lyrics target uses immediate positioning`() {
+    fun `first lyrics target uses immediate positioning`() = runTest {
         assertFalse(
             shouldAnimatePlayerLyricsScroll(
                 previousTargetIndex = null,
@@ -156,7 +165,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `adjacent visible lyrics target uses smooth scrolling`() {
+    fun `adjacent visible lyrics target uses smooth scrolling`() = runTest {
         assertTrue(
             shouldAnimatePlayerLyricsScroll(
                 previousTargetIndex = 4,
@@ -167,7 +176,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `visible lyrics target two lines away uses smooth scrolling`() {
+    fun `visible lyrics target two lines away uses smooth scrolling`() = runTest {
         assertTrue(
             shouldAnimatePlayerLyricsScroll(
                 previousTargetIndex = 4,
@@ -178,7 +187,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `distant lyrics target uses immediate positioning`() {
+    fun `distant lyrics target uses immediate positioning`() = runTest {
         assertFalse(
             shouldAnimatePlayerLyricsScroll(
                 previousTargetIndex = 4,
@@ -189,7 +198,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `offscreen lyrics target uses immediate positioning`() {
+    fun `offscreen lyrics target uses immediate positioning`() = runTest {
         assertFalse(
             shouldAnimatePlayerLyricsScroll(
                 previousTargetIndex = 4,
@@ -200,7 +209,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `browse target chooses timestamped visible line closest to viewport center`() {
+    fun `browse target chooses timestamped visible line closest to viewport center`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "第一句"),
@@ -224,7 +233,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `browse target ignores visible lines without timestamp`() {
+    fun `browse target ignores visible lines without timestamp`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = null, text = "无时间轴"),
@@ -247,7 +256,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `lyrics seek position applies offset and clamps to duration`() {
+    fun `lyrics seek position applies offset and clamps to duration`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "第一句"),
@@ -275,7 +284,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `lyrics seek position is null for lines without timestamp`() {
+    fun `lyrics seek position is null for lines without timestamp`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             plainLyricsDocument(
                 LyricsLine(timestampMs = null, text = "第一句"),
@@ -292,7 +301,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `sleep timer custom minutes parser accepts only supported minute range`() {
+    fun `sleep timer custom minutes parser accepts only supported minute range`() = runTest {
         assertNull(parseSleepTimerCustomMinutes(""))
         assertNull(parseSleepTimerCustomMinutes("abc"))
         assertNull(parseSleepTimerCustomMinutes("0"))
@@ -302,7 +311,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `sleep timer remaining text uses minute and hour formats`() {
+    fun `sleep timer remaining text uses minute and hour formats`() = runTest {
         assertEquals("00:59", formatSleepTimerRemaining(59_000L))
         assertEquals("15:00", formatSleepTimerRemaining(15 * 60_000L))
         assertEquals("1:00:00", formatSleepTimerRemaining(60 * 60_000L))
@@ -314,7 +323,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `active highlight uses browse target while browsing when target can seek`() {
+    fun `active highlight uses browse target while browsing when target can seek`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "第一句"),
@@ -334,7 +343,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `active highlight falls back to playback highlight while browsing without seekable target`() {
+    fun `active highlight falls back to playback highlight while browsing without seekable target`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "第一句"),
@@ -363,7 +372,7 @@ class PlayerLyricsDisplayFilteringTest {
     }
 
     @Test
-    fun `active highlight keeps playback highlight when not browsing`() {
+    fun `active highlight keeps playback highlight when not browsing`() = runTest {
         val visibleLines = buildVisiblePlayerLyricsLines(
             syncedLyricsDocument(
                 LyricsLine(timestampMs = 1_000L, text = "第一句"),

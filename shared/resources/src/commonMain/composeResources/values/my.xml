@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="recent_album_count">
+        <item quantity="one">%1$s album</item>
+        <item quantity="other">%1$s albums</item>
+    </plurals>
+    <string name="recent_albums_empty_hint">Albums appear here after playing their songs.</string>
+    <string name="recommendations_generating_description">Generating daily recommendations</string>
+    <string name="recent_plays_loading">Loading recent plays</string>
+    <string name="recommendations_empty_title">No daily recommendations yet</string>
+    <string name="recent_tracks_empty_title">No recently played songs</string>
+    <plurals name="recent_track_play_summary">
+        <item quantity="one">Played %1$s time · %2$s</item>
+        <item quantity="other">Played %1$s times · %2$s</item>
+    </plurals>
+    <string name="recent_albums_title">Recently played albums</string>
+    <string name="recent_tracks_title">Recently played songs</string>
+    <string name="recent_tracks_empty_hint">Songs appear here after meeting the play-count threshold.</string>
+    <string name="recommendations_today_playlist">Today's playlist</string>
+    <string name="recommendations_empty_hint">Today's recommendations will appear once the library has songs.</string>
+    <string name="recent_view_all_action">View all &gt;</string>
+</resources>

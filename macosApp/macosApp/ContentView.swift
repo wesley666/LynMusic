@@ -5,12 +5,13 @@ import ComposeApp
 
 @MainActor
 final class MacPlaybackViewModel: ObservableObject {
-    private static let unsupportedSeekMessage = "歌曲可能正在转码，不支持快进。"
     private let controller = MacosPlaybackHostKt.createMacPlaybackHostController()
     private var timer: Timer?
-    private var transientSeekMessage: String?
+    private var transientSeekGeneration = 0
+    private var showsTransientSeekMessage = false
 
-    @Published var title: String = "未选择文件"
+    @Published var title: String = ""
+    @Published var hasLoadedFile: Bool = false
     @Published var isPlaying: Bool = false
     @Published var positionMs: Double = 0
     @Published var durationMs: Double = 0
@@ -32,6 +33,8 @@ final class MacPlaybackViewModel: ObservableObject {
         controller.dispose()
     }
 
+    var hasTransientSeekMessage: Bool { showsTransientSeekMessage }
+
     var durationText: String {
         Self.formatTime(durationMs)
     }
@@ -51,7 +54,7 @@ final class MacPlaybackViewModel: ObservableObject {
         panel.allowedContentTypes = ["mp3", "m4a", "aac", "wav"]
             .compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK, let url = panel.url {
-            transientSeekMessage = nil
+            showsTransientSeekMessage = false
             controller.openLocalFile(path: url.path)
             refresh()
         }
@@ -82,30 +85,31 @@ final class MacPlaybackViewModel: ObservableObject {
 
     func refresh() {
         let snapshot = controller.currentState()
-        title = snapshot.title.isEmpty ? "未选择文件" : snapshot.title
+        title = snapshot.title
+        hasLoadedFile = snapshot.hasLoadedFile
         isPlaying = snapshot.isPlaying
         positionMs = Double(snapshot.positionMs)
         durationMs = Double(snapshot.durationMs)
         canSeek = snapshot.canSeek
         volume = Double(snapshot.volume)
         if let playbackError = snapshot.errorMessage, !playbackError.isEmpty {
-            transientSeekMessage = nil
+            showsTransientSeekMessage = false
             errorMessage = playbackError
         } else {
-            errorMessage = transientSeekMessage
+            errorMessage = showsTransientSeekMessage ? MacUiLanguage.shared.text("mac_seek_unsupported") : nil
         }
     }
 
     private func showTransientSeekMessage() {
-        transientSeekMessage = Self.unsupportedSeekMessage
-        errorMessage = Self.unsupportedSeekMessage
+        transientSeekGeneration += 1
+        let generation = transientSeekGeneration
+        showsTransientSeekMessage = true
+        refresh()
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_500_000_000)
-            await MainActor.run {
-                guard self?.transientSeekMessage == Self.unsupportedSeekMessage else { return }
-                self?.transientSeekMessage = nil
-                self?.refresh()
-            }
+            guard let self, self.transientSeekGeneration == generation else { return }
+            self.showsTransientSeekMessage = false
+            self.refresh()
         }
     }
 
@@ -119,25 +123,37 @@ final class MacPlaybackViewModel: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var viewModel = MacPlaybackViewModel()
+    @ObservedObject private var language = MacUiLanguage.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Spacer()
+                Picker(language.text("language_title"), selection: $language.selectedValue) {
+                    Text(language.text("language_follow_system")).tag("system")
+                    Text("简体中文").tag("zh-Hans")
+                    Text("繁體中文").tag("zh-Hant")
+                    Text("English").tag("en")
+                }
+                .pickerStyle(.menu)
+                .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 12) {
-                Button("打开本地文件") {
+                Button(language.text("mac_open_file")) {
                     viewModel.openLocalFile()
                 }
-                Button(viewModel.isPlaying ? "暂停" : "播放") {
+                Button(language.text(viewModel.isPlaying ? "pause" : "play")) {
                     viewModel.togglePlayback()
                 }
-                .disabled(viewModel.title == "未选择文件")
+                .disabled(!viewModel.hasLoadedFile)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(viewModel.title)
+                Text(viewModel.hasLoadedFile ? viewModel.title : language.text("mac_no_file"))
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
                 if let errorMessage = viewModel.errorMessage, !errorMessage.isEmpty {
-                    Text(errorMessage)
+                    Text(viewModel.hasTransientSeekMessage ? language.text("mac_seek_unsupported") : errorMessage)
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
@@ -151,6 +167,7 @@ struct ContentView: View {
                     ),
                     in: 0...viewModel.seekUpperBound
                 )
+                .accessibilityLabel(language.text("position"))
                 HStack {
                     Text(viewModel.positionText)
                     Spacer()
@@ -161,7 +178,7 @@ struct ContentView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("音量")
+                Text(language.text("mac_volume"))
                     .font(.headline)
                 Slider(
                     value: Binding(
@@ -170,9 +187,16 @@ struct ContentView: View {
                     ),
                     in: 0...1
                 )
+                .accessibilityLabel(language.text("mac_volume"))
             }
 
             Spacer()
+        }
+        .environment(\.locale, Locale(identifier: language.effectiveValue))
+        .onReceive(language.$effectiveValue) { _ in viewModel.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in
+            language.refreshSystemLanguage()
+            viewModel.refresh()
         }
         .padding(24)
         .frame(minWidth: 520, minHeight: 320)

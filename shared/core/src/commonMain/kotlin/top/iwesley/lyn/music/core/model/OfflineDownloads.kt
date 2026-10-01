@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 enum class OfflineDownloadStatus {
     Pending,
     Downloading,
@@ -50,7 +52,7 @@ interface OfflineDownloadGateway {
 }
 
 object UnsupportedOfflineDownloadGateway : OfflineDownloadGateway {
-    private val error = IllegalStateException("当前平台暂不支持离线下载。")
+    private val error = UiTextException(uiText(Res.string.offline_download_platform_unsupported))
 
     override suspend fun download(
         track: Track,

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cast_search_nearby">搜尋附近裝置</string>
+    <string name="cast_unknown_device">未知裝置</string>
+    <string name="cast_searching">正在搜尋附近裝置</string>
+    <string name="cast_connecting_device">正在連接 %1$s</string>
+    <string name="cast_connecting">正在連接裝置</string>
+    <string name="cast_connected_device">已投屏到 %1$s</string>
+    <string name="cast_casting">正在投屏</string>
+    <string name="cast_failed">投屏失敗。</string>
+    <string name="cast_platform_unsupported">當前平台暫不支持投屏。</string>
+    <string name="cast_device_unsupported">當前裝置暫不支持投屏。</string>
+    <string name="cast_control_uninitialized">UPnP 控制點未初始化。</string>
+    <string name="cast_discovery_failed">搜尋投屏裝置失敗。</string>
+    <string name="cast_device_not_found">未找到選中的投屏裝置。</string>
+    <string name="cast_send_uri_failed">傳送投屏地址失敗。</string>
+    <string name="cast_start_failed">啟動投屏播放失敗。</string>
+    <string name="cast_resume_failed">恢復投屏播放失敗。</string>
+    <string name="cast_pause_failed">暫停投屏失敗。</string>
+    <string name="cast_seek_failed">調整投屏進度失敗。</string>
+    <string name="cast_stop_failed">停止投屏失敗。</string>
+    <string name="playback_vlc_unavailable">未偵測到 VLC，請安裝或在設定中手動選擇 VLC 路徑。</string>
+    <string name="playback_vlc_initializing">正在初始化 VLC，使用者也可能尚未安裝 VLC 播放器…</string>
+    <string name="playback_media_failed">桌面播放器無法播放目前媒體。</string>
+    <string name="playback_access_failed">存取歌曲失敗：%1$s</string>
+    <string name="playback_unknown_error">未知錯誤</string>
+    <plurals name="cast_devices_found">
+        <item quantity="one">找到 %1$s 台裝置</item>
+        <item quantity="other">找到 %1$s 台裝置</item>
+    </plurals>
+</resources>

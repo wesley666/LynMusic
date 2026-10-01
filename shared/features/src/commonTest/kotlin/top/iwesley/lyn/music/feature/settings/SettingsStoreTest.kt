@@ -1,6 +1,12 @@
 package top.iwesley.lyn.music.feature.settings
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.core.model.resolveUiText
+
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -19,7 +25,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.AppReleaseInfo
@@ -30,6 +36,7 @@ import top.iwesley.lyn.music.core.model.AppStorageSnapshot
 import top.iwesley.lyn.music.core.model.AppDataLocationChangeMode
 import top.iwesley.lyn.music.core.model.AppDataLocationPlatformService
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
+import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTextPalettePreferences
@@ -72,6 +79,137 @@ import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsStoreTest {
+    @Test
+    fun languageSaveFailureIsReportedWithoutChangingSelectionOrForm() = runTest {
+        val preferences = FakeSettingsRepository()
+        preferences.setAppLanguage(AppLanguage.TraditionalChinese)
+        val repository = object : SettingsRepository by preferences {
+            override suspend fun setAppLanguage(language: AppLanguage) { error("磁盘原文 %1\$s") }
+        }
+        val uncaught = mutableListOf<Throwable>()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob() + CoroutineExceptionHandler { _, error -> uncaught += error })
+        try {
+            val store = SettingsStore(repository, scope)
+            store.dispatch(SettingsIntent.NameChanged("用户来源"))
+            store.dispatch(SettingsIntent.UrlChanged("https://example.test/lyrics"))
+            advanceUntilIdle()
+            val before = store.state.value
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.English))
+            advanceUntilIdle()
+            val message = kotlin.test.assertNotNull(store.state.value.message)
+            kotlin.test.assertEquals(before.copy(message = message), store.state.value)
+            kotlin.test.assertEquals(AppLanguage.TraditionalChinese, preferences.appLanguage.value)
+            assertTrue(uncaught.isEmpty())
+            val expectations = listOf(
+                AppLanguage.English to "The language setting could not be saved. Please try again.\n磁盘原文 %1\$s",
+                AppLanguage.SimplifiedChinese to "语言设置保存失败，请重试。\n磁盘原文 %1\$s",
+                AppLanguage.TraditionalChinese to "語言設定儲存失敗，請重試。\n磁盘原文 %1\$s",
+            )
+            for ((language, expected) in expectations) kotlin.test.assertEquals(expected, resolveUiText(message, language))
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun cancelledLanguageSaveDoesNotBecomeAnErrorMessage() = runTest {
+        val preferences = FakeSettingsRepository()
+        val repository = object : SettingsRepository by preferences {
+            override suspend fun setAppLanguage(language: AppLanguage) { throw CancellationException("cancelled") }
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = SettingsStore(repository, scope)
+            advanceUntilIdle()
+            val before = store.state.value
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.English))
+            advanceUntilIdle()
+            kotlin.test.assertEquals(before, store.state.value)
+            kotlin.test.assertEquals(AppLanguage.System, preferences.appLanguage.value)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun delayedSaveFailureCannotRevertANewerSuccessfulSelection() = runTest {
+        val preferences = FakeSettingsRepository()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val repository = object : SettingsRepository by preferences {
+            override suspend fun setAppLanguage(language: AppLanguage) {
+                if (language == AppLanguage.SimplifiedChinese) {
+                    entered.complete(Unit)
+                    release.await()
+                    error("disk unavailable")
+                }
+                preferences.setAppLanguage(language)
+            }
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = SettingsStore(repository, scope)
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.SimplifiedChinese))
+            entered.await()
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.English))
+            advanceUntilIdle()
+            release.complete(Unit)
+            advanceUntilIdle()
+            kotlin.test.assertEquals(AppLanguage.English, store.state.value.appLanguage)
+            kotlin.test.assertEquals(AppLanguage.English, preferences.appLanguage.value)
+            kotlin.test.assertNotNull(store.state.value.message)
+        } finally { scope.cancel() }
+    }
+
+
+    @Test
+    fun delayedLanguageWriteCompletionCannotOverwriteTheObservedSelection() = runTest {
+        val preferences = FakeSettingsRepository()
+        val firstWritePublished = CompletableDeferred<Unit>()
+        val releaseFirstWrite = CompletableDeferred<Unit>()
+        val repository = object : SettingsRepository by preferences {
+            override suspend fun setAppLanguage(language: AppLanguage) {
+                preferences.setAppLanguage(language)
+                if (language == AppLanguage.SimplifiedChinese) {
+                    firstWritePublished.complete(Unit)
+                    releaseFirstWrite.await()
+                }
+            }
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = SettingsStore(repository, scope)
+            store.dispatch(SettingsIntent.NameChanged("User lyrics source"))
+            store.dispatch(SettingsIntent.UrlChanged("https://example.com/lyrics"))
+            advanceUntilIdle()
+            val before = store.state.value
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.SimplifiedChinese))
+            firstWritePublished.await()
+            store.dispatch(SettingsIntent.AppLanguageChanged(AppLanguage.English))
+            advanceUntilIdle()
+            kotlin.test.assertEquals(AppLanguage.English, store.state.value.appLanguage)
+            releaseFirstWrite.complete(Unit)
+            advanceUntilIdle()
+            kotlin.test.assertEquals(AppLanguage.English, preferences.appLanguage.value)
+            kotlin.test.assertEquals(before.copy(appLanguage = AppLanguage.English), store.state.value)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `language changes preserve form and other settings`() = runTest {
+        val repository = FakeSettingsRepository()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = SettingsStore(repository, scope)
+        advanceUntilIdle()
+        store.dispatch(SettingsIntent.NameChanged("User lyrics source"))
+        store.dispatch(SettingsIntent.UrlChanged("https://example.com/lyrics"))
+        advanceUntilIdle()
+        val before = store.state.value
+        for (language in top.iwesley.lyn.music.core.model.AppLanguage.entries) {
+            store.dispatch(SettingsIntent.AppLanguageChanged(language))
+            advanceUntilIdle()
+            kotlin.test.assertEquals(before.copy(appLanguage = language), store.state.value)
+        }
+        scope.cancel()
+    }
 
     @Test
     fun `store exposes lyrics share font import support when platform service is available`() = runTest {
@@ -114,9 +252,9 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.LoadLyricsShareImportedFonts)
         advanceUntilIdle()
 
-        assertEquals(1, fontLibrary.listCalls)
-        assertEquals(listOf("imported:abc"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
-        assertEquals("/tmp/abc__My Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
+        assertLocalizedEquals(1, fontLibrary.listCalls)
+        assertLocalizedEquals(listOf("imported:abc"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals("/tmp/abc__My Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
         assertFalse(store.state.value.lyricsShareFontsLoading)
         scope.cancel()
     }
@@ -147,12 +285,12 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ImportLyricsShareFont)
         advanceUntilIdle()
 
-        assertEquals(1, fontLibrary.importCalls)
-        assertEquals(listOf("imported:def"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
-        assertEquals("/tmp/def__Fancy Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
-        assertEquals("字体已导入。", store.state.value.message)
+        assertLocalizedEquals(1, fontLibrary.importCalls)
+        assertLocalizedEquals(listOf("imported:def"), store.state.value.importedLyricsShareFonts.map { it.fontKey })
+        assertLocalizedEquals("/tmp/def__Fancy Imported Font.ttf", store.state.value.importedLyricsShareFonts.single().fontFilePath)
+        assertLocalizedEquals("字体已导入。", store.state.value.message)
         assertFalse(store.state.value.importingLyricsShareFont)
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        assertLocalizedEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
         effectJob.cancel()
         scope.cancel()
     }
@@ -174,7 +312,7 @@ class SettingsStoreTest {
 
         assertTrue(repository.currentShowDesktopLyrics())
         assertTrue(store.state.value.showDesktopLyrics)
-        assertEquals(listOf(true), desktopLyricsService.enabledCalls)
+        assertLocalizedEquals(listOf(true), desktopLyricsService.enabledCalls)
         scope.cancel()
     }
 
@@ -195,7 +333,7 @@ class SettingsStoreTest {
 
         assertFalse(repository.currentShowDesktopLyrics())
         assertFalse(store.state.value.showDesktopLyrics)
-        assertEquals(listOf(true, false), desktopLyricsService.enabledCalls)
+        assertLocalizedEquals(listOf(true, false), desktopLyricsService.enabledCalls)
         assertTrue(desktopLyricsService.hidden)
         scope.cancel()
     }
@@ -217,7 +355,7 @@ class SettingsStoreTest {
 
         assertFalse(repository.currentShowDesktopLyrics())
         assertFalse(store.state.value.showDesktopLyrics)
-        assertEquals(1, desktopLyricsService.permissionRequests)
+        assertLocalizedEquals(1, desktopLyricsService.permissionRequests)
         scope.cancel()
     }
 
@@ -241,7 +379,7 @@ class SettingsStoreTest {
 
         assertTrue(repository.currentShowDesktopLyrics())
         assertTrue(store.state.value.showDesktopLyrics)
-        assertEquals(listOf(true), desktopLyricsService.enabledCalls)
+        assertLocalizedEquals(listOf(true), desktopLyricsService.enabledCalls)
         scope.cancel()
     }
 
@@ -289,10 +427,10 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ImportLyricsShareFont)
         advanceUntilIdle()
 
-        assertEquals(1, fontLibrary.importCalls)
-        assertEquals("读取失败", store.state.value.message)
+        assertLocalizedEquals(1, fontLibrary.importCalls)
+        assertLocalizedEquals("字体已导入，但刷新列表失败。\n读取失败", store.state.value.message)
         assertFalse(store.state.value.importingLyricsShareFont)
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        assertLocalizedEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
         effectJob.cancel()
         scope.cancel()
     }
@@ -327,12 +465,12 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.DeleteLyricsShareImportedFont("imported:gone"))
         advanceUntilIdle()
 
-        assertEquals(listOf("imported:gone"), fontLibrary.deletedFontKeys)
+        assertLocalizedEquals(listOf("imported:gone"), fontLibrary.deletedFontKeys)
         assertTrue(store.state.value.importedLyricsShareFonts.isEmpty())
-        assertEquals(null, fontPreferencesStore.selectedLyricsShareFontKey.value)
-        assertEquals("字体已删除。", store.state.value.message)
-        assertEquals(null, store.state.value.deletingLyricsShareFontKey)
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
+        assertLocalizedEquals(null, fontPreferencesStore.selectedLyricsShareFontKey.value)
+        assertLocalizedEquals("字体已删除。", store.state.value.message)
+        assertLocalizedEquals(null, store.state.value.deletingLyricsShareFontKey)
+        assertLocalizedEquals(listOf<SettingsEffect>(SettingsEffect.LyricsShareFontsChanged), effects)
         effectJob.cancel()
         scope.cancel()
     }
@@ -358,9 +496,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(AppThemeId.Custom, state.selectedTheme)
-        assertEquals(customTokens, state.customThemeTokens)
-        assertEquals(AppThemeTextPalette.Black, state.textPalettePreferences.custom)
+        assertLocalizedEquals(AppThemeId.Custom, state.selectedTheme)
+        assertLocalizedEquals(customTokens, state.customThemeTokens)
+        assertLocalizedEquals(AppThemeTextPalette.Black, state.textPalettePreferences.custom)
         scope.cancel()
     }
 
@@ -376,9 +514,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", state.desktopVlcAutoDetectedPath)
-        assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcManualPath)
-        assertEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcEffectivePath)
+        assertLocalizedEquals("/Applications/VLC.app/Contents/MacOS/lib", state.desktopVlcAutoDetectedPath)
+        assertLocalizedEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcManualPath)
+        assertLocalizedEquals("/opt/homebrew/Cellar/vlc/lib", state.desktopVlcEffectivePath)
         scope.cancel()
     }
 
@@ -612,10 +750,10 @@ class SettingsStoreTest {
             releaseFirstWrite.complete(Unit)
             advanceUntilIdle()
 
-            assertEquals(2, writeCount)
+            assertLocalizedEquals(2, writeCount)
             assertFalse(store.state.value.minimizeWindowOnClose)
             assertFalse(repository.currentMinimizeWindowOnClose())
-            assertEquals(null, store.state.value.message)
+            assertLocalizedEquals(null, store.state.value.message)
         } finally {
             releaseFirstWrite.complete(Unit)
             scope.cancel()
@@ -636,7 +774,7 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         assertTrue(store.state.value.minimizeWindowOnClose)
-        assertEquals("关闭按钮行为保存失败。", store.state.value.message)
+        assertLocalizedEquals("关闭按钮行为保存失败。", store.state.value.message)
         scope.cancel()
     }
 
@@ -707,7 +845,7 @@ class SettingsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(PlayerArtworkStyle.HALF_RECORD, store.state.value.playerArtworkStyle)
+        assertLocalizedEquals(PlayerArtworkStyle.HALF_RECORD, store.state.value.playerArtworkStyle)
         scope.cancel()
     }
 
@@ -718,13 +856,13 @@ class SettingsStoreTest {
         val store = SettingsStore(repository, scope)
 
         advanceUntilIdle()
-        assertEquals(PlayerArtworkStyle.VINYL, store.state.value.playerArtworkStyle)
+        assertLocalizedEquals(PlayerArtworkStyle.VINYL, store.state.value.playerArtworkStyle)
 
         store.dispatch(SettingsIntent.PlayerArtworkStyleChanged(PlayerArtworkStyle.MINIMAL_COVER))
         advanceUntilIdle()
 
-        assertEquals(PlayerArtworkStyle.MINIMAL_COVER, store.state.value.playerArtworkStyle)
-        assertEquals(PlayerArtworkStyle.MINIMAL_COVER, repository.currentPlayerArtworkStyle())
+        assertLocalizedEquals(PlayerArtworkStyle.MINIMAL_COVER, store.state.value.playerArtworkStyle)
+        assertLocalizedEquals(PlayerArtworkStyle.MINIMAL_COVER, repository.currentPlayerArtworkStyle())
         scope.cancel()
     }
 
@@ -736,7 +874,7 @@ class SettingsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
+        assertLocalizedEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
         scope.cancel()
     }
 
@@ -747,13 +885,13 @@ class SettingsStoreTest {
         val store = SettingsStore(repository, scope)
 
         advanceUntilIdle()
-        assertEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
+        assertLocalizedEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
 
         store.dispatch(SettingsIntent.AppDisplayScalePresetChanged(AppDisplayScalePreset.Large))
         advanceUntilIdle()
 
-        assertEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
-        assertEquals(AppDisplayScalePreset.Large, repository.currentAppDisplayScalePreset())
+        assertLocalizedEquals(AppDisplayScalePreset.Large, store.state.value.appDisplayScalePreset)
+        assertLocalizedEquals(AppDisplayScalePreset.Large, repository.currentAppDisplayScalePreset())
         scope.cancel()
     }
 
@@ -764,12 +902,12 @@ class SettingsStoreTest {
         val store = SettingsStore(repository, scope)
 
         advanceUntilIdle()
-        assertEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
+        assertLocalizedEquals(AppDisplayScalePreset.Default, store.state.value.appDisplayScalePreset)
 
         repository.setAppDisplayScalePreset(AppDisplayScalePreset.Compact)
         advanceUntilIdle()
 
-        assertEquals(AppDisplayScalePreset.Compact, store.state.value.appDisplayScalePreset)
+        assertLocalizedEquals(AppDisplayScalePreset.Compact, store.state.value.appDisplayScalePreset)
         scope.cancel()
     }
 
@@ -784,8 +922,8 @@ class SettingsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(NavidromeAudioQuality.Kbps320, store.state.value.navidromeWifiAudioQuality)
-        assertEquals(NavidromeAudioQuality.Kbps128, store.state.value.navidromeMobileAudioQuality)
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps320, store.state.value.navidromeWifiAudioQuality)
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps128, store.state.value.navidromeMobileAudioQuality)
         scope.cancel()
     }
 
@@ -801,10 +939,10 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.NavidromeMobileAudioQualityChanged(NavidromeAudioQuality.Kbps128))
         advanceUntilIdle()
 
-        assertEquals(NavidromeAudioQuality.Kbps320, store.state.value.navidromeWifiAudioQuality)
-        assertEquals(NavidromeAudioQuality.Kbps128, store.state.value.navidromeMobileAudioQuality)
-        assertEquals(NavidromeAudioQuality.Kbps320, repository.currentNavidromeWifiAudioQuality())
-        assertEquals(NavidromeAudioQuality.Kbps128, repository.currentNavidromeMobileAudioQuality())
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps320, store.state.value.navidromeWifiAudioQuality)
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps128, store.state.value.navidromeMobileAudioQuality)
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps320, repository.currentNavidromeWifiAudioQuality())
+        assertLocalizedEquals(NavidromeAudioQuality.Kbps128, repository.currentNavidromeMobileAudioQuality())
         scope.cancel()
     }
 
@@ -816,7 +954,7 @@ class SettingsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
+        assertLocalizedEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
         scope.cancel()
     }
 
@@ -828,7 +966,7 @@ class SettingsStoreTest {
 
         advanceUntilIdle()
 
-        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.ocean)
+        assertLocalizedEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.ocean)
         scope.cancel()
     }
 
@@ -852,9 +990,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val saved = repository.currentSources().filterIsInstance<LyricsSourceConfig>().single()
-        assertEquals(RequestMethod.GET, saved.method)
-        assertEquals("", saved.bodyTemplate)
-        assertEquals(LyricsResponseFormat.JSON, saved.responseFormat)
+        assertLocalizedEquals(RequestMethod.GET, saved.method)
+        assertLocalizedEquals("", saved.bodyTemplate)
+        assertLocalizedEquals(LyricsResponseFormat.JSON, saved.responseFormat)
         scope.cancel()
     }
 
@@ -868,8 +1006,8 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ThemeTextPaletteSelected(AppThemeId.Forest, AppThemeTextPalette.Black))
         advanceUntilIdle()
 
-        assertEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
-        assertEquals(AppThemeTextPalette.Black, repository.currentTextPalettePreferences().forest)
+        assertLocalizedEquals(AppThemeTextPalette.Black, store.state.value.textPalettePreferences.forest)
+        assertLocalizedEquals(AppThemeTextPalette.Black, repository.currentTextPalettePreferences().forest)
         scope.cancel()
     }
 
@@ -890,14 +1028,14 @@ class SettingsStoreTest {
         advanceUntilIdle()
         store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Forest))
         advanceUntilIdle()
-        assertEquals(
+        assertLocalizedEquals(
             AppThemeTextPalette.Black,
             resolveAppThemeTextPalette(store.state.value.selectedTheme, store.state.value.textPalettePreferences),
         )
 
         store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Custom))
         advanceUntilIdle()
-        assertEquals(
+        assertLocalizedEquals(
             AppThemeTextPalette.Black,
             resolveAppThemeTextPalette(store.state.value.selectedTheme, store.state.value.textPalettePreferences),
         )
@@ -914,8 +1052,8 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ThemeSelected(AppThemeId.Forest))
         advanceUntilIdle()
 
-        assertEquals(AppThemeId.Forest, store.state.value.selectedTheme)
-        assertEquals(AppThemeId.Forest, repository.currentSelectedTheme())
+        assertLocalizedEquals(AppThemeId.Forest, store.state.value.selectedTheme)
+        assertLocalizedEquals(AppThemeId.Forest, repository.currentSelectedTheme())
         scope.cancel()
     }
 
@@ -930,10 +1068,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val expected = defaultCustomThemeTokens().copy(backgroundArgb = 0xFF102030.toInt())
-        assertEquals(expected, repository.currentCustomThemeTokens())
-        assertEquals(expected, store.state.value.customThemeTokens)
-        assertEquals(1, repository.setCustomThemeTokensCalls)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(expected, repository.currentCustomThemeTokens())
+        assertLocalizedEquals(expected, store.state.value.customThemeTokens)
+        assertLocalizedEquals(1, repository.setCustomThemeTokensCalls)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -948,10 +1086,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val expected = defaultCustomThemeTokens().copy(accentArgb = 0xFF405060.toInt())
-        assertEquals(expected, repository.currentCustomThemeTokens())
-        assertEquals(expected, store.state.value.customThemeTokens)
-        assertEquals(1, repository.setCustomThemeTokensCalls)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(expected, repository.currentCustomThemeTokens())
+        assertLocalizedEquals(expected, store.state.value.customThemeTokens)
+        assertLocalizedEquals(1, repository.setCustomThemeTokensCalls)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -966,10 +1104,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val expected = defaultCustomThemeTokens().copy(focusArgb = 0xFF708090.toInt())
-        assertEquals(expected, repository.currentCustomThemeTokens())
-        assertEquals(expected, store.state.value.customThemeTokens)
-        assertEquals(1, repository.setCustomThemeTokensCalls)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(expected, repository.currentCustomThemeTokens())
+        assertLocalizedEquals(expected, store.state.value.customThemeTokens)
+        assertLocalizedEquals(1, repository.setCustomThemeTokensCalls)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -990,9 +1128,9 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ResetCustomTheme)
         advanceUntilIdle()
 
-        assertEquals(defaultCustomThemeTokens(), repository.currentCustomThemeTokens())
-        assertEquals(defaultCustomThemeTokens(), store.state.value.customThemeTokens)
-        assertEquals("自定义主题已重置。", store.state.value.message)
+        assertLocalizedEquals(defaultCustomThemeTokens(), repository.currentCustomThemeTokens())
+        assertLocalizedEquals(defaultCustomThemeTokens(), store.state.value.customThemeTokens)
+        assertLocalizedEquals("自定义主题已重置。", store.state.value.message)
         scope.cancel()
     }
 
@@ -1015,9 +1153,9 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.PickDesktopVlcPath)
         advanceUntilIdle()
 
-        assertEquals("/opt/homebrew/Cellar/vlc/lib", repository.currentDesktopVlcManualPath())
-        assertEquals("/opt/homebrew/Cellar/vlc/lib", store.state.value.desktopVlcEffectivePath)
-        assertEquals("VLC 路径已保存，将在下次启动后生效。", store.state.value.message)
+        assertLocalizedEquals("/opt/homebrew/Cellar/vlc/lib", repository.currentDesktopVlcManualPath())
+        assertLocalizedEquals("/opt/homebrew/Cellar/vlc/lib", store.state.value.desktopVlcEffectivePath)
+        assertLocalizedEquals("VLC 路径已保存，将在下次启动后生效。", store.state.value.message)
         scope.cancel()
     }
 
@@ -1040,10 +1178,10 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.PickDesktopVlcPath)
         advanceUntilIdle()
 
-        assertEquals(null, repository.currentDesktopVlcManualPath())
-        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcAutoDetectedPath)
-        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(null, repository.currentDesktopVlcManualPath())
+        assertLocalizedEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcAutoDetectedPath)
+        assertLocalizedEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
     }
 
@@ -1060,14 +1198,14 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ClearDesktopVlcManualPath)
         advanceUntilIdle()
 
-        assertEquals(null, repository.currentDesktopVlcManualPath())
-        assertEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
-        assertEquals("已恢复自动识别，将在下次启动后生效。", store.state.value.message)
+        assertLocalizedEquals(null, repository.currentDesktopVlcManualPath())
+        assertLocalizedEquals("/Applications/VLC.app/Contents/MacOS/lib", store.state.value.desktopVlcEffectivePath)
+        assertLocalizedEquals("已恢复自动识别，将在下次启动后生效。", store.state.value.message)
         scope.cancel()
     }
 
     @Test
-    fun `theme palette derivation preserves configured tokens and contrast`() {
+    fun `theme palette derivation preserves configured tokens and contrast`() = runTest {
         val whiteTextPalette = deriveAppThemePalette(defaultCustomThemeTokens(), AppThemeTextPalette.White)
         val blackTextPalette = deriveAppThemePalette(defaultCustomThemeTokens(), AppThemeTextPalette.Black)
         val lightPalette = deriveAppThemePalette(
@@ -1079,13 +1217,13 @@ class SettingsStoreTest {
             AppThemeTextPalette.Black,
         )
 
-        assertEquals(defaultCustomThemeTokens().accentArgb, whiteTextPalette.primaryArgb)
-        assertEquals(defaultCustomThemeTokens().focusArgb, whiteTextPalette.secondaryArgb)
-        assertEquals(0xFFF7F5F3.toInt(), whiteTextPalette.onBackgroundArgb)
-        assertEquals(0xFF111111.toInt(), blackTextPalette.onBackgroundArgb)
-        assertEquals(0xFFD6D1CD.toInt(), whiteTextPalette.onSurfaceVariantArgb)
-        assertEquals(0xFF4A4541.toInt(), blackTextPalette.onSurfaceVariantArgb)
-        assertEquals(0xFF111111.toInt(), lightPalette.onBackgroundArgb)
+        assertLocalizedEquals(defaultCustomThemeTokens().accentArgb, whiteTextPalette.primaryArgb)
+        assertLocalizedEquals(defaultCustomThemeTokens().focusArgb, whiteTextPalette.secondaryArgb)
+        assertLocalizedEquals(0xFFF7F5F3.toInt(), whiteTextPalette.onBackgroundArgb)
+        assertLocalizedEquals(0xFF111111.toInt(), blackTextPalette.onBackgroundArgb)
+        assertLocalizedEquals(0xFFD6D1CD.toInt(), whiteTextPalette.onSurfaceVariantArgb)
+        assertLocalizedEquals(0xFF4A4541.toInt(), blackTextPalette.onSurfaceVariantArgb)
+        assertLocalizedEquals(0xFF111111.toInt(), lightPalette.onBackgroundArgb)
         assertTrue(lightPalette.surfaceArgb != lightPalette.backgroundArgb)
     }
 
@@ -1101,10 +1239,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("direct-1", state.editingId)
-        assertEquals("My Direct Source", state.name)
-        assertEquals("https://lyrics.example/direct", state.urlTemplate)
-        assertEquals(null, state.editingWorkflowId)
+        assertLocalizedEquals("direct-1", state.editingId)
+        assertLocalizedEquals("My Direct Source", state.name)
+        assertLocalizedEquals("https://lyrics.example/direct", state.urlTemplate)
+        assertLocalizedEquals(null, state.editingWorkflowId)
         scope.cancel()
     }
 
@@ -1120,8 +1258,8 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("wf-1", state.editingWorkflowId)
-        assertEquals(workflow.rawJson, state.workflowJsonInput)
+        assertLocalizedEquals("wf-1", state.editingWorkflowId)
+        assertLocalizedEquals(workflow.rawJson, state.workflowJsonInput)
         scope.cancel()
     }
 
@@ -1143,7 +1281,7 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("wf-1", state.editingWorkflowId)
+        assertLocalizedEquals("wf-1", state.editingWorkflowId)
         assertTrue(state.workflowJsonInput.contains("\"enabled\": true"))
         scope.cancel()
     }
@@ -1162,11 +1300,11 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("歌词源已新建。", state.message)
-        assertEquals("Forked Source", state.name)
-        assertEquals("https://lyrics.example/direct", state.urlTemplate)
-        assertEquals(2, repository.currentSources().size)
-        assertEquals(setOf("My Direct Source", "Forked Source"), repository.currentSources().map { it.name }.toSet())
+        assertLocalizedEquals("歌词源已新建。", state.message)
+        assertLocalizedEquals("Forked Source", state.name)
+        assertLocalizedEquals("https://lyrics.example/direct", state.urlTemplate)
+        assertLocalizedEquals(2, repository.currentSources().size)
+        assertLocalizedEquals(setOf("My Direct Source", "Forked Source"), repository.currentSources().map { it.name }.toSet())
         scope.cancel()
     }
 
@@ -1183,8 +1321,8 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("wf-1", state.editingWorkflowId)
-        assertEquals(true, "Workflow Source v2" in state.workflowJsonInput)
+        assertLocalizedEquals("wf-1", state.editingWorkflowId)
+        assertLocalizedEquals(true, "Workflow Source v2" in state.workflowJsonInput)
         scope.cancel()
     }
 
@@ -1202,12 +1340,12 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("Workflow 源已新建。", state.message)
+        assertLocalizedEquals("Workflow 源已新建。", state.message)
         val workflowSources = repository.currentSources().filterIsInstance<WorkflowLyricsSourceConfig>()
-        assertEquals(2, workflowSources.size)
-        assertEquals(setOf("Workflow Source", "Forked Workflow"), workflowSources.map { it.name }.toSet())
-        assertEquals(true, workflowSources.any { it.id != "wf-1" && it.name == "Forked Workflow" })
-        assertEquals(true, "Forked Workflow" in state.workflowJsonInput)
+        assertLocalizedEquals(2, workflowSources.size)
+        assertLocalizedEquals(setOf("Workflow Source", "Forked Workflow"), workflowSources.map { it.name }.toSet())
+        assertLocalizedEquals(true, workflowSources.any { it.id != "wf-1" && it.name == "Forked Workflow" })
+        assertLocalizedEquals(true, "Forked Workflow" in state.workflowJsonInput)
         scope.cancel()
     }
 
@@ -1228,10 +1366,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("歌词源名称已存在。", state.message)
-        assertEquals(" taken name ", state.name)
-        assertEquals("https://lyrics.example/new", state.urlTemplate)
-        assertEquals(null, state.editingId)
+        assertLocalizedEquals("歌词源保存失败。\n歌词源名称已存在。", state.message)
+        assertLocalizedEquals(" taken name ", state.name)
+        assertLocalizedEquals("https://lyrics.example/new", state.urlTemplate)
+        assertLocalizedEquals(null, state.editingId)
         scope.cancel()
     }
 
@@ -1251,9 +1389,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(null, state.editingWorkflowId)
-        assertEquals("", state.workflowJsonInput)
-        assertEquals(2, state.sources.size)
+        assertLocalizedEquals(null, state.editingWorkflowId)
+        assertLocalizedEquals("", state.workflowJsonInput)
+        assertLocalizedEquals(2, state.sources.size)
         scope.cancel()
     }
 
@@ -1273,10 +1411,10 @@ class SettingsStoreTest {
             .filterIsInstance<WorkflowLyricsSourceConfig>()
             .single()
 
-        assertEquals("Musicmatch 已保存。", state.message)
-        assertEquals("token-123", state.musicmatchUserToken)
-        assertEquals(true, state.hasMusicmatchSource)
-        assertEquals(MANAGED_MUSICMATCH_SOURCE_ID, managed.id)
+        assertLocalizedEquals("Musicmatch 已保存。", state.message)
+        assertLocalizedEquals("token-123", state.musicmatchUserToken)
+        assertLocalizedEquals(true, state.hasMusicmatchSource)
+        assertLocalizedEquals(MANAGED_MUSICMATCH_SOURCE_ID, managed.id)
         scope.cancel()
     }
 
@@ -1296,15 +1434,15 @@ class SettingsStoreTest {
             .filterIsInstance<LyricsSourceConfig>()
             .single()
 
-        assertEquals("LrcAPI 已保存。", state.message)
-        assertEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
-        assertEquals(true, state.hasLrcApiSource)
-        assertEquals(MANAGED_LRCAPI_SOURCE_ID, managed.id)
-        assertEquals("LrcAPI", managed.name)
-        assertEquals(110, managed.priority)
-        assertEquals("title={title}&artist={artist}", managed.queryTemplate)
-        assertEquals("json-map:lyrics=lyrics|lrc,title=title,artist=artist,album=album,durationSeconds=duration,id=id,coverUrl=cover", managed.extractor)
-        assertEquals(true, managed.enabled)
+        assertLocalizedEquals("LrcAPI 已保存。", state.message)
+        assertLocalizedEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
+        assertLocalizedEquals(true, state.hasLrcApiSource)
+        assertLocalizedEquals(MANAGED_LRCAPI_SOURCE_ID, managed.id)
+        assertLocalizedEquals("LrcAPI", managed.name)
+        assertLocalizedEquals(110, managed.priority)
+        assertLocalizedEquals("title={title}&artist={artist}", managed.queryTemplate)
+        assertLocalizedEquals("json-map:lyrics=lyrics|lrc,title=title,artist=artist,album=album,durationSeconds=duration,id=id,coverUrl=cover", managed.extractor)
+        assertLocalizedEquals(true, managed.enabled)
         scope.cancel()
     }
 
@@ -1322,12 +1460,12 @@ class SettingsStoreTest {
         val managed = repository.currentSources()
             .filterIsInstance<LyricsSourceConfig>()
             .single()
-        assertEquals(DEFAULT_LRCAPI_URL, state.lrcApiUrl)
-        assertEquals(true, state.hasLrcApiSource)
-        assertEquals("LrcAPI 已恢复默认。", state.message)
-        assertEquals(MANAGED_LRCAPI_SOURCE_ID, managed.id)
-        assertEquals(DEFAULT_LRCAPI_URL, managed.urlTemplate)
-        assertEquals(true, managed.enabled)
+        assertLocalizedEquals(DEFAULT_LRCAPI_URL, state.lrcApiUrl)
+        assertLocalizedEquals(true, state.hasLrcApiSource)
+        assertLocalizedEquals("LrcAPI 已恢复默认。", state.message)
+        assertLocalizedEquals(MANAGED_LRCAPI_SOURCE_ID, managed.id)
+        assertLocalizedEquals(DEFAULT_LRCAPI_URL, managed.urlTemplate)
+        assertLocalizedEquals(true, managed.enabled)
         scope.cancel()
     }
 
@@ -1343,10 +1481,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
-        assertEquals(true, state.hasLrcApiSource)
-        assertEquals(null, state.editingId)
-        assertEquals("", state.workflowJsonInput)
+        assertLocalizedEquals("https://lyrics.example/jsonapi", state.lrcApiUrl)
+        assertLocalizedEquals(true, state.hasLrcApiSource)
+        assertLocalizedEquals(null, state.editingId)
+        assertLocalizedEquals("", state.workflowJsonInput)
         scope.cancel()
     }
 
@@ -1361,9 +1499,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("", state.musicmatchUserToken)
-        assertEquals(false, state.hasMusicmatchSource)
-        assertEquals(emptyList(), repository.currentSources())
+        assertLocalizedEquals("", state.musicmatchUserToken)
+        assertLocalizedEquals(false, state.hasMusicmatchSource)
+        assertLocalizedEquals(emptyList(), repository.currentSources())
         scope.cancel()
     }
 
@@ -1379,10 +1517,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("token-123", state.musicmatchUserToken)
-        assertEquals(true, state.hasMusicmatchSource)
-        assertEquals(null, state.editingWorkflowId)
-        assertEquals("", state.workflowJsonInput)
+        assertLocalizedEquals("token-123", state.musicmatchUserToken)
+        assertLocalizedEquals(true, state.hasMusicmatchSource)
+        assertLocalizedEquals(null, state.editingWorkflowId)
+        assertLocalizedEquals("", state.workflowJsonInput)
         scope.cancel()
     }
 
@@ -1397,9 +1535,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("", state.lrcApiUrl)
-        assertEquals(false, state.hasLrcApiSource)
-        assertEquals("歌词源已删除。", state.message)
+        assertLocalizedEquals("", state.lrcApiUrl)
+        assertLocalizedEquals(false, state.hasLrcApiSource)
+        assertLocalizedEquals("歌词源已删除。", state.message)
         scope.cancel()
     }
 
@@ -1421,10 +1559,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(3_328L, state.storageSnapshot?.totalSizeBytes)
-        assertEquals(true, state.storageLoaded)
-        assertEquals(false, state.storageLoading)
-        assertEquals(1, storageGateway.loadCalls)
+        assertLocalizedEquals(3_328L, state.storageSnapshot?.totalSizeBytes)
+        assertLocalizedEquals(true, state.storageLoaded)
+        assertLocalizedEquals(false, state.storageLoading)
+        assertLocalizedEquals(1, storageGateway.loadCalls)
         scope.cancel()
     }
 
@@ -1444,8 +1582,8 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.PickDataLocation)
         advanceUntilIdle()
 
-        assertEquals("C:\\Users\\tester\\.lynmusic", store.state.value.currentDataRootPath)
-        assertEquals("D:\\MusicData\\LynMusic", store.state.value.pendingDataRootPath)
+        assertLocalizedEquals("C:\\Users\\tester\\.lynmusic", store.state.value.currentDataRootPath)
+        assertLocalizedEquals("D:\\MusicData\\LynMusic", store.state.value.pendingDataRootPath)
         assertFalse(store.state.value.dataLocationBusy)
         scope.cancel()
     }
@@ -1470,12 +1608,12 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.PickDataLocation)
         runCurrent()
 
-        assertEquals(1, service.pickCalls)
+        assertLocalizedEquals(1, service.pickCalls)
         assertTrue(store.state.value.dataLocationBusy)
 
         pickerCompletion.complete(Unit)
         advanceUntilIdle()
-        assertEquals("D:\\MusicData\\LynMusic", store.state.value.pendingDataRootPath)
+        assertLocalizedEquals("D:\\MusicData\\LynMusic", store.state.value.pendingDataRootPath)
         assertFalse(store.state.value.dataLocationBusy)
         scope.cancel()
     }
@@ -1497,9 +1635,9 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.RequestDataLocationChange(AppDataLocationChangeMode.Migrate))
         advanceUntilIdle()
 
-        assertEquals(listOf("D:\\LynMusic" to AppDataLocationChangeMode.Migrate), service.scheduledChanges)
+        assertLocalizedEquals(listOf("D:\\LynMusic" to AppDataLocationChangeMode.Migrate), service.scheduledChanges)
         assertTrue(store.state.value.dataLocationRestartRequired)
-        assertEquals(null, store.state.value.pendingDataRootPath)
+        assertLocalizedEquals(null, store.state.value.pendingDataRootPath)
         scope.cancel()
     }
 
@@ -1526,15 +1664,15 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.CancelDataLocationSelection)
         runCurrent()
 
-        assertEquals(listOf("D:\\LynMusic" to AppDataLocationChangeMode.Migrate), service.scheduledChanges)
-        assertEquals("D:\\LynMusic", store.state.value.pendingDataRootPath)
+        assertLocalizedEquals(listOf("D:\\LynMusic" to AppDataLocationChangeMode.Migrate), service.scheduledChanges)
+        assertLocalizedEquals("D:\\LynMusic", store.state.value.pendingDataRootPath)
         assertTrue(store.state.value.dataLocationBusy)
 
         scheduleCompletion.complete(Unit)
         advanceUntilIdle()
         assertTrue(store.state.value.dataLocationRestartRequired)
-        assertEquals(null, store.state.value.pendingDataRootPath)
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(null, store.state.value.pendingDataRootPath)
+        assertLocalizedEquals(null, store.state.value.message)
         assertFalse(store.state.value.dataLocationBusy)
         scope.cancel()
     }
@@ -1557,7 +1695,7 @@ class SettingsStoreTest {
         runCurrent()
 
         assertFalse(store.state.value.dataLocationBusy)
-        assertEquals(0, service.pickCalls)
+        assertLocalizedEquals(0, service.pickCalls)
     }
 
     @Test
@@ -1587,8 +1725,8 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.ConfirmDataLocationRestart)
         advanceUntilIdle()
 
-        assertEquals(listOf("E:\\AppData\\LynMusic" to AppDataLocationChangeMode.Discard), service.scheduledChanges)
-        assertEquals(listOf<SettingsEffect>(SettingsEffect.ExitApplicationRequested), effects)
+        assertLocalizedEquals(listOf("E:\\AppData\\LynMusic" to AppDataLocationChangeMode.Discard), service.scheduledChanges)
+        assertLocalizedEquals(listOf<SettingsEffect>(SettingsEffect.ExitApplicationRequested), effects)
         effectJob.cancel()
         scope.cancel()
     }
@@ -1608,12 +1746,12 @@ class SettingsStoreTest {
 
         store.dispatch(SettingsIntent.PickDataLocation)
         advanceUntilIdle()
-        assertEquals(null, store.state.value.pendingDataRootPath)
+        assertLocalizedEquals(null, store.state.value.pendingDataRootPath)
 
         store.dispatch(SettingsIntent.RetryDataLocationCleanup)
         advanceUntilIdle()
-        assertEquals(null, store.state.value.pendingDataCleanupRootPath)
-        assertEquals("旧数据目录已清理。", store.state.value.message)
+        assertLocalizedEquals(null, store.state.value.pendingDataCleanupRootPath)
+        assertLocalizedEquals("旧数据目录已清理。", store.state.value.message)
         scope.cancel()
     }
 
@@ -1638,12 +1776,38 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("Google Pixel 8", state.deviceInfoSnapshot?.deviceModel)
-        assertEquals("Android", state.deviceInfoSnapshot?.systemName)
-        assertEquals(true, state.deviceInfoLoaded)
-        assertEquals(false, state.deviceInfoLoading)
-        assertEquals(1, deviceInfoGateway.loadCalls)
+        assertLocalizedEquals("Google Pixel 8", state.deviceInfoSnapshot?.deviceModel)
+        assertLocalizedEquals("Android", state.deviceInfoSnapshot?.systemName)
+        assertLocalizedEquals(true, state.deviceInfoLoaded)
+        assertLocalizedEquals(false, state.deviceInfoLoading)
+        assertLocalizedEquals(1, deviceInfoGateway.loadCalls)
         scope.cancel()
+    }
+
+    @Test
+    fun cachedDeviceInfoSurvivesLanguageChangesWithoutReloading() = runTest {
+        val repository = FakeSettingsRepository()
+        val snapshot = DeviceInfoSnapshot("Android", "14", cpuDescription = "arm64", logicalCoreCount = 2)
+        val gateway = FakeDeviceInfoGateway(initialSnapshot = snapshot)
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = SettingsStore(repository, scope, deviceInfoGateway = gateway)
+            store.dispatch(SettingsIntent.LoadDeviceInfo())
+            advanceUntilIdle()
+            val before = store.state.value
+            store.dispatch(SettingsIntent.AppLanguageChanged(top.iwesley.lyn.music.core.model.AppLanguage.English))
+            advanceUntilIdle()
+            store.dispatch(SettingsIntent.LoadDeviceInfo())
+            advanceUntilIdle()
+            kotlin.test.assertEquals(before.copy(appLanguage = top.iwesley.lyn.music.core.model.AppLanguage.English), store.state.value)
+            kotlin.test.assertSame(snapshot, store.state.value.deviceInfoSnapshot)
+            kotlin.test.assertEquals(1, gateway.loadCalls)
+            kotlin.test.assertEquals("arm64 · 2 cores", top.iwesley.lyn.music.core.model.resolveUiText(
+                checkNotNull(snapshot.cpuDescriptionText), top.iwesley.lyn.music.core.model.AppLanguage.English,
+            ))
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -1670,9 +1834,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("macOS", state.deviceInfoSnapshot?.systemName)
-        assertEquals("读取设备信息失败。", state.message)
-        assertEquals(true, state.deviceInfoLoaded)
+        assertLocalizedEquals("macOS", state.deviceInfoSnapshot?.systemName)
+        assertLocalizedEquals("读取设备信息失败。\n读取设备信息失败。", state.message)
+        assertLocalizedEquals(true, state.deviceInfoLoaded)
         scope.cancel()
     }
 
@@ -1696,7 +1860,7 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.LoadDeviceInfo(force = true))
         advanceUntilIdle()
 
-        assertEquals(2, deviceInfoGateway.loadCalls)
+        assertLocalizedEquals(2, deviceInfoGateway.loadCalls)
         scope.cancel()
     }
 
@@ -1718,9 +1882,9 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(2_048L, state.storageSnapshot?.totalSizeBytes)
-        assertEquals("缓存统计失败。", state.message)
-        assertEquals(true, state.storageLoaded)
+        assertLocalizedEquals(2_048L, state.storageSnapshot?.totalSizeBytes)
+        assertLocalizedEquals("缓存统计失败。\n缓存统计失败。", state.message)
+        assertLocalizedEquals(true, state.storageLoaded)
         scope.cancel()
     }
 
@@ -1745,10 +1909,10 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(4_288L, state.storageSnapshot?.totalSizeBytes)
-        assertEquals(0L, state.storageSnapshot?.categories?.first { it.category == AppStorageCategory.Artwork }?.sizeBytes)
-        assertEquals("封面缓存已清除。", state.message)
-        assertEquals(null, state.clearingStorageCategory)
+        assertLocalizedEquals(4_288L, state.storageSnapshot?.totalSizeBytes)
+        assertLocalizedEquals(0L, state.storageSnapshot?.categories?.first { it.category == AppStorageCategory.Artwork }?.sizeBytes)
+        assertLocalizedEquals("封面缓存已清除。", state.message)
+        assertLocalizedEquals(null, state.clearingStorageCategory)
         scope.cancel()
     }
 
@@ -1769,7 +1933,7 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.LoadStorageUsage(force = true))
         advanceUntilIdle()
 
-        assertEquals(2, storageGateway.loadCalls)
+        assertLocalizedEquals(2, storageGateway.loadCalls)
         scope.cancel()
     }
 
@@ -1792,12 +1956,12 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(1, appUpdateRepository.calls)
+        assertLocalizedEquals(1, appUpdateRepository.calls)
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
-        assertEquals(true, state.appUpdateHasNewVersion)
-        assertEquals(null, state.appUpdateError)
-        assertEquals("发现新版本 v1.0.8.1。", state.message)
+        assertLocalizedEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(true, state.appUpdateHasNewVersion)
+        assertLocalizedEquals(null, state.appUpdateError)
+        assertLocalizedEquals("发现新版本 v1.0.8.1。", state.message)
         scope.cancel()
     }
 
@@ -1821,15 +1985,15 @@ class SettingsStoreTest {
 
         val state = store.state.value
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.8", state.appUpdateLatestRelease?.tagName)
-        assertEquals(false, state.appUpdateHasNewVersion)
-        assertEquals(null, state.appUpdateError)
-        assertEquals("当前已是最新版本。", state.message)
+        assertLocalizedEquals("v1.0.8", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(false, state.appUpdateHasNewVersion)
+        assertLocalizedEquals(null, state.appUpdateError)
+        assertLocalizedEquals("当前已是最新版本。", state.message)
         scope.cancel()
     }
 
     @Test
-    fun `app release comparison treats prerelease lower than stable release`() {
+    fun `app release comparison treats prerelease lower than stable release`() = runTest {
         assertFalse(isAppReleaseNewer(currentVersionName = "2.0.0", releaseTagName = "v2.0.0-rc1"))
         assertTrue(isAppReleaseNewer(currentVersionName = "2.0.0-rc1", releaseTagName = "v2.0.0"))
         assertTrue(isAppReleaseNewer(currentVersionName = "1.0.8", releaseTagName = "v1.0.8.1"))
@@ -1837,49 +2001,49 @@ class SettingsStoreTest {
     }
 
     @Test
-    fun `app update ui model maps checking error update latest and idle states`() {
+    fun `app update ui model maps checking error update latest and idle states`() = runTest {
         val checking = SettingsState(appUpdateChecking = true).toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.Checking, checking.status)
-        assertEquals("正在检查最新版本...", checking.message)
+        assertLocalizedEquals(AppUpdateUiStatus.Checking, checking.status)
+        assertLocalizedEquals("正在检查最新版本...", checking.message)
 
-        val error = SettingsState(appUpdateError = "network down").toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.Error, error.status)
-        assertEquals("network down", error.message)
+        val error = SettingsState(appUpdateError = top.iwesley.lyn.music.core.model.UiText.Raw("network down")).toAppUpdateUiModel()
+        assertLocalizedEquals(AppUpdateUiStatus.Error, error.status)
+        assertLocalizedEquals("network down", error.message)
 
         val update = SettingsState(
             appUpdateLatestRelease = sampleAppRelease(tagName = "v1.0.8.1"),
             appUpdateHasNewVersion = true,
         ).toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.UpdateAvailable, update.status)
-        assertEquals("v1.0.8.1", update.latestVersion)
-        assertEquals("发现可用更新，可以到公众号获取云盘链接或者 GitHub 下载。", update.message)
-        assertEquals("https://github.com/wesley666/LynMusic/releases/tag/v1.0.8.1", update.downloadUrl)
+        assertLocalizedEquals(AppUpdateUiStatus.UpdateAvailable, update.status)
+        assertLocalizedEquals("v1.0.8.1", update.latestVersion)
+        assertLocalizedEquals("发现可用更新，可以到公众号获取云盘链接或者 GitHub 下载。", update.message)
+        assertLocalizedEquals("https://github.com/wesley666/LynMusic/releases/tag/v1.0.8.1", update.downloadUrl)
 
         val updateWithFallbackUrl = SettingsState(
             appUpdateLatestRelease = sampleAppRelease(tagName = "v1.0.8.1").copy(htmlUrl = ""),
             appUpdateHasNewVersion = true,
         ).toAppUpdateUiModel()
-        assertEquals(LynMusicUpdateLinks.RELEASES_URL, updateWithFallbackUrl.downloadUrl)
+        assertLocalizedEquals(LynMusicUpdateLinks.RELEASES_URL, updateWithFallbackUrl.downloadUrl)
 
         val updateWithError = SettingsState(
             appUpdateLatestRelease = sampleAppRelease(tagName = "v1.0.8.1"),
             appUpdateHasNewVersion = true,
-            appUpdateError = "network down",
+            appUpdateError = top.iwesley.lyn.music.core.model.UiText.Raw("network down"),
         ).toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.UpdateAvailable, updateWithError.status)
-        assertEquals("v1.0.8.1", updateWithError.latestVersion)
-        assertEquals("network down", updateWithError.errorMessage)
+        assertLocalizedEquals(AppUpdateUiStatus.UpdateAvailable, updateWithError.status)
+        assertLocalizedEquals("v1.0.8.1", updateWithError.latestVersion)
+        assertLocalizedEquals("network down", updateWithError.errorMessage)
 
         val latest = SettingsState(
             appUpdateLatestRelease = sampleAppRelease(tagName = "v1.0.8"),
             appUpdateHasNewVersion = false,
         ).toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.UpToDate, latest.status)
-        assertEquals("当前已是最新版本。", latest.message)
+        assertLocalizedEquals(AppUpdateUiStatus.UpToDate, latest.status)
+        assertLocalizedEquals("当前已是最新版本。", latest.message)
 
         val idle = SettingsState().toAppUpdateUiModel()
-        assertEquals(AppUpdateUiStatus.Idle, idle.status)
-        assertEquals(null, idle.message)
+        assertLocalizedEquals(AppUpdateUiStatus.Idle, idle.status)
+        assertLocalizedEquals(null, idle.message)
     }
 
     @Test
@@ -1902,10 +2066,10 @@ class SettingsStoreTest {
 
         val state = store.state.value
         assertFalse(state.appUpdateChecking)
-        assertEquals(null, state.appUpdateLatestRelease)
-        assertEquals(null, state.appUpdateHasNewVersion)
-        assertEquals("network down", state.appUpdateError)
-        assertEquals("network down", state.message)
+        assertLocalizedEquals(null, state.appUpdateLatestRelease)
+        assertLocalizedEquals(null, state.appUpdateHasNewVersion)
+        assertLocalizedEquals("检查更新失败。\nnetwork down", state.appUpdateError)
+        assertLocalizedEquals("检查更新失败。\nnetwork down", state.message)
         scope.cancel()
     }
 
@@ -1926,15 +2090,15 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.CheckAppUpdate)
         advanceUntilIdle()
 
-        assertEquals(1, appUpdateRepository.calls)
+        assertLocalizedEquals(1, appUpdateRepository.calls)
 
         appUpdateRepository.complete(Result.success(sampleAppRelease(tagName = "v1.0.8.1")))
         advanceUntilIdle()
 
         val state = store.state.value
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
-        assertEquals(true, state.appUpdateHasNewVersion)
+        assertLocalizedEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(true, state.appUpdateHasNewVersion)
         scope.cancel()
     }
 
@@ -1957,12 +2121,12 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(1, appUpdateRepository.calls)
+        assertLocalizedEquals(1, appUpdateRepository.calls)
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
-        assertEquals(true, state.appUpdateHasNewVersion)
-        assertEquals(null, state.appUpdateError)
-        assertEquals(null, state.message)
+        assertLocalizedEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(true, state.appUpdateHasNewVersion)
+        assertLocalizedEquals(null, state.appUpdateError)
+        assertLocalizedEquals(null, state.message)
         scope.cancel()
     }
 
@@ -1985,12 +2149,12 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(1, appUpdateRepository.calls)
+        assertLocalizedEquals(1, appUpdateRepository.calls)
         assertFalse(state.appUpdateChecking)
-        assertEquals(null, state.appUpdateLatestRelease)
-        assertEquals(null, state.appUpdateHasNewVersion)
-        assertEquals(null, state.appUpdateError)
-        assertEquals(null, state.message)
+        assertLocalizedEquals(null, state.appUpdateLatestRelease)
+        assertLocalizedEquals(null, state.appUpdateHasNewVersion)
+        assertLocalizedEquals(null, state.appUpdateError)
+        assertLocalizedEquals(null, state.message)
         scope.cancel()
     }
 
@@ -2014,18 +2178,18 @@ class SettingsStoreTest {
         store.dispatch(SettingsIntent.CheckAppUpdateSilently)
         advanceUntilIdle()
 
-        assertEquals(1, appUpdateRepository.calls)
+        assertLocalizedEquals(1, appUpdateRepository.calls)
 
         appUpdateRepository.nextResult = Result.success(sampleAppRelease(tagName = "v1.0.9"))
         store.dispatch(SettingsIntent.CheckAppUpdate)
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(2, appUpdateRepository.calls)
+        assertLocalizedEquals(2, appUpdateRepository.calls)
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.9", state.appUpdateLatestRelease?.tagName)
-        assertEquals(true, state.appUpdateHasNewVersion)
-        assertEquals("发现新版本 v1.0.9。", state.message)
+        assertLocalizedEquals("v1.0.9", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(true, state.appUpdateHasNewVersion)
+        assertLocalizedEquals("发现新版本 v1.0.9。", state.message)
         scope.cancel()
     }
 
@@ -2052,12 +2216,12 @@ class SettingsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(2, appUpdateRepository.calls)
+        assertLocalizedEquals(2, appUpdateRepository.calls)
         assertFalse(state.appUpdateChecking)
-        assertEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
-        assertEquals(true, state.appUpdateHasNewVersion)
-        assertEquals("network down", state.appUpdateError)
-        assertEquals("network down", state.message)
+        assertLocalizedEquals("v1.0.8.1", state.appUpdateLatestRelease?.tagName)
+        assertLocalizedEquals(true, state.appUpdateHasNewVersion)
+        assertLocalizedEquals("检查更新失败。\nnetwork down", state.appUpdateError)
+        assertLocalizedEquals("检查更新失败。\nnetwork down", state.message)
         scope.cancel()
     }
 }
@@ -2082,6 +2246,10 @@ private class FakeSettingsRepository(
     desktopVlcManualPath: String? = null,
     private val onSetMinimizeWindowOnClose: suspend (Boolean) -> Unit = {},
 ) : SettingsRepository {
+    override val appLanguage = MutableStateFlow(top.iwesley.lyn.music.core.model.AppLanguage.System)
+    override suspend fun setAppLanguage(language: top.iwesley.lyn.music.core.model.AppLanguage) {
+        appLanguage.value = language
+    }
     private val mutableSources = MutableStateFlow(sources)
     private val mutableUseSambaCache = MutableStateFlow(false)
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(showCompactPlayerLyrics)

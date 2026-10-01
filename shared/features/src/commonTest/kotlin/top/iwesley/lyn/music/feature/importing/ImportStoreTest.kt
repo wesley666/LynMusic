@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.feature.importing
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.core.model.resolveUiText
+
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,7 +19,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -39,6 +45,25 @@ import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImportStoreTest {
+    @Test fun iosSambaRecommendationFlowsThroughTestToastAndKeepsEnteredDraft() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            pendingResult = CompletableDeferred(Result.failure(top.iwesley.lyn.music.core.model.UiTextException(top.iwesley.lyn.music.core.model.uiText(Res.string.ios_samba_files_recommended))))
+        }
+        val harness = createStore(repository)
+        try {
+            val store = harness.store
+            store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+            store.dispatch(ImportIntent.SambaPathChanged("Media/用户目录"))
+            advanceUntilIdle()
+            store.dispatch(ImportIntent.TestSambaSource)
+            advanceUntilIdle()
+            val message = kotlin.test.assertNotNull(store.state.value.testMessage)
+            kotlin.test.assertEquals("Samba connection failed: Use Files to connect to SMB in this iOS build.", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.English))
+            kotlin.test.assertEquals("Samba 連接測試失敗: 目前 iOS 版本建議透過 Files 連線至 SMB。", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese))
+            kotlin.test.assertEquals("Media/用户目录", repository.lastTestSambaDraft?.path)
+            assertNull(store.state.value.message)
+        } finally { harness.close() }
+    }
 
     @Test
     fun `name conflict failure is surfaced through existing samba error message`() = runTest {
@@ -54,7 +79,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.AddSambaSource)
         advanceUntilIdle()
 
-        assertEquals("Samba 导入失败: 音乐源名称已存在。", store.state.value.message)
+        assertLocalizedEquals("Samba 导入失败: 音乐源名称已存在。", store.state.value.message)
         harness.close()
     }
 
@@ -69,7 +94,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.ImportLocalFolder)
         advanceUntilIdle()
 
-        assertEquals("导入本地文件夹失败: 该本地文件夹已导入。", store.state.value.message)
+        assertLocalizedEquals("导入本地文件夹失败: 该本地文件夹已导入。", store.state.value.message)
         harness.close()
     }
 
@@ -91,12 +116,12 @@ class ImportStoreTest {
         harness.store.dispatch(ImportIntent.ReauthorizeLocalFolder("local-1"))
         advanceUntilIdle()
 
-        assertEquals("local-1", repository.lastReauthorizedLocalFolderSourceId)
-        assertEquals(
+        assertLocalizedEquals("local-1", repository.lastReauthorizedLocalFolderSourceId)
+        assertLocalizedEquals(
             "本地文件夹已重新授权并扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。",
             harness.store.state.value.message,
         )
-        assertEquals(testScanSummary("local-1"), harness.store.state.value.latestScanSummariesBySourceId["local-1"])
+        assertLocalizedEquals(testScanSummary("local-1"), harness.store.state.value.latestScanSummariesBySourceId["local-1"])
         harness.close()
     }
 
@@ -108,8 +133,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.ImportLocalFolderWithPickerMode(mode))
         advanceUntilIdle()
 
-        assertEquals(mode, repository.lastLocalFolderMode)
-        assertEquals("本地音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertLocalizedEquals(mode, repository.lastLocalFolderMode)
+        assertLocalizedEquals("本地音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
         harness.close()
     }
 
@@ -134,7 +159,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.AddNavidromeSource)
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             ImportScanProgress(
                 sourceId = "nav-1",
                 phase = ImportScanPhase.Scanning,
@@ -147,7 +172,7 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.scanProgress)
-        assertEquals("Navidrome 音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertLocalizedEquals("Navidrome 音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
         harness.close()
     }
 
@@ -175,12 +200,12 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         val editing = assertNotNull(store.state.value.editingSource)
-        assertEquals("家庭 NAS", editing.label)
-        assertEquals("nas.local", editing.server)
-        assertEquals("445", editing.port)
-        assertEquals("Media/Music", editing.path)
-        assertEquals("lyn", editing.username)
-        assertEquals("", editing.password)
+        assertLocalizedEquals("家庭 NAS", editing.label)
+        assertLocalizedEquals("nas.local", editing.server)
+        assertLocalizedEquals("445", editing.port)
+        assertLocalizedEquals("Media/Music", editing.path)
+        assertLocalizedEquals("lyn", editing.username)
+        assertLocalizedEquals("", editing.password)
         assertTrue(editing.hasStoredCredential)
         assertTrue(editing.keepExistingCredential)
         harness.close()
@@ -207,8 +232,8 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         val editing = assertNotNull(store.state.value.editingSource)
-        assertEquals("https://dav.example.com/中文 音乐/", editing.rootUrl)
-        assertEquals("云端曲库", editing.label)
+        assertLocalizedEquals("https://dav.example.com/中文 音乐/", editing.rootUrl)
+        assertLocalizedEquals("云端曲库", editing.label)
         harness.close()
     }
 
@@ -234,8 +259,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.SaveRemoteSource)
         advanceUntilIdle()
 
-        assertEquals("dav-1", repository.lastUpdatedWebDavSourceId)
-        assertEquals("https://dav.example.com/中文 音乐/", repository.lastUpdatedWebDavDraft?.rootUrl)
+        assertLocalizedEquals("dav-1", repository.lastUpdatedWebDavSourceId)
+        assertLocalizedEquals("https://dav.example.com/中文 音乐/", repository.lastUpdatedWebDavDraft?.rootUrl)
         assertTrue(repository.lastUpdatedWebDavKeepExisting)
         harness.close()
     }
@@ -252,7 +277,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.TestSambaSource)
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             SambaSourceDraft(
                 label = "",
                 server = "nas.local",
@@ -263,7 +288,7 @@ class ImportStoreTest {
             ),
             repository.lastTestSambaDraft,
         )
-        assertEquals("Samba 连接测试成功。", store.state.value.testMessage)
+        assertLocalizedEquals("Samba 连接测试成功。", store.state.value.testMessage)
         assertNull(store.state.value.message)
         harness.close()
     }
@@ -292,8 +317,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.SaveRemoteSource)
         advanceUntilIdle()
 
-        assertEquals("nav-1", repository.lastUpdatedNavidromeSourceId)
-        assertEquals(
+        assertLocalizedEquals("nav-1", repository.lastUpdatedNavidromeSourceId)
+        assertLocalizedEquals(
             NavidromeSourceDraft(
                 label = "Navidrome",
                 baseUrl = "https://nav2.example.com",
@@ -304,8 +329,8 @@ class ImportStoreTest {
         )
         assertTrue(repository.lastUpdatedNavidromeKeepExisting)
         assertNull(store.state.value.editingSource)
-        assertEquals("来源已更新并重新扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
-        assertEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
+        assertLocalizedEquals("来源已更新并重新扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertLocalizedEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -333,7 +358,7 @@ class ImportStoreTest {
         navidromeHarness.store.dispatch(ImportIntent.SaveRemoteSource)
         advanceUntilIdle()
 
-        assertEquals("https://nav.wan", navidromeRepository.lastUpdatedNavidromeDraft?.wanBaseUrl)
+        assertLocalizedEquals("https://nav.wan", navidromeRepository.lastUpdatedNavidromeDraft?.wanBaseUrl)
         navidromeHarness.close()
 
         val subsonicRepository = FakeImportSourceRepository(
@@ -359,7 +384,7 @@ class ImportStoreTest {
         subsonicHarness.store.dispatch(ImportIntent.SaveRemoteSource)
         advanceUntilIdle()
 
-        assertEquals("https://sub.wan", subsonicRepository.lastUpdatedSubsonicDraft?.wanBaseUrl)
+        assertLocalizedEquals("https://sub.wan", subsonicRepository.lastUpdatedSubsonicDraft?.wanBaseUrl)
         subsonicHarness.close()
 
         val embyRepository = FakeImportSourceRepository(
@@ -388,9 +413,9 @@ class ImportStoreTest {
 
         val updatedEmbyDraft = assertNotNull(
             embyRepository.lastUpdatedEmbyDraft,
-            embyHarness.store.state.value.message,
+            embyHarness.store.state.value.message?.let { top.iwesley.lyn.music.core.model.resolveUiText(it, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese) },
         )
-        assertEquals("https://emby.wan", updatedEmbyDraft.wanBaseUrl)
+        assertLocalizedEquals("https://emby.wan", updatedEmbyDraft.wanBaseUrl)
         embyHarness.close()
     }
 
@@ -420,11 +445,11 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         val editing = assertNotNull(store.state.value.editingSource)
-        assertEquals(SubsonicAuthMode.API_KEY, editing.subsonicAuthMode)
-        assertEquals("", editing.username)
-        assertEquals(false, editing.keepExistingCredential)
-        assertEquals("", editing.password)
-        assertEquals("请先填写 Subsonic API Key。", store.state.value.message)
+        assertLocalizedEquals(SubsonicAuthMode.API_KEY, editing.subsonicAuthMode)
+        assertLocalizedEquals("", editing.username)
+        assertLocalizedEquals(false, editing.keepExistingCredential)
+        assertLocalizedEquals("", editing.password)
+        assertLocalizedEquals("请先填写 Subsonic API Key。", store.state.value.message)
         assertNull(repository.lastUpdatedSubsonicSourceId)
         assertNull(repository.lastUpdatedSubsonicDraft)
         harness.close()
@@ -447,8 +472,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.AddSubsonicSource)
         advanceUntilIdle()
 
-        assertEquals("", store.state.value.subsonicUsername)
-        assertEquals(
+        assertLocalizedEquals("", store.state.value.subsonicUsername)
+        assertLocalizedEquals(
             SubsonicSourceDraft(
                 label = "",
                 baseUrl = "https://sub.example.com",
@@ -479,8 +504,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.ToggleSourceEnabled("dav-1", enabled = false))
         advanceUntilIdle()
 
-        assertEquals("来源已禁用。", store.state.value.message)
-        assertEquals(false, store.state.value.sources.first().source.enabled)
+        assertLocalizedEquals("来源已禁用。", store.state.value.message)
+        assertLocalizedEquals(false, store.state.value.sources.first().source.enabled)
         harness.close()
     }
 
@@ -494,7 +519,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.ImportLocalFolder)
         advanceUntilIdle()
 
-        assertEquals(ImportScanOperation.CreateLocalFolder, store.state.value.activeScanOperation)
+        assertLocalizedEquals(ImportScanOperation.CreateLocalFolder, store.state.value.activeScanOperation)
         assertTrue(store.state.value.isWorking)
 
         pendingResult.complete(Result.success(Unit))
@@ -548,7 +573,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.RescanSource("dav-1"))
         advanceUntilIdle()
 
-        assertEquals(ImportScanOperation.RescanSource("dav-1"), store.state.value.activeScanOperation)
+        assertLocalizedEquals(ImportScanOperation.RescanSource("dav-1"), store.state.value.activeScanOperation)
 
         pendingResult.complete(Result.success(Unit))
         advanceUntilIdle()
@@ -577,8 +602,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.AddSambaSource)
         advanceUntilIdle()
 
-        assertEquals("Samba 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
-        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["smb-1"])
+        assertLocalizedEquals("Samba 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
+        assertLocalizedEquals(summary, store.state.value.latestScanSummariesBySourceId["smb-1"])
         harness.close()
     }
 
@@ -608,8 +633,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.AddNavidromeSource)
         advanceUntilIdle()
 
-        assertEquals("Navidrome 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
-        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
+        assertLocalizedEquals("Navidrome 音乐源已导入。发现 3 个音频文件，成功导入 2 首，1 个失败。", store.state.value.message)
+        assertLocalizedEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -637,7 +662,7 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.pendingLargeNavidromeImport)
-        assertEquals("Navidrome 在线模式保存失败: save failed", store.state.value.testMessage)
+        assertLocalizedEquals("Navidrome 在线模式保存失败: save failed", store.state.value.testMessage)
         harness.close()
     }
 
@@ -663,8 +688,8 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.pendingLargeNavidromeImport)
-        assertEquals("Navidrome 音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
-        assertEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
+        assertLocalizedEquals("Navidrome 音乐源已导入。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertLocalizedEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -680,7 +705,7 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.TestNavidromeSource)
         advanceUntilIdle()
 
-        assertEquals("Navidrome 连接测试成功。", store.state.value.testMessage)
+        assertLocalizedEquals("Navidrome 连接测试成功。", store.state.value.testMessage)
         assertNull(store.state.value.message)
         assertTrue(store.state.value.latestScanSummariesBySourceId.isEmpty())
         harness.close()
@@ -718,8 +743,8 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.RescanSource("nav-1"))
         advanceUntilIdle()
 
-        assertEquals("音乐源已重新扫描。发现 2 个音频文件，成功导入 1 首，1 个失败。", store.state.value.message)
-        assertEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
+        assertLocalizedEquals("音乐源已重新扫描。发现 2 个音频文件，成功导入 1 首，1 个失败。", store.state.value.message)
+        assertLocalizedEquals(summary, store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -753,7 +778,7 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.pendingLargeNavidromeImport)
-        assertEquals("切换在线模式失败: switch failed", store.state.value.message)
+        assertLocalizedEquals("切换在线模式失败: switch failed", store.state.value.message)
         harness.close()
     }
 
@@ -786,8 +811,8 @@ class ImportStoreTest {
         advanceUntilIdle()
 
         assertNull(store.state.value.pendingLargeNavidromeImport)
-        assertEquals("音乐源已重新扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
-        assertEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
+        assertLocalizedEquals("音乐源已重新扫描。发现 1 个音频文件，成功导入 1 首，0 个失败。", store.state.value.message)
+        assertLocalizedEquals(testScanSummary("nav-1"), store.state.value.latestScanSummariesBySourceId["nav-1"])
         harness.close()
     }
 
@@ -840,14 +865,14 @@ class ImportStoreTest {
         store.dispatch(ImportIntent.SaveRemoteSource)
         advanceUntilIdle()
 
-        assertEquals(ImportScanOperation.UpdateRemote("nav-1"), store.state.value.activeScanOperation)
+        assertLocalizedEquals(ImportScanOperation.UpdateRemote("nav-1"), store.state.value.activeScanOperation)
 
         pendingResult.complete(Result.failure(IllegalStateException("连接失败")))
         advanceUntilIdle()
 
         assertNull(store.state.value.activeScanOperation)
         assertNotNull(store.state.value.editingSource)
-        assertEquals("更新来源失败: 连接失败", store.state.value.message)
+        assertLocalizedEquals("更新来源失败: 连接失败", store.state.value.message)
         harness.close()
     }
 
@@ -894,7 +919,7 @@ class ImportStoreTest {
         store.dispatch(intent)
         advanceUntilIdle()
 
-        assertEquals(expectedOperation, store.state.value.activeScanOperation)
+        assertLocalizedEquals(expectedOperation, store.state.value.activeScanOperation)
 
         pendingResult.complete(Result.success(Unit))
         advanceUntilIdle()

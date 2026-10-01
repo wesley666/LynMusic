@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="source_navidrome_label">Navidrome source</string>
+    <string name="common_available_after_reading">Shown after reading</string>
+    <string name="common_synced">Synced</string>
+    <string name="desktop_lyrics_loading">Loading lyrics…</string>
+    <string name="desktop_lyrics_unavailable">No lyrics available</string>
+    <string name="app_icon_description">LynMusic app icon</string>
+    <string name="startup_app_starting">Starting LynMusic…</string>
+    <string name="crash_report_title">LynMusic crash report</string>
+    <string name="common_copied">Copied</string>
+    <string name="common_exit">Exit</string>
+    <string name="crash_desktop_report_instructions">LynMusic encountered an unexpected error and will exit. Copy the crash details below to help the developer investigate.</string>
+    <string name="playback_audio_open_failed">Unable to open this audio file.</string>
+    <string name="desktop_lyrics_close_description">Close desktop lyrics</string>
+    <string name="artwork_unavailable_message">No artwork available.</string>
+    <string name="equalizer_playback_required">Available after playback starts</string>
+    <string name="equalizer_device_unsupported">This device does not support the equalizer</string>
+    <string name="equalizer_apply_failed">Unable to apply equalizer settings</string>
+    <string name="cast_playback_failed_notice">Cast playback failed</string>
+    <string name="cast_control_failed_notice">Cast control failed</string>
+    <string name="renderer_waiting_for_cast">Waiting for a cast</string>
+    <string name="tags_avfoundation_read_only_label">AVFoundation · read only</string>
+    <string name="source_ios_files_index_label">Files app · index in place</string>
+    <string name="folder_picker_internal_storage">Internal storage</string>
+    <string name="folder_picker_usb_drive_named">USB drive %1$s</string>
+    <string name="import_scan_success">%1$s %2$s.</string>
+    <string name="ui_list_separator">, </string>
+    <string name="settings_direct_source">Direct</string>
+    <string name="settings_workflow_source">Workflow</string>
+    <string name="settings_workflow_json">Workflow JSON</string>
+    <string name="settings_usertoken">Musicmatch user token</string>
+    <string name="settings_api_key">API key</string>
+    <plurals name="online_source_summary">
+        <item quantity="one">Online mode is enabled. The remote library contains %1$s song; the local index is unchanged.</item>
+        <item quantity="other">Online mode is enabled. The remote library contains %1$s songs; the local index is unchanged.</item>
+    </plurals>
+    <string name="lyrics_source_same_name_file">Same-name lyrics file</string>
+    <string name="lyrics_source_song_tags">Song tags</string>
+</resources>

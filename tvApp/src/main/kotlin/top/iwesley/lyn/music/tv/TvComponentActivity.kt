@@ -19,6 +19,7 @@ abstract class TvComponentActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        top.iwesley.lyn.music.platform.refreshAndroidSystemAppLanguage(resources.configuration)
         activityActionHost.notifyResumed()
     }
 

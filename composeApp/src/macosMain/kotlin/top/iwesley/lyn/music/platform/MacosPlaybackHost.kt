@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -7,11 +9,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.*
 
 data class MacPlaybackHostState(
     val title: String = "",
+    val hasLoadedFile: Boolean = false,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -25,9 +30,17 @@ class MacPlaybackHostController {
     private val gateway = ApplePlaybackGateway(platformLabel = "macOS")
     private val mutableState = MutableStateFlow(MacPlaybackHostState())
 
+    private val errorText = MutableStateFlow<UiText?>(null)
+
     init {
         scope.launch {
+            observeResolvedUiText(errorText) { message, isCurrent ->
+                mutableState.update { if (isCurrent()) it.copy(errorMessage = message) else it }
+            }
+        }
+        scope.launch {
             gateway.state.collect { gatewayState ->
+                errorText.value = gatewayState.playbackErrorText()
                 mutableState.update {
                     it.copy(
                         title = gatewayState.metadataTitle?.takeIf(String::isNotBlank) ?: it.title,
@@ -36,7 +49,6 @@ class MacPlaybackHostController {
                         durationMs = gatewayState.durationMs,
                         canSeek = gatewayState.canSeek,
                         volume = gatewayState.volume,
-                        errorMessage = gatewayState.errorMessage,
                     )
                 }
             }
@@ -48,7 +60,7 @@ class MacPlaybackHostController {
     fun openLocalFile(path: String) {
         val normalizedPath = path.trim()
         if (normalizedPath.isBlank()) {
-            mutableState.update { it.copy(errorMessage = "请选择要播放的本地文件。") }
+            errorText.value = uiText(Res.string.mac_select_file)
             return
         }
         val title = normalizedPath.substringAfterLast('/').substringBeforeLast('.')
@@ -59,9 +71,11 @@ class MacPlaybackHostController {
             mediaLocator = normalizedPath,
             relativePath = normalizedPath.substringAfterLast('/'),
         )
+        errorText.value = null
         mutableState.update {
             it.copy(
                 title = title,
+                hasLoadedFile = true,
                 positionMs = 0L,
                 durationMs = 0L,
                 canSeek = false,
@@ -97,3 +111,10 @@ class MacPlaybackHostController {
 }
 
 fun createMacPlaybackHostController(): MacPlaybackHostController = MacPlaybackHostController()
+
+/** SwiftUI owns persistence, while the playback controller stays alive during UI language changes. */
+fun configureMacUiLanguage(savedValue: String, systemLanguageTag: String): String {
+    AppLanguageRuntime.updateSystemLanguage(systemLanguageTag)
+    AppLanguageRuntime.update(appLanguageOrDefault(savedValue))
+    return AppLanguageRuntime.effectiveLanguage.value.storageValue
+}

@@ -1,5 +1,19 @@
 package top.iwesley.lyn.music.platform
 
+import androidx.compose.runtime.Composable
+
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.resolveUiString
+
+import top.iwesley.lyn.music.uiString
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiFailureTextOrNull
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
+
 import androidx.room.PooledConnection
 import androidx.room.Room
 import androidx.room.immediateTransaction
@@ -35,7 +49,7 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 
 data class JvmDataLocationProgress(
-    val message: String,
+    val message: UiText,
     val fraction: Float? = null,
 )
 
@@ -75,10 +89,10 @@ class JvmDataLocationManager(
     val supportsCustomLocation: Boolean
         get() = isJvmWindowsOs(osName)
 
-    var cleanupWarning: String? = null
+    var cleanupWarning: UiText? = null
         private set
 
-    private var pendingSafetyWarning: String? = null
+    private var pendingSafetyWarning: UiText? = null
 
     fun currentRootDirectory(): File {
         if (!supportsCustomLocation) return defaultRoot
@@ -160,15 +174,15 @@ class JvmDataLocationManager(
 
     suspend fun scheduleChange(targetRoot: File, mode: AppDataLocationChangeMode) = withContext(Dispatchers.IO) {
         operationMutex.withLock {
-            check(supportsCustomLocation) { "当前平台暂不支持修改数据位置。" }
+            checkUi(supportsCustomLocation) { uiText(Res.string.data_location_custom_unsupported) }
             synchronized(propertyLock) {
-                require(PENDING_KEYS.none(loadProperties()::containsKey)) {
-                    "已有待处理的数据位置切换，请先重新打开应用完成切换。"
+                requireUi(PENDING_KEYS.none(loadProperties()::containsKey)) {
+                    uiText(Res.string.data_location_change_pending)
                 }
             }
             val source = currentRootDirectory().normalized()
             val target = targetRoot.normalized()
-            require(resolveCleanupRootDirectory() == null) { "旧数据目录尚未清理完成，请先重试清理。" }
+            requireUi(resolveCleanupRootDirectory() == null) { uiText(Res.string.data_location_cleanup_pending) }
             validateSourceOwnership(source)
             validateTargetTopology(source, target)
             val strategy = when (mode) {
@@ -195,9 +209,9 @@ class JvmDataLocationManager(
                 when (val cleanup = loadCleanupRootState(properties)) {
                     CleanupRootState.None -> Unit
                     is CleanupRootState.InvalidPath -> clearInvalidCleanupRoot(properties, cleanup)
-                    is CleanupRootState.InvalidPhase -> error(cleanup.message)
-                    is CleanupRootState.InvalidIdentity -> error(cleanup.message)
-                    is CleanupRootState.Valid -> error("旧数据目录尚未清理完成，请先重试清理。")
+                    is CleanupRootState.InvalidPhase -> throw UiTextException(cleanup.text)
+                    is CleanupRootState.InvalidIdentity -> throw UiTextException(cleanup.text)
+                    is CleanupRootState.Valid -> throw UiTextException(uiText(Res.string.data_location_cleanup_pending))
                 }
                 properties.setProperty(KEY_PENDING_SOURCE, source.absolutePath)
                 properties.setProperty(KEY_PENDING_TARGET, target.absolutePath)
@@ -261,7 +275,7 @@ class JvmDataLocationManager(
                     validateTargetAvailability(source, target, JvmDataMigrationStrategy.Move)
                     writeOperationMarker(source, pending, JvmDataOperationRole.Target)
                     removeEmptyTarget(target)
-                    onProgress.report(JvmDataLocationProgress("正在移动应用数据…", 0.35f))
+                    onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_moving_data), 0.35f))
                     moveDirectory(source.toPath(), target.toPath())
                 } else {
                     requireRootIdentity(
@@ -277,10 +291,10 @@ class JvmDataLocationManager(
             require(!source.existsNoFollow()) { "同盘移动恢复时源目录和目标目录同时存在。" }
             requireRootIdentity(target, pending.requireTargetRootId(), "移动后的目标数据目录身份不匹配。")
             requireOperationMarker(target, pending, setOf(JvmDataOperationRole.Target))
-            onProgress.report(JvmDataLocationProgress("正在修复数据引用…", 0.8f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_repairing_references), 0.8f))
             rewriteMovedDatabasePaths(target, source, target)
             commitActiveRoot(pending, cleanupRoot = null)
-            onProgress.report(JvmDataLocationProgress("数据迁移完成。", 1f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_migration_complete), 1f))
             return target
         } catch (error: Throwable) {
             if (!sameLocation(configuredActiveRootDirectory(), target)) {
@@ -322,7 +336,7 @@ class JvmDataLocationManager(
                 writeOperationMarker(staging, pending, JvmDataOperationRole.Staging)
                 ensureRootMarker(staging, pending.requireTargetRootId())
                 stagingCreatedByThisAttempt = true
-                onProgress.report(JvmDataLocationProgress("正在复制应用数据…", 0f))
+                onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_copying_data), 0f))
                 copyNonDatabaseFiles(source, staging, onProgress)
                 backupDatabaseLogically(source, staging)
                 verifyNonDatabaseCopy(source, staging)
@@ -350,13 +364,13 @@ class JvmDataLocationManager(
             prepareDatabaseForMigration(source, "源")
             prepareDatabaseForMigration(target, "目标")
             verifyDatabasePairAfterUpgrade(source, target)
-            onProgress.report(JvmDataLocationProgress("正在修复数据引用…", 0.9f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_repairing_references), 0.9f))
             rewriteMovedDatabasePaths(target, source, target)
             writeOperationMarker(source, pending, JvmDataOperationRole.Cleanup)
             commitActiveRoot(pending, cleanupRoot = source)
-            onProgress.report(JvmDataLocationProgress("正在清理旧数据…", 0.96f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_cleaning_old_data), 0.96f))
             finishCleanupOrRecordWarning()
-            onProgress.report(JvmDataLocationProgress("数据迁移完成。", 1f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_migration_complete), 1f))
             return target
         } catch (error: Throwable) {
             if (stagingCreatedByThisAttempt && staging.existsNoFollow()) {
@@ -407,7 +421,7 @@ class JvmDataLocationManager(
                         deletePendingDirectory(tombstone, pending, setOf(JvmDataOperationRole.Tombstone))
                     }
                     writeOperationMarker(source, pending, JvmDataOperationRole.Tombstone)
-                    onProgress.report(JvmDataLocationProgress("正在隔离旧数据…", 0.3f))
+                    onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_isolating_old_data), 0.3f))
                     moveDirectory(source.toPath(), tombstone.toPath())
                 } else {
                     requireRootIdentity(
@@ -426,9 +440,9 @@ class JvmDataLocationManager(
             requireOperationMarker(tombstone, pending, setOf(JvmDataOperationRole.Tombstone))
             requireEmptyOperationDirectory(target, pending, JvmDataOperationRole.Target)
             commitActiveRoot(pending, cleanupRoot = tombstone)
-            onProgress.report(JvmDataLocationProgress("正在永久删除旧数据…", 0.75f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_deleting_old_data), 0.75f))
             finishCleanupOrRecordWarning()
-            onProgress.report(JvmDataLocationProgress("新的数据位置已启用。", 1f))
+            onProgress.report(JvmDataLocationProgress(uiText(Res.string.startup_new_location_active), 1f))
             return target
         } catch (error: Throwable) {
             if (rollbackIsSafe && !sameLocation(configuredActiveRootDirectory(), target)) {
@@ -569,22 +583,22 @@ class JvmDataLocationManager(
         val sourcePath = source.toPath()
         val targetPath = target.toPath()
         val canonicalSourcePath = source.canonicalFile.toPath()
-        require(target.name == TARGET_DIRECTORY_NAME) { "目标数据目录必须命名为 $TARGET_DIRECTORY_NAME。" }
-        val parent = target.parentFile ?: error("不能使用磁盘根目录作为数据位置。")
-        require(parent.isDirectory) { "所选目录不存在。" }
+        requireUi(target.name == TARGET_DIRECTORY_NAME) { uiText(Res.string.data_location_target_name_required, TARGET_DIRECTORY_NAME) }
+        val parent = target.parentFile ?: throw UiTextException(uiText(Res.string.data_location_disk_root_unsupported))
+        requireUi(parent.isDirectory) { uiText(Res.string.data_location_selected_directory_missing) }
         val canonicalTargetPath = if (target.existsNoFollow()) {
             target.canonicalFile.toPath()
         } else {
             parent.canonicalFile.toPath().resolve(target.name).normalize()
         }
-        require(sourcePath != targetPath) { "新数据位置与当前位置相同。" }
-        require(
+        requireUi(sourcePath != targetPath) { uiText(Res.string.data_location_target_unchanged) }
+        requireUi(
             !sourcePath.startsWith(targetPath) &&
                 !targetPath.startsWith(sourcePath) &&
                 !canonicalSourcePath.startsWith(canonicalTargetPath) &&
                 !canonicalTargetPath.startsWith(canonicalSourcePath),
         ) {
-            "新数据位置不能位于当前数据目录内部，也不能包含当前数据目录。"
+            uiText(Res.string.data_location_target_overlaps_current)
         }
     }
 
@@ -592,21 +606,21 @@ class JvmDataLocationManager(
         validateTargetParentAvailability(source, target, strategy)
         if (target.existsNoFollow()) {
             rejectRootLink(target)
-            require(target.isDirectory && target.listFiles().orEmpty().isEmpty()) { "目标 LynMusic 目录必须为空。" }
+            requireUi(target.isDirectory && target.listFiles().orEmpty().isEmpty()) { uiText(Res.string.data_location_target_must_be_empty) }
         }
     }
 
     private fun validateTargetParentAvailability(source: File, target: File, strategy: JvmDataMigrationStrategy) {
-        val parent = target.parentFile ?: error("不能使用磁盘根目录作为数据位置。")
+        val parent = target.parentFile ?: throw UiTextException(uiText(Res.string.data_location_disk_root_unsupported))
         val probe = File.createTempFile("lynmusic-location-", ".tmp", parent)
-        check(probe.delete()) { "无法验证所选目录的写入权限。" }
+        checkUi(probe.delete()) { uiText(Res.string.data_location_write_access_unverified) }
         val required = when (strategy) {
             JvmDataMigrationStrategy.Move, JvmDataMigrationStrategy.Discard -> MINIMUM_FREE_SPACE_RESERVE_BYTES
             JvmDataMigrationStrategy.Copy ->
                 directoryStats(source, ignoredRootNames = DATABASE_FILE_NAMES + MIGRATION_METADATA_FILE_NAMES).bytes +
                     databaseFileSize(source) + MINIMUM_FREE_SPACE_RESERVE_BYTES
         }
-        require(parent.usableSpace >= required) { "目标磁盘空间不足，无法迁移全部应用数据。" }
+        requireUi(parent.usableSpace >= required) { uiText(Res.string.data_location_insufficient_space) }
     }
 
     private fun validateSourceDatabaseCollection(source: File) {
@@ -623,27 +637,27 @@ class JvmDataLocationManager(
 
     private fun validateSourceOwnership(source: File) {
         rejectRootLink(source)
-        require(source.existsNoFollow() && source.isDirectory) { "当前数据目录不存在。" }
-        require(source == defaultRoot || source.isOwnedDirectory()) {
-            "当前自定义数据目录不可用或缺少 LynMusic 所有权标记。"
+        requireUi(source.existsNoFollow() && source.isDirectory) { uiText(Res.string.data_location_current_missing) }
+        requireUi(source == defaultRoot || source.isOwnedDirectory()) {
+            uiText(Res.string.data_location_current_unowned)
         }
     }
 
     private fun validateActiveRoot(active: ConfiguredActiveRoot) {
         if (active.directory == defaultRoot) {
             if (!active.directory.existsNoFollow()) {
-                require(active.rootId == null) { "默认数据目录不存在，无法验证目录身份。" }
+                requireUi(active.rootId == null) { uiText(Res.string.data_location_default_missing_identity) }
                 return
             }
             rejectRootLink(active.directory)
-            require(Files.isDirectory(active.directory.toPath(), NOFOLLOW_LINKS)) {
-                "默认数据目录不是普通目录。"
+            requireUi(Files.isDirectory(active.directory.toPath(), NOFOLLOW_LINKS)) {
+                uiText(Res.string.data_location_default_not_directory)
             }
             validateConfiguredRootIdentity(active)
             return
         }
-        require(active.directory.name == TARGET_DIRECTORY_NAME) {
-            "当前自定义数据目录必须命名为 $TARGET_DIRECTORY_NAME。"
+        requireUi(active.directory.name == TARGET_DIRECTORY_NAME) {
+            uiText(Res.string.data_location_current_name_required, TARGET_DIRECTORY_NAME)
         }
         validateSourceOwnership(active.directory)
         validateConfiguredRootIdentity(active)
@@ -652,9 +666,9 @@ class JvmDataLocationManager(
     private fun validateConfiguredRootIdentity(active: ConfiguredActiveRoot) {
         val configuredRootId = active.rootId ?: return
         val marker = readRootMarker(active.directory)
-            ?: error("当前数据目录缺少 LynMusic 所有权标记。")
-        require(marker.rootId == configuredRootId) {
-            "当前数据目录身份与位置配置不一致。"
+            ?: throw UiTextException(uiText(Res.string.data_location_current_marker_missing))
+        requireUi(marker.rootId == configuredRootId) {
+            uiText(Res.string.data_location_current_identity_mismatch)
         }
     }
 
@@ -672,9 +686,9 @@ class JvmDataLocationManager(
         synchronized(propertyLock) {
             val properties = loadProperties()
             val active = configuredActiveRoot(properties)
-            require(sameLocation(active.directory, source)) { "活动数据目录配置已发生变化。" }
+            requireUi(sameLocation(active.directory, source)) { uiText(Res.string.data_location_active_changed) }
             active.rootId?.let { configuredId ->
-                require(configuredId == rootId) { "活动数据目录身份已发生变化。" }
+                requireUi(configuredId == rootId) { uiText(Res.string.data_location_active_identity_changed) }
             }
             properties.setProperty(KEY_ACTIVE_ROOT_ID, rootId)
             persist(properties)
@@ -685,7 +699,7 @@ class JvmDataLocationManager(
     private fun removeEmptyTarget(target: File) {
         if (!target.existsNoFollow()) return
         rejectRootLink(target)
-        require(target.listFiles().orEmpty().isEmpty()) { "目标 LynMusic 目录必须为空。" }
+        requireUi(target.listFiles().orEmpty().isEmpty()) { uiText(Res.string.data_location_target_must_be_empty) }
         Files.delete(target.toPath())
     }
 
@@ -715,7 +729,7 @@ class JvmDataLocationManager(
                     copiedBytes += attrs.size()
                     onProgress.report(
                         JvmDataLocationProgress(
-                            "正在复制应用数据…",
+                            uiText(Res.string.startup_copying_data),
                             (copiedBytes.toFloat() / totalBytes).coerceIn(0f, 0.8f),
                         ),
                     )
@@ -812,8 +826,8 @@ class JvmDataLocationManager(
 
     private fun verifyNonDatabaseCopy(source: File, target: File) {
         val ignored = DATABASE_FILE_NAMES + MIGRATION_METADATA_FILE_NAMES
-        check(relativeFileSizes(source, ignored) == relativeFileSizes(target, ignored)) {
-            "迁移文件校验失败，当前位置未切换。"
+        checkUi(relativeFileSizes(source, ignored) == relativeFileSizes(target, ignored)) {
+            uiText(Res.string.startup_copy_verification_failed)
         }
     }
 
@@ -840,8 +854,8 @@ class JvmDataLocationManager(
             when (val cleanup = loadCleanupRootState(properties)) {
                 CleanupRootState.None -> Unit
                 is CleanupRootState.InvalidPath -> clearInvalidCleanupRoot(properties, cleanup)
-                is CleanupRootState.InvalidPhase -> error(cleanup.message)
-                is CleanupRootState.InvalidIdentity -> error(cleanup.message)
+                is CleanupRootState.InvalidPhase -> throw UiTextException(cleanup.text)
+                is CleanupRootState.InvalidIdentity -> throw UiTextException(cleanup.text)
                 is CleanupRootState.Valid -> error("旧数据目录尚未清理完成，拒绝覆盖清理记录。")
             }
             properties.setProperty(KEY_ACTIVE_ROOT, target.absolutePath)
@@ -884,7 +898,7 @@ class JvmDataLocationManager(
                 }
                 return
             }
-            is CleanupRootState.InvalidPhase -> error(cleanupState.message)
+            is CleanupRootState.InvalidPhase -> throw UiTextException(cleanupState.text)
             is CleanupRootState.InvalidIdentity -> {
                 if (!cleanupState.directory.existsNoFollow()) {
                     synchronized(propertyLock) {
@@ -894,7 +908,7 @@ class JvmDataLocationManager(
                     }
                     return
                 }
-                error(cleanupState.message)
+                throw UiTextException(cleanupState.text)
             }
             is CleanupRootState.Valid -> cleanupState
         }
@@ -1191,11 +1205,11 @@ class JvmDataLocationManager(
             CleanupRootState.None -> null
             is CleanupRootState.Valid -> state.directory
             is CleanupRootState.InvalidPhase -> {
-                cleanupWarning = state.message
+                cleanupWarning = state.text
                 state.directory
             }
             is CleanupRootState.InvalidIdentity -> {
-                cleanupWarning = state.message
+                cleanupWarning = state.text
                 state.directory
             }
         }
@@ -1218,14 +1232,14 @@ class JvmDataLocationManager(
         if (rootIdValue == null || operationIdValue == null) {
             return CleanupRootState.InvalidIdentity(
                 directory = directory,
-                detail = "清理记录缺少目录身份或 operation ID",
+                detail = uiText(Res.string.startup_cleanup_identity_missing),
             )
         }
         val rootId = runCatching { parseIdentity(rootIdValue) }.getOrElse {
-            return CleanupRootState.InvalidIdentity(directory, "非法 cleanup_root_id=$rootIdValue")
+            return CleanupRootState.InvalidIdentity(directory, uiText(Res.string.startup_cleanup_identity_value_invalid, "cleanup_root_id", rootIdValue))
         }
         val operationId = runCatching { parseIdentity(operationIdValue) }.getOrElse {
-            return CleanupRootState.InvalidIdentity(directory, "非法 cleanup_operation_id=$operationIdValue")
+            return CleanupRootState.InvalidIdentity(directory, uiText(Res.string.startup_cleanup_identity_value_invalid, "cleanup_operation_id", operationIdValue))
         }
         return CleanupRootState.Valid(directory, phase, rootId, operationId)
     }
@@ -1233,7 +1247,7 @@ class JvmDataLocationManager(
     private fun clearInvalidCleanupRoot(properties: Properties, state: CleanupRootState.InvalidPath) {
         clearCleanup(properties)
         persist(properties)
-        cleanupWarning = "已忽略无效的旧数据清理记录，未删除任何目录：${state.rawValue}"
+        cleanupWarning = uiText(Res.string.startup_cleanup_record_ignored, UiText.Raw(state.rawValue))
     }
 
     private fun clearCleanup(properties: Properties) {
@@ -1252,14 +1266,14 @@ class JvmDataLocationManager(
         if (PENDING_KEYS.none(properties::containsKey)) return null
         val source = properties.getProperty(KEY_PENDING_SOURCE)
             ?.let(::safeAbsoluteFile)
-            ?: error("迁移配置损坏：source 缺失或不是绝对路径。")
+            ?: throw UiTextException(uiText(Res.string.startup_pending_path_invalid, "source"))
         val target = properties.getProperty(KEY_PENDING_TARGET)
             ?.let(::safeAbsoluteFile)
-            ?: error("迁移配置损坏：target 缺失或不是绝对路径。")
+            ?: throw UiTextException(uiText(Res.string.startup_pending_path_invalid, "target"))
         val modeValue = properties.getProperty(KEY_PENDING_MODE)
-            ?: error("迁移配置损坏：mode 缺失。")
+            ?: throw UiTextException(uiText(Res.string.startup_pending_field_missing, "mode"))
         val mode = AppDataLocationChangeMode.entries.firstOrNull { it.name == modeValue }
-            ?: error("迁移配置损坏：非法 mode=$modeValue。")
+            ?: throw UiTextException(uiText(Res.string.startup_pending_field_invalid, "mode", modeValue))
         val defaultStrategy = if (mode == AppDataLocationChangeMode.Discard) {
             JvmDataMigrationStrategy.Discard
         } else {
@@ -1267,19 +1281,19 @@ class JvmDataLocationManager(
         }
         val strategy = properties.getProperty(KEY_PENDING_STRATEGY)?.let { value ->
             JvmDataMigrationStrategy.entries.firstOrNull { it.configValue == value }
-                ?: error("迁移配置损坏：非法 strategy=$value。")
+                ?: throw UiTextException(uiText(Res.string.startup_pending_field_invalid, "strategy", value))
         } ?: defaultStrategy
         val phase = properties.getProperty(KEY_PENDING_PHASE)?.let { value ->
             JvmDataMigrationPhase.entries.firstOrNull { it.configValue == value }
-                ?: error("迁移配置损坏：非法 phase=$value。")
+                ?: throw UiTextException(uiText(Res.string.startup_pending_field_invalid, "phase", value))
         } ?: JvmDataMigrationPhase.Prepared
         val identityValues = listOf(
             properties.getProperty(KEY_PENDING_ID),
             properties.getProperty(KEY_PENDING_SOURCE_ROOT_ID),
             properties.getProperty(KEY_PENDING_TARGET_ROOT_ID),
         )
-        require(identityValues.all { it == null } || identityValues.all { it != null }) {
-            "迁移配置损坏：操作身份字段不完整。"
+        requireUi(identityValues.all { it == null } || identityValues.all { it != null }) {
+            uiText(Res.string.startup_pending_identity_incomplete)
         }
         return PendingChange(
             source = source,
@@ -1299,7 +1313,7 @@ class JvmDataLocationManager(
             clearPending(properties)
             persist(properties)
         }
-        pendingSafetyWarning = "已安全取消损坏的数据位置切换记录，未移动或删除任何目录：${error.message ?: error}"
+        pendingSafetyWarning = uiText(Res.string.startup_pending_record_cancelled, error.uiFailureTextOrNull() ?: UiText.Raw(error.message ?: error.toString()))
     }
 
     private fun loadProperties(): Properties {
@@ -1392,12 +1406,10 @@ class JvmDataLocationManager(
         ) : CleanupRootState
         data class InvalidPath(val rawValue: String) : CleanupRootState
         data class InvalidPhase(val directory: File, val rawValue: String) : CleanupRootState {
-            val message: String
-                get() = "旧数据清理配置损坏：非法 cleanup_phase=$rawValue。未删除任何目录。"
+            val text: UiText get() = uiText(Res.string.startup_cleanup_phase_invalid, rawValue)
         }
-        data class InvalidIdentity(val directory: File, val detail: String) : CleanupRootState {
-            val message: String
-                get() = "旧数据清理配置损坏：$detail。未删除任何目录。"
+        data class InvalidIdentity(val directory: File, val detail: UiText) : CleanupRootState {
+            val text: UiText get() = uiText(Res.string.startup_cleanup_identity_invalid, detail)
         }
     }
 }
@@ -1411,7 +1423,7 @@ internal class JvmAppDataLocationPlatformService(
         get() = manager.pendingCleanupRootPath()
 
     override suspend fun pickTargetDataRoot(): Result<String?> = runCatching {
-        val parent = JvmNativeFilePicker.pickDirectory("选择 LynMusic 数据位置") ?: return@runCatching null
+        val parent = JvmNativeFilePicker.pickDirectory(resolveUiString(Res.string.desktop_picker_data_location_title)) ?: return@runCatching null
         parent.resolve(TARGET_DIRECTORY_NAME).toAbsolutePath().normalize().toString()
     }
 
@@ -1547,8 +1559,12 @@ private fun rejectRootLink(root: File) {
 }
 
 private fun rejectLink(path: Path, attrs: BasicFileAttributes) {
-    require(!isJvmLinkOrReparsePoint(path, attrs)) {
-        "数据目录中包含不受支持的链接或 Junction：${path.toAbsolutePath()}"
+    if (isJvmLinkOrReparsePoint(path, attrs)) {
+        val absolutePath = path.toAbsolutePath().toString()
+        throw UiTextArgumentException(
+            text = uiText(Res.string.data_location_links_unsupported, absolutePath),
+            diagnosticMessage = "数据目录中包含不受支持的链接或 Junction：$absolutePath",
+        )
     }
 }
 
@@ -1750,8 +1766,8 @@ private fun isRootDatabaseFile(relative: Path): Boolean =
 private fun isRootMigrationMetadata(relative: Path): Boolean =
     relative.nameCount == 1 && relative.fileName.toString() in MIGRATION_METADATA_FILE_NAMES
 
-private fun cleanupFailureMessage(error: Throwable): String =
-    "新数据位置已启用，但旧目录清理失败，请在空间管理中重试：${error.message ?: error}"
+private fun cleanupFailureMessage(error: Throwable): UiText =
+    uiText(Res.string.startup_cleanup_failed, error.uiFailureTextOrNull() ?: UiText.Raw(error.message ?: error.toString()))
 
 private fun ((JvmDataLocationProgress) -> Unit).report(progress: JvmDataLocationProgress) {
     runCatching { invoke(progress) }

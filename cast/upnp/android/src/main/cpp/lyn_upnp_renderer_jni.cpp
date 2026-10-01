@@ -124,16 +124,16 @@ public:
 
     std::string Start() {
         if (renderer_raw_ == nullptr || upnp_ == nullptr) {
-            return "DLNA 接收端初始化失败。";
+            return "lyn_ui:renderer_initialize_failed";
         }
         if (started_) return std::string();
         NPT_Result result = upnp_->AddDevice(renderer_);
         if (NPT_FAILED(result)) {
-            return "注册 DLNA 接收设备失败。";
+            return "lyn_ui:renderer_register_failed";
         }
         result = upnp_->Start();
         if (NPT_FAILED(result)) {
-            return "启动 DLNA 接收端失败。";
+            return "lyn_ui:renderer_start_failed";
         }
         started_ = true;
         UpdateTransportState("NO_MEDIA_PRESENT", 0, 0);
@@ -494,7 +494,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpMediaRenderer_nativeStar
     jobject,
     jlong handle) {
     auto* engine = RendererFromHandle(handle);
-    if (engine == nullptr) return Error(env, "DLNA 接收端未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:renderer_uninitialized");
     const std::string error = engine->Start();
     return error.empty() ? Success(env) : Error(env, error);
 }

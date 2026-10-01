@@ -1,7 +1,9 @@
 package top.iwesley.lyn.music.feature.my
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,6 +23,28 @@ import top.iwesley.lyn.music.data.repository.MyRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MyStoreTest {
+    @Test fun describedRecentSyncFailureDoesNotDuplicateHintOrRestartRefreshOnLanguageChange() = runTest {
+        val text = top.iwesley.lyn.music.core.model.uiText(Res.string.recent_remote_sync_failed_fallback)
+        val repository = FakeMyRepository(refreshResult = Result.failure(top.iwesley.lyn.music.core.model.UiTextException(text)))
+        val store = createStore(repository, testScheduler, startImmediately = false)
+        store.ensureStarted()
+        advanceUntilIdle()
+        kotlin.test.assertEquals(text, store.state.value.message)
+        val savedLanguage = top.iwesley.lyn.music.core.model.AppLanguageRuntime.appLanguage.value
+        try {
+            for (language in listOf(top.iwesley.lyn.music.core.model.AppLanguage.English, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)) {
+                top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(language)
+                advanceUntilIdle()
+                kotlin.test.assertEquals(text, store.state.value.message)
+                kotlin.test.assertEquals(1, repository.refreshCalls)
+            }
+            store.dispatch(MyIntent.ClearMessage)
+            advanceUntilIdle()
+            top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.English)
+            advanceUntilIdle()
+            assertNull(store.state.value.message)
+        } finally { top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(savedLanguage) }
+    }
 
     @Test
     fun `ensure started collects recent content and triggers one navidrome refresh`() = runTest {
@@ -34,14 +58,14 @@ class MyStoreTest {
         store.ensureStarted()
         advanceUntilIdle()
 
-        assertEquals(1, repository.refreshCalls)
-        assertEquals(1, repository.ensureDailyRecommendationCalls)
-        assertEquals(listOf("track-1"), store.state.value.recentTracks.map { it.track.id })
-        assertEquals(listOf("album-1"), store.state.value.recentAlbums.map { it.album.id })
-        assertEquals(listOf("daily-1"), store.state.value.dailyRecommendationTracks.map { it.id })
-        assertEquals(false, store.state.value.isLoadingContent)
-        assertEquals(false, store.state.value.isGeneratingDailyRecommendation)
-        assertEquals(false, store.state.value.isRefreshingNavidrome)
+        assertLocalizedEquals(1, repository.refreshCalls)
+        assertLocalizedEquals(1, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.recentTracks.map { it.track.id })
+        assertLocalizedEquals(listOf("album-1"), store.state.value.recentAlbums.map { it.album.id })
+        assertLocalizedEquals(listOf("daily-1"), store.state.value.dailyRecommendationTracks.map { it.id })
+        assertLocalizedEquals(false, store.state.value.isLoadingContent)
+        assertLocalizedEquals(false, store.state.value.isGeneratingDailyRecommendation)
+        assertLocalizedEquals(false, store.state.value.isRefreshingNavidrome)
     }
 
     @Test
@@ -54,7 +78,7 @@ class MyStoreTest {
         store.dispatch(MyIntent.RefreshNavidromeRecentPlays)
         advanceUntilIdle()
 
-        assertEquals(2, repository.refreshCalls)
+        assertLocalizedEquals(2, repository.refreshCalls)
         assertNull(store.state.value.message)
     }
 
@@ -68,8 +92,8 @@ class MyStoreTest {
         store.ensureStarted()
         advanceUntilIdle()
 
-        assertEquals("同步失败", store.state.value.message)
-        assertEquals(false, store.state.value.isRefreshingNavidrome)
+        assertLocalizedEquals("远程最近播放同步失败，已显示本地统计。\n同步失败", store.state.value.message)
+        assertLocalizedEquals(false, store.state.value.isRefreshingNavidrome)
 
         store.dispatch(MyIntent.ClearMessage)
         advanceUntilIdle()
@@ -88,8 +112,8 @@ class MyStoreTest {
         store.ensureStarted()
         advanceUntilIdle()
 
-        assertEquals(listOf("track-1"), store.state.value.recentTracks.map { it.track.id })
-        assertEquals(false, store.state.value.isGeneratingDailyRecommendation)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.recentTracks.map { it.track.id })
+        assertLocalizedEquals(false, store.state.value.isGeneratingDailyRecommendation)
     }
 
     @Test
@@ -102,7 +126,7 @@ class MyStoreTest {
         repository.setDateKey("2026-05-02")
         advanceUntilIdle()
 
-        assertEquals(2, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(2, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -115,7 +139,7 @@ class MyStoreTest {
         repository.setDateKey("2026-05-01")
         advanceUntilIdle()
 
-        assertEquals(1, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(1, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -129,8 +153,8 @@ class MyStoreTest {
         store.ensureStarted()
         advanceUntilIdle()
 
-        assertEquals(2, repository.dateKeyRefreshCalls)
-        assertEquals(2, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(2, repository.dateKeyRefreshCalls)
+        assertLocalizedEquals(2, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -143,7 +167,7 @@ class MyStoreTest {
         repository.setHasDailyRecommendationCandidates(true)
         advanceUntilIdle()
 
-        assertEquals(2, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(2, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -159,7 +183,7 @@ class MyStoreTest {
         repository.setHasDailyRecommendationCandidates(true)
         advanceUntilIdle()
 
-        assertEquals(1, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(1, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -175,7 +199,7 @@ class MyStoreTest {
         repository.setDailyRecommendation(emptyList())
         advanceUntilIdle()
 
-        assertEquals(2, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(2, repository.ensureDailyRecommendationCalls)
     }
 
     @Test
@@ -191,7 +215,7 @@ class MyStoreTest {
         repository.setDailyRecommendation(emptyList())
         advanceUntilIdle()
 
-        assertEquals(1, repository.ensureDailyRecommendationCalls)
+        assertLocalizedEquals(1, repository.ensureDailyRecommendationCalls)
     }
 
     private fun createStore(

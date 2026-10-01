@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlin.time.Clock
@@ -57,7 +61,7 @@ class RoomMusicTagsRepository(
     override suspend fun refreshTags(track: Track): Result<MusicTagSaveResult> {
         return runCatching {
             if (!audioTagGateway.canEdit(track)) {
-                error("当前歌曲不支持标签读取。")
+                throw UiTextException(uiText(Res.string.tags_read_unsupported))
             }
             val snapshot = audioTagGateway.read(track).getOrThrow()
             val updatedTrack = persistTrackSnapshot(track, snapshot)
@@ -68,7 +72,7 @@ class RoomMusicTagsRepository(
     override suspend fun saveTags(track: Track, patch: AudioTagPatch): Result<MusicTagSaveResult> {
         return runCatching {
             if (!audioTagGateway.canWrite(track)) {
-                error("当前平台暂不支持本地标签写回。")
+                throw UiTextException(uiText(Res.string.tags_write_unsupported))
             }
             val snapshot = audioTagGateway.write(track, patch).getOrThrow()
             val updatedTrack = persistTrackSnapshot(track, snapshot)

@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music.feature.importing
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
@@ -95,8 +104,8 @@ data class ImportState(
     val scanProgress: ImportScanProgress? = null,
     val latestScanSummariesBySourceId: Map<String, ImportScanSummary> = emptyMap(),
     val pendingLargeNavidromeImport: PendingLargeNavidromeImport? = null,
-    val message: String? = null,
-    val testMessage: String? = null,
+    val message: UiText? = null,
+    val testMessage: UiText? = null,
 )
 
 sealed interface ImportIntent {
@@ -208,17 +217,17 @@ class ImportStore(
                 repository.importSelectedLocalFolder(intent.selection, progressSink)
                     .onSuccess { summary ->
                         recordScanSummary(summary)
-                        setMessage(scanSuccessMessage("本地音乐源已导入。", summary))
+                        setMessage(scanSuccessMessage(uiText(Res.string.source_local_folder_imported), summary))
                     }
-                    .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
+                    .onFailure { setMessage(uiText(Res.string.source_local_folder_import_failed, it.uiErrorDetail())) }
             }
 
             ImportIntent.TestSambaSource -> {
                 val draft = sambaDraftOrNull(state.value) ?: return
                 runImport {
                     repository.testSambaSource(draft)
-                        .onSuccess { setTestMessage("Samba 连接测试成功。") }
-                        .onFailure { setTestMessage("Samba 连接测试失败: ${it.message}") }
+                        .onSuccess { setTestMessage(uiText(Res.string.source_samba_connection_succeeded)) }
+                        .onFailure { setTestMessage(uiText(Res.string.source_samba_connection_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -241,9 +250,9 @@ class ImportStore(
                                 )
                             }
                             recordScanSummary(summary)
-                            setMessage(scanSuccessMessage("Samba 音乐源已导入。", summary))
+                            setMessage(scanSuccessMessage(uiText(Res.string.source_samba_imported), summary))
                         }
-                        .onFailure { setCreateOrPageMessage(ImportSourceType.SAMBA, "Samba 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_samba_import_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -251,8 +260,8 @@ class ImportStore(
                 val draft = webDavDraftOrNull(state.value, allowBlankPassword = true) ?: return
                 runImport {
                     repository.testWebDavSource(draft)
-                        .onSuccess { setTestMessage("WebDAV 连接测试成功。") }
-                        .onFailure { setTestMessage("WebDAV 连接测试失败: ${it.message}") }
+                        .onSuccess { setTestMessage(uiText(Res.string.source_webdav_connection_succeeded)) }
+                        .onFailure { setTestMessage(uiText(Res.string.source_webdav_connection_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -273,9 +282,9 @@ class ImportStore(
                                 )
                             }
                             recordScanSummary(summary)
-                            setMessage(scanSuccessMessage("WebDAV 音乐源已导入。", summary))
+                            setMessage(scanSuccessMessage(uiText(Res.string.source_webdav_imported), summary))
                         }
-                        .onFailure { setCreateOrPageMessage(ImportSourceType.WEBDAV, "WebDAV 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.source_webdav_import_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -290,8 +299,8 @@ class ImportStore(
                 ) ?: return
                 runImport {
                     repository.testNavidromeSource(draft)
-                        .onSuccess { setTestMessage("Navidrome 连接测试成功。") }
-                        .onFailure { setTestMessage("Navidrome 连接测试失败: ${it.message}") }
+                        .onSuccess { setTestMessage(uiText(Res.string.source_navidrome_connection_succeeded)) }
+                        .onFailure { setTestMessage(uiText(Res.string.source_navidrome_connection_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -326,7 +335,7 @@ class ImportStore(
                                 importNavidromeFull(draft)
                             }
                         }
-                        .onFailure { setCreateOrPageMessage(ImportSourceType.NAVIDROME, "Navidrome 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_navidrome_import_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -365,8 +374,8 @@ class ImportStore(
                 ) ?: return
                 runImport {
                     repository.testSubsonicSource(draft)
-                        .onSuccess { setTestMessage("Subsonic 连接测试成功。") }
-                        .onFailure { setTestMessage("Subsonic 连接测试失败: ${it.message}") }
+                        .onSuccess { setTestMessage(uiText(Res.string.source_subsonic_connection_succeeded)) }
+                        .onFailure { setTestMessage(uiText(Res.string.source_subsonic_connection_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -396,9 +405,9 @@ class ImportStore(
                                 )
                             }
                             recordScanSummary(summary)
-                            setMessage(scanSuccessMessage("Subsonic 音乐源已导入。", summary))
+                            setMessage(scanSuccessMessage(uiText(Res.string.source_subsonic_imported), summary))
                         }
-                        .onFailure { setCreateOrPageMessage(ImportSourceType.SUBSONIC, "Subsonic 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.SUBSONIC, uiText(Res.string.source_subsonic_import_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -413,8 +422,8 @@ class ImportStore(
                 ) ?: return
                 runImport {
                     repository.testEmbySource(draft)
-                        .onSuccess { setTestMessage("Emby 连接测试成功。") }
-                        .onFailure { setTestMessage("Emby 连接测试失败: ${it.message}") }
+                        .onSuccess { setTestMessage(uiText(Res.string.source_emby_connection_succeeded)) }
+                        .onFailure { setTestMessage(uiText(Res.string.source_emby_connection_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -442,9 +451,9 @@ class ImportStore(
                                 )
                             }
                             recordScanSummary(summary)
-                            setMessage(scanSuccessMessage("Emby 音乐源已导入。", summary))
+                            setMessage(scanSuccessMessage(uiText(Res.string.source_emby_imported), summary))
                         }
-                        .onFailure { setCreateOrPageMessage(ImportSourceType.EMBY, "Emby 导入失败: ${it.message}") }
+                        .onFailure { setCreateOrPageMessage(ImportSourceType.EMBY, uiText(Res.string.source_emby_import_failed, it.uiErrorDetail())) }
                 }
             }
 
@@ -515,9 +524,9 @@ class ImportStore(
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                             ).onSuccess {
-                                setTestMessage("Samba 连接测试成功。")
+                                setTestMessage(uiText(Res.string.source_samba_connection_succeeded))
                             }.onFailure {
-                                setTestMessage("Samba 连接测试失败: ${it.message}")
+                                setTestMessage(uiText(Res.string.source_samba_connection_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -530,9 +539,9 @@ class ImportStore(
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                             ).onSuccess {
-                                setTestMessage("WebDAV 连接测试成功。")
+                                setTestMessage(uiText(Res.string.source_webdav_connection_succeeded))
                             }.onFailure {
-                                setTestMessage("WebDAV 连接测试失败: ${it.message}")
+                                setTestMessage(uiText(Res.string.source_webdav_connection_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -545,9 +554,9 @@ class ImportStore(
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                             ).onSuccess {
-                                setTestMessage("Navidrome 连接测试成功。")
+                                setTestMessage(uiText(Res.string.source_navidrome_connection_succeeded))
                             }.onFailure {
-                                setTestMessage("Navidrome 连接测试失败: ${it.message}")
+                                setTestMessage(uiText(Res.string.source_navidrome_connection_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -560,9 +569,9 @@ class ImportStore(
                                 draft = draft,
                                 keepExistingCredentialWhenBlankCredential = editor.keepExistingCredential,
                             ).onSuccess {
-                                setTestMessage("Subsonic 连接测试成功。")
+                                setTestMessage(uiText(Res.string.source_subsonic_connection_succeeded))
                             }.onFailure {
-                                setTestMessage("Subsonic 连接测试失败: ${it.message}")
+                                setTestMessage(uiText(Res.string.source_subsonic_connection_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -575,9 +584,9 @@ class ImportStore(
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                             ).onSuccess {
-                                setTestMessage("Emby 连接测试成功。")
+                                setTestMessage(uiText(Res.string.source_emby_connection_succeeded))
                             }.onFailure {
-                                setTestMessage("Emby 连接测试失败: ${it.message}")
+                                setTestMessage(uiText(Res.string.source_emby_connection_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -600,9 +609,9 @@ class ImportStore(
                             ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
                                 recordScanSummary(summary)
-                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
-                                setMessage("更新来源失败: ${it.message}")
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -618,9 +627,9 @@ class ImportStore(
                             ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
                                 recordScanSummary(summary)
-                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
-                                setMessage("更新来源失败: ${it.message}")
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -636,9 +645,9 @@ class ImportStore(
                             ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
                                 recordScanSummary(summary)
-                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
-                                setMessage("更新来源失败: ${it.message}")
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -654,9 +663,9 @@ class ImportStore(
                             ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
                                 recordScanSummary(summary)
-                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
-                                setMessage("更新来源失败: ${it.message}")
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -672,9 +681,9 @@ class ImportStore(
                             ).onSuccess { summary ->
                                 updateState { it.copy(editingSource = null) }
                                 recordScanSummary(summary)
-                                setMessage(scanSuccessMessage("来源已更新并重新扫描。", summary))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
-                                setMessage("更新来源失败: ${it.message}")
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
                             }
                         }
                     }
@@ -691,28 +700,28 @@ class ImportStore(
                         .onSuccess { summary ->
                             summary?.let {
                                 recordScanSummary(it)
-                                setMessage(scanSuccessMessage("本地文件夹已重新授权并扫描。", it))
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_local_folder_authorized_and_scanned), it))
                             }
                         }
-                        .onFailure { setMessage("重新授权本地文件夹失败: ${it.message}") }
+                        .onFailure { setMessage(uiText(Res.string.source_local_folder_authorization_failed, it.uiErrorDetail())) }
                 }
             }
 
             is ImportIntent.ToggleSourceEnabled -> runImport {
                 repository.setSourceEnabled(intent.sourceId, intent.enabled)
                     .onSuccess {
-                        setMessage(if (intent.enabled) "来源已启用。" else "来源已禁用。")
+                        setMessage(if (intent.enabled) uiText(Res.string.source_enabled_notice) else uiText(Res.string.source_disabled_notice))
                     }
-                    .onFailure { setMessage("更新来源状态失败: ${it.message}") }
+                    .onFailure { setMessage(uiText(Res.string.source_status_update_failed, it.uiErrorDetail())) }
             }
 
             is ImportIntent.DeleteSource -> runImport {
                 repository.deleteSource(intent.sourceId)
                     .onSuccess {
                         clearScanSummary(intent.sourceId)
-                        setMessage("音乐源已删除。")
+                        setMessage(uiText(Res.string.source_deleted))
                     }
-                    .onFailure { setMessage("删除音乐源失败: ${it.message}") }
+                    .onFailure { setMessage(uiText(Res.string.source_delete_failed, it.uiErrorDetail())) }
             }
 
             is ImportIntent.SambaLabelChanged -> updateState { it.copy(sambaLabel = intent.value) }
@@ -801,10 +810,10 @@ class ImportStore(
                 .onSuccess { summary ->
                     summary?.let {
                         recordScanSummary(it)
-                        setMessage(scanSuccessMessage("本地音乐源已导入。", it))
+                        setMessage(scanSuccessMessage(uiText(Res.string.source_local_folder_imported), it))
                     }
                 }
-                .onFailure { setMessage("导入本地文件夹失败: ${it.message}") }
+                .onFailure { setMessage(uiText(Res.string.source_local_folder_import_failed, it.uiErrorDetail())) }
         }
     }
 
@@ -814,9 +823,9 @@ class ImportStore(
                 .onSuccess { summary ->
                     clearNavidromeCreator()
                     recordScanSummary(summary)
-                    setMessage(scanSuccessMessage("Navidrome 音乐源已导入。", summary))
+                    setMessage(scanSuccessMessage(uiText(Res.string.source_navidrome_imported), summary))
                 }
-                .onFailure { setCreateOrPageMessage(ImportSourceType.NAVIDROME, "Navidrome 导入失败: ${it.message}") }
+                .onFailure { setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_navidrome_import_failed, it.uiErrorDetail())) }
         }
     }
 
@@ -830,10 +839,10 @@ class ImportStore(
             ).onSuccess { summary ->
                 clearNavidromeCreator()
                 recordScanSummary(summary)
-                setMessage("Navidrome 在线模式已启用，需在曲库来源选择在线来源。远端共有 ${pending.remoteTrackCount} 首歌曲。")
+                setMessage(uiPlural(Res.plurals.source_navidrome_online_library_hint, (pending.remoteTrackCount).toInt(), pending.remoteTrackCount))
             }.onFailure {
                 updateState { state -> state.copy(pendingLargeNavidromeImport = null) }
-                setCreateOrPageMessage(ImportSourceType.NAVIDROME, "Navidrome 在线模式保存失败: ${it.message}")
+                setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_navidrome_online_mode_save_failed, it.uiErrorDetail()))
             }
         }
     }
@@ -866,7 +875,7 @@ class ImportStore(
                             rescanSourceFull(sourceId)
                         }
                     }
-                    .onFailure { setMessage("重新扫描失败: ${it.message}") }
+                    .onFailure { setMessage(uiText(Res.string.source_rescan_failed, it.uiErrorDetail())) }
             }
         } else {
             rescanSourceFull(sourceId)
@@ -878,9 +887,9 @@ class ImportStore(
             repository.rescanSource(sourceId, progressSink)
                 .onSuccess { summary ->
                     summary?.let(::recordScanSummary)
-                    setMessage(scanSuccessMessage("音乐源已重新扫描。", summary))
+                    setMessage(scanSuccessMessage(uiText(Res.string.source_rescanned), summary))
                 }
-                .onFailure { setMessage("重新扫描失败: ${it.message}") }
+                .onFailure { setMessage(uiText(Res.string.source_rescan_failed, it.uiErrorDetail())) }
         }
     }
 
@@ -896,10 +905,10 @@ class ImportStore(
             ).onSuccess { summary ->
                 updateState { it.copy(pendingLargeNavidromeImport = null) }
                 recordScanSummary(summary)
-                setMessage("“$sourceLabel”已切换为 Navidrome 在线模式。远端共有 $remoteTrackCount 首歌曲，旧本地索引已隐藏并保留。")
+                setMessage(uiPlural(Res.plurals.source_navidrome_online_switch_summary, remoteTrackCount, sourceLabel, remoteTrackCount))
             }.onFailure {
                 updateState { state -> state.copy(pendingLargeNavidromeImport = null) }
-                setMessage("切换在线模式失败: ${it.message}")
+                setMessage(uiText(Res.string.source_online_mode_switch_failed, it.uiErrorDetail()))
             }
         }
     }
@@ -922,15 +931,15 @@ class ImportStore(
     private fun sambaDraftOrNull(state: ImportState): SambaSourceDraft? {
         val port = state.sambaPort.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         if (state.sambaServer.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.SAMBA, "请先填写 Samba 服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_samba_address_required))
             return null
         }
         if (state.sambaPort.isNotBlank() && port == null) {
-            setCreateOrPageMessage(ImportSourceType.SAMBA, "端口号格式不正确。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_port_invalid))
             return null
         }
         if (state.sambaPath.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.SAMBA, "请填写路径，至少包含共享名，例如 Media 或 Media/Music。")
+            setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_samba_share_path_required))
             return null
         }
         return SambaSourceDraft(
@@ -948,15 +957,15 @@ class ImportStore(
         allowBlankPassword: Boolean,
     ): WebDavSourceDraft? {
         if (state.webDavRootUrl.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.WEBDAV, "请先填写 WebDAV 根 URL。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.source_webdav_root_url_required))
             return null
         }
         if (!allowBlankPassword && state.webDavPassword.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.WEBDAV, "请先填写 WebDAV 密码。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.source_webdav_password_required))
             return null
         }
         if (state.webDavPassword.isNotBlank() && state.webDavUsername.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.WEBDAV, "WebDAV 使用密码时必须填写用户名。")
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.webdav_password_username_required))
             return null
         }
         return WebDavSourceDraft(
@@ -977,15 +986,15 @@ class ImportStore(
         allowBlankPassword: Boolean,
     ): NavidromeSourceDraft? {
         if (baseUrl.isBlank() && wanBaseUrl.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请至少填写一个服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_server_address_missing))
             return null
         }
         if (username.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请先填写 Navidrome 用户名。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_navidrome_username_required))
             return null
         }
         if (!allowBlankPassword && password.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.NAVIDROME, "请先填写 Navidrome 密码。")
+            setCreateOrPageMessage(ImportSourceType.NAVIDROME, uiText(Res.string.source_navidrome_password_required))
             return null
         }
         return NavidromeSourceDraft(
@@ -1007,16 +1016,16 @@ class ImportStore(
         allowBlankCredential: Boolean,
     ): SubsonicSourceDraft? {
         if (baseUrl.isBlank() && wanBaseUrl.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.SUBSONIC, "请至少填写一个服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.SUBSONIC, uiText(Res.string.source_server_address_missing))
             return null
         }
         if (authMode == SubsonicAuthMode.PASSWORD && username.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.SUBSONIC, "请先填写 Subsonic 用户名。")
+            setCreateOrPageMessage(ImportSourceType.SUBSONIC, uiText(Res.string.source_subsonic_username_required))
             return null
         }
         if (!allowBlankCredential && credential.isBlank()) {
-            val labelText = if (authMode == SubsonicAuthMode.API_KEY) "API Key" else "密码"
-            setCreateOrPageMessage(ImportSourceType.SUBSONIC, "请先填写 Subsonic $labelText。")
+            val labelText = if (authMode == SubsonicAuthMode.API_KEY) "API Key" else uiText(Res.string.common_password)
+            setCreateOrPageMessage(ImportSourceType.SUBSONIC, uiText(Res.string.source_subsonic_credential_required, labelText))
             return null
         }
         return SubsonicSourceDraft(
@@ -1038,15 +1047,15 @@ class ImportStore(
         allowBlankPassword: Boolean,
     ): EmbySourceDraft? {
         if (baseUrl.isBlank() && wanBaseUrl.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.EMBY, "请至少填写一个服务器地址。")
+            setCreateOrPageMessage(ImportSourceType.EMBY, uiText(Res.string.source_server_address_missing))
             return null
         }
         if (username.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.EMBY, "请先填写 Emby 用户名。")
+            setCreateOrPageMessage(ImportSourceType.EMBY, uiText(Res.string.source_emby_username_required))
             return null
         }
         if (!allowBlankPassword && password.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.EMBY, "请先填写 Emby 密码。")
+            setCreateOrPageMessage(ImportSourceType.EMBY, uiText(Res.string.source_emby_password_required))
             return null
         }
         return EmbySourceDraft(
@@ -1061,15 +1070,15 @@ class ImportStore(
     private fun editingSambaDraftOrNull(editor: RemoteSourceEditorState): SambaSourceDraft? {
         val port = editor.port.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         if (editor.server.isBlank()) {
-            setMessage("请先填写 Samba 服务器地址。")
+            setMessage(uiText(Res.string.source_samba_address_required))
             return null
         }
         if (editor.port.isNotBlank() && port == null) {
-            setMessage("端口号格式不正确。")
+            setMessage(uiText(Res.string.source_port_invalid))
             return null
         }
         if (editor.path.isBlank()) {
-            setMessage("请填写路径，至少包含共享名，例如 Media 或 Media/Music。")
+            setMessage(uiText(Res.string.source_samba_share_path_required))
             return null
         }
         return SambaSourceDraft(
@@ -1084,15 +1093,15 @@ class ImportStore(
 
     private fun editingWebDavDraftOrNull(editor: RemoteSourceEditorState): WebDavSourceDraft? {
         if (editor.rootUrl.isBlank()) {
-            setMessage("请先填写 WebDAV 根 URL。")
+            setMessage(uiText(Res.string.source_webdav_root_url_required))
             return null
         }
         if (!editor.keepExistingCredential && editor.password.isBlank()) {
-            setMessage("请先填写 WebDAV 密码。")
+            setMessage(uiText(Res.string.source_webdav_password_required))
             return null
         }
         if (editor.password.isNotBlank() && editor.username.isBlank()) {
-            setMessage("WebDAV 使用密码时必须填写用户名。")
+            setMessage(uiText(Res.string.webdav_password_username_required))
             return null
         }
         return WebDavSourceDraft(
@@ -1236,15 +1245,15 @@ class ImportStore(
         updateState { it.copy(isWorking = false, activeScanOperation = null, scanProgress = null) }
     }
 
-    private fun setMessage(message: String) {
+    private fun setMessage(message: UiText) {
         updateState { it.copy(message = message) }
     }
 
-    private fun setTestMessage(message: String) {
+    private fun setTestMessage(message: UiText) {
         updateState { it.copy(testMessage = message) }
     }
 
-    private fun setCreateOrPageMessage(type: ImportSourceType, message: String) {
+    private fun setCreateOrPageMessage(type: ImportSourceType, message: UiText) {
         if (state.value.creatingSourceType == type) {
             setTestMessage(message)
         } else {
@@ -1268,14 +1277,16 @@ private class ThrottledImportScanProgressSink(
     }
 }
 
-fun formatImportScanSummary(summary: ImportScanSummary): String {
-    return "发现 ${summary.discoveredAudioFileCount} 个音频文件，" +
-        "成功导入 ${summary.importedTrackCount} 首，" +
-        "${summary.failedAudioFileCount} 个失败"
+fun formatImportScanSummary(summary: ImportScanSummary): UiText {
+    return uiText(Res.string.import_scan_summary,
+        uiPlural(Res.plurals.import_audio_file_count, (summary.discoveredAudioFileCount).toInt(), summary.discoveredAudioFileCount),
+        uiPlural(Res.plurals.common_track_count_short, (summary.importedTrackCount).toInt(), summary.importedTrackCount),
+        uiPlural(Res.plurals.import_failure_count, (summary.failedAudioFileCount).toInt(), summary.failedAudioFileCount),
+    )
 }
 
 const val LARGE_NAVIDROME_LIBRARY_TRACK_THRESHOLD: Int = 100_000
 
-private fun scanSuccessMessage(prefix: String, summary: ImportScanSummary?): String {
-    return summary?.let { "$prefix${formatImportScanSummary(it)}。" } ?: prefix
+private fun scanSuccessMessage(prefix: UiText, summary: ImportScanSummary?): UiText {
+    return summary?.let { uiText(Res.string.import_scan_success, prefix, formatImportScanSummary(it)) } ?: prefix
 }

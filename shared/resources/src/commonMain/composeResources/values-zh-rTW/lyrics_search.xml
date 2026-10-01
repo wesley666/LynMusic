@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyrics_workflow_candidate_apply_hint">“應用”或“僅應用歌詞”會繼續請求該候選的歌詞內容。</string>
+    <string name="lyrics_sync_mode_line">逐行</string>
+    <string name="lyrics_sync_mode_plain_text">純文本</string>
+    <string name="lyrics_sync_mode_word">逐字</string>
+</resources>

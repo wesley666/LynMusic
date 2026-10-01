@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="apple_media_empty">Apple 平台无法播放空的媒体定位符。</string>
+    <string name="apple_android_uri_unsupported">Apple 平台暂不支持 Android content URI。</string>
+    <string name="apple_samba_unsupported">Apple 平台 v1 暂不支持 Samba locator。</string>
+    <string name="apple_webdav_unsupported">Apple 平台 v1 暂不支持 WebDAV locator。</string>
+    <string name="apple_media_unsupported">Apple 平台暂不支持当前媒体定位符。</string>
+    <string name="apple_playback_failed">%1$s 播放失败。</string>
+    <string name="apple_local_access_failed">%1$s 无法访问本地歌曲。</string>
+    <string name="apple_invalid_media_url">媒体 URL 无效。</string>
+    <string name="ios_folder_picker_active">已有文件夹选择器正在显示。</string>
+    <string name="ios_folder_access_failed">未能取得所选文件夹的访问权限。</string>
+    <string name="ios_folder_bookmark_failed">无法保存文件夹访问权限。</string>
+    <string name="ios_folder_permission_expired">文件夹权限已失效，请重新授权。</string>
+    <string name="ios_folder_access_unavailable">无法访问文件夹，请检查文件提供方状态或重新授权。</string>
+    <string name="ios_local_path_invalid">本地歌曲相对路径无效。</string>
+</resources>

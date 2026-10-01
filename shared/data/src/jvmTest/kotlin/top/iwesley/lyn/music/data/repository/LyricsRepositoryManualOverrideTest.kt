@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.sourceNameUiText
 import androidx.room.Room
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
@@ -59,6 +65,33 @@ import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.domain.serializeEmbyCredential
 
 class LyricsRepositoryManualOverrideTest {
+    @Test fun missingWorkflowConfigurationDescribesManualApplyAndTagImportFailures() = runTest {
+        val database = createTestDatabase()
+        val repository = DefaultLyricsRepository(database, RecordingLyricsHttpClient(), MapCredentialStore(), logger = NoopDiagnosticLogger)
+        val candidate = WorkflowSongCandidate(sourceId = "missing-source", sourceName = "用户来源", id = "candidate", title = "原始标题", artists = listOf("原始歌手"))
+        try {
+            val apply = checkNotNull(runCatching { repository.applyWorkflowSongCandidate("track", candidate) }.exceptionOrNull())
+            val tags = checkNotNull(runCatching { repository.resolveWorkflowSongCandidate(localTrack(), candidate) }.exceptionOrNull())
+            for (error in listOf(apply, tags)) {
+                assertEquals("Workflow lyrics source missing-source does not exist.", resolveUiText(error.uiErrorDetail(), AppLanguage.English))
+                assertEquals("Workflow 歌詞來源 missing-source 不存在。", resolveUiText(error.uiErrorDetail(), AppLanguage.TraditionalChinese))
+            }
+            assertNull(database.lyricsCacheDao().getByTrackIdAndSourceId("track", MANUAL_LYRICS_OVERRIDE_SOURCE_ID))
+        } finally { database.close() }
+    }
+
+    @Test fun missingWorkflowArtworkKeepsUserSourceNameAndDoesNotPersistAnOverride() = runTest {
+        val database = createTestDatabase()
+        val repository = DefaultLyricsRepository(database, RecordingLyricsHttpClient(), MapCredentialStore(), logger = NoopDiagnosticLogger)
+        val candidate = WorkflowSongCandidate(sourceId = "workflow", sourceName = "用户来源 %1\$s", id = "candidate", title = "原始标题", artists = listOf("原始歌手"))
+        try {
+            val error = checkNotNull(runCatching { repository.applyWorkflowSongCandidate("track", candidate, LyricsSearchApplyMode.ARTWORK_ONLY) }.exceptionOrNull())
+            assertEquals("Workflow lyrics source 用户来源 %1\$s has no available artwork.", resolveUiText(error.uiErrorDetail(), AppLanguage.English))
+            assertEquals("Workflow 歌词来源 用户来源 %1\$s 没有可用封面。", resolveUiText(error.uiErrorDetail(), AppLanguage.SimplifiedChinese))
+            assertEquals("Workflow 歌詞來源 用户来源 %1\$s 沒有可用封面。", resolveUiText(error.uiErrorDetail(), AppLanguage.TraditionalChinese))
+            assertNull(database.lyricsCacheDao().getByTrackIdAndSourceId("track", MANUAL_LYRICS_OVERRIDE_SOURCE_ID))
+        } finally { database.close() }
+    }
 
     @Test
     fun `network lyrics metadata uses direct source without caching`() = runTest {
@@ -1005,6 +1038,11 @@ class LyricsRepositoryManualOverrideTest {
 
         assertEquals(listOf(SAME_NAME_LRC_SOURCE_ID, EMBEDDED_LYRICS_SOURCE_ID), candidates.map { it.sourceId })
         assertEquals(listOf("sidecar line", "tag line"), candidates.map { it.document.lines.single().text })
+        val texts = candidates.map { it.sourceNameUiText() }
+        assertEquals(listOf("Same-name lyrics file", "Song tags"), texts.map { resolveUiText(it, AppLanguage.English) })
+        assertEquals(listOf("同名歌词文件", "歌曲标签"), texts.map { resolveUiText(it, AppLanguage.SimplifiedChinese) })
+        assertEquals(listOf("同名歌詞檔案", "歌曲標籤"), texts.map { resolveUiText(it, AppLanguage.TraditionalChinese) })
+        assertEquals(listOf("Same-name lyrics file", "Song tags"), texts.map { resolveUiText(it, AppLanguage.English) })
         assertTrue(candidates.all { it.isTrackProvided })
         assertEquals(listOf(track.id), sameNameLyricsFileGateway.readTrackIds)
         assertEquals(listOf(track.id), audioTagGateway.readTrackIds)
@@ -1544,7 +1582,9 @@ class LyricsRepositoryManualOverrideTest {
         val overrideRow = database.lyricsCacheDao()
             .getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID)
 
-        assertEquals("Workflow lyrics source Workflow Json Error 没有返回可解析歌词。", error.message)
+        assertEquals("Workflow lyrics source Workflow Json Error returned no parseable lyrics.", resolveUiText(error.uiErrorDetail(), AppLanguage.English))
+        assertEquals("Workflow 歌词来源 Workflow Json Error 没有返回可解析歌词。", resolveUiText(error.uiErrorDetail(), AppLanguage.SimplifiedChinese))
+        assertEquals("Workflow 歌詞來源 Workflow Json Error 未回傳可解析的歌詞。", resolveUiText(error.uiErrorDetail(), AppLanguage.TraditionalChinese))
         assertNull(overrideRow)
     }
 

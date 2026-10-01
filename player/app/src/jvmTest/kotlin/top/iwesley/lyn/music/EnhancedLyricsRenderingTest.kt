@@ -9,6 +9,11 @@ import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsSegment
 
 class EnhancedLyricsRenderingTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `segment fill fractions reflect completed active and upcoming segments`() {
         val line = EnhancedLyricsDisplayLine(

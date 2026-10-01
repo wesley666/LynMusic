@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.phoneLibraryRootLabel
+import top.iwesley.lyn.music.testing.mobileLibraryHubTabLabel
+
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.testing.mobileLibraryHubSearchPlaceholder
+
 import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,16 +18,21 @@ import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 
 class MobileLibraryHubNavigationTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
 
     @Test
-    fun `legacy mobile primary navigation only contains my and library`() {
+    fun `legacy mobile primary navigation only contains my and library`() = runTest {
         assertEquals(listOf(AppTab.Library, AppTab.My), mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Favorites in mobilePrimaryNavigationTabs)
         assertFalse(AppTab.Playlists in mobilePrimaryNavigationTabs)
     }
 
     @Test
-    fun `portrait phone tablet and automotive navigation includes collection`() {
+    fun `portrait phone tablet and automotive navigation includes collection`() = runTest {
         for (name in listOf(ANDROID_PLATFORM_NAME, IOS_PLATFORM_NAME, ANDROID_AUTOMOTIVE_PLATFORM_NAME)) {
             val platform = PlatformDescriptor(name, emptyCapabilities())
             for ((width, height) in listOf(390 to 844, 800 to 1280)) {
@@ -35,7 +47,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `likes and playlists highlight collection instead of library on phones`() {
+    fun `likes and playlists highlight collection instead of library on phones`() = runTest {
         assertEquals(AppTab.Library, phoneNavigationGroup(AppTab.Library))
         assertEquals(AppTab.Favorites, phoneNavigationGroup(AppTab.Favorites))
         assertEquals(AppTab.Favorites, phoneNavigationGroup(AppTab.Playlists))
@@ -44,7 +56,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `phone library and collection have separate pagers`() {
+    fun `phone library and collection have separate pagers`() = runTest {
         assertEquals(listOf(AppTab.Library), libraryHubTabs(AppTab.Library, phoneNavigation = true))
         assertEquals(listOf(AppTab.Favorites, AppTab.Playlists), libraryHubTabs(AppTab.Favorites, true))
         assertEquals(listOf(AppTab.Favorites, AppTab.Playlists), libraryHubTabs(AppTab.Playlists, true))
@@ -52,16 +64,16 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `phone root categories retain folder page for unsupported online sources`() {
+    fun `phone root categories retain folder page for unsupported online sources`() = runTest {
         assertEquals(
             listOf("歌曲", "专辑", "艺人", "文件夹"),
-            LibraryBrowserRootView.entries.map(::phoneLibraryRootLabel),
+            LibraryBrowserRootView.entries.map { phoneLibraryRootLabel(it) },
         )
         assertEquals(3, LibraryBrowserRootView.Folders.ordinal)
     }
 
     @Test
-    fun `landscape and desktop or television portrait navigation stays unchanged`() {
+    fun `landscape and desktop or television portrait navigation stays unchanged`() = runTest {
         for (name in listOf(ANDROID_PLATFORM_NAME, IOS_PLATFORM_NAME, "Desktop", ANDROID_TV_PLATFORM_NAME, ANDROID_AUTOMOTIVE_PLATFORM_NAME)) {
             val platform = PlatformDescriptor(name, emptyCapabilities())
             val landscape = buildLayoutProfile(1280.dp, 800.dp, platform)
@@ -75,12 +87,12 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `default selected app tab is library`() {
+    fun `default selected app tab is library`() = runTest {
         assertEquals(AppTab.Library, defaultSelectedAppTab)
     }
 
     @Test
-    fun `library bottom item is selected for every mobile library hub page`() {
+    fun `library bottom item is selected for every mobile library hub page`() = runTest {
         assertTrue(isMobilePrimaryNavigationSelected(AppTab.Library, AppTab.Library))
         assertTrue(isMobilePrimaryNavigationSelected(AppTab.Favorites, AppTab.Library))
         assertTrue(isMobilePrimaryNavigationSelected(AppTab.Playlists, AppTab.Library))
@@ -89,9 +101,9 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub pages keep expected order and labels`() {
+    fun `mobile library hub pages keep expected order and labels`() = runTest {
         assertEquals(listOf(AppTab.Library, AppTab.Favorites, AppTab.Playlists), mobileLibraryHubTabs)
-        assertEquals(listOf("曲库", "喜欢", "歌单"), mobileLibraryHubTabs.map(::mobileLibraryHubTabLabel))
+        assertEquals(listOf("曲库", "喜欢", "歌单"), mobileLibraryHubTabs.map { mobileLibraryHubTabLabel(it) })
         assertEquals(AppTab.Library, mobileLibraryHubTabForPage(0))
         assertEquals(AppTab.Favorites, mobileLibraryHubTabForPage(1))
         assertEquals(AppTab.Playlists, mobileLibraryHubTabForPage(2))
@@ -99,7 +111,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub resolves selected tab to pager page`() {
+    fun `mobile library hub resolves selected tab to pager page`() = runTest {
         assertEquals(0, mobileLibraryHubPageForTab(AppTab.Library))
         assertEquals(1, mobileLibraryHubPageForTab(AppTab.Favorites))
         assertEquals(2, mobileLibraryHubPageForTab(AppTab.Playlists))
@@ -107,7 +119,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub search placeholders match selected page`() {
+    fun `mobile library hub search placeholders match selected page`() = runTest {
         assertEquals("搜索歌曲 / 艺人 / 专辑", mobileLibraryHubSearchPlaceholder(AppTab.Library))
         assertEquals("搜索喜欢的歌曲 / 艺人 / 专辑", mobileLibraryHubSearchPlaceholder(AppTab.Favorites))
         assertEquals("搜索歌单", mobileLibraryHubSearchPlaceholder(AppTab.Playlists))
@@ -115,7 +127,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub source menu shows for library hub content pages`() {
+    fun `mobile library hub source menu shows for library hub content pages`() = runTest {
         assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Library))
         assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Favorites))
         assertTrue(mobileLibraryHubShowsSourceMenu(AppTab.Playlists))
@@ -123,7 +135,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub track sort only applies to library and favorites`() {
+    fun `mobile library hub track sort only applies to library and favorites`() = runTest {
         assertTrue(mobileLibraryHubSupportsTrackSort(AppTab.Library))
         assertTrue(mobileLibraryHubSupportsTrackSort(AppTab.Favorites))
         assertFalse(mobileLibraryHubSupportsTrackSort(AppTab.Playlists))
@@ -131,7 +143,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub uses pull to refresh for remote-backed hub pages`() {
+    fun `mobile library hub uses pull to refresh for remote-backed hub pages`() = runTest {
         assertFalse(mobileLibraryHubUsesPullToRefresh(AppTab.Library))
         assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Favorites))
         assertTrue(mobileLibraryHubUsesPullToRefresh(AppTab.Playlists))
@@ -139,7 +151,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub batch operation availability follows active page`() {
+    fun `mobile library hub batch operation availability follows active page`() = runTest {
         assertTrue(
             mobileLibraryHubCanBatchOperate(
                 tab = AppTab.Library,
@@ -188,7 +200,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub refresh indicator stays visible while refreshing or holding`() {
+    fun `mobile library hub refresh indicator stays visible while refreshing or holding`() = runTest {
         assertFalse(
             mobileLibraryHubRefreshIndicatorVisible(
                 isRefreshing = false,
@@ -216,7 +228,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub filters playlists by name only`() {
+    fun `mobile library hub filters playlists by name only`() = runTest {
         val playlists = listOf(
             PlaylistSummary(id = "1", name = "Daily Mix"),
             PlaylistSummary(id = "2", name = "夜晚驾驶"),
@@ -231,7 +243,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `automotive navigation hides music tags entry`() {
+    fun `automotive navigation hides music tags entry`() = runTest {
         val platform = automotivePlatform()
 
         assertFalse(supportsMusicTagsEntry(platform))
@@ -242,7 +254,7 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `non automotive navigation keeps music tags entry`() {
+    fun `non automotive navigation keeps music tags entry`() = runTest {
         val platform = androidPlatform()
 
         assertTrue(supportsMusicTagsEntry(platform))

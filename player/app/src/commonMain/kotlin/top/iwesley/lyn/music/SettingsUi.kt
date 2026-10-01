@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+
+import top.iwesley.lyn.music.core.model.AppLanguage
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -74,7 +81,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import lynmusic.player.app.generated.resources.Res
+import lynmusic.player.app.generated.resources.Res as PlayerRes
 import lynmusic.player.app.generated.resources.about_app_wechat_qr
 import org.jetbrains.compose.resources.imageResource
 import top.iwesley.lyn.music.core.model.AppStorageCategory
@@ -142,8 +149,8 @@ internal fun SettingsTab(
             containerColor = shellColors.cardContainer,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("删除歌词来源") },
-            text = { Text("确认删除“$pendingLyricsSourceDeleteName”吗？删除后将不再参与歌词搜索和匹配。") },
+            title = { Text(uiString(Res.string.lyrics_source_delete_title)) },
+            text = { Text(uiString(Res.string.lyrics_source_delete_confirmation, pendingLyricsSourceDeleteName)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -159,7 +166,7 @@ internal fun SettingsTab(
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
-                    Text("删除")
+                    Text(uiString(Res.string.common_delete))
                 }
             },
             dismissButton = {
@@ -170,7 +177,7 @@ internal fun SettingsTab(
                         pendingLyricsSourceDeleteUsesEditingAction = false
                     },
                 ) {
-                    Text("取消")
+                    Text(uiString(Res.string.common_cancel))
                 }
             },
         )
@@ -460,7 +467,7 @@ private fun SettingsSectionListPane(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         SectionTitle(
-            title = "设置",
+            title = uiString(Res.string.settings_title),
             subtitle = ""
         )
         sections.forEach { section ->
@@ -597,8 +604,8 @@ private fun HelpSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "帮助",
-                subtitle = "查看投屏和后台运行常见问题。",
+                title = uiString(Res.string.settings_help_title),
+                subtitle = uiString(Res.string.settings_help_description),
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -624,19 +631,19 @@ private fun HelpSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "后台投屏失败，怎么解决",
+                            text = uiString(Res.string.cast_background_troubleshooting_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "投屏时如果应用退到后台后无法自动投下一首，通常是系统冻结了后台运行。",
+                            text = uiString(Res.string.cast_background_suspension_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
                     }
                 }
                 Text(
-                    text = "请在系统电池设置中允许 LynMusic 完全后台运行，或关闭电池优化。这样应用退到后台后仍能继续维护投屏会话、同步状态并发起下一首音乐。",
+                    text = uiString(Res.string.cast_background_permission_hint),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -644,7 +651,7 @@ private fun HelpSettingsPane(
                     onClick = onOpenBackgroundRunSettings,
                     shape = RoundedCornerShape(18.dp),
                 ) {
-                    Text("允许后台运行")
+                    Text(uiString(Res.string.cast_allow_background_operation))
                 }
             }
         }
@@ -678,8 +685,8 @@ private fun GeneralSettingsPane(
     val manualPath = state.desktopVlcManualPath?.takeIf { it.isNotBlank() }
     val autoDetectedPath = state.desktopVlcAutoDetectedPath?.takeIf { it.isNotBlank() }
     val effectivePath = state.desktopVlcEffectivePath?.takeIf { it.isNotBlank() }
-    val currentPath = effectivePath ?: "未自动识别到 VLC 路径"
-    val currentSource = if (manualPath != null) "手动指定" else "自动识别"
+    val currentPath = effectivePath ?: uiString(Res.string.vlc_path_not_detected)
+    val currentSource = if (manualPath != null) uiString(Res.string.vlc_path_manually_selected) else uiString(Res.string.vlc_path_auto_detected)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -689,9 +696,12 @@ private fun GeneralSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "通用",
-                subtitle = "管理播放页歌词显示和平台相关通用配置。",
+                title = uiString(Res.string.settings_general_title),
+                subtitle = uiString(Res.string.settings_general_summary),
             )
+        }
+        AppLanguageSettings(state.appLanguage) { language ->
+            onSettingsIntent(SettingsIntent.AppLanguageChanged(language))
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
             Row(
@@ -706,12 +716,12 @@ private fun GeneralSettingsPane(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "启动应用后自动播放",
+                        text = uiString(Res.string.player_startup_autoplay_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "启动时恢复上次播放队列和进度，并自动开始播放。",
+                        text = uiString(Res.string.player_startup_autoplay_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = shellColors.secondaryText,
                     )
@@ -739,12 +749,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "启动后自动进入全屏播放",
+                            text = uiString(Res.string.player_startup_fullscreen_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "启动时恢复到上次歌曲后，自动打开全屏播放页。",
+                            text = uiString(Res.string.player_startup_fullscreen_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -773,12 +783,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "点击关闭按钮时最小化",
+                            text = uiString(Res.string.window_close_minimize_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "开启后，关闭窗口会最小化到程序坞（Dock）；关闭此选项后会退出应用。仍可使用 ⌘Q 退出。",
+                            text = uiString(Res.string.window_close_minimize_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -807,12 +817,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "桌面歌词",
+                            text = uiString(Res.string.desktop_lyrics_settings_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "在系统悬浮窗中显示当前歌词，离开应用后仍可查看。",
+                            text = uiString(Res.string.desktop_lyrics_settings_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -841,12 +851,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "菜单栏歌词与控制",
+                            text = uiString(Res.string.mac_menu_bar_lyrics_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "在 macOS 顶部菜单栏显示当前歌词，并提供上一首、播放暂停和下一首。",
+                            text = uiString(Res.string.mac_menu_bar_lyrics_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -868,27 +878,27 @@ private fun GeneralSettingsPane(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = "VLC 播放器路径",
+                        text = uiString(Res.string.vlc_player_path_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "当前生效路径会在下次启动时用于初始化桌面播放器。",
+                        text = uiString(Res.string.vlc_path_startup_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = shellColors.secondaryText,
                     )
                     AboutAppFieldRow(
-                        label = "当前路径",
+                        label = uiString(Res.string.data_location_current_path),
                         value = currentPath,
                         monospace = true,
                     )
                     AboutDeviceFieldRow(
-                        label = "来源",
+                        label = uiString(Res.string.sources_title),
                         value = currentSource,
                     )
                     if (manualPath != null && autoDetectedPath != null) {
                         AboutAppFieldRow(
-                            label = "自动识别路径",
+                            label = uiString(Res.string.vlc_detected_path_label),
                             value = autoDetectedPath,
                             monospace = true,
                         )
@@ -901,18 +911,18 @@ private fun GeneralSettingsPane(
                         Button(
                             onClick = { onSettingsIntent(SettingsIntent.PickDesktopVlcPath) },
                         ) {
-                            Text("选择 VLC 路径")
+                            Text(uiString(Res.string.vlc_select_path_action))
                         }
                         if (manualPath != null) {
                             OutlinedButton(
                                 onClick = { onSettingsIntent(SettingsIntent.ClearDesktopVlcManualPath) },
                             ) {
-                                Text("恢复自动识别")
+                                Text(uiString(Res.string.vlc_use_detected_path))
                             }
                         }
                     }
                     Text(
-                        text = "保存后将在下次启动时生效",
+                        text = uiString(Res.string.settings_restart_effect_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = shellColors.secondaryText,
                     )
@@ -933,12 +943,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "显示播放页歌词",
+                            text = uiString(Res.string.player_lyrics_visibility_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "仅在移动端非分栏播放页显示封面下方歌词。",
+                            text = uiString(Res.string.player_lyrics_visibility_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -961,12 +971,12 @@ private fun GeneralSettingsPane(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "播放页封面样式",
+                            text = uiString(Res.string.player_artwork_style_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "控制播放界面的封面样式。",
+                            text = uiString(Res.string.player_artwork_style_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -1018,12 +1028,12 @@ private fun GeneralSettingsPane(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "远程播放音质",
+                            text = uiString(Res.string.playback_remote_quality_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "影响 Navidrome 与 Subsonic 曲目，设置会在下一次加载歌曲时生效。",
+                            text = uiString(Res.string.playback_remote_quality_change_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -1036,7 +1046,7 @@ private fun GeneralSettingsPane(
                         },
                     )
                     NavidromeAudioQualitySettingRow(
-                        title = "移动网络",
+                        title = uiString(Res.string.playback_mobile_data_quality),
                         selected = state.navidromeMobileAudioQuality,
                         onSelected = { quality ->
                             onSettingsIntent(SettingsIntent.NavidromeMobileAudioQualityChanged(quality))
@@ -1059,12 +1069,12 @@ private fun GeneralSettingsPane(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "FFmpeg 扩展解码器",
+                            text = uiString(Res.string.playback_ffmpeg_decoder_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "用于提升部分 Android 设备的音频格式兼容性，切换后下一首歌生效。",
+                            text = uiString(Res.string.playback_ffmpeg_decoder_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -1087,12 +1097,12 @@ private fun GeneralSettingsPane(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "显示大小",
+                            text = uiString(Res.string.display_scale_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "仅影响应用内界面大小，不修改系统显示大小。",
+                            text = uiString(Res.string.display_app_scaling_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = shellColors.secondaryText,
                         )
@@ -1223,8 +1233,8 @@ private fun ThemeSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "主题",
-                subtitle = "切换预置主题，自定义主界面颜色，并给每个主题单独选择黑字或白字。",
+                title = uiString(Res.string.theme_settings_title),
+                subtitle = uiString(Res.string.theme_settings_description),
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -1271,32 +1281,32 @@ private fun ThemeSettingsPane(
                 )
                 if (state.selectedTheme == AppThemeId.Custom) {
                     Text(
-                        text = "自定义主题",
+                        text = uiString(Res.string.theme_custom_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "点击颜色项选择并立即应用，页面会保留只读色值作为参考。",
+                        text = uiString(Res.string.theme_color_selection_hint),
                         color = shellColors.secondaryText,
                     )
                     ThemeColorPickerRow(
-                        label = "主背景色",
+                        label = uiString(Res.string.theme_background_color),
                         argb = state.customThemeTokens.backgroundArgb,
                         onClick = { activeColorRole = CustomThemeColorRole.Background },
                     )
                     ThemeColorPickerRow(
-                        label = "主色",
+                        label = uiString(Res.string.theme_primary_color),
                         argb = state.customThemeTokens.accentArgb,
                         onClick = { activeColorRole = CustomThemeColorRole.Accent },
                     )
                     ThemeColorPickerRow(
-                        label = "选中 / 落焦色",
+                        label = uiString(Res.string.theme_selection_color),
                         argb = state.customThemeTokens.focusArgb,
                         onClick = { activeColorRole = CustomThemeColorRole.Focus },
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ResetCustomTheme) }) {
-                            Text("重置自定义主题")
+                            Text(uiString(Res.string.theme_reset_custom_colors))
                         }
                     }
                 }
@@ -1330,8 +1340,8 @@ private fun LyricsSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "歌词",
-                subtitle = "配置歌词 API 和搜索源。",
+                title = uiString(Res.string.settings_lyrics_title),
+                subtitle = uiString(Res.string.lyrics_sources_settings_summary),
             )
         }
         if (state.supportsLyricsShareFontImport) {
@@ -1347,7 +1357,7 @@ private fun LyricsSettingsPane(
             ) {
                 Text("LrcAPI", fontWeight = FontWeight.Bold)
                 Text(
-                    "专用入口只维护请求地址，保存后会自动生成保留的 Direct 歌词源。",
+                    uiString(Res.string.lyrics_lrcapi_reserved_source_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(
@@ -1356,14 +1366,14 @@ private fun LyricsSettingsPane(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (state.hasLrcApiSource) "已保存到歌词源列表" else "尚未配置",
+                        if (state.hasLrcApiSource) uiString(Res.string.workflow_saved_to_sources) else uiString(Res.string.common_not_configured),
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium,
                     )
                     if (state.hasLrcApiSource) {
                         MainShellAssistChip(
                             onClick = {},
-                            label = { Text("Direct") },
+                            label = { Text(uiString(Res.string.settings_direct_source)) },
                             leadingIcon = { Icon(Icons.Rounded.CloudSync, null) },
                         )
                     }
@@ -1371,7 +1381,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.lrcApiUrl,
                     onValueChange = { onSettingsIntent(SettingsIntent.LrcApiUrlChanged(it)) },
-                    label = { Text("LrcAPI 请求地址") },
+                    label = { Text(uiString(Res.string.lyrics_lrcapi_request_url)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     singleLine = true,
@@ -1379,13 +1389,13 @@ private fun LyricsSettingsPane(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { onSettingsIntent(SettingsIntent.SaveLrcApi) }) {
-                        Text("保存 LrcAPI")
+                        Text(uiString(Res.string.lyrics_lrcapi_save_action))
                     }
                     OutlinedButton(
                         onClick = { onSettingsIntent(SettingsIntent.ClearLrcApi) },
                         enabled = state.hasLrcApiSource,
                     ) {
-                        Text("清除 LrcAPI")
+                        Text(uiString(Res.string.lyrics_lrcapi_clear_action))
                     }
                 }
             }
@@ -1397,7 +1407,7 @@ private fun LyricsSettingsPane(
             ) {
                 Text("Musicmatch", fontWeight = FontWeight.Bold)
                 Text(
-                    "专用入口只维护 usertoken，保存后会自动生成保留的 Workflow 歌词源。",
+                    uiString(Res.string.lyrics_musicmatch_reserved_source_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(
@@ -1406,14 +1416,14 @@ private fun LyricsSettingsPane(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (state.hasMusicmatchSource) "已保存到歌词源列表" else "尚未配置",
+                        if (state.hasMusicmatchSource) uiString(Res.string.workflow_saved_to_sources) else uiString(Res.string.common_not_configured),
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium,
                     )
                     if (state.hasMusicmatchSource) {
                         MainShellAssistChip(
                             onClick = {},
-                            label = { Text("Workflow") },
+                            label = { Text(uiString(Res.string.settings_workflow_source)) },
                             leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) },
                         )
                     }
@@ -1421,7 +1431,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.musicmatchUserToken,
                     onValueChange = { onSettingsIntent(SettingsIntent.MusicmatchUserTokenChanged(it)) },
-                    label = { Text("Musicmatch usertoken") },
+                    label = { Text(uiString(Res.string.settings_usertoken)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     singleLine = true,
@@ -1429,11 +1439,11 @@ private fun LyricsSettingsPane(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { onSettingsIntent(SettingsIntent.SaveMusicmatch) }) {
-                        Text("保存 Musicmatch")
+                        Text(uiString(Res.string.lyrics_musicmatch_save_action))
                     }
                     if (state.hasMusicmatchSource || state.musicmatchUserToken.isNotBlank()) {
                         OutlinedButton(onClick = { onSettingsIntent(SettingsIntent.ClearMusicmatch) }) {
-                            Text("清除 Musicmatch")
+                            Text(uiString(Res.string.lyrics_musicmatch_clear_action))
                         }
                     }
                 }
@@ -1447,7 +1457,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.name,
                     onValueChange = { onSettingsIntent(SettingsIntent.NameChanged(it)) },
-                    label = { Text("歌词源名称") },
+                    label = { Text(uiString(Res.string.lyrics_source_name_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
@@ -1455,7 +1465,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.urlTemplate,
                     onValueChange = { onSettingsIntent(SettingsIntent.UrlChanged(it)) },
-                    label = { Text("URL 模板") },
+                    label = { Text(uiString(Res.string.lyrics_source_url_template)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
@@ -1463,7 +1473,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.queryTemplate,
                     onValueChange = { onSettingsIntent(SettingsIntent.QueryChanged(it)) },
-                    label = { Text("Query 模板") },
+                    label = { Text(uiString(Res.string.lyrics_source_query_template)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
@@ -1471,7 +1481,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.headersTemplate,
                     onValueChange = { onSettingsIntent(SettingsIntent.HeadersChanged(it)) },
-                    label = { Text("请求头，每行 Key: Value") },
+                    label = { Text(uiString(Res.string.lyrics_source_headers_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
@@ -1479,7 +1489,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.extractor,
                     onValueChange = { onSettingsIntent(SettingsIntent.ExtractorChanged(it)) },
-                    label = { Text("提取规则") },
+                    label = { Text(uiString(Res.string.lyrics_source_extraction_rules)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = settingsFieldColors,
@@ -1487,7 +1497,7 @@ private fun LyricsSettingsPane(
                 ImeAwareOutlinedTextField(
                     value = state.priority,
                     onValueChange = { onSettingsIntent(SettingsIntent.PriorityChanged(it)) },
-                    label = { Text("优先级") },
+                    label = { Text(uiString(Res.string.lyrics_source_priority_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1497,7 +1507,7 @@ private fun LyricsSettingsPane(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("启用歌词源", fontWeight = FontWeight.Medium)
+                    Text(uiString(Res.string.lyrics_source_enable_label), fontWeight = FontWeight.Medium)
                     Switch(
                         checked = state.enabled,
                         onCheckedChange = { onSettingsIntent(SettingsIntent.EnabledChanged(it)) },
@@ -1509,7 +1519,7 @@ private fun LyricsSettingsPane(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { onSettingsIntent(if (state.editingId != null) SettingsIntent.Save else SettingsIntent.CreateNew) }) {
-                        Text(if (state.editingId != null) "保存" else "新建")
+                        Text(if (state.editingId != null) uiString(Res.string.common_save) else uiString(Res.string.lyrics_source_new_action))
                     }
                     OutlinedButton(onClick = {
                         onSettingsIntent(
@@ -1518,14 +1528,14 @@ private fun LyricsSettingsPane(
                             )
                         )
                     }) {
-                        Text(if (state.editingId != null) "新建" else "清空")
+                        Text(if (state.editingId != null) uiString(Res.string.lyrics_source_new_action) else uiString(Res.string.common_clear))
                     }
                     if (state.editingId != null) {
                         TextButton(
                             onClick = onRequestDeleteEditingSource,
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         ) {
-                            Text("删除")
+                            Text(uiString(Res.string.common_delete))
                         }
                     }
                 }
@@ -1536,15 +1546,15 @@ private fun LyricsSettingsPane(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Workflow JSON", fontWeight = FontWeight.Bold)
+                Text(uiString(Res.string.settings_workflow_json), fontWeight = FontWeight.Bold)
                 Text(
-                    "用于新建或编辑多阶段歌词源，支持搜歌 -> 选歌 -> 拉歌词。当前仍直接编辑原始 JSON。",
+                    uiString(Res.string.workflow_editor_description),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 ImeAwareOutlinedTextField(
                     value = state.workflowJsonInput,
                     onValueChange = { onSettingsIntent(SettingsIntent.WorkflowJsonChanged(it)) },
-                    label = { Text("Workflow JSON") },
+                    label = { Text(uiString(Res.string.settings_workflow_json)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 180.dp),
@@ -1555,7 +1565,7 @@ private fun LyricsSettingsPane(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = { onSettingsIntent(if (state.editingWorkflowId != null) SettingsIntent.ImportWorkflow else SettingsIntent.CreateNewWorkflow) }) {
-                        Text(if (state.editingWorkflowId != null) "保存 Workflow" else "新建 Workflow")
+                        Text(if (state.editingWorkflowId != null) uiString(Res.string.workflow_save_action) else uiString(Res.string.workflow_new_action))
                     }
                     if (state.editingWorkflowId != null || state.workflowJsonInput.isNotBlank()) {
                         OutlinedButton(onClick = {
@@ -1565,7 +1575,7 @@ private fun LyricsSettingsPane(
                                 )
                             )
                         }) {
-                            Text(if (state.editingWorkflowId != null) "新建 Workflow" else "清空编辑")
+                            Text(if (state.editingWorkflowId != null) uiString(Res.string.workflow_new_action) else uiString(Res.string.lyrics_source_clear_editor))
                         }
                     }
                 }
@@ -1573,13 +1583,13 @@ private fun LyricsSettingsPane(
         }
 
         SectionTitle(
-            title = "已有配置",
-            subtitle = "Direct 源继续走声明式 extractor；Workflow 源通过 JSON 导入并参与同一优先级链路。"
+            title = uiString(Res.string.lyrics_source_existing_configurations),
+            subtitle = uiString(Res.string.lyrics_source_kinds_description)
         )
         if (state.sources.isEmpty()) {
             EmptyStateCard(
-                title = "还没有歌词源",
-                body = "添加一个可用的 API 后，播放页会按优先级自动请求并缓存歌词。",
+                title = uiString(Res.string.lyrics_sources_empty_title),
+                body = uiString(Res.string.lyrics_source_priority_hint),
             )
         } else {
             state.sources.forEach { source ->
@@ -1631,9 +1641,9 @@ private fun LyricsShareFontImportCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("歌词分享字体", fontWeight = FontWeight.Bold)
+            Text(uiString(Res.string.font_share_library_title), fontWeight = FontWeight.Bold)
             Text(
-                "导入 .ttf / .otf 字体后，可在歌词分享页里直接选择并参与最终出图。",
+                uiString(Res.string.font_import_description),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(
@@ -1643,9 +1653,9 @@ private fun LyricsShareFontImportCard(
             ) {
                 Text(
                     text = if (state.importedLyricsShareFonts.isEmpty()) {
-                        "尚未导入字体"
+                        uiString(Res.string.font_imported_list_empty_title)
                     } else {
-                        "已导入 ${state.importedLyricsShareFonts.size} 个字体"
+                        uiString(Res.plurals.font_imported_count, (state.importedLyricsShareFonts.size).toInt(), state.importedLyricsShareFonts.size)
                     },
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium,
@@ -1654,16 +1664,16 @@ private fun LyricsShareFontImportCard(
                     onClick = { onSettingsIntent(SettingsIntent.ImportLyricsShareFont) },
                     enabled = !state.importingLyricsShareFont && state.deletingLyricsShareFontKey == null,
                 ) {
-                    Text(if (state.importingLyricsShareFont) "导入中..." else "导入字体")
+                    Text(if (state.importingLyricsShareFont) uiString(Res.string.font_importing_progress) else uiString(Res.string.font_import_action))
                 }
             }
             when {
                 state.lyricsShareFontsLoading -> {
-                    Text("正在读取已导入字体...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(uiString(Res.string.font_imported_list_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 state.importedLyricsShareFonts.isEmpty() -> {
-                    Text("当前没有已导入字体。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(uiString(Res.string.font_imported_list_empty_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 else -> {
@@ -1711,7 +1721,7 @@ private fun LyricsShareImportedFontRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     LyricsShareImportedFontName(
-                        displayName = option.displayName,
+                        displayName = option.uiDisplayName(),
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(
@@ -1727,7 +1737,7 @@ private fun LyricsShareImportedFontRow(
                         } else {
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
-                                contentDescription = "删除字体",
+                                contentDescription = uiString(Res.string.font_delete_action),
                             )
                         }
                     }
@@ -1753,13 +1763,13 @@ private fun LyricsShareImportedFontRow(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    LyricsShareImportedFontName(option.displayName)
+                    LyricsShareImportedFontName(option.uiDisplayName())
                 }
                 OutlinedButton(
                     onClick = onDelete,
                     enabled = !deleting,
                 ) {
-                    Text(if (deleting) "删除中..." else "删除")
+                    Text(if (deleting) uiString(Res.string.font_deleting_progress) else uiString(Res.string.common_delete))
                 }
             }
         }
@@ -1773,7 +1783,7 @@ private fun LyricsShareImportedFontPreview(
 ) {
     val previewFontFamily = lyricsSharePreviewFontFamily(
         fontKey = option.fontKey,
-        displayName = option.displayName,
+        displayName = option.uiDisplayName(),
         fontFilePath = option.fontFilePath,
     )
     Box(
@@ -1807,27 +1817,29 @@ private fun LyricsShareImportedFontName(
     )
 }
 
+@Composable
 private fun settingsSectionTitle(section: SettingsSection): String {
     return when (section) {
-        SettingsSection.General -> "通用"
-        SettingsSection.Theme -> "主题"
-        SettingsSection.Lyrics -> "歌词"
-        SettingsSection.Storage -> "空间管理"
-        SettingsSection.AboutDevice -> "关于本机"
-        SettingsSection.AboutApp -> "关于应用"
-        SettingsSection.Help -> "帮助"
+        SettingsSection.General -> uiString(Res.string.settings_general_title)
+        SettingsSection.Theme -> uiString(Res.string.theme_settings_title)
+        SettingsSection.Lyrics -> uiString(Res.string.settings_lyrics_title)
+        SettingsSection.Storage -> uiString(Res.string.settings_storage_management_title)
+        SettingsSection.AboutDevice -> uiString(Res.string.about_device_title)
+        SettingsSection.AboutApp -> uiString(Res.string.about_app_title)
+        SettingsSection.Help -> uiString(Res.string.settings_help_title)
     }
 }
 
+@Composable
 private fun settingsSectionSubtitle(section: SettingsSection): String {
     return when (section) {
-        SettingsSection.General -> "管理播放页歌词显示和平台通用配置。"
-        SettingsSection.Theme -> "切换预置主题、自定义颜色和文字颜色。"
-        SettingsSection.Lyrics -> "配置歌词 API、搜索源和播放缓存。"
-        SettingsSection.Storage -> "查看并清理缓存占用。"
-        SettingsSection.AboutDevice -> "查看系统、屏幕和硬件信息。"
-        SettingsSection.AboutApp -> "查看开发者、项目地址和公众号信息。"
-        SettingsSection.Help -> "查看投屏和后台运行常见问题。"
+        SettingsSection.General -> uiString(Res.string.settings_general_description)
+        SettingsSection.Theme -> uiString(Res.string.theme_settings_summary)
+        SettingsSection.Lyrics -> uiString(Res.string.lyrics_sources_settings_description)
+        SettingsSection.Storage -> uiString(Res.string.storage_cleanup_summary)
+        SettingsSection.AboutDevice -> uiString(Res.string.device_info_summary)
+        SettingsSection.AboutApp -> uiString(Res.string.about_app_information_hint)
+        SettingsSection.Help -> uiString(Res.string.settings_help_description)
     }
 }
 
@@ -1858,19 +1870,19 @@ private fun AboutDeviceSettingsPane(
     val summaryTitle = when {
         snapshot?.deviceModel?.isNotBlank() == true -> snapshot.deviceModel
         snapshot?.systemName?.isNotBlank() == true -> snapshot.systemName
-        state.deviceInfoLoading -> "正在读取设备信息..."
-        else -> "关于本机"
+        state.deviceInfoLoading -> uiString(Res.string.device_info_loading_progress)
+        else -> uiString(Res.string.about_device_title)
     }.orEmpty()
     val summarySubtitle = snapshot?.let {
         buildString {
-            append(it.systemName.ifBlank { "系统" })
+            append(it.systemName.ifBlank { uiString(Res.string.device_system_label) })
             append(" · ")
-            append(it.systemVersion.ifBlank { "版本不可用" })
+            append(it.systemVersion.ifBlank { uiString(Res.string.about_version_unavailable) })
         }
     } ?: if (state.deviceInfoLoading) {
-        "正在读取系统、屏幕和硬件信息。"
+        uiString(Res.string.device_info_loading_description)
     } else {
-        "查看系统、屏幕和硬件信息。"
+        uiString(Res.string.device_info_summary)
     }
     LaunchedEffect(Unit) {
         onSettingsIntent(SettingsIntent.LoadDeviceInfo())
@@ -1884,8 +1896,8 @@ private fun AboutDeviceSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "关于本机",
-                subtitle = "查看当前设备或主机的系统、屏幕和硬件信息。",
+                title = uiString(Res.string.about_device_title),
+                subtitle = uiString(Res.string.device_info_description),
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -1916,30 +1928,30 @@ private fun AboutDeviceSettingsPane(
                 }
             }
         }
-        AboutDeviceInfoCard(title = "系统") {
+        AboutDeviceInfoCard(title = uiString(Res.string.device_system_label)) {
             AboutDeviceFieldRow(
-                label = "系统名称",
+                label = uiString(Res.string.device_system_name),
                 value = deviceInfoDisplayValue(snapshot?.systemName, state.deviceInfoLoading),
             )
             AboutDeviceFieldRow(
-                label = "系统版本",
+                label = uiString(Res.string.device_system_version),
                 value = deviceInfoDisplayValue(snapshot?.systemVersion, state.deviceInfoLoading),
             )
             snapshot?.deviceModel?.takeIf { it.isNotBlank() }?.let { model ->
                 AboutDeviceFieldRow(
-                    label = "设备型号",
+                    label = uiString(Res.string.device_model_label),
                     value = model,
                 )
             }
         }
-        AboutDeviceInfoCard(title = "显示") {
+        AboutDeviceInfoCard(title = uiString(Res.string.device_display_label)) {
             AboutDeviceFieldRow(
-                label = "分辨率",
+                label = uiString(Res.string.display_resolution_label),
                 value = deviceInfoDisplayValue(snapshot?.resolution, state.deviceInfoLoading),
             )
             if (showsAndroidDisplayMetrics) {
                 AboutDeviceFieldRow(
-                    label = "应用 DP 分辨率",
+                    label = uiString(Res.string.display_app_resolution_dp),
                     value = deviceInfoDpResolutionValue(
                         widthPx = snapshot?.resolutionWidthPx,
                         heightPx = snapshot?.resolutionHeightPx,
@@ -1948,7 +1960,7 @@ private fun AboutDeviceSettingsPane(
                     ),
                 )
                 AboutDeviceFieldRow(
-                    label = "系统 DP 分辨率",
+                    label = uiString(Res.string.display_system_resolution_dp),
                     value = deviceInfoDpResolutionValue(
                         widthPx = snapshot?.resolutionWidthPx,
                         heightPx = snapshot?.resolutionHeightPx,
@@ -1957,14 +1969,14 @@ private fun AboutDeviceSettingsPane(
                     ),
                 )
                 AboutDeviceFieldRow(
-                    label = "应用像素密度",
+                    label = uiString(Res.string.display_app_density),
                     value = deviceInfoDensityValue(
                         density = localDensity.density,
                         loading = false,
                     ),
                 )
                 AboutDeviceFieldRow(
-                    label = "系统像素密度",
+                    label = uiString(Res.string.display_system_density),
                     value = deviceInfoDensityValue(
                         density = snapshot?.systemDensityScale,
                         loading = state.deviceInfoLoading,
@@ -1972,7 +1984,7 @@ private fun AboutDeviceSettingsPane(
                 )
             } else {
                 AboutDeviceFieldRow(
-                    label = "DP 分辨率",
+                    label = uiString(Res.string.display_resolution_dp),
                     value = deviceInfoDpResolutionValue(
                         widthPx = snapshot?.resolutionWidthPx,
                         heightPx = snapshot?.resolutionHeightPx,
@@ -1981,7 +1993,7 @@ private fun AboutDeviceSettingsPane(
                     ),
                 )
                 AboutDeviceFieldRow(
-                    label = "像素密度",
+                    label = uiString(Res.string.display_density_label),
                     value = deviceInfoDensityValue(
                         density = localDensity.density,
                         loading = false,
@@ -1989,17 +2001,17 @@ private fun AboutDeviceSettingsPane(
                 )
             }
             AboutDeviceFieldRow(
-                label = "字体缩放",
+                label = uiString(Res.string.display_font_scale),
                 value = deviceInfoFontScaleValue(localDensity.fontScale),
             )
         }
-        AboutDeviceInfoCard(title = "硬件") {
+        AboutDeviceInfoCard(title = uiString(Res.string.device_hardware_label)) {
             AboutDeviceFieldRow(
                 label = "CPU",
-                value = deviceInfoDisplayValue(snapshot?.cpuDescription, state.deviceInfoLoading),
+                value = deviceInfoDisplayValue(snapshot?.cpuDescriptionText?.displayText(), state.deviceInfoLoading),
             )
             AboutDeviceFieldRow(
-                label = "内存",
+                label = uiString(Res.string.device_memory_label),
                 value = deviceInfoMemoryValue(snapshot?.totalMemoryBytes, state.deviceInfoLoading),
             )
         }
@@ -2027,8 +2039,8 @@ private fun AboutAppSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "关于应用",
-                subtitle = "查看开发者、项目地址和公众号信息。",
+                title = uiString(Res.string.about_app_title),
+                subtitle = uiString(Res.string.about_app_information_hint),
             )
         }
         MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
@@ -2048,27 +2060,27 @@ private fun AboutAppSettingsPane(
 //                )
             }
         }
-        AboutDeviceInfoCard(title = "基本信息") {
+        AboutDeviceInfoCard(title = uiString(Res.string.common_basic_information)) {
             AboutAppFieldRow(
-                label = "版本号",
+                label = uiString(Res.string.about_version),
                 value = BuildMetadata.versionDisplay,
                 monospace = true,
             )
             AboutAppFieldRow(
-                label = "平台名称",
+                label = uiString(Res.string.device_platform_label),
                 value = platformName,
             )
             AboutAppFieldRow(
-                label = "编译时间",
+                label = uiString(Res.string.about_build_time),
                 value = BuildMetadata.buildTimeUtc,
                 monospace = true,
             )
         }
-        AboutDeviceInfoCard(title = "版本更新") {
+        AboutDeviceInfoCard(title = uiString(Res.string.settings_app_updates_title)) {
             when (appUpdateUiModel.status) {
                 AppUpdateUiStatus.Checking -> {
                     Text(
-                        text = appUpdateUiModel.message.orEmpty(),
+                        text = appUpdateUiModel.message?.displayText().orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = shellColors.secondaryText,
                     )
@@ -2076,7 +2088,7 @@ private fun AboutAppSettingsPane(
 
                 AppUpdateUiStatus.Error -> {
                     Text(
-                        text = appUpdateUiModel.message.orEmpty(),
+                        text = appUpdateUiModel.message?.displayText().orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -2084,12 +2096,12 @@ private fun AboutAppSettingsPane(
 
                 AppUpdateUiStatus.UpdateAvailable -> {
                     AboutAppFieldRow(
-                        label = "最新版本",
+                        label = uiString(Res.string.update_latest_version),
                         value = appUpdateUiModel.latestVersion.orEmpty(),
                         monospace = true,
                     )
                     Text(
-                        text = appUpdateUiModel.message.orEmpty(),
+                        text = appUpdateUiModel.message?.displayText().orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = shellColors.secondaryText,
                     )
@@ -2097,7 +2109,7 @@ private fun AboutAppSettingsPane(
 
                 AppUpdateUiStatus.UpToDate -> {
                     Text(
-                        text = appUpdateUiModel.message.orEmpty(),
+                        text = appUpdateUiModel.message?.displayText().orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = shellColors.secondaryText,
                     )
@@ -2107,7 +2119,7 @@ private fun AboutAppSettingsPane(
             }
             appUpdateUiModel.errorMessage?.let { errorMessage ->
                 Text(
-                    text = errorMessage,
+                    text = errorMessage.uiDisplayText(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -2134,7 +2146,7 @@ private fun AboutAppSettingsPane(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(if (appUpdateChecking) "检查中" else "检查更新")
+                    Text(if (appUpdateChecking) uiString(Res.string.common_checking) else uiString(Res.string.update_check_action))
                 }
                 if (appUpdateUiModel.status == AppUpdateUiStatus.UpdateAvailable) {
                     Button(
@@ -2143,31 +2155,31 @@ private fun AboutAppSettingsPane(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("打开下载页")
+                        Text(uiString(Res.string.update_open_download_page))
                     }
                 }
             }
         }
-        AboutDeviceInfoCard(title = "开发者") {
+        AboutDeviceInfoCard(title = uiString(Res.string.about_developer_label)) {
             AboutAppFieldRow(
-                label = "名称",
+                label = uiString(Res.string.common_name),
                 value = ABOUT_APP_DEVELOPER,
             )
         }
-        AboutDeviceInfoCard(title = "项目地址") {
+        AboutDeviceInfoCard(title = uiString(Res.string.about_project_website)) {
             AboutAppLinkFieldRow(
-                label = "地址",
+                label = uiString(Res.string.lyrics_source_address_label),
                 value = LynMusicUpdateLinks.PROJECT_URL,
                 url = LynMusicUpdateLinks.PROJECT_URL,
             )
         }
-        AboutDeviceInfoCard(title = "微信公众号") {
+        AboutDeviceInfoCard(title = uiString(Res.string.about_wechat_account)) {
             AboutAppFieldRow(
-                label = "账号",
+                label = uiString(Res.string.common_account),
                 value = ABOUT_APP_WECHAT_ACCOUNT,
             )
             Text(
-                text = "公众号二维码",
+                text = uiString(Res.string.about_wechat_qr_code),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2179,7 +2191,7 @@ private fun AboutAppSettingsPane(
                     .align(Alignment.CenterHorizontally),
             )
             Text(
-                text = "扫码关注公众号，获取更新和交流信息。",
+                text = uiString(Res.string.about_wechat_follow_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = shellColors.secondaryText,
             )
@@ -2224,13 +2236,13 @@ private fun StorageSettingsPane(
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                 textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 tonalElevation = 0.dp,
-                title = { Text("需要重新打开应用") },
+                title = { Text(uiString(Res.string.settings_restart_required)) },
                 text = {
-                    Text("数据位置设置已保存。应用将退出，请重新打开 LynMusic 以完成数据位置切换。")
+                    Text(uiString(Res.string.data_location_saved_restart_hint))
                 },
                 confirmButton = {
                     Button(onClick = { onSettingsIntent(SettingsIntent.ConfirmDataLocationRestart) }) {
-                        Text("退出应用")
+                        Text(uiString(Res.string.common_exit_app))
                     }
                 },
             )
@@ -2247,9 +2259,9 @@ private fun StorageSettingsPane(
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                 textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 tonalElevation = 0.dp,
-                title = { Text("永久丢弃旧数据？") },
+                title = { Text(uiString(Res.string.data_location_discard_confirmation_title)) },
                 text = {
-                    Text("下次启动时将永久删除当前位置的数据库、设置、凭据、离线音乐和缓存。此操作不可恢复。")
+                    Text(uiString(Res.string.data_location_discard_confirmation_description))
                 },
                 confirmButton = {
                     Button(
@@ -2260,7 +2272,7 @@ private fun StorageSettingsPane(
                             contentColor = MaterialTheme.colorScheme.onError,
                         ),
                     ) {
-                        Text("永久丢弃")
+                        Text(uiString(Res.string.data_location_discard_permanently_action))
                     }
                 },
                 dismissButton = {
@@ -2268,7 +2280,7 @@ private fun StorageSettingsPane(
                         onClick = { onSettingsIntent(SettingsIntent.CancelDiscardDataLocation) },
                         enabled = !state.dataLocationBusy,
                     ) {
-                        Text("取消")
+                        Text(uiString(Res.string.common_cancel))
                     }
                 },
             )
@@ -2285,16 +2297,16 @@ private fun StorageSettingsPane(
                 titleContentColor = MaterialTheme.colorScheme.onSurface,
                 textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 tonalElevation = 0.dp,
-                title = { Text("更改数据位置") },
+                title = { Text(uiString(Res.string.data_location_change_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("新的数据目录")
+                        Text(uiString(Res.string.data_location_new_folder_label))
                         Text(
                             text = pendingDataRootPath,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                         )
-                        Text("请选择如何处理当前位置中的全部应用数据。")
+                        Text(uiString(Res.string.data_location_old_data_strategy_hint))
                     }
                 },
                 confirmButton = {
@@ -2306,7 +2318,7 @@ private fun StorageSettingsPane(
                         },
                         enabled = !state.dataLocationBusy,
                     ) {
-                        Text("迁移旧数据")
+                        Text(uiString(Res.string.data_location_migrate_old_data))
                     }
                 },
                 dismissButton = {
@@ -2319,13 +2331,13 @@ private fun StorageSettingsPane(
                             },
                             enabled = !state.dataLocationBusy,
                         ) {
-                            Text("丢弃旧数据")
+                            Text(uiString(Res.string.data_location_discard_old_data))
                         }
                         TextButton(
                             onClick = { onSettingsIntent(SettingsIntent.CancelDataLocationSelection) },
                             enabled = !state.dataLocationBusy,
                         ) {
-                            Text("取消")
+                            Text(uiString(Res.string.common_cancel))
                         }
                     }
                 },
@@ -2341,8 +2353,8 @@ private fun StorageSettingsPane(
     ) {
         if (showHeading) {
             SectionTitle(
-                title = "空间管理",
-                subtitle = "查看占用、清理缓存，并管理应用数据位置。",
+                title = uiString(Res.string.settings_storage_management_title),
+                subtitle = uiString(Res.string.storage_management_description),
             )
         }
         if (supportsCustomDataLocation) {
@@ -2358,21 +2370,21 @@ private fun StorageSettingsPane(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text("数据位置", fontWeight = FontWeight.Bold)
+                        Text(uiString(Res.string.data_location_title), fontWeight = FontWeight.Bold)
                         Text(
-                            text = state.currentDataRootPath.ifBlank { "正在读取…" },
+                            text = state.currentDataRootPath.ifBlank { uiString(Res.string.data_location_reading_path_status) },
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
                         )
                         Text(
-                            "更改后将在所选目录中创建 LynMusic 文件夹，并在下次启动时生效。",
+                            uiString(Res.string.data_location_new_folder_hint),
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         state.pendingDataCleanupRootPath?.let { cleanupPath ->
                             Text(
-                                "旧数据尚未清理：$cleanupPath",
+                                uiString(Res.string.data_location_pending_cleanup_path, cleanupPath),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
@@ -2384,14 +2396,14 @@ private fun StorageSettingsPane(
                             onClick = { onSettingsIntent(SettingsIntent.RetryDataLocationCleanup) },
                             enabled = !state.dataLocationBusy,
                         ) {
-                            Text(if (state.dataLocationBusy) "清理中" else "重试清理")
+                            Text(if (state.dataLocationBusy) uiString(Res.string.data_location_cleanup_status) else uiString(Res.string.data_location_retry_cleanup))
                         }
                     } else {
                         OutlinedButton(
                             onClick = { onSettingsIntent(SettingsIntent.PickDataLocation) },
                             enabled = !state.dataLocationBusy && !state.dataLocationRestartRequired,
                         ) {
-                            Text(if (state.dataLocationBusy) "处理中" else "更改位置")
+                            Text(if (state.dataLocationBusy) uiString(Res.string.common_processing) else uiString(Res.string.data_location_change_action))
                         }
                     }
                 }
@@ -2411,21 +2423,21 @@ private fun StorageSettingsPane(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text("当前可管理空间", fontWeight = FontWeight.Bold)
+                        Text(uiString(Res.string.storage_manageable_usage), fontWeight = FontWeight.Bold)
                         Text(
                             text = state.storageSnapshot?.let { formatStorageSize(it.totalSizeBytes) }
-                                ?: if (state.storageLoading) "正在统计空间..." else "暂未读取",
+                                ?: if (state.storageLoading) uiString(Res.string.storage_calculating_usage_progress) else uiString(Res.string.common_not_read),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Text(
-                            "不含数据库、设置和凭据文件。",
+                            uiString(Res.string.storage_cleanup_exclusions_hint),
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (storagePaths.isNotEmpty()) {
                             Text(
-                                "当前空间路径",
+                                uiString(Res.string.storage_paths_title),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -2443,18 +2455,18 @@ private fun StorageSettingsPane(
                     ) {
                         Icon(Icons.Rounded.Sync, null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (state.storageLoading) "刷新中" else "刷新")
+                        Text(if (state.storageLoading) uiString(Res.string.common_refreshing) else uiString(Res.string.common_refresh))
                     }
                 }
             }
         }
         if (categories.isEmpty()) {
             EmptyStateCard(
-                title = if (state.storageLoading) "正在统计空间" else "没有可管理空间",
+                title = if (state.storageLoading) uiString(Res.string.storage_calculating_usage) else uiString(Res.string.storage_no_manageable_data),
                 body = if (state.storageLoading) {
-                    "正在读取当前平台支持的存储目录。"
+                    uiString(Res.string.storage_reading_locations_description)
                 } else {
-                    "当前平台还没有暴露可清理的空间分类。"
+                    uiString(Res.string.storage_no_cleanup_categories)
                 },
             )
         } else {
@@ -2524,7 +2536,7 @@ private fun StorageCategoryCard(
                     onClick = onClear,
                     enabled = actionEnabled,
                 ) {
-                    Text(if (clearing) "清理中..." else "清除")
+                    Text(if (clearing) uiString(Res.string.storage_cleaning_progress) else uiString(Res.string.common_clean_up))
                 }
             }
         }
@@ -2643,47 +2655,51 @@ private fun AboutAppQrImage(
             .padding(12.dp),
     ) {
         Image(
-            bitmap = imageResource(Res.drawable.about_app_wechat_qr),
-            contentDescription = "公众号二维码",
+            bitmap = imageResource(PlayerRes.drawable.about_app_wechat_qr),
+            contentDescription = uiString(Res.string.about_wechat_qr_code),
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
     }
 }
 
+@Composable
 private fun storageCategoryTitle(category: AppStorageCategory): String {
     return when (category) {
-        AppStorageCategory.Artwork -> "封面缓存"
-        AppStorageCategory.PlaybackCache -> "播放缓存"
-        AppStorageCategory.OfflineDownloads -> "离线音乐"
-        AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
-        AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
+        AppStorageCategory.Artwork -> uiString(Res.string.storage_artwork_cache)
+        AppStorageCategory.PlaybackCache -> uiString(Res.string.storage_playback_cache)
+        AppStorageCategory.OfflineDownloads -> uiString(Res.string.storage_offline_music)
+        AppStorageCategory.LyricsShareTemp -> uiString(Res.string.storage_lyrics_share_temporary_files)
+        AppStorageCategory.TagEditTemp -> uiString(Res.string.storage_tags_temporary_files)
     }
 }
 
+@Composable
 private fun storageCategoryDescription(category: AppStorageCategory): String {
     return when (category) {
-        AppStorageCategory.Artwork -> "包含下载封面，以及扫描或标签编辑时生成的本地封面文件。"
-        AppStorageCategory.PlaybackCache -> "包含 SMB 播放时落到本地的临时音频缓存。"
-        AppStorageCategory.OfflineDownloads -> "包含手动下载到本机的非本地音乐文件。"
-        AppStorageCategory.LyricsShareTemp -> "包含生成歌词分享图时写入的临时图片。"
-        AppStorageCategory.TagEditTemp -> "包含编辑标签封面时写入的临时中转文件。"
+        AppStorageCategory.Artwork -> uiString(Res.string.storage_artwork_cache_description)
+        AppStorageCategory.PlaybackCache -> uiString(Res.string.storage_samba_cache_description)
+        AppStorageCategory.OfflineDownloads -> uiString(Res.string.storage_offline_music_description)
+        AppStorageCategory.LyricsShareTemp -> uiString(Res.string.storage_lyrics_share_temporary_description)
+        AppStorageCategory.TagEditTemp -> uiString(Res.string.storage_tags_temporary_description)
     }
 }
 
+@Composable
 private fun appDisplayScalePresetLabel(preset: AppDisplayScalePreset): String {
     return when (preset) {
-        AppDisplayScalePreset.Compact -> "紧凑"
-        AppDisplayScalePreset.Default -> "默认"
-        AppDisplayScalePreset.Large -> "大号"
+        AppDisplayScalePreset.Compact -> uiString(Res.string.display_scale_compact)
+        AppDisplayScalePreset.Default -> uiString(Res.string.common_default)
+        AppDisplayScalePreset.Large -> uiString(Res.string.display_scale_large)
     }
 }
 
+@Composable
 private fun playerArtworkStyleLabel(style: PlayerArtworkStyle): String {
     return when (style) {
-        PlayerArtworkStyle.VINYL -> "黑胶"
-        PlayerArtworkStyle.HALF_RECORD -> "半出唱片"
-        PlayerArtworkStyle.MINIMAL_COVER -> "极简大封面"
+        PlayerArtworkStyle.VINYL -> uiString(Res.string.player_artwork_style_vinyl)
+        PlayerArtworkStyle.HALF_RECORD -> uiString(Res.string.player_artwork_style_record)
+        PlayerArtworkStyle.MINIMAL_COVER -> uiString(Res.string.player_artwork_style_minimal)
     }
 }
 
@@ -2695,14 +2711,17 @@ internal fun shouldShowMacOsWindowCloseBehaviorSetting(platform: PlatformDescrip
     return platform.capabilities.supportsMacOsWindowCloseBehavior
 }
 
-internal fun navidromeAudioQualityLabel(quality: NavidromeAudioQuality): String {
+internal fun navidromeAudioQualityLabelText(quality: NavidromeAudioQuality): UiText {
     return when (quality) {
-        NavidromeAudioQuality.Original -> "原始"
-        NavidromeAudioQuality.Kbps320 -> "320kbps"
-        NavidromeAudioQuality.Kbps192 -> "192kbps"
-        NavidromeAudioQuality.Kbps128 -> "128kbps"
+        NavidromeAudioQuality.Original -> uiText(Res.string.common_original)
+        NavidromeAudioQuality.Kbps320 -> UiText.Raw("320kbps")
+        NavidromeAudioQuality.Kbps192 -> UiText.Raw("192kbps")
+        NavidromeAudioQuality.Kbps128 -> UiText.Raw("128kbps")
     }
 }
+
+@Composable
+internal fun navidromeAudioQualityLabel(quality: NavidromeAudioQuality): String = navidromeAudioQualityLabelText(quality).displayText()
 
 private fun formatStorageSize(sizeBytes: Long): String {
     if (sizeBytes <= 0L) return "0 B"
@@ -2722,43 +2741,61 @@ private fun formatStorageSize(sizeBytes: Long): String {
     return "$formatted ${units[unitIndex]}"
 }
 
+@Composable
 private fun deviceInfoDisplayValue(value: String?, loading: Boolean): String {
     return when {
         value != null && value.isNotBlank() -> value
-        loading -> "正在读取..."
-        else -> "不可用"
+        loading -> uiString(Res.string.device_info_reading_status)
+        else -> uiString(Res.string.common_unavailable)
     }
 }
 
+internal fun deviceInfoDpResolutionValueText(
+    widthPx: Int?,
+    heightPx: Int?,
+    density: Float?,
+    loading: Boolean,
+): UiText {
+    val resolvedWidth = widthPx?.takeIf { it > 0 }
+    val resolvedHeight = heightPx?.takeIf { it > 0 }
+    if (resolvedWidth == null || resolvedHeight == null) {
+        return if (loading) uiText(Res.string.device_info_reading_status) else uiText(Res.string.common_unavailable)
+    }
+    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f } ?: return uiText(Res.string.common_unavailable)
+    val widthDp = (resolvedWidth / resolvedDensity).roundToInt()
+    val heightDp = (resolvedHeight / resolvedDensity).roundToInt()
+    return UiText.Raw("$widthDp × $heightDp dp")
+}
+
+@Composable
 internal fun deviceInfoDpResolutionValue(
     widthPx: Int?,
     heightPx: Int?,
     density: Float?,
     loading: Boolean,
-): String {
-    val resolvedWidth = widthPx?.takeIf { it > 0 }
-    val resolvedHeight = heightPx?.takeIf { it > 0 }
-    if (resolvedWidth == null || resolvedHeight == null) {
-        return if (loading) "正在读取..." else "不可用"
-    }
-    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f } ?: return "不可用"
-    val widthDp = (resolvedWidth / resolvedDensity).roundToInt()
-    val heightDp = (resolvedHeight / resolvedDensity).roundToInt()
-    return "$widthDp × $heightDp dp"
+): String = deviceInfoDpResolutionValueText(widthPx, heightPx, density, loading).displayText()
+
+internal fun deviceInfoDensityValueText(
+    density: Float?,
+    loading: Boolean,
+): UiText {
+    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f }
+        ?: return if (loading) uiText(Res.string.device_info_reading_status) else uiText(Res.string.common_unavailable)
+    return formatDeviceInfoDecimal(resolvedDensity)?.let { UiText.Raw("$it px/dp") } ?: uiText(Res.string.common_unavailable)
 }
 
+@Composable
 internal fun deviceInfoDensityValue(
     density: Float?,
     loading: Boolean,
-): String {
-    val resolvedDensity = density?.takeIf { it.isFinite() && it > 0f }
-        ?: return if (loading) "正在读取..." else "不可用"
-    return formatDeviceInfoDecimal(resolvedDensity)?.let { "$it px/dp" } ?: "不可用"
+): String = deviceInfoDensityValueText(density, loading).displayText()
+
+internal fun deviceInfoFontScaleValueText(fontScale: Float): UiText {
+    return formatDeviceInfoDecimal(fontScale)?.let { UiText.Raw("${it}x") } ?: uiText(Res.string.common_unavailable)
 }
 
-internal fun deviceInfoFontScaleValue(fontScale: Float): String {
-    return formatDeviceInfoDecimal(fontScale)?.let { "${it}x" } ?: "不可用"
-}
+@Composable
+internal fun deviceInfoFontScaleValue(fontScale: Float): String = deviceInfoFontScaleValueText(fontScale).displayText()
 
 internal fun formatDeviceInfoDecimal(value: Float): String? {
     if (!value.isFinite() || value <= 0f) return null
@@ -2772,16 +2809,16 @@ internal fun formatDeviceInfoDecimal(value: Float): String? {
     }
 }
 
+@Composable
 private fun deviceInfoMemoryValue(totalMemoryBytes: Long?, loading: Boolean): String {
     return totalMemoryBytes?.takeIf { it > 0L }?.let(::formatStorageSize)
-        ?: if (loading) "正在读取..." else "不可用"
+        ?: if (loading) uiString(Res.string.device_info_reading_status) else uiString(Res.string.common_unavailable)
 }
 
 private const val ABOUT_APP_NAME = "LynMusic"
-private const val ABOUT_APP_SUMMARY =
-    "以下为开发者、项目地址和公众号信息。"
-private const val ABOUT_APP_DEVELOPER = "锋风"
-private const val ABOUT_APP_WECHAT_ACCOUNT = "锋风"
+private val ABOUT_APP_SUMMARY: String @Composable get() = uiString(Res.string.about_app_information_summary)
+private val ABOUT_APP_DEVELOPER: String @Composable get() = uiString(Res.string.about_author_name)
+private val ABOUT_APP_WECHAT_ACCOUNT: String @Composable get() = uiString(Res.string.about_author_name)
 
 @Composable
 private fun ThemePresetCard(
@@ -2828,7 +2865,7 @@ private fun ThemePresetCard(
             }
             Text(
                 text = buildString {
-                    append(if (themeId == AppThemeId.Custom) "自定义主界面颜色" else "预置主题")
+                    append(if (themeId == AppThemeId.Custom) uiString(Res.string.theme_custom_colors_title) else uiString(Res.string.theme_preset_label))
                     append(" · ")
                     append(themeTextPaletteLabel(textPalette))
                 },
@@ -2850,12 +2887,12 @@ private fun ThemeTextPaletteToggle(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "文字颜色",
+            text = uiString(Res.string.theme_text_color_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "${themeDisplayName(selectedTheme)}主题单独保存黑字或白字，不会影响播放界面。",
+            text = uiString(Res.string.theme_text_color_scope_hint, themeDisplayName(selectedTheme)),
             color = shellColors.secondaryText,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -2921,7 +2958,7 @@ private fun ThemeColorPickerRow(
             )
         }
         Text(
-            text = "选择颜色",
+            text = uiString(Res.string.theme_select_color_title),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
@@ -2944,20 +2981,22 @@ private fun ThemeSwatch(
     )
 }
 
+@Composable
 private fun themeDisplayName(themeId: AppThemeId): String {
     return when (themeId) {
-        AppThemeId.Classic -> "经典黑"
-        AppThemeId.Forest -> "森林"
-        AppThemeId.Ocean -> "经典白"
-        AppThemeId.Sand -> "砂岩"
-        AppThemeId.Custom -> "自定义"
+        AppThemeId.Classic -> uiString(Res.string.theme_classic_dark)
+        AppThemeId.Forest -> uiString(Res.string.theme_forest)
+        AppThemeId.Ocean -> uiString(Res.string.theme_classic_light)
+        AppThemeId.Sand -> uiString(Res.string.theme_sandstone)
+        AppThemeId.Custom -> uiString(Res.string.common_custom)
     }
 }
 
+@Composable
 private fun themeTextPaletteLabel(textPalette: AppThemeTextPalette): String {
     return when (textPalette) {
-        AppThemeTextPalette.White -> "白字"
-        AppThemeTextPalette.Black -> "黑字"
+        AppThemeTextPalette.White -> uiString(Res.string.theme_white_text)
+        AppThemeTextPalette.Black -> uiString(Res.string.theme_black_text)
     }
 }
 
@@ -2969,10 +3008,11 @@ private fun AppThemeTokens.colorFor(role: CustomThemeColorRole): Int {
     }
 }
 
+@Composable
 private fun customThemeColorLabel(role: CustomThemeColorRole): String {
     return when (role) {
-        CustomThemeColorRole.Background -> "主背景色"
-        CustomThemeColorRole.Accent -> "主色"
-        CustomThemeColorRole.Focus -> "选中 / 落焦色"
+        CustomThemeColorRole.Background -> uiString(Res.string.theme_background_color)
+        CustomThemeColorRole.Accent -> uiString(Res.string.theme_primary_color)
+        CustomThemeColorRole.Focus -> uiString(Res.string.theme_selection_color)
     }
 }

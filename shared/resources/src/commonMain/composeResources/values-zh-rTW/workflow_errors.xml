@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workflow_kind_required">workflow.kind 必須為 "%1$s"。</string>
+    <string name="workflow_value_required">%1$s 不能為空。</string>
+    <string name="workflow_mapping_missing_fields">%1$s 缺少欄位：%2$s。</string>
+    <string name="workflow_steps_required">%1$s 至少需要一個步驟。</string>
+    <string name="workflow_payload_path_required">%1$s 最後一步必須提供 payloadPath 或 fallbackPayloadPath。</string>
+    <string name="workflow_json_response_required">%1$s 目前僅支援 JSON 回應。</string>
+    <string name="workflow_template_variables_unknown">%1$s 使用了未定義範本變數：%2$s。</string>
+    <string name="workflow_object_required">%1$s 必須是物件。</string>
+    <string name="workflow_array_required">%1$s 必須是陣列。</string>
+    <string name="workflow_value_invalid">欄位 %1$s 的值 "%2$s" 無效。</string>
+    <string name="workflow_string_items_required">%1$s 中存在非字串值。</string>
+    <string name="workflow_string_required">%1$s 必須是字串。</string>
+    <string name="workflow_fields_unknown">%1$s 包含未知欄位：%2$s。</string>
+    <string name="workflow_source_missing">Workflow 歌詞來源 %1$s 不存在。</string>
+    <string name="workflow_lyrics_unavailable">Workflow 歌詞來源 %1$s 未回傳可解析的歌詞。</string>
+    <string name="workflow_artwork_unavailable">Workflow 歌詞來源 %1$s 沒有可用封面。</string>
+</resources>

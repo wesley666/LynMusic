@@ -13,6 +13,7 @@ plugins {
 }
 
 android {
+    testOptions { unitTests.isIncludeAndroidResources = true }
     namespace = "top.iwesley.lyn.music.tv"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     ndkVersion = libs.versions.android.ndk.get()
@@ -71,6 +72,8 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(libs.robolectric)
+    implementation(project(":shared:resources"))
     implementation(project(":android:runtime"))
     implementation(project(":cast:upnp:android"))
     implementation(project(":player:app"))
@@ -90,6 +93,7 @@ dependencies {
     debugImplementation(libs.compose.uiTooling)
 
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 if (rootProject.isAndroidLintOnAssembleEnabled()) {

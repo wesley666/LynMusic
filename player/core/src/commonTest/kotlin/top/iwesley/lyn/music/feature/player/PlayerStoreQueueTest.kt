@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.resolveUiText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -14,7 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import top.iwesley.lyn.music.cast.CastDevice
 import top.iwesley.lyn.music.cast.CastGateway
@@ -48,6 +54,22 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 class PlayerStoreQueueTest {
 
     @Test
+    fun `UI language changes do not reset playback state`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val snapshot = sampleSnapshot().copy(isPlaying = true, positionMs = 42_000L)
+        val repository = FakeQueuePlaybackRepository(initialSnapshot = snapshot)
+        val store = PlayerStore(repository, NoopQueueLyricsRepository(), scope)
+        advanceUntilIdle()
+        val before = store.state.value
+        for (language in top.iwesley.lyn.music.core.model.AppLanguage.entries) {
+            top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(language)
+            advanceUntilIdle()
+            kotlin.test.assertEquals(before, store.state.value)
+        }
+        scope.cancel()
+    }
+
+    @Test
     fun `startup hydration expands restored paused playback when enabled`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val restoredSnapshot = sampleSnapshot().copy(isPlaying = false, isHydratingPlayback = false)
@@ -60,9 +82,9 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         advanceUntilIdle()
 
-        assertEquals(true, store.state.value.isExpanded)
-        assertEquals(false, store.state.value.snapshot.isPlaying)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.snapshot.isPlaying)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -82,8 +104,8 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         advanceUntilIdle()
 
-        assertEquals(true, store.state.value.isExpanded)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -100,13 +122,13 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         runCurrent()
 
-        assertEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
 
         playbackRepository.publishHydratedSnapshot()
         advanceUntilIdle()
 
-        assertEquals(true, store.state.value.isExpanded)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -122,7 +144,7 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = false)
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
         scope.cancel()
     }
 
@@ -138,7 +160,7 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
         scope.cancel()
     }
 
@@ -156,8 +178,8 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayTracks(sampleSnapshot().queue, 0))
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -174,8 +196,8 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -192,7 +214,7 @@ class PlayerStoreQueueTest {
         store.startHydration(expandPlayerAfterHydration = true)
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
         scope.cancel()
     }
 
@@ -217,7 +239,7 @@ class PlayerStoreQueueTest {
         playbackRepository.publishHydratedSnapshot()
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isExpanded)
+        assertLocalizedEquals(false, store.state.value.isExpanded)
         scope.cancel()
     }
 
@@ -231,7 +253,7 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.QueueVisibilityChanged(true))
         advanceUntilIdle()
 
-        assertEquals(true, store.state.value.isQueueVisible)
+        assertLocalizedEquals(true, store.state.value.isQueueVisible)
         scope.cancel()
     }
 
@@ -247,9 +269,9 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayQueueIndex(1))
         advanceUntilIdle()
 
-        assertEquals(1, playbackRepository.lastPlayQueueIndex)
-        assertEquals(null, playbackRepository.lastPlayTracks)
-        assertEquals("track-2", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(1, playbackRepository.lastPlayQueueIndex)
+        assertLocalizedEquals(null, playbackRepository.lastPlayTracks)
+        assertLocalizedEquals("track-2", store.state.value.snapshot.currentTrack?.id)
         assertFalse(store.state.value.isQueueVisible)
         scope.cancel()
     }
@@ -280,15 +302,47 @@ class PlayerStoreQueueTest {
         playbackRepository.updateSnapshot(sampleSnapshot().copy(errorMessage = "访问歌曲失败"))
         advanceUntilIdle()
 
-        assertEquals("访问歌曲失败", store.state.value.message)
+        assertLocalizedEquals("操作失败：访问歌曲失败", store.state.value.message)
 
         store.dispatch(PlayerIntent.ClearMessage)
         advanceUntilIdle()
         playbackRepository.updateSnapshot(sampleSnapshot().copy(positionMs = 1_000L, errorMessage = "访问歌曲失败"))
         advanceUntilIdle()
 
-        assertEquals(null, store.state.value.message)
+        assertLocalizedEquals(null, store.state.value.message)
         scope.cancel()
+    }
+
+    @Test
+    fun describedPlaybackErrorFollowsLanguageWithoutResettingPlaybackOrRepeatingToast() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = FakeQueuePlaybackRepository(sampleSnapshot())
+        try {
+            val store = PlayerStore(repository, NoopQueueLyricsRepository(), scope)
+            advanceUntilIdle()
+            val text = uiText(Res.string.playback_vlc_unavailable)
+            val snapshot = sampleSnapshot().copy(errorMessage = "仅用于诊断", errorText = text)
+            repository.updateSnapshot(snapshot)
+            advanceUntilIdle()
+            val before = store.state.value
+            kotlin.test.assertEquals(text, before.message)
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                AppLanguageRuntime.update(language)
+                advanceUntilIdle()
+                kotlin.test.assertEquals(resolveUiText(text, language), resolveUiText(checkNotNull(store.state.value.message), language))
+                kotlin.test.assertEquals(before, store.state.value)
+            }
+            store.dispatch(PlayerIntent.ClearMessage)
+            advanceUntilIdle()
+            repository.updateSnapshot(snapshot.copy(positionMs = 1_000L))
+            advanceUntilIdle()
+            kotlin.test.assertEquals(null, store.state.value.message)
+            repository.updateSnapshot(snapshot.copy(currentIndex = 1))
+            advanceUntilIdle()
+            kotlin.test.assertEquals(text, store.state.value.message)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -306,7 +360,7 @@ class PlayerStoreQueueTest {
         playbackRepository.updateSnapshot(sampleSnapshot().copy(currentIndex = 1, errorMessage = "无法播放当前歌曲"))
         advanceUntilIdle()
 
-        assertEquals("无法播放当前歌曲", store.state.value.message)
+        assertLocalizedEquals("操作失败：无法播放当前歌曲", store.state.value.message)
         scope.cancel()
     }
 
@@ -320,8 +374,8 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.SeekTo(12_345L))
         advanceUntilIdle()
 
-        assertEquals("歌曲可能正在转码，不支持快进。", store.state.value.message)
-        assertEquals(emptyList(), playbackRepository.seekCalls)
+        assertLocalizedEquals("歌曲可能正在转码，不支持快进。", store.state.value.message)
+        assertLocalizedEquals(emptyList(), playbackRepository.seekCalls)
         scope.cancel()
     }
 
@@ -335,8 +389,8 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.SeekTo(12_345L))
         advanceUntilIdle()
 
-        assertEquals(null, store.state.value.message)
-        assertEquals(listOf(12_345L), playbackRepository.seekCalls)
+        assertLocalizedEquals(null, store.state.value.message)
+        assertLocalizedEquals(listOf(12_345L), playbackRepository.seekCalls)
         scope.cancel()
     }
 
@@ -352,10 +406,10 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayQueueIndex(99))
         advanceUntilIdle()
 
-        assertEquals(null, playbackRepository.lastPlayTracks)
-        assertEquals(null, playbackRepository.lastPlayQueueIndex)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
-        assertEquals(true, store.state.value.isQueueVisible)
+        assertLocalizedEquals(null, playbackRepository.lastPlayTracks)
+        assertLocalizedEquals(null, playbackRepository.lastPlayQueueIndex)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(true, store.state.value.isQueueVisible)
         scope.cancel()
     }
 
@@ -369,18 +423,18 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.StartSleepTimer(1))
         runCurrent()
 
-        assertEquals(1, store.state.value.sleepTimer.durationMinutes)
-        assertEquals(60_000L, store.state.value.sleepTimer.remainingMs)
+        assertLocalizedEquals(1, store.state.value.sleepTimer.durationMinutes)
+        assertLocalizedEquals(60_000L, store.state.value.sleepTimer.remainingMs)
 
         advanceTimeBy(1_000L)
         runCurrent()
 
-        assertEquals(59_000L, store.state.value.sleepTimer.remainingMs)
+        assertLocalizedEquals(59_000L, store.state.value.sleepTimer.remainingMs)
 
         advanceTimeBy(59_000L)
         runCurrent()
 
-        assertEquals(1, playbackRepository.pauseCallCount)
+        assertLocalizedEquals(1, playbackRepository.pauseCallCount)
         assertFalse(store.state.value.sleepTimer.isActive)
         scope.cancel()
     }
@@ -401,9 +455,9 @@ class PlayerStoreQueueTest {
         advanceTimeBy(30_000L)
         runCurrent()
 
-        assertEquals(2, store.state.value.sleepTimer.durationMinutes)
-        assertEquals(90_000L, store.state.value.sleepTimer.remainingMs)
-        assertEquals(0, playbackRepository.pauseCallCount)
+        assertLocalizedEquals(2, store.state.value.sleepTimer.durationMinutes)
+        assertLocalizedEquals(90_000L, store.state.value.sleepTimer.remainingMs)
+        assertLocalizedEquals(0, playbackRepository.pauseCallCount)
         scope.cancel()
     }
 
@@ -422,7 +476,7 @@ class PlayerStoreQueueTest {
         runCurrent()
 
         assertFalse(store.state.value.sleepTimer.isActive)
-        assertEquals(0, playbackRepository.pauseCallCount)
+        assertLocalizedEquals(0, playbackRepository.pauseCallCount)
         scope.cancel()
     }
 
@@ -459,8 +513,8 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("/tmp/cache/manual.jpg", playbackRepository.lastArtworkOverride)
-        assertEquals("/tmp/cache/manual.jpg", store.state.value.snapshot.currentTrack?.artworkLocator)
+        assertLocalizedEquals("/tmp/cache/manual.jpg", playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("/tmp/cache/manual.jpg", store.state.value.snapshot.currentTrack?.artworkLocator)
         scope.cancel()
     }
 
@@ -472,16 +526,16 @@ class PlayerStoreQueueTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        assertEquals(listOf("track-1"), lyricsRepository.requestedTrackIds)
-        assertEquals(false, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals(listOf("track-1"), lyricsRepository.requestedTrackIds)
+        assertLocalizedEquals(false, store.state.value.hasLyricsLookupCompleted)
 
         playbackRepository.updateSnapshot(sampleSnapshot().copy(currentIndex = 2))
         advanceUntilIdle()
 
-        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
-        assertEquals(true, store.state.value.isLyricsLoading)
-        assertEquals(false, store.state.value.hasLyricsLookupCompleted)
-        assertEquals(listOf("track-1", "track-3"), lyricsRepository.requestedTrackIds)
+        assertLocalizedEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(true, store.state.value.isLyricsLoading)
+        assertLocalizedEquals(false, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals(listOf("track-1", "track-3"), lyricsRepository.requestedTrackIds)
 
         lyricsRepository.complete(
             trackId = "track-1",
@@ -493,10 +547,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
-        assertEquals(null, store.state.value.lyrics)
-        assertEquals(false, store.state.value.hasLyricsLookupCompleted)
-        assertEquals(null, playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(null, store.state.value.lyrics)
+        assertLocalizedEquals(false, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals(null, playbackRepository.lastArtworkOverride)
 
         lyricsRepository.complete(
             trackId = "track-3",
@@ -508,10 +562,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("track-3", store.state.value.snapshot.currentTrack?.id)
-        assertEquals("lyrics for track-3", store.state.value.lyrics?.rawPayload)
-        assertEquals(true, store.state.value.hasLyricsLookupCompleted)
-        assertEquals("/tmp/track-3.jpg", playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("track-3", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals("lyrics for track-3", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals(true, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals("/tmp/track-3.jpg", playbackRepository.lastArtworkOverride)
         scope.cancel()
     }
 
@@ -523,9 +577,9 @@ class PlayerStoreQueueTest {
 
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isLyricsLoading)
-        assertEquals(true, store.state.value.hasLyricsLookupCompleted)
-        assertEquals(null, store.state.value.lyrics)
+        assertLocalizedEquals(false, store.state.value.isLyricsLoading)
+        assertLocalizedEquals(true, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals(null, store.state.value.lyrics)
         scope.cancel()
     }
 
@@ -537,7 +591,7 @@ class PlayerStoreQueueTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        assertEquals(false, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals(false, store.state.value.hasLyricsLookupCompleted)
 
         lyricsRepository.complete(
             trackId = "track-1",
@@ -548,9 +602,9 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals(false, store.state.value.isLyricsLoading)
-        assertEquals(true, store.state.value.hasLyricsLookupCompleted)
-        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals(false, store.state.value.isLyricsLoading)
+        assertLocalizedEquals(true, store.state.value.hasLyricsLookupCompleted)
+        assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
         scope.cancel()
     }
 
@@ -591,9 +645,9 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals(null, playbackRepository.lastArtworkOverride)
-        assertEquals(listOf("album:local-1:artist a:album a"), artworkCacheStore.checkedKeys)
-        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals(null, playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals(listOf("album:local-1:artist a:album a"), artworkCacheStore.checkedKeys)
+        assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
         scope.cancel()
     }
 
@@ -623,9 +677,9 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
-        assertEquals("/tmp/track-1-auto.jpg", store.state.value.snapshot.currentDisplayArtworkLocator)
-        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("/tmp/track-1-auto.jpg", store.state.value.snapshot.currentDisplayArtworkLocator)
+        assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
         scope.cancel()
     }
 
@@ -656,9 +710,9 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
-        assertEquals(listOf("album:nav-source:artist a:album a"), artworkCacheStore.checkedPlaceholderKeys)
-        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals(listOf("album:nav-source:artist a:album a"), artworkCacheStore.checkedPlaceholderKeys)
+        assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
         scope.cancel()
     }
 
@@ -684,8 +738,8 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.CastToDevice("device-1"))
         advanceUntilIdle()
 
-        assertEquals(0, resolver.resolveCallCount)
-        assertEquals("https://example.com/song.mp3", castGateway.lastRequest?.uri)
+        assertLocalizedEquals(0, resolver.resolveCallCount)
+        assertLocalizedEquals("https://example.com/song.mp3", castGateway.lastRequest?.uri)
         scope.cancel()
     }
 
@@ -710,10 +764,10 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.StopCast)
         advanceUntilIdle()
 
-        assertEquals(1, resolver.resolveCallCount)
-        assertEquals(proxySession.uri, castGateway.lastRequest?.uri)
-        assertEquals(proxySession.mimeType, castGateway.lastRequest?.mimeType)
-        assertEquals(1, proxySession.closeCallCount)
+        assertLocalizedEquals(1, resolver.resolveCallCount)
+        assertLocalizedEquals(proxySession.uri, castGateway.lastRequest?.uri)
+        assertLocalizedEquals(proxySession.mimeType, castGateway.lastRequest?.mimeType)
+        assertLocalizedEquals(1, proxySession.closeCallCount)
         scope.cancel()
     }
 
@@ -745,10 +799,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, playbackRepository.pauseCallCount)
-        assertEquals(false, store.state.value.effectiveSnapshot.isPlaying)
-        assertEquals(12_345L, store.state.value.effectiveSnapshot.positionMs)
-        assertEquals(emptyList(), playbackRepository.seekCalls)
+        assertLocalizedEquals(1, playbackRepository.pauseCallCount)
+        assertLocalizedEquals(false, store.state.value.effectiveSnapshot.isPlaying)
+        assertLocalizedEquals(12_345L, store.state.value.effectiveSnapshot.positionMs)
+        assertLocalizedEquals(emptyList(), playbackRepository.seekCalls)
         scope.cancel()
     }
 
@@ -782,10 +836,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals(1, castGateway.startDiscoveryCallCount)
-        assertEquals(CastSessionStatus.Casting, store.state.value.castState.status)
-        assertEquals(true, store.state.value.isCastSheetVisible)
-        assertEquals(24_000L, store.state.value.effectiveSnapshot.positionMs)
+        assertLocalizedEquals(1, castGateway.startDiscoveryCallCount)
+        assertLocalizedEquals(CastSessionStatus.Casting, store.state.value.castState.status)
+        assertLocalizedEquals(true, store.state.value.isCastSheetVisible)
+        assertLocalizedEquals(24_000L, store.state.value.effectiveSnapshot.positionMs)
         scope.cancel()
     }
 
@@ -815,13 +869,13 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.SkipNext)
         advanceUntilIdle()
 
-        assertEquals(CastSessionStatus.Connecting, store.state.value.castState.status)
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
-        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
-        assertEquals("Second Song", store.state.value.effectiveSnapshot.currentDisplayTitle)
-        assertEquals(0L, store.state.value.effectiveSnapshot.positionMs)
-        assertEquals(false, store.state.value.effectiveSnapshot.isPlaying)
-        assertEquals("Second Song", castGateway.lastRequest?.title)
+        assertLocalizedEquals(CastSessionStatus.Connecting, store.state.value.castState.status)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertLocalizedEquals("Second Song", store.state.value.effectiveSnapshot.currentDisplayTitle)
+        assertLocalizedEquals(0L, store.state.value.effectiveSnapshot.positionMs)
+        assertLocalizedEquals(false, store.state.value.effectiveSnapshot.isPlaying)
+        assertLocalizedEquals("Second Song", castGateway.lastRequest?.title)
         scope.cancel()
     }
 
@@ -847,7 +901,7 @@ class PlayerStoreQueueTest {
             result = resolvedLyricsResult(sourceId = "source-track-1", line = "lyrics for track-1"),
         )
         advanceUntilIdle()
-        assertEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
 
         store.dispatch(PlayerIntent.CastToDevice("device-1"))
         advanceUntilIdle()
@@ -855,10 +909,10 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.SkipNext)
         advanceUntilIdle()
 
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
-        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
-        assertEquals(listOf("track-1", "track-2"), lyricsRepository.requestedTrackIds)
-        assertEquals(null, store.state.value.lyrics)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertLocalizedEquals(listOf("track-1", "track-2"), lyricsRepository.requestedTrackIds)
+        assertLocalizedEquals(null, store.state.value.lyrics)
 
         lyricsRepository.complete(
             trackId = "track-2",
@@ -866,10 +920,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("track-1", store.state.value.snapshot.currentTrack?.id)
-        assertEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
-        assertEquals("lyrics for track-2", store.state.value.lyrics?.rawPayload)
-        assertEquals(null, playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals("track-2", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertLocalizedEquals("lyrics for track-2", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals(null, playbackRepository.lastArtworkOverride)
         scope.cancel()
     }
 
@@ -894,11 +948,11 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayTracks(tracks, 1))
         advanceUntilIdle()
 
-        assertEquals(tracks, playbackRepository.lastPlayTracks)
-        assertEquals(1, playbackRepository.lastPlayStartIndex)
-        assertEquals(0, playbackRepository.prepareExternalPlaybackQueueCallCount)
-        assertEquals(null, castGateway.lastRequest)
-        assertEquals("track-5", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals(tracks, playbackRepository.lastPlayTracks)
+        assertLocalizedEquals(1, playbackRepository.lastPlayStartIndex)
+        assertLocalizedEquals(0, playbackRepository.prepareExternalPlaybackQueueCallCount)
+        assertLocalizedEquals(null, castGateway.lastRequest)
+        assertLocalizedEquals("track-5", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
@@ -927,14 +981,14 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.PlayTracks(tracks, 1))
         advanceUntilIdle()
 
-        assertEquals(null, playbackRepository.lastPlayTracks)
-        assertEquals(1, playbackRepository.prepareExternalPlaybackQueueCallCount)
-        assertEquals(2, playbackRepository.pauseCallCount)
-        assertEquals("track-5", playbackRepository.snapshot.value.currentTrack?.id)
-        assertEquals("track-5", store.state.value.snapshot.currentTrack?.id)
-        assertEquals("track-5", store.state.value.effectiveSnapshot.currentTrack?.id)
-        assertEquals("Fifth Song", castGateway.lastRequest?.title)
-        assertEquals(1, store.state.value.castQueueIndex)
+        assertLocalizedEquals(null, playbackRepository.lastPlayTracks)
+        assertLocalizedEquals(1, playbackRepository.prepareExternalPlaybackQueueCallCount)
+        assertLocalizedEquals(2, playbackRepository.pauseCallCount)
+        assertLocalizedEquals("track-5", playbackRepository.snapshot.value.currentTrack?.id)
+        assertLocalizedEquals("track-5", store.state.value.snapshot.currentTrack?.id)
+        assertLocalizedEquals("track-5", store.state.value.effectiveSnapshot.currentTrack?.id)
+        assertLocalizedEquals("Fifth Song", castGateway.lastRequest?.title)
+        assertLocalizedEquals(1, store.state.value.castQueueIndex)
         scope.cancel()
     }
 
@@ -961,9 +1015,9 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.SeekTo(45_000L))
         advanceUntilIdle()
 
-        assertEquals(1, castGateway.pauseCastCallCount)
-        assertEquals(listOf(45_000L), castGateway.seekCastCalls)
-        assertEquals(emptyList(), playbackRepository.seekCalls)
+        assertLocalizedEquals(1, castGateway.pauseCastCallCount)
+        assertLocalizedEquals(listOf(45_000L), castGateway.seekCastCalls)
+        assertLocalizedEquals(emptyList(), playbackRepository.seekCalls)
         scope.cancel()
     }
 
@@ -997,10 +1051,10 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals(true, foregroundService.isStarted)
-        assertEquals("First Song", foregroundService.updateStates.last().snapshot.currentDisplayTitle)
-        assertEquals(32_000L, foregroundService.updateStates.last().snapshot.positionMs)
-        assertEquals(CastSessionStatus.Casting, foregroundService.updateStates.last().castState.status)
+        assertLocalizedEquals(true, foregroundService.isStarted)
+        assertLocalizedEquals("First Song", foregroundService.updateStates.last().snapshot.currentDisplayTitle)
+        assertLocalizedEquals(32_000L, foregroundService.updateStates.last().snapshot.positionMs)
+        assertLocalizedEquals(CastSessionStatus.Casting, foregroundService.updateStates.last().castState.status)
         scope.cancel()
     }
 
@@ -1029,9 +1083,9 @@ class PlayerStoreQueueTest {
         foregroundService.skipNext()
         advanceUntilIdle()
 
-        assertEquals(1, castGateway.pauseCastCallCount)
-        assertEquals("Second Song", castGateway.lastRequest?.title)
-        assertEquals(null, playbackRepository.lastPlayQueueIndex)
+        assertLocalizedEquals(1, castGateway.pauseCastCallCount)
+        assertLocalizedEquals("Second Song", castGateway.lastRequest?.title)
+        assertLocalizedEquals(null, playbackRepository.lastPlayQueueIndex)
         scope.cancel()
     }
 
@@ -1058,7 +1112,7 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.StopCast)
         advanceUntilIdle()
 
-        assertEquals(false, foregroundService.isStarted)
+        assertLocalizedEquals(false, foregroundService.isStarted)
         scope.cancel()
     }
 
@@ -1093,11 +1147,11 @@ class PlayerStoreQueueTest {
         )
         advanceUntilIdle()
 
-        assertEquals("Second Song", castGateway.lastRequest?.title)
-        assertEquals(1, store.state.value.castQueueIndex)
-        assertEquals(2, resolver.resolveCallCount)
-        assertEquals(1, proxySession.closeCallCount)
-        assertEquals(null, playbackRepository.lastPlayQueueIndex)
+        assertLocalizedEquals("Second Song", castGateway.lastRequest?.title)
+        assertLocalizedEquals(1, store.state.value.castQueueIndex)
+        assertLocalizedEquals(2, resolver.resolveCallCount)
+        assertLocalizedEquals(1, proxySession.closeCallCount)
+        assertLocalizedEquals(null, playbackRepository.lastPlayQueueIndex)
         scope.cancel()
     }
 
@@ -1131,10 +1185,10 @@ class PlayerStoreQueueTest {
         store.dispatch(PlayerIntent.StopCast)
         advanceUntilIdle()
 
-        assertEquals(listOf(42_000L), playbackRepository.seekCalls)
-        assertEquals(1, playbackRepository.togglePlayPauseCallCount)
-        assertEquals(1, playbackRepository.pauseCallCount)
-        assertEquals(null, store.state.value.castQueueIndex)
+        assertLocalizedEquals(listOf(42_000L), playbackRepository.seekCalls)
+        assertLocalizedEquals(1, playbackRepository.togglePlayPauseCallCount)
+        assertLocalizedEquals(1, playbackRepository.pauseCallCount)
+        assertLocalizedEquals(null, store.state.value.castQueueIndex)
         scope.cancel()
     }
 

@@ -35,6 +35,7 @@ private class AndroidDeviceInfoGateway(
                 resolutionHeightPx = resolutionHeightPx,
                 systemDensityScale = androidSystemDensityScale(context),
                 cpuDescription = androidCpuDescription(),
+                logicalCoreCount = Runtime.getRuntime().availableProcessors().takeIf { it > 0 },
                 totalMemoryBytes = androidTotalMemoryBytes(context),
                 deviceModel = androidDeviceModel(),
             )
@@ -82,8 +83,7 @@ private fun androidCpuDescription(): String? {
         ?: normalizeAndroidValue(Build.HARDWARE)
         ?: normalizeAndroidValue(Build.BOARD)
     val abi = Build.SUPPORTED_ABIS.firstOrNull()?.let(::normalizeAndroidValue)
-    val logicalCores = Runtime.getRuntime().availableProcessors().takeIf { it > 0 }?.let { "$it 核" }
-    return listOfNotNull(model, abi, logicalCores).joinToString(" · ").takeIf { it.isNotBlank() }
+    return listOfNotNull(model, abi).joinToString(" · ").takeIf { it.isNotBlank() }
 }
 
 private fun androidTotalMemoryBytes(context: Context): Long? {

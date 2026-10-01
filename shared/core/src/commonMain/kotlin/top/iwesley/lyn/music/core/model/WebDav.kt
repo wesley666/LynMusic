@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 import io.ktor.http.DEFAULT_PORT
 import io.ktor.http.Url
 import io.ktor.http.URLBuilder
@@ -37,12 +39,12 @@ fun parseWebDavLocator(locator: String): Pair<String, String>? {
 
 fun normalizeWebDavRootUrl(rawUrl: String?): String {
     val value = rawUrl.orEmpty().trim()
-    require(value.isNotBlank()) { "请填写 WebDAV 根 URL。" }
-    require('?' !in value && '#' !in value) { "WebDAV 根 URL 不能包含 query 或 fragment。" }
-    val parsed = parseUrl(value) ?: error("WebDAV 根 URL 无效。")
-    require(parsed.protocol.name in setOf("http", "https")) { "WebDAV 根 URL 只支持 http 或 https。" }
-    require(parsed.host.isNotBlank()) { "WebDAV 根 URL 缺少主机名。" }
-    require(parsed.user == null && parsed.password == null) { "请不要在 WebDAV URL 中内嵌用户名或密码。" }
+    requireUi(value.isNotBlank()) { uiText(Res.string.webdav_root_required) }
+    requireUi('?' !in value && '#' !in value) { uiText(Res.string.webdav_root_no_query) }
+    val parsed = parseUrl(value) ?: throw UiTextException(uiText(Res.string.webdav_root_invalid))
+    requireUi(parsed.protocol.name in setOf("http", "https")) { uiText(Res.string.webdav_root_http_required) }
+    requireUi(parsed.host.isNotBlank()) { uiText(Res.string.webdav_root_host_required) }
+    requireUi(parsed.user == null && parsed.password == null) { uiText(Res.string.server_address_no_credentials, "WebDAV") }
 
     val normalizedPath = URLBuilder().apply {
         encodedPath = "/"
@@ -148,33 +150,59 @@ fun buildBasicAuthorizationHeader(username: String, password: String): String? {
     return "Basic $encoded"
 }
 
+enum class WebDavOperation(private val resource: org.jetbrains.compose.resources.StringResource) {
+    TestConnection(Res.string.webdav_operation_test_connection),
+    Scan(Res.string.webdav_operation_scan),
+    ReadLyrics(Res.string.webdav_operation_read_lyrics),
+    ProbeMetadata(Res.string.webdav_operation_probe_metadata),
+    Playback(Res.string.webdav_operation_playback);
+
+    val text: UiText get() = uiText(resource)
+}
+
+fun webDavHttpFailureText(
+    operation: WebDavOperation,
+    statusCode: Int,
+    authSent: Boolean,
+    serverDetail: String?,
+): UiText = webDavHttpFailureText(operation.text, statusCode, authSent, serverDetail)
+
+/** Diagnostic compatibility for callers that already store an operation label. */
 fun describeWebDavHttpFailure(
     operation: String,
     statusCode: Int,
     authSent: Boolean,
     serverDetail: String?,
-): String {
+): String = (webDavHttpFailureText(UiText.Raw(operation), statusCode, authSent, serverDetail)).diagnosticMessage()
+
+private fun webDavHttpFailureText(
+    operation: UiText,
+    statusCode: Int,
+    authSent: Boolean,
+    serverDetail: String?,
+): UiText {
     val normalizedServerDetail = serverDetail.orEmpty().trim()
     val detail = when {
         statusCode == 401 && !authSent && normalizedServerDetail.contains("Basic", ignoreCase = true) ->
-            "WebDAV 服务端拒绝匿名访问，需要填写 Basic Auth 用户名。"
+            uiText(Res.string.webdav_anonymous_basic_auth_required)
 
         statusCode == 401 && !authSent ->
-            "WebDAV 服务端拒绝匿名访问，需要填写认证信息。"
+            uiText(Res.string.webdav_anonymous_auth_required)
 
         statusCode == 401 && authSent && normalizedServerDetail.contains("Basic", ignoreCase = true) ->
-            "WebDAV Basic Auth 认证失败，请检查用户名和密码。"
+            uiText(Res.string.webdav_basic_auth_failed)
 
         statusCode == 401 ->
-            "WebDAV $operation 失败，请检查当前认证信息。"
+            uiText(Res.string.webdav_operation_auth_failed, operation)
 
         statusCode == 403 ->
-            "WebDAV $operation 失败，当前账号没有访问权限。"
+            uiText(Res.string.webdav_operation_access_denied, operation)
 
         else ->
-            "WebDAV $operation 失败，HTTP $statusCode。"
+            uiText(Res.string.webdav_operation_http_failed, operation, statusCode)
     }
-    return detail + normalizedServerDetail.takeIf { it.isNotBlank() }?.let { " 服务端信息: $it" }.orEmpty()
+    return if (normalizedServerDetail.isBlank()) detail else
+        uiText(Res.string.webdav_failure_with_server_detail, detail, UiText.Raw(normalizedServerDetail))
 }
 
 private fun resolveWebDavHref(root: Url, href: String): Url? {

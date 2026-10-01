@@ -1,5 +1,17 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.SambaOperation
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.sambaFailureText
+import top.iwesley.lyn.music.core.model.uiText
+
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -108,7 +120,7 @@ internal suspend fun resolveJvmSambaPlaybackTarget(
                     logger.error(SAMBA_LOG_TAG, throwable) {
                         "callback-failed stage=read source=${context.sourceId} endpoint=${context.endpoint} share=${context.shareName} remotePath=${context.remotePath} offset=${stream.offset}"
                     }
-                    throw throwable.asJvmSambaIOException("读取")
+                    throw throwable.asJvmSambaIOException(SambaOperation.Read)
                 }
             }
 
@@ -147,7 +159,7 @@ private suspend fun resolveJvmSambaSourceContext(
     locator: Pair<String, String>,
 ): JvmSambaSourceContext {
     val source = database.importSourceDao().getById(locator.first)?.takeIf { it.enabled }
-        ?: error("Samba 来源不可用。")
+        ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
     val shareName = source.shareName
     val storedPort = shareName?.toIntOrNull()
     val storedPath = when {
@@ -156,7 +168,7 @@ private suspend fun resolveJvmSambaSourceContext(
         else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
     }
     val sambaPath = parseSambaPath(storedPath)
-        ?: error("SMB source path is missing a share name.")
+        ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
     val endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath)
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     val username = source.username.orEmpty()
@@ -190,7 +202,7 @@ private fun resolveJvmSambaFileSize(context: JvmSambaSourceContext): Long {
             }
         }
     } catch (throwable: Throwable) {
-        throw throwable.asJvmSambaIOException("探测大小")
+        throw throwable.asJvmSambaIOException(SambaOperation.ProbeSize)
     } finally {
         runCatching { client.close() }
     }
@@ -225,7 +237,7 @@ private fun openJvmSambaStream(
         )
     } catch (throwable: Throwable) {
         runCatching { client.close() }
-        throw throwable.asJvmSambaIOException("打开")
+        throw throwable.asJvmSambaIOException(SambaOperation.Open)
     }
 }
 
@@ -254,9 +266,10 @@ internal fun buildJvmSambaSourceReference(
     return "endpoint=$endpoint share=$shareName remotePath=$remotePath"
 }
 
-private fun Throwable.asJvmSambaIOException(operation: String): IOException {
-    val detail = message?.takeIf { it.isNotBlank() }
-        ?: this::class.simpleName
-        ?: "未知错误"
-    return IOException("Samba $operation 失败：$detail", this)
-}
+internal fun Throwable.asJvmSambaIOException(operation: SambaOperation): IOException =
+    SambaUiIOException(sambaFailureText(operation, this), this)
+
+internal class SambaUiIOException(
+    override val text: UiText,
+    cause: Throwable? = null,
+) : IOException((text).diagnosticMessage(), cause), UiTextFailure

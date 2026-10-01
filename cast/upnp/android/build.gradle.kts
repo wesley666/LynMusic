@@ -6,6 +6,7 @@ plugins {
 }
 
 android {
+    testOptions { unitTests.isIncludeAndroidResources = true }
     namespace = "top.iwesley.lyn.music.cast.upnp.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     ndkVersion = libs.versions.android.ndk.get()
@@ -40,6 +41,8 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(libs.robolectric)
+    implementation(project(":shared:resources"))
     api(project(":cast:api"))
     implementation(project(":shared:core"))
     implementation(libs.androidx.core.ktx)
@@ -47,4 +50,5 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music.feature.settings
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
+import top.iwesley.lyn.music.core.model.AppLanguage
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,6 +83,7 @@ enum class CustomThemeColorRole {
 }
 
 data class SettingsState(
+    val appLanguage: AppLanguage = AppLanguage.System,
     val sources: List<LyricsSourceDefinition> = emptyList(),
     val useSambaCache: Boolean = false,
     val showCompactPlayerLyrics: Boolean = false,
@@ -128,14 +138,15 @@ data class SettingsState(
     val appUpdateChecking: Boolean = false,
     val appUpdateLatestRelease: AppReleaseInfo? = null,
     val appUpdateHasNewVersion: Boolean? = null,
-    val appUpdateError: String? = null,
+    val appUpdateError: UiText? = null,
     val desktopVlcAutoDetectedPath: String? = null,
     val desktopVlcManualPath: String? = null,
     val desktopVlcEffectivePath: String? = null,
-    val message: String? = null,
+    val message: UiText? = null,
 )
 
 sealed interface SettingsIntent {
+    data class AppLanguageChanged(val value: AppLanguage) : SettingsIntent
     data class UseSambaCacheChanged(val value: Boolean) : SettingsIntent
     data class ShowCompactPlayerLyricsChanged(val value: Boolean) : SettingsIntent
     data class ShowDesktopLyricsChanged(val value: Boolean) : SettingsIntent
@@ -242,6 +253,7 @@ class SettingsStore(
         UnsupportedDesktopLyricsPlatformService,
 ) : BaseStore<SettingsState, SettingsIntent, SettingsEffect>(
     initialState = SettingsState(
+        appLanguage = repository.appLanguage.value,
         autoOpenPlayerOnStartup = repository.autoOpenPlayerOnStartup.value,
         minimizeWindowOnClose = repository.minimizeWindowOnClose.value,
         currentDataRootPath = appDataLocationPlatformService.currentDataRootPath,
@@ -260,6 +272,12 @@ class SettingsStore(
     private var silentAppUpdateCheckStarted = false
 
     init {
+        scope.launch {
+            repository.appLanguage.collect { language ->
+                updateState { it.copy(appLanguage = language) }
+            }
+        }
+
         scope.launch {
             repository.lyricsSources.collect { sources ->
                 val managedLrcApi = sources
@@ -307,7 +325,7 @@ class SettingsStore(
                     updateState {
                         it.copy(
                             showDesktopLyrics = false,
-                            message = "桌面歌词悬浮窗权限已关闭。",
+                            message = uiText(Res.string.desktop_lyrics_overlay_permission_disabled),
                         )
                     }
                 } else {
@@ -578,6 +596,18 @@ class SettingsStore(
                 persistMinimizeWindowOnClose(intent)
             }
 
+            is SettingsIntent.AppLanguageChanged -> {
+                try {
+                    repository.setAppLanguage(intent.value)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    updateState { current ->
+                        current.copy(message = error.uiErrorText(uiText(Res.string.language_preference_save_failed)))
+                    }
+                }
+            }
+
             is SettingsIntent.AppDisplayScalePresetChanged -> {
                 repository.setAppDisplayScalePreset(intent.value)
                 updateState { it.copy(appDisplayScalePreset = intent.value) }
@@ -674,7 +704,7 @@ class SettingsStore(
                 if (failure != null) {
                     updateState {
                         it.copy(
-                            message = failure.message ?: "选择 VLC 路径失败。",
+                            message = failure.uiErrorText(uiText(Res.string.vlc_path_selection_failed)),
                         )
                     }
                 } else {
@@ -684,7 +714,7 @@ class SettingsStore(
                             it.copy(
                                 desktopVlcManualPath = selectedPath,
                                 desktopVlcEffectivePath = selectedPath,
-                                message = "VLC 路径已保存，将在下次启动后生效。",
+                                message = uiText(Res.string.vlc_path_saved_restart_required),
                             )
                         }
                     }
@@ -697,7 +727,7 @@ class SettingsStore(
                     it.copy(
                         desktopVlcManualPath = null,
                         desktopVlcEffectivePath = it.desktopVlcAutoDetectedPath,
-                        message = "已恢复自动识别，将在下次启动后生效。",
+                        message = uiText(Res.string.vlc_auto_detection_restored),
                     )
                 }
             }
@@ -790,7 +820,7 @@ class SettingsStore(
             SettingsIntent.ImportWorkflow -> {
                 val rawJson = state.value.workflowJsonInput.trim()
                 if (rawJson.isBlank()) {
-                    updateState { it.copy(message = "请先粘贴 Workflow JSON。") }
+                    updateState { it.copy(message = uiText(Res.string.workflow_import_json_required)) }
                     return
                 }
                 val isEditingWorkflow = state.value.editingWorkflowId != null
@@ -805,8 +835,8 @@ class SettingsStore(
                         workflowJsonInput = imported.getOrNull()?.rawJson ?: it.workflowJsonInput,
                         editingWorkflowId = imported.getOrNull()?.id ?: it.editingWorkflowId,
                         message = imported.fold(
-                            onSuccess = { config -> if (isEditingWorkflow) "Workflow 源已保存。" else "Workflow 源 ${config.name} 已导入。" },
-                            onFailure = { error -> error.message ?: "Workflow 保存失败。" },
+                            onSuccess = { config -> if (isEditingWorkflow) uiText(Res.string.workflow_source_saved) else uiText(Res.string.workflow_source_imported, config.name) },
+                            onFailure = { error -> error.uiErrorText(uiText(Res.string.workflow_save_failed)) },
                         ),
                     )
                 }
@@ -814,14 +844,14 @@ class SettingsStore(
 
             SettingsIntent.CreateNew -> {
                 val config = state.value.toConfig(forceNew = true) ?: run {
-                    updateState { it.copy(message = "请至少填写歌词源名称和 URL。") }
+                    updateState { it.copy(message = uiText(Res.string.lyrics_source_name_and_url_required)) }
                     return
                 }
                 val created = runCatching { repository.saveLyricsSource(config) }
                 updateState { currentState ->
                     created.fold(
-                        onSuccess = { config.toState(sources = currentState.sources, message = "歌词源已新建。") },
-                        onFailure = { error -> currentState.copy(message = error.message ?: "歌词源新建失败。") },
+                        onSuccess = { config.toState(sources = currentState.sources, message = uiText(Res.string.lyrics_source_created)) },
+                        onFailure = { error -> currentState.copy(message = error.uiErrorText(uiText(Res.string.lyrics_source_create_failed))) },
                     )
                 }
             }
@@ -829,7 +859,7 @@ class SettingsStore(
             SettingsIntent.CreateNewWorkflow -> {
                 val rawJson = state.value.workflowJsonInput.trim()
                 if (rawJson.isBlank()) {
-                    updateState { it.copy(message = "请先粘贴 Workflow JSON。") }
+                    updateState { it.copy(message = uiText(Res.string.workflow_import_json_required)) }
                     return
                 }
                 val preparedRawJson = runCatching {
@@ -847,11 +877,11 @@ class SettingsStore(
                             currentState.copy(
                                 workflowJsonInput = config.rawJson,
                                 editingWorkflowId = config.id,
-                                message = "Workflow 源已新建。",
+                                message = uiText(Res.string.workflow_source_created),
                             )
                         },
                         onFailure = { error ->
-                            currentState.copy(message = error.message ?: "Workflow 新建失败。")
+                            currentState.copy(message = error.uiErrorText(uiText(Res.string.workflow_create_failed)))
                         },
                     )
                 }
@@ -860,7 +890,7 @@ class SettingsStore(
             SettingsIntent.SaveLrcApi -> {
                 val url = state.value.lrcApiUrl.trim()
                 if (url.isBlank()) {
-                    updateState { it.copy(message = "请填写 LrcAPI 请求地址。") }
+                    updateState { it.copy(message = uiText(Res.string.lyrics_lrcapi_url_required)) }
                     return
                 }
                 val saved = runCatching {
@@ -871,8 +901,8 @@ class SettingsStore(
                         lrcApiUrl = url,
                         hasLrcApiSource = if (saved.isSuccess) true else currentState.hasLrcApiSource,
                         message = saved.fold(
-                            onSuccess = { "LrcAPI 已保存。" },
-                            onFailure = { error -> error.message ?: "LrcAPI 保存失败。" },
+                            onSuccess = { uiText(Res.string.lyrics_lrcapi_saved) },
+                            onFailure = { error -> error.uiErrorText(uiText(Res.string.lyrics_lrcapi_save_failed)) },
                         ),
                     )
                 }
@@ -887,8 +917,8 @@ class SettingsStore(
                         lrcApiUrl = if (saved.isSuccess) DEFAULT_LRCAPI_URL else currentState.lrcApiUrl,
                         hasLrcApiSource = if (saved.isSuccess) true else currentState.hasLrcApiSource,
                         message = saved.fold(
-                            onSuccess = { "LrcAPI 已恢复默认。" },
-                            onFailure = { error -> error.message ?: "LrcAPI 恢复默认失败。" },
+                            onSuccess = { uiText(Res.string.lyrics_lrcapi_defaults_restored) },
+                            onFailure = { error -> error.uiErrorText(uiText(Res.string.lyrics_lrcapi_defaults_restore_failed)) },
                         ),
                     )
                 }
@@ -897,7 +927,7 @@ class SettingsStore(
             SettingsIntent.SaveMusicmatch -> {
                 val userToken = state.value.musicmatchUserToken.trim()
                 if (userToken.isBlank()) {
-                    updateState { it.copy(message = "请填写 Musicmatch usertoken。") }
+                    updateState { it.copy(message = uiText(Res.string.lyrics_musicmatch_token_required)) }
                     return
                 }
                 val saved = runCatching {
@@ -911,8 +941,8 @@ class SettingsStore(
                         musicmatchUserToken = userToken,
                         hasMusicmatchSource = if (saved.isSuccess) true else currentState.hasMusicmatchSource,
                         message = saved.fold(
-                            onSuccess = { "Musicmatch 已保存。" },
-                            onFailure = { error -> error.message ?: "Musicmatch 保存失败。" },
+                            onSuccess = { uiText(Res.string.lyrics_musicmatch_saved) },
+                            onFailure = { error -> error.uiErrorText(uiText(Res.string.lyrics_musicmatch_save_failed)) },
                         ),
                     )
                 }
@@ -926,7 +956,7 @@ class SettingsStore(
                     it.copy(
                         musicmatchUserToken = "",
                         hasMusicmatchSource = false,
-                        message = "Musicmatch 已清除。",
+                        message = uiText(Res.string.lyrics_musicmatch_cleared),
                     )
                 }
             }
@@ -937,7 +967,7 @@ class SettingsStore(
                 updateState {
                     it.copy(
                         customThemeTokens = tokens,
-                        message = "自定义主题已重置。",
+                        message = uiText(Res.string.theme_custom_colors_reset),
                     )
                 }
             }
@@ -945,7 +975,7 @@ class SettingsStore(
             is SettingsIntent.ToggleSourceEnabled -> {
                 repository.setLyricsSourceEnabled(intent.sourceId, intent.enabled)
                 updateState {
-                    it.copy(message = if (intent.enabled) "歌词源已启用。" else "歌词源已停用。")
+                    it.copy(message = if (intent.enabled) uiText(Res.string.lyrics_source_enabled_notice) else uiText(Res.string.lyrics_source_disabled_notice))
                 }
             }
 
@@ -966,7 +996,7 @@ class SettingsStore(
                             hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
                             editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
-                            message = "歌词源已删除。",
+                            message = uiText(Res.string.lyrics_source_deleted),
                         )
                     } else {
                         it.copy(
@@ -976,7 +1006,7 @@ class SettingsStore(
                             hasMusicmatchSource = if (shouldClearMusicmatch) false else it.hasMusicmatchSource,
                             workflowJsonInput = if (shouldClearWorkflow) "" else it.workflowJsonInput,
                             editingWorkflowId = if (shouldClearWorkflow) null else it.editingWorkflowId,
-                            message = "歌词源已删除。",
+                            message = uiText(Res.string.lyrics_source_deleted),
                         )
                     }
                 }
@@ -984,14 +1014,14 @@ class SettingsStore(
 
             SettingsIntent.Save -> {
                 val config = state.value.toConfig() ?: run {
-                    updateState { it.copy(message = "请至少填写歌词源名称和 URL。") }
+                    updateState { it.copy(message = uiText(Res.string.lyrics_source_name_and_url_required)) }
                     return
                 }
                 val saved = runCatching { repository.saveLyricsSource(config) }
                 updateState { currentState ->
                     saved.fold(
-                        onSuccess = { config.toState(sources = currentState.sources, message = "歌词源已保存。") },
-                        onFailure = { error -> currentState.copy(message = error.message ?: "歌词源保存失败。") },
+                        onSuccess = { config.toState(sources = currentState.sources, message = uiText(Res.string.lyrics_source_saved)) },
+                        onFailure = { error -> currentState.copy(message = error.uiErrorText(uiText(Res.string.lyrics_source_save_failed))) },
                     )
                 }
             }
@@ -1009,7 +1039,7 @@ class SettingsStore(
                         hasMusicmatchSource = it.hasMusicmatchSource,
                         workflowJsonInput = it.workflowJsonInput,
                         editingWorkflowId = it.editingWorkflowId,
-                        message = "歌词源已删除。",
+                        message = uiText(Res.string.lyrics_source_deleted),
                     )
                 }
             }
@@ -1033,7 +1063,7 @@ class SettingsStore(
                     } else {
                         currentState.copy(
                             minimizeWindowOnClose = repository.minimizeWindowOnClose.value,
-                            message = "关闭按钮行为保存失败。",
+                            message = uiText(Res.string.window_close_behavior_save_failed),
                         )
                     }
                 }
@@ -1049,7 +1079,7 @@ class SettingsStore(
             updateState {
                 it.copy(
                     showDesktopLyrics = false,
-                    message = "当前平台暂不支持桌面歌词。",
+                    message = uiText(Res.string.desktop_lyrics_platform_unsupported),
                 )
             }
             return
@@ -1068,7 +1098,7 @@ class SettingsStore(
             updateState {
                 it.copy(
                     showDesktopLyrics = false,
-                    message = "请授权悬浮窗权限后开启桌面歌词。",
+                    message = uiText(Res.string.desktop_lyrics_overlay_permission_required),
                 )
             }
             val granted = desktopLyricsPlatformService.requestOverlayPermission()
@@ -1104,7 +1134,7 @@ class SettingsStore(
                 updateState {
                     it.copy(
                         showDesktopLyrics = true,
-                        message = "桌面歌词已开启。",
+                        message = uiText(Res.string.desktop_lyrics_enabled),
                     )
                 }
             }
@@ -1117,7 +1147,7 @@ class SettingsStore(
                 updateState {
                     it.copy(
                         showDesktopLyrics = false,
-                        message = "桌面歌词悬浮窗权限已关闭。",
+                        message = uiText(Res.string.desktop_lyrics_overlay_permission_disabled),
                     )
                 }
             }
@@ -1147,7 +1177,7 @@ class SettingsStore(
                 onFailure = { error ->
                     latest.copy(
                         storageLoading = false,
-                        message = error.message ?: "缓存统计失败。",
+                        message = error.uiErrorText(uiText(Res.string.storage_usage_calculation_failed)),
                     )
                 },
             )
@@ -1163,7 +1193,7 @@ class SettingsStore(
             updateState {
                 it.copy(
                     clearingStorageCategory = null,
-                    message = clearResult.exceptionOrNull()?.message ?: "${category.displayName()}清除失败。",
+                    message = clearResult.exceptionOrNull()?.uiErrorText(uiText(Res.string.storage_category_cleanup_failed, category.displayName())) ?: uiText(Res.string.storage_category_cleanup_failed, category.displayName()),
                 )
             }
             return
@@ -1176,13 +1206,13 @@ class SettingsStore(
                         storageSnapshot = snapshot,
                         storageLoaded = true,
                         clearingStorageCategory = null,
-                        message = "${category.displayName()}已清除。",
+                        message = uiText(Res.string.storage_category_cleared, category.displayName()),
                     )
                 },
                 onFailure = { error ->
                     latest.copy(
                         clearingStorageCategory = null,
-                        message = error.message ?: "${category.displayName()}已清除，但刷新失败。",
+                        message = error.uiErrorText(uiText(Res.string.storage_category_cleared_refresh_failed, category.displayName())),
                     )
                 },
             )
@@ -1200,7 +1230,7 @@ class SettingsStore(
                 },
                 onFailure = { error ->
                     current.copy(
-                        message = error.message ?: "选择数据位置失败。",
+                        message = error.uiErrorText(uiText(Res.string.data_location_selection_failed)),
                     )
                 },
             )
@@ -1214,13 +1244,13 @@ class SettingsStore(
                 onSuccess = {
                     current.copy(
                         pendingDataCleanupRootPath = appDataLocationPlatformService.pendingCleanupRootPath,
-                        message = "旧数据目录已清理。",
+                        message = uiText(Res.string.data_location_old_folder_cleaned),
                     )
                 },
                 onFailure = { error ->
                     current.copy(
                         pendingDataCleanupRootPath = appDataLocationPlatformService.pendingCleanupRootPath,
-                        message = error.message ?: "清理旧数据目录失败。",
+                        message = error.uiErrorText(uiText(Res.string.data_location_old_folder_cleanup_failed)),
                     )
                 },
             )
@@ -1242,7 +1272,7 @@ class SettingsStore(
                 },
                 onFailure = { error ->
                     current.copy(
-                        message = error.message ?: "保存数据位置失败。",
+                        message = error.uiErrorText(uiText(Res.string.data_location_save_failed)),
                     )
                 },
             )
@@ -1267,7 +1297,7 @@ class SettingsStore(
                 onFailure = { error ->
                     latest.copy(
                         deviceInfoLoading = false,
-                        message = error.message ?: "读取设备信息失败。",
+                        message = error.uiErrorText(uiText(Res.string.device_info_read_failed)),
                     )
                 },
             )
@@ -1303,13 +1333,13 @@ class SettingsStore(
                             appUpdateError = null,
                             message = when {
                                 silent -> latest.message
-                                hasNewVersion -> "发现新版本 ${release.tagName}。"
-                                else -> "当前已是最新版本。"
+                                hasNewVersion -> uiText(Res.string.update_new_version_available, release.tagName)
+                                else -> uiText(Res.string.update_already_latest)
                             },
                         )
                     },
                     onFailure = { error ->
-                        val message = error.message ?: "检查更新失败。"
+                        val message = error.uiErrorText(uiText(Res.string.update_check_failed))
                         latest.copy(
                             appUpdateChecking = false,
                             appUpdateLatestRelease = latest.appUpdateLatestRelease,
@@ -1349,7 +1379,7 @@ class SettingsStore(
                 onFailure = { error ->
                     latest.copy(
                         lyricsShareFontsLoading = false,
-                        message = error.message ?: "读取已导入字体失败。",
+                        message = error.uiErrorText(uiText(Res.string.font_imported_list_read_failed)),
                     )
                 },
             )
@@ -1374,13 +1404,13 @@ class SettingsStore(
                         latest.copy(
                             importedLyricsShareFonts = fonts,
                             importingLyricsShareFont = false,
-                            message = "字体已导入。",
+                            message = uiText(Res.string.font_imported),
                         )
                     },
                     onFailure = { error ->
                         latest.copy(
                             importingLyricsShareFont = false,
-                            message = error.message ?: "字体已导入，但刷新列表失败。",
+                            message = error.uiErrorText(uiText(Res.string.font_imported_refresh_failed)),
                         )
                     },
                 )
@@ -1389,8 +1419,8 @@ class SettingsStore(
             updateState { latest ->
                 latest.copy(
                     importingLyricsShareFont = false,
-                    message = result.exceptionOrNull()?.message
-                        ?: if (importedOption == null) "已取消导入。" else "字体导入失败。",
+                    message = result.exceptionOrNull()?.uiErrorText()
+                        ?: if (importedOption == null) uiText(Res.string.import_cancelled) else uiText(Res.string.font_import_failed),
                 )
             }
         }
@@ -1408,7 +1438,7 @@ class SettingsStore(
             updateState {
                 it.copy(
                     deletingLyricsShareFontKey = null,
-                    message = deleteResult.exceptionOrNull()?.message ?: "删除字体失败。",
+                    message = deleteResult.exceptionOrNull()?.uiErrorText(uiText(Res.string.font_delete_failed)) ?: uiText(Res.string.font_delete_failed),
                 )
             }
             return
@@ -1424,13 +1454,13 @@ class SettingsStore(
                     latest.copy(
                         importedLyricsShareFonts = fonts,
                         deletingLyricsShareFontKey = null,
-                        message = "字体已删除。",
+                        message = uiText(Res.string.font_deleted),
                     )
                 },
                 onFailure = { error ->
                     latest.copy(
                         deletingLyricsShareFontKey = null,
-                        message = error.message ?: "字体已删除，但刷新列表失败。",
+                        message = error.uiErrorText(uiText(Res.string.font_deleted_refresh_failed)),
                     )
                 },
             )
@@ -1456,7 +1486,7 @@ class SettingsStore(
 
     private fun LyricsSourceConfig.toState(
             sources: List<LyricsSourceDefinition> = state.value.sources,
-            message: String? = null,
+            message: UiText? = null,
     ): SettingsState {
         return state.value.copy(
             sources = sources,
@@ -1520,13 +1550,13 @@ class SettingsStore(
         }
     }
 
-    private fun AppStorageCategory.displayName(): String {
+    private fun AppStorageCategory.displayName(): UiText {
         return when (this) {
-            AppStorageCategory.Artwork -> "封面缓存"
-            AppStorageCategory.PlaybackCache -> "播放缓存"
-            AppStorageCategory.OfflineDownloads -> "离线音乐"
-            AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
-            AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
+            AppStorageCategory.Artwork -> uiText(Res.string.storage_artwork_cache)
+            AppStorageCategory.PlaybackCache -> uiText(Res.string.storage_playback_cache)
+            AppStorageCategory.OfflineDownloads -> uiText(Res.string.storage_offline_music)
+            AppStorageCategory.LyricsShareTemp -> uiText(Res.string.storage_lyrics_share_temporary_files)
+            AppStorageCategory.TagEditTemp -> uiText(Res.string.storage_tags_temporary_files)
         }
     }
 
@@ -1539,7 +1569,7 @@ class SettingsStore(
         hasMusicmatchSource: Boolean = this.hasMusicmatchSource,
         workflowJsonInput: String = this.workflowJsonInput,
         editingWorkflowId: String? = this.editingWorkflowId,
-        message: String? = this.message,
+        message: UiText? = this.message,
     ): SettingsState {
         return copy(
             sources = sources,

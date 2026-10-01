@@ -1,9 +1,17 @@
 package top.iwesley.lyn.music.cast
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
 
 data class CastDevice(
     val id: String,
@@ -13,6 +21,9 @@ data class CastDevice(
     val manufacturer: String? = null,
     val location: String? = null,
 )
+
+fun CastDevice.displayNameText(): UiText =
+    name.takeIf { it.isNotBlank() }?.let { UiText.Raw(it) } ?: uiText(Res.string.cast_unknown_device)
 
 data class CastMediaRequest(
     val uri: String,
@@ -51,6 +62,8 @@ data class CastSessionState(
     val errorMessage: String? = null,
     val playback: CastPlaybackState? = null,
     val revision: Long = 0L,
+    val messageText: UiText? = null,
+    val errorText: UiText? = null,
 ) {
     val isSearching: Boolean
         get() = status == CastSessionStatus.Searching
@@ -80,7 +93,8 @@ object UnsupportedCastGateway : CastGateway {
     private val unsupportedState = MutableStateFlow(
         CastSessionState(
             status = CastSessionStatus.Unsupported,
-            errorMessage = "当前平台暂不支持投屏。",
+            errorMessage = (uiText(Res.string.cast_platform_unsupported)).diagnosticMessage(),
+            errorText = uiText(Res.string.cast_platform_unsupported),
         ),
     )
 
@@ -97,17 +111,26 @@ object UnsupportedCastGateway : CastGateway {
     override suspend fun release() = Unit
 }
 
-fun castSessionStatusLabel(state: CastSessionState): String {
-    state.errorMessage?.takeIf { it.isNotBlank() }?.let { return it }
+fun castSessionStatusText(state: CastSessionState): UiText {
+    state.errorText?.let { return it }
+    state.errorMessage?.takeIf { it.isNotBlank() }?.let {
+        return uiText(Res.string.ui_error_with_details, UiText.Raw(it))
+    }
+    state.messageText?.let { return it }
     return when (state.status) {
-        CastSessionStatus.Idle -> "搜索附近设备"
-        CastSessionStatus.Searching -> "正在搜索附近设备"
-        CastSessionStatus.Connecting -> state.selectedDeviceName?.let { "正在连接 $it" } ?: "正在连接设备"
-        CastSessionStatus.Casting -> state.selectedDeviceName?.let { "已投屏到 $it" } ?: "正在投屏"
-        CastSessionStatus.Failed -> "投屏失败"
-        CastSessionStatus.Unsupported -> "当前平台暂不支持"
+        CastSessionStatus.Idle -> uiText(Res.string.cast_search_nearby)
+        CastSessionStatus.Searching -> uiText(Res.string.cast_searching)
+        CastSessionStatus.Connecting -> state.selectedDeviceName?.takeIf { it.isNotBlank() }?.let { uiText(Res.string.cast_connecting_device, it) }
+            ?: uiText(Res.string.cast_connecting)
+        CastSessionStatus.Casting -> state.selectedDeviceName?.takeIf { it.isNotBlank() }?.let { uiText(Res.string.cast_connected_device, it) }
+            ?: uiText(Res.string.cast_casting)
+        CastSessionStatus.Failed -> uiText(Res.string.cast_failed)
+        CastSessionStatus.Unsupported -> uiText(Res.string.cast_platform_unsupported)
     }
 }
+
+suspend fun castSessionStatusLabel(state: CastSessionState): String =
+    resolveUiText(castSessionStatusText(state), AppLanguageRuntime.effectiveLanguage.value)
 
 fun isDirectCastUri(uri: String): Boolean {
     val trimmed = uri.trim()

@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.playbackLoadFailureText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -150,6 +152,7 @@ class DefaultPlaybackRepository(
     private var lastGatewayStateLogKey: String? = null
     private var ignoredGatewayErrorRevision: Long? = null
     private var ignoredGatewayErrorMessage: String? = null
+    private var ignoredGatewayErrorText: UiText? = null
 
     override val snapshot: StateFlow<PlaybackSnapshot> = mutableSnapshot.asStateFlow()
 
@@ -266,6 +269,12 @@ class DefaultPlaybackRepository(
                         errorMessage = when (gatewayError) {
                             GatewayErrorResolution.Ignore -> it.errorMessage
                             is GatewayErrorResolution.Apply -> gatewayError.message
+                        },
+                        errorText = when (gatewayError) {
+                            GatewayErrorResolution.Ignore -> it.errorText
+                            is GatewayErrorResolution.Apply -> gatewayError.text ?: it.errorText.takeIf { _ ->
+                                gatewayError.message != null && gatewayError.message == it.errorMessage
+                            }
                         },
                     )
                 }
@@ -631,6 +640,7 @@ class DefaultPlaybackRepository(
                 metadataAlbumTitle = null,
                 metadataArtworkLocator = null,
                 errorMessage = null,
+                errorText = null,
             )
         }
         return createLoadRequest(
@@ -779,6 +789,7 @@ class DefaultPlaybackRepository(
                     positionMs = request.startPositionMs.coerceAtLeast(0L),
                     canSeek = false,
                     errorMessage = buildPlaybackLoadFailureMessage(throwable),
+                    errorText = playbackLoadFailureText(throwable),
                 )
             }
         }
@@ -786,16 +797,19 @@ class DefaultPlaybackRepository(
 
     private fun ignoreCurrentGatewayErrorForNextTrack() {
         val gatewayState = gateway.state.value
-        val message = gatewayState.errorMessage?.takeIf { it.isNotBlank() } ?: return
+        val message = gatewayState.errorMessage?.takeIf { it.isNotBlank() }
+        if (message == null && gatewayState.errorText == null) return
         ignoredGatewayErrorMessage = message
+        ignoredGatewayErrorText = gatewayState.errorText
         ignoredGatewayErrorRevision = gatewayState.errorRevision.takeIf { it > 0L }
     }
 
     private fun resolveGatewayError(gatewayState: PlaybackGatewayState): GatewayErrorResolution {
         val message = gatewayState.errorMessage?.takeIf { it.isNotBlank() }
-        if (message == null) {
+        val text = gatewayState.errorText
+        if (message == null && text == null) {
             clearIgnoredGatewayError()
-            return GatewayErrorResolution.Apply(null)
+            return GatewayErrorResolution.Apply(null, null)
         }
         val ignoredRevision = ignoredGatewayErrorRevision
         if (ignoredRevision != null) {
@@ -803,23 +817,24 @@ class DefaultPlaybackRepository(
                 return GatewayErrorResolution.Ignore
             }
             clearIgnoredGatewayError()
-            return GatewayErrorResolution.Apply(message)
+            return GatewayErrorResolution.Apply(message, text)
         }
-        if (message == ignoredGatewayErrorMessage) {
+        if (message == ignoredGatewayErrorMessage && text == ignoredGatewayErrorText) {
             return GatewayErrorResolution.Ignore
         }
         clearIgnoredGatewayError()
-        return GatewayErrorResolution.Apply(message)
+        return GatewayErrorResolution.Apply(message, text)
     }
 
     private fun clearIgnoredGatewayError() {
         ignoredGatewayErrorRevision = null
         ignoredGatewayErrorMessage = null
+        ignoredGatewayErrorText = null
     }
 
     private sealed interface GatewayErrorResolution {
         data object Ignore : GatewayErrorResolution
-        data class Apply(val message: String?) : GatewayErrorResolution
+        data class Apply(val message: String?, val text: UiText?) : GatewayErrorResolution
     }
 
     private fun updatePlaybackStats(snapshot: PlaybackSnapshot) {

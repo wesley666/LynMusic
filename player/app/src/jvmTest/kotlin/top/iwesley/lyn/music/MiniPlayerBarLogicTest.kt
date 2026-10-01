@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.formatTrackTechnicalSummary
+import top.iwesley.lyn.music.testing.resolveMiniPlayerLyricsText
+import top.iwesley.lyn.music.testing.hasMiniPlayerLyricsContent
+import top.iwesley.lyn.music.testing.formatAndroidCurrentPlaybackAudioQuality
+
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.testing.formatCurrentNavidromePlaybackAudioQuality
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -18,15 +27,20 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 
 class MiniPlayerBarLogicTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
-    fun `automotive landscape mini player is only selected for automotive platform`() {
+    fun `automotive landscape mini player is only selected for automotive platform`() = runTest {
         assertTrue(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform(ANDROID_AUTOMOTIVE_PLATFORM_NAME)))
         assertFalse(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform(ANDROID_PLATFORM_NAME)))
         assertFalse(shouldUseAutomotiveLandscapeMiniPlayer(testPlatform("Desktop")))
     }
 
     @Test
-    fun `automotive landscape mini player action order prioritizes playback controls`() {
+    fun `automotive landscape mini player action order prioritizes playback controls`() = runTest {
         assertEquals(
             listOf(
                 AutomotiveLandscapeMiniPlayerAction.Previous,
@@ -40,7 +54,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `mini player lyrics prefers highlighted line`() {
+    fun `mini player lyrics prefers highlighted line`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "第一句"),
             LyricsLine(timestampMs = 2_000L, text = "第二句"),
@@ -57,7 +71,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `mini player lyrics falls back to first non blank line`() {
+    fun `mini player lyrics falls back to first non blank line`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "   "),
             LyricsLine(timestampMs = 2_000L, text = "第一句"),
@@ -75,7 +89,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `mini player lyrics returns loading text while lyrics are preparing`() {
+    fun `mini player lyrics returns loading text while lyrics are preparing`() = runTest {
         assertEquals(
             "正在准备歌词",
             resolveMiniPlayerLyricsText(
@@ -87,7 +101,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `mini player lyrics returns null when there is no lyric text and not loading`() {
+    fun `mini player lyrics returns null when there is no lyric text and not loading`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "   "),
             LyricsLine(timestampMs = 2_000L, text = ""),
@@ -103,7 +117,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `mini player lyrics content is only ready for actual lyric text`() {
+    fun `mini player lyrics content is only ready for actual lyric text`() = runTest {
         assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = null))
         assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = ""))
         assertFalse(hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = "正在准备歌词"))
@@ -112,7 +126,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `compact player lyrics prefers highlighted line`() {
+    fun `compact player lyrics prefers highlighted line`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "第一句"),
             LyricsLine(timestampMs = 2_000L, text = "第二句"),
@@ -128,7 +142,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `compact player lyrics falls back to first non blank line`() {
+    fun `compact player lyrics falls back to first non blank line`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "   "),
             LyricsLine(timestampMs = 2_000L, text = "第一句"),
@@ -145,7 +159,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `compact player lyrics returns null when there is no actual lyric text`() {
+    fun `compact player lyrics returns null when there is no actual lyric text`() = runTest {
         val lyrics = lyricsDocument(
             LyricsLine(timestampMs = 1_000L, text = "   "),
             LyricsLine(timestampMs = 2_000L, text = ""),
@@ -160,7 +174,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `compact player lyrics does not surface loading placeholder without lyrics`() {
+    fun `compact player lyrics does not surface loading placeholder without lyrics`() = runTest {
         assertNull(
             resolveCompactPlayerLyricsText(
                 lyrics = null,
@@ -170,7 +184,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `compact player lyrics visibility requires enabled setting and actual lyric text`() {
+    fun `compact player lyrics visibility requires enabled setting and actual lyric text`() = runTest {
         assertFalse(shouldShowCompactPlayerLyrics(enabled = false, compactLyricsText = "第一句"))
         assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = null))
         assertFalse(shouldShowCompactPlayerLyrics(enabled = true, compactLyricsText = ""))
@@ -178,7 +192,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `track audio quality formats all navidrome fields`() {
+    fun `track audio quality formats all navidrome fields`() = runTest {
         assertEquals(
             "16bit / 44.1kHz · 880kbps · 2ch",
             formatTrackAudioQuality(
@@ -193,7 +207,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `track audio quality omits missing fields`() {
+    fun `track audio quality omits missing fields`() = runTest {
         assertEquals(
             "44.1kHz · 2ch",
             formatTrackAudioQuality(
@@ -206,12 +220,12 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `track audio quality returns null without quality fields`() {
+    fun `track audio quality returns null without quality fields`() = runTest {
         assertNull(formatTrackAudioQuality(sampleQualityTrack()))
     }
 
     @Test
-    fun `current navidrome playback audio quality formats only navidrome tracks`() {
+    fun `current navidrome playback audio quality formats only navidrome tracks`() = runTest {
         assertEquals(
             "192kbps",
             formatCurrentNavidromePlaybackAudioQuality(
@@ -228,7 +242,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `current navidrome playback audio quality hides until gateway reports quality`() {
+    fun `current navidrome playback audio quality hides until gateway reports quality`() = runTest {
         assertNull(
             formatCurrentNavidromePlaybackAudioQuality(
                 track = sampleQualityTrack(),
@@ -238,7 +252,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `current playback audio format formats all fields`() {
+    fun `current playback audio format formats all fields`() = runTest {
         assertEquals(
             "44.1kHz · 320kbps · 2ch",
             formatCurrentPlaybackAudioFormat(
@@ -252,7 +266,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `current playback audio format omits missing bitrate`() {
+    fun `current playback audio format omits missing bitrate`() = runTest {
         assertEquals(
             "48kHz · 2ch",
             formatCurrentPlaybackAudioFormat(
@@ -265,7 +279,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `current playback audio format omits missing sampling rate`() {
+    fun `current playback audio format omits missing sampling rate`() = runTest {
         assertEquals(
             "192kbps · 1ch",
             formatCurrentPlaybackAudioFormat(
@@ -278,13 +292,13 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `current playback audio format returns null without fields`() {
+    fun `current playback audio format returns null without fields`() = runTest {
         assertNull(formatCurrentPlaybackAudioFormat(PlaybackAudioFormat()))
         assertNull(formatCurrentPlaybackAudioFormat(null))
     }
 
     @Test
-    fun `android current playback audio quality prefers exoplayer bitrate`() {
+    fun `android current playback audio quality prefers exoplayer bitrate`() = runTest {
         assertEquals(
             "44.1kHz · 256kbps · 2ch",
             formatAndroidCurrentPlaybackAudioQuality(
@@ -300,7 +314,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `android current playback audio quality falls back to navidrome bitrate`() {
+    fun `android current playback audio quality falls back to navidrome bitrate`() = runTest {
         assertEquals(
             "44.1kHz · 192kbps · 2ch",
             formatAndroidCurrentPlaybackAudioQuality(
@@ -323,7 +337,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `android current playback audio quality falls back to original navidrome quality`() {
+    fun `android current playback audio quality falls back to original navidrome quality`() = runTest {
         assertEquals(
             "44.1kHz · 原始 · 2ch",
             formatAndroidCurrentPlaybackAudioQuality(
@@ -338,7 +352,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `android current playback audio quality does not fallback for non navidrome tracks`() {
+    fun `android current playback audio quality does not fallback for non navidrome tracks`() = runTest {
         assertEquals(
             "48kHz · 2ch",
             formatAndroidCurrentPlaybackAudioQuality(
@@ -360,7 +374,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `track technical summary includes format audio quality and size`() {
+    fun `track technical summary includes format audio quality and size`() = runTest {
         assertEquals(
             "FLAC · 16bit / 44.1kHz · 880kbps · 2ch · 12.3 MB",
             formatTrackTechnicalSummary(
@@ -376,7 +390,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `track technical summary omits missing audio quality but keeps format and size`() {
+    fun `track technical summary omits missing audio quality but keeps format and size`() = runTest {
         assertEquals(
             "MP3 · 1.0 MB",
             formatTrackTechnicalSummary(
@@ -389,7 +403,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player info vinyl size grows with larger compact space`() {
+    fun `player info vinyl size grows with larger compact space`() = runTest {
         val small = resolvePlayerInfoVinylSize(
             maxWidth = 320.dp,
             maxHeight = 360.dp,
@@ -407,7 +421,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player info vinyl size keeps compact sizing identical with or without lyrics`() {
+    fun `player info vinyl size keeps compact sizing identical with or without lyrics`() = runTest {
         val withoutLyrics = resolvePlayerInfoVinylSize(
             maxWidth = 390.dp,
             maxHeight = 520.dp,
@@ -425,7 +439,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player info vinyl size is capped on large wide layouts`() {
+    fun `player info vinyl size is capped on large wide layouts`() = runTest {
         assertEquals(
             400.dp,
             resolvePlayerInfoVinylSize(
@@ -438,7 +452,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player artwork display visual factors keep layout height stable`() {
+    fun `player artwork display visual factors keep layout height stable`() = runTest {
         assertEquals(1f, playerArtworkDisplayVisualWidthFactor(PlayerArtworkStyle.VINYL))
         assertEquals(1.24f, playerArtworkDisplayVisualWidthFactor(PlayerArtworkStyle.HALF_RECORD))
         assertEquals(1f, playerArtworkDisplayVisualWidthFactor(PlayerArtworkStyle.MINIMAL_COVER))
@@ -449,7 +463,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player artwork swipe resolves skip intent by threshold and direction`() {
+    fun `player artwork swipe resolves skip intent by threshold and direction`() = runTest {
         assertEquals(
             PlayerIntent.SkipNext,
             resolvePlayerArtworkSwipeIntent(
@@ -485,7 +499,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player artwork drag offset is clamped to visual bounds`() {
+    fun `player artwork drag offset is clamped to visual bounds`() = runTest {
         assertEquals(
             40f,
             resolvePlayerArtworkDragOffsetPx(
@@ -521,7 +535,7 @@ class MiniPlayerBarLogicTest {
     }
 
     @Test
-    fun `player seek position resolves only on valid seekable playback`() {
+    fun `player seek position resolves only on valid seekable playback`() = runTest {
         val seekableSnapshot = PlaybackSnapshot(
             durationMs = 100_000L,
             canSeek = true,

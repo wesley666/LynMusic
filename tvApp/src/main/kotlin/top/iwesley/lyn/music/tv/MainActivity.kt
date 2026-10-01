@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.uiString
+
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
@@ -47,20 +53,24 @@ class MainActivity : TvComponentActivity() {
         var appComponentResult by mutableStateOf(tvAppComponentResult())
 
         setContent {
-            val appComponent = appComponentResult.getOrNull()
-            if (appComponent != null) {
-                val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
-                ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                    TvMainApp(appComponent)
+            ProvideUiLanguage {
+                val appComponent = appComponentResult.getOrNull()
+                if (appComponent != null) {
+                    val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
+                    ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                        TvMainApp(appComponent)
+                    }
+                } else {
+                    TvStartupComponentErrorScreen(
+                        onRetry = {
+                            appComponentResult = tvAppComponentResult()
+                        },
+                    )
                 }
-            } else {
-                TvStartupComponentErrorScreen(
-                    onRetry = {
-                        appComponentResult = tvAppComponentResult()
-                    },
-                )
+
+
             }
-        }
+}
     }
 }
 
@@ -83,17 +93,17 @@ private fun TvStartupComponentErrorScreen(onRetry: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Text(
-                    text = "无法启动 LynMusic",
+                    text = uiString(Res.string.startup_failed_title),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = "组件初始化失败，请检查存储状态后重试。",
+                    text = uiString(Res.string.startup_component_initialization_failed),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 TvButton(onClick = onRetry) {
-                    Text("重试")
+                    Text(uiString(Res.string.common_retry))
                 }
             }
         }

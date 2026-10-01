@@ -1,5 +1,22 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.audioImportFailure
+
+import top.iwesley.lyn.music.core.model.APP_LANGUAGE_PREFERENCE_KEY
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.resolveUiString
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.playbackLoadFailureText
+import top.iwesley.lyn.music.core.model.AppLanguagePreferencesStore
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.appLanguageOrDefault
+
 import androidx.room.Room
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -51,6 +68,7 @@ import top.iwesley.lyn.music.SharedRuntimeServices
 import top.iwesley.lyn.music.buildPlayerAppComponent
 import top.iwesley.lyn.music.buildSharedGraph
 import top.iwesley.lyn.music.isJvmMacOs
+import top.iwesley.lyn.music.logJvmStartupFailure
 import top.iwesley.lyn.music.core.model.AudioTagGateway
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
 import top.iwesley.lyn.music.core.model.AudioTagPatch
@@ -188,6 +206,22 @@ import uk.co.caprica.vlcj.media.MetaData
 import uk.co.caprica.vlcj.media.callback.CallbackMedia
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
+
+/** Load only the UI language before database initialization and early startup messages. */
+internal fun initializeJvmAppLanguage(
+    dataLocationManager: JvmDataLocationManager = JvmDataLocationManager(),
+) {
+    AppLanguageRuntime.updateSystemLanguage(java.util.Locale.getDefault().toLanguageTag())
+    val language = try {
+        val settingsFile = File(dataLocationManager.currentRootDirectory(), "settings.properties")
+        val properties = JvmSettingsPropertiesFile(settingsFile).load()
+        appLanguageOrDefault(properties.getProperty(APP_LANGUAGE_PREFERENCE_KEY)?.trim())
+    } catch (error: Throwable) {
+        logJvmStartupFailure(stage = "app-language", error = error)
+        AppLanguage.System
+    }
+    AppLanguageRuntime.update(language)
+}
 
 fun createJvmAppComponent(
     dataLocationManager: JvmDataLocationManager = JvmDataLocationManager(),
@@ -433,12 +467,26 @@ internal class JvmLyricsHttpClient : LyricsHttpClient {
 
 internal class JvmAppPreferencesStore(
     settingsFile: File = defaultJvmSettingsFile(),
-) : PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
+) : AppLanguagePreferencesStore, PlaybackPreferencesStore, SambaCachePreferencesStore, ThemePreferencesStore,
     CompactPlayerLyricsPreferencesStore, DesktopLyricsPreferencesStore, DesktopLyricsPositionPreferencesStore,
     MenuBarLyricsControlsPreferencesStore,
     DesktopVlcPreferencesStore, LyricsShareFontPreferencesStore, PlayerArtworkStylePreferencesStore,
     LibrarySourceFilterPreferencesStore, WindowClosePreferencesStore, AutoOpenPlayerOnStartupPreferencesStore {
     private val propertiesFile = JvmSettingsPropertiesFile(settingsFile)
+    private val mutableAppLanguage = MutableStateFlow(appLanguageOrDefault(readNullablePreference(APP_LANGUAGE_PREFERENCE_KEY)))
+    override val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
+    init { AppLanguageRuntime.install(this, java.util.Locale.getDefault().toLanguageTag()) }
+    override suspend fun setAppLanguage(language: AppLanguage) {
+        AppLanguageRuntime.updateSystemLanguage(java.util.Locale.getDefault().toLanguageTag())
+        updateProperties(
+            mutate = { setProperty(APP_LANGUAGE_PREFERENCE_KEY, language.storageValue) },
+            onPersisted = {
+                mutableAppLanguage.value = language
+                AppLanguageRuntime.update(language)
+            },
+        )
+    }
+
     private val mutableUseSambaCache = MutableStateFlow(readUseSambaCache())
     private val mutablePlaybackVolume = MutableStateFlow(readPlaybackVolume())
     private val mutableShowCompactPlayerLyrics = MutableStateFlow(readShowCompactPlayerLyrics())
@@ -1020,9 +1068,9 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
     override suspend fun pickArtworkBytes(): Result<ByteArray?> {
         return runCatching {
             val path = JvmNativeFilePicker.pickOpenFile(
-                title = "选择图片文件",
+                title = resolveUiString(Res.string.desktop_picker_artwork_title),
                 extensionFilter = JvmFileExtensionFilter(
-                    description = "图片文件",
+                    description = resolveUiString(Res.string.desktop_picker_image_files),
                     rawExtensions = listOf("jpg", "jpeg", "png", "webp", "bmp", "gif"),
                 ),
             ) ?: return@runCatching null
@@ -1078,9 +1126,9 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
 private class JvmVlcPathPickerPlatformService : VlcPathPickerPlatformService {
     override suspend fun pickVlcDirectory(): Result<String?> {
         return runCatching {
-            val selectedPath = JvmNativeFilePicker.pickFileOrDirectory("选择 VLC 路径") ?: return@runCatching null
+            val selectedPath = JvmNativeFilePicker.pickFileOrDirectory(resolveUiString(Res.string.vlc_select_path_action)) ?: return@runCatching null
             val normalizedPath = normalizeDesktopVlcSelection(selectedPath)
-                ?: error(desktopVlcInvalidSelectionMessage())
+                ?: throw UiTextException(desktopVlcInvalidSelectionMessage())
             normalizedPath.toString()
         }
     }
@@ -1232,7 +1280,7 @@ private suspend fun resolveJvmSambaTagReadTarget(
         else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
     }
     val sambaPath = parseSambaPath(storedPath)
-        ?: error("SMB source path is missing a share name.")
+        ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
     return JvmSambaTagReadTarget(
         sourceId = samba.first,
@@ -1247,12 +1295,12 @@ private suspend fun resolveJvmSambaTagReadTarget(
     )
 }
 
-private class JvmImportSourceGateway(
+internal class JvmImportSourceGateway(
     private val logger: DiagnosticLogger,
     private val navidromeHttpClient: LyricsHttpClient,
 ) : ImportSourceGateway {
     override suspend fun pickLocalFolder(): LocalFolderSelection? {
-        val path = JvmNativeFilePicker.pickDirectory("选择本地音乐文件夹") ?: return null
+        val path = JvmNativeFilePicker.pickDirectory(resolveUiString(Res.string.desktop_picker_music_folder_title)) ?: return null
         return LocalFolderSelection(
             label = path.name.ifBlank { path.toString() },
             persistentReference = path.toString(),
@@ -1271,7 +1319,7 @@ private class JvmImportSourceGateway(
     ): ImportScanReport {
         val root = Path.of(selection.persistentReference)
         if (!Files.exists(root)) {
-            error("Folder does not exist: ${selection.persistentReference}")
+            throw UiTextException(uiText(Res.string.source_folder_missing, selection.persistentReference))
         }
         val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
         val failures = mutableListOf<ImportScanFailure>()
@@ -1301,10 +1349,7 @@ private class JvmImportSourceGateway(
                                     ),
                                 )
                             }.onFailure { throwable ->
-                                failures += ImportScanFailure(
-                                    relativePath = relativePath,
-                                    reason = scanFailureReason(throwable),
-                                )
+                                failures += audioImportFailure(relativePath, throwable)
                                 logger.warn(LOCAL_IMPORT_LOG_TAG) {
                                     "candidate-failed source=$sourceId path=$relativePath reason=${throwable.message.orEmpty()}"
                                 }
@@ -1322,7 +1367,7 @@ private class JvmImportSourceGateway(
 
     override suspend fun testSamba(draft: SambaSourceDraft) {
         val sambaPath = parseSambaPath(draft.path)
-            ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
+            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -1340,7 +1385,7 @@ private class JvmImportSourceGateway(
                 }
                 val share = session.connectShare(sambaPath.shareName) as DiskShare
                 if (sambaPath.directoryPath.isNotBlank() && !share.folderExists(sambaPath.directoryPath)) {
-                    error("SMB 路径不存在或无法访问。")
+                    throw UiTextException(uiText(Res.string.samba_path_unavailable))
                 }
             }
         }.onSuccess {
@@ -1364,7 +1409,7 @@ private class JvmImportSourceGateway(
         progressSink: ImportScanProgressSink,
     ): ImportScanReport {
         val sambaPath = parseSambaPath(draft.path)
-            ?: error("SMB 路径至少需要包含共享名，例如 Media 或 Media/Music。")
+            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -1631,10 +1676,7 @@ private class JvmImportSourceGateway(
                                 ),
                             )
                         }.onFailure { throwable ->
-                            failures += ImportScanFailure(
-                                relativePath = childRelative,
-                                reason = scanFailureReason(throwable),
-                            )
+                            failures += audioImportFailure(childRelative, throwable)
                         }
                     }
                 }
@@ -1890,6 +1932,7 @@ internal class JvmPlaybackGateway(
                         metadataArtistName = track?.artistName?.takeIf { value -> value.isNotBlank() } ?: it.metadataArtistName,
                         metadataAlbumTitle = track?.albumTitle?.takeIf { value -> value.isNotBlank() } ?: it.metadataAlbumTitle,
                         errorMessage = null,
+                        errorText = null,
                     )
                 }
                 logger.info(VLC_LOG_TAG) {
@@ -1908,6 +1951,7 @@ internal class JvmPlaybackGateway(
                     it.copy(
                         isPlaying = true,
                         errorMessage = null,
+                        errorText = null,
                     )
                 }
             }
@@ -1979,7 +2023,8 @@ internal class JvmPlaybackGateway(
                 }
                 mutableState.update {
                     it.copy(
-                        errorMessage = "桌面播放器无法播放当前媒体。",
+                        errorMessage = (DESKTOP_MEDIA_FAILED_TEXT).diagnosticMessage(),
+                        errorText = DESKTOP_MEDIA_FAILED_TEXT,
                         canSeek = false,
                         errorRevision = it.errorRevision + 1L,
                     )
@@ -2007,7 +2052,7 @@ internal class JvmPlaybackGateway(
         logger.warn(VLC_LOG_TAG) {
             "remote-address-fallback retry index=$nextIndex url=${nextCandidate.value} recentLogs=$errorDetail"
         }
-        mutableState.update { it.copy(errorMessage = null) }
+        mutableState.update { it.copy(errorMessage = null, errorText = null) }
         scope.launch {
             applyRemoteAddressFallback(
                 runtime = runtime,
@@ -2051,6 +2096,7 @@ internal class JvmPlaybackGateway(
                         isPlaying = retryPlayWhenReady,
                         canSeek = false,
                         errorMessage = null,
+                        errorText = null,
                     )
                 }
                 pendingSeek = if (retryPositionMs > 0L) {
@@ -2082,7 +2128,8 @@ internal class JvmPlaybackGateway(
                     it.copy(
                         isPlaying = false,
                         canSeek = false,
-                        errorMessage = "桌面播放器无法播放当前媒体。",
+                        errorMessage = (DESKTOP_MEDIA_FAILED_TEXT).diagnosticMessage(),
+                        errorText = DESKTOP_MEDIA_FAILED_TEXT,
                         errorRevision = it.errorRevision + 1L,
                     )
                 }
@@ -2098,6 +2145,7 @@ internal class JvmPlaybackGateway(
                     isPlaying = false,
                     canSeek = false,
                     errorMessage = buildJvmPlaybackLoadFailureMessage(throwable),
+                    errorText = playbackLoadFailureText(throwable),
                     errorRevision = it.errorRevision + 1L,
                 )
             }
@@ -2156,7 +2204,7 @@ internal class JvmPlaybackGateway(
                 handleVlcUnavailable(
                     action = "load",
                     positionMs = it.startPositionMs,
-                    errorMessage = if (it.playWhenReady) DESKTOP_VLC_UNAVAILABLE_MESSAGE else null,
+                    errorText = if (it.playWhenReady) DESKTOP_VLC_UNAVAILABLE_TEXT else null,
                     clearMetadata = true,
                 )
             }
@@ -2224,7 +2272,7 @@ internal class JvmPlaybackGateway(
                 handleVlcUnavailable(
                     action = "load",
                     positionMs = startPositionMs,
-                    errorMessage = if (playWhenReady) DESKTOP_VLC_UNAVAILABLE_MESSAGE else null,
+                    errorText = if (playWhenReady) DESKTOP_VLC_UNAVAILABLE_TEXT else null,
                     clearMetadata = true,
                 )
                 currentCallbackMedia = null
@@ -2378,6 +2426,7 @@ internal class JvmPlaybackGateway(
                         metadataAlbumTitle = null,
                         currentNavidromeAudioQuality = currentNavidromeAudioQuality,
                         errorMessage = null,
+                        errorText = null,
                     )
                 }
                 initialSeekForLoad = if (startPositionMs > 0) {
@@ -2409,7 +2458,7 @@ internal class JvmPlaybackGateway(
                     return
                 }
             }
-            check(started) { "Unable to load media $playbackTarget" }
+            checkUi(started) { uiText(Res.string.playback_vlc_media_load_failed, playbackTarget) }
             if (webDavTarget != null) {
                 val expectedTrackId = track.id
                 val expectedSourceReference = sourceReference
@@ -2445,6 +2494,7 @@ internal class JvmPlaybackGateway(
                     durationMs = 0L,
                     canSeek = false,
                     errorMessage = buildJvmPlaybackLoadFailureMessage(throwable),
+                    errorText = playbackLoadFailureText(throwable),
                     errorRevision = it.errorRevision + 1L,
                 )
             }
@@ -2473,7 +2523,7 @@ internal class JvmPlaybackGateway(
             }
             JvmVlcRuntimeState.Initializing,
             JvmVlcRuntimeState.Unavailable,
-            JvmVlcRuntimeState.Released -> mutableState.update { it.copy(isPlaying = false, errorMessage = null) }
+            JvmVlcRuntimeState.Released -> mutableState.update { it.copy(isPlaying = false, errorMessage = null, errorText = null) }
         }
     }
 
@@ -2694,6 +2744,7 @@ internal class JvmPlaybackGateway(
                 metadataArtistName = null,
                 metadataAlbumTitle = null,
                 errorMessage = message,
+                errorText = if (message != null) DESKTOP_VLC_INITIALIZING_TEXT else null,
                 errorRevision = if (message != null) state.errorRevision + 1L else state.errorRevision,
             )
         }
@@ -2708,6 +2759,7 @@ internal class JvmPlaybackGateway(
                 isPlaying = false,
                 canSeek = false,
                 errorMessage = DESKTOP_VLC_INITIALIZING_MESSAGE,
+                errorText = DESKTOP_VLC_INITIALIZING_TEXT,
                 errorRevision = state.errorRevision + 1L,
             )
         }
@@ -2744,7 +2796,7 @@ internal class JvmPlaybackGateway(
         )?.let { return it }
         val samba = parseSambaLocator(locator) ?: return locator
         val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
-            ?: error("Samba 来源不可用。")
+            ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
         val shareName = source.shareName
         val storedPort = shareName?.toIntOrNull()
         val storedPath = when {
@@ -2753,13 +2805,13 @@ internal class JvmPlaybackGateway(
             else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
         }
         val sambaPath = parseSambaPath(storedPath)
-            ?: error("SMB source path is missing a share name.")
+            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath)
         val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         val username = source.username.orEmpty()
         val remotePath = joinSambaPath(sambaPath.directoryPath, samba.second)
         if (!playbackPreferencesStore.useSambaCache.value) {
-            error("Desktop Samba direct-link playback is disabled. Expected SMB callback target for locator=$locator")
+            throw UiTextException(uiText(Res.string.samba_direct_target_missing))
         }
         val cacheFile = File(sambaCacheDir, buildSambaCacheFileName(samba.first, remotePath))
         if (cacheFile.exists()) {
@@ -2844,7 +2896,7 @@ internal class JvmPlaybackGateway(
     private fun handleVlcUnavailable(
         action: String,
         positionMs: Long? = null,
-        errorMessage: String? = DESKTOP_VLC_UNAVAILABLE_MESSAGE,
+        errorText: UiText? = DESKTOP_VLC_UNAVAILABLE_TEXT,
         clearMetadata: Boolean = false,
     ) {
         logger.warn(VLC_LOG_TAG) {
@@ -2859,8 +2911,9 @@ internal class JvmPlaybackGateway(
                 metadataTitle = if (clearMetadata) null else state.metadataTitle,
                 metadataArtistName = if (clearMetadata) null else state.metadataArtistName,
                 metadataAlbumTitle = if (clearMetadata) null else state.metadataAlbumTitle,
-                errorMessage = errorMessage,
-                errorRevision = if (errorMessage != null) state.errorRevision + 1L else state.errorRevision,
+                errorMessage = errorText?.let { (it).diagnosticMessage() },
+                errorText = errorText,
+                errorRevision = if (errorText != null) state.errorRevision + 1L else state.errorRevision,
             )
         }
     }
@@ -3193,15 +3246,11 @@ private val jvmRemoteArtworkDirectory by lazy {
 internal const val SAMBA_LOG_TAG = "Samba"
 private const val LOCAL_IMPORT_LOG_TAG = "LocalImport"
 private const val VLC_LOG_TAG = "VLC"
-private const val DESKTOP_VLC_UNAVAILABLE_MESSAGE = "未检测到 VLC，请安装或在设置手动选择 VLC 路径。"
-private const val DESKTOP_VLC_INITIALIZING_MESSAGE = "正在初始化 VLC, 用户也可能没有安装 VLC 播放器..."
+private val DESKTOP_VLC_UNAVAILABLE_TEXT = uiText(Res.string.playback_vlc_unavailable)
+private val DESKTOP_MEDIA_FAILED_TEXT = uiText(Res.string.playback_media_failed)
+private val DESKTOP_VLC_INITIALIZING_TEXT = uiText(Res.string.playback_vlc_initializing)
+private val DESKTOP_VLC_INITIALIZING_MESSAGE: String get() = (DESKTOP_VLC_INITIALIZING_TEXT).diagnosticMessage()
 private const val VLC_START_PAUSED_OPTION = "start-paused"
-
-private fun scanFailureReason(throwable: Throwable): String {
-    return throwable.message?.takeIf { it.isNotBlank() }
-        ?: throwable::class.simpleName
-        ?: "读取失败。"
-}
 
 private fun buildJvmPlaybackLoadFailureMessage(throwable: Throwable): String {
     val detail = throwable.message?.takeIf { it.isNotBlank() }

@@ -18,5 +18,6 @@ fun PlaybackGatewayState.resetForTrackSwitch(
         currentNavidromeAudioQuality = null,
         currentPlaybackAudioFormat = null,
         errorMessage = null,
+        errorText = null,
     )
 }

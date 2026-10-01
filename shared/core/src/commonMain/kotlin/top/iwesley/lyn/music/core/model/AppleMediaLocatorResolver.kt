@@ -1,17 +1,20 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+import org.jetbrains.compose.resources.StringResource
+
 sealed interface AppleResolvedMediaLocator {
     data class FileUrl(val url: String) : AppleResolvedMediaLocator
     data class RemoteUrl(val url: String) : AppleResolvedMediaLocator
     data class AbsolutePath(val path: String) : AppleResolvedMediaLocator
-    data class Unsupported(val message: String) : AppleResolvedMediaLocator
+    data class Unsupported(val message: String, val messageText: UiText = UiText.Raw(message)) : AppleResolvedMediaLocator
 }
 
 object AppleMediaLocatorResolver {
     fun resolve(locator: String): AppleResolvedMediaLocator {
         val value = locator.trim()
         if (value.isBlank()) {
-            return AppleResolvedMediaLocator.Unsupported("Apple 平台无法播放空的媒体定位符。")
+            return unsupported(Res.string.apple_media_empty)
         }
         return when {
             value.startsWith("file://", ignoreCase = true) ->
@@ -24,16 +27,21 @@ object AppleMediaLocatorResolver {
                 AppleResolvedMediaLocator.AbsolutePath(value)
 
             value.startsWith("content://", ignoreCase = true) ->
-                AppleResolvedMediaLocator.Unsupported("Apple 平台暂不支持 Android content URI。")
+                unsupported(Res.string.apple_android_uri_unsupported)
 
             parseSambaLocator(value) != null ->
-                AppleResolvedMediaLocator.Unsupported("Apple 平台 v1 暂不支持 Samba locator。")
+                unsupported(Res.string.apple_samba_unsupported)
 
             parseWebDavLocator(value) != null ->
-                AppleResolvedMediaLocator.Unsupported("Apple 平台 v1 暂不支持 WebDAV locator。")
+                unsupported(Res.string.apple_webdav_unsupported)
 
             else ->
-                AppleResolvedMediaLocator.Unsupported("Apple 平台暂不支持当前媒体定位符。")
+                unsupported(Res.string.apple_media_unsupported)
         }
+    }
+
+    private fun unsupported(resource: StringResource): AppleResolvedMediaLocator.Unsupported {
+        val text = uiText(resource)
+        return AppleResolvedMediaLocator.Unsupported((text).diagnosticMessage(), text)
     }
 }

@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -8,7 +9,15 @@ import kotlin.test.assertTrue
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
-import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.WebDavOperation
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.webDavHttpFailureText
+import top.iwesley.lyn.music.resources.Res
+import top.iwesley.lyn.music.resources.webdav_anonymous_basic_auth_required
+import top.iwesley.lyn.music.resources.webdav_failure_with_server_detail
 import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
@@ -150,15 +159,26 @@ class WebDavTest {
     }
 
     @Test
-    fun `webdav 401 without auth explains anonymous access is rejected`() {
-        val message = describeWebDavHttpFailure(
-            operation = "扫描",
+    fun `webdav 401 without auth explains anonymous access is rejected`() = runTest {
+        val serverDetail = "Basic realm=\"Restricted\""
+        val text = webDavHttpFailureText(
+            operation = WebDavOperation.Scan,
             statusCode = 401,
             authSent = false,
-            serverDetail = "Basic realm=\"Restricted\"",
+            serverDetail = serverDetail,
         )
 
-        assertTrue(message.contains("拒绝匿名访问"))
-        assertTrue(message.contains("Basic Auth 用户名"))
+        assertEquals(
+            uiText(Res.string.webdav_failure_with_server_detail,
+                uiText(Res.string.webdav_anonymous_basic_auth_required), UiText.Raw(serverDetail)),
+            text,
+        )
+        for ((language, expected) in listOf(
+            AppLanguage.English to "The WebDAV server rejected anonymous access. Enter a Basic Auth username. Server details: $serverDetail",
+            AppLanguage.SimplifiedChinese to "WebDAV 服务端拒绝匿名访问，需要填写 Basic Auth 用户名。 服务端信息: $serverDetail",
+            AppLanguage.TraditionalChinese to "WebDAV 伺服器拒絕匿名存取，需要填寫 Basic Auth 使用者名稱。 伺服器資訊: $serverDetail",
+        )) {
+            assertEquals(expected, resolveUiText(text, language))
+        }
     }
 }

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_add_action">加入</string>
+    <string name="playlists_create_empty_hint">從播放器把當前歌曲加入歌單，或先新建一個空歌單。</string>
+    <string name="playlists_add_current_track_hint">從播放器把當前歌曲加入這裡後，就可以直接播放和管理了。</string>
+    <string name="playlist_add_track_title">加入普通歌單</string>
+    <string name="playlist_add_to_favorites">加入喜歡</string>
+    <string name="playlist_import_added_status">已新增</string>
+    <plurals name="playlist_import_added_track_count">
+        <item quantity="one">已加入 %1$s 首</item>
+        <item quantity="other">已加入 %1$s 首</item>
+    </plurals>
+    <string name="playlists_search_empty_hint">試試調整搜索詞，或清空搜索後查看全部歌單。</string>
+    <string name="playlist_import_already_added_status">已存在</string>
+    <string name="playlist_import_assistant_title">助手</string>
+    <string name="playlists_back_to_list">返回歌單列表</string>
+    <string name="playlist_create_and_add">新建並加入</string>
+    <string name="playlist_create_action">創建</string>
+    <string name="playlist_delete_synced_confirmation">確認刪除“%1$s”嗎？本機和已同步的遠端歌單都會一起刪除。</string>
+    <string name="playlist_delete_title">刪除歌單</string>
+    <string name="playlist_delete_remote_confirmation">確認刪除遠端歌單“%1$s”嗎？刪除後會同步到伺服器。</string>
+    <plurals name="playlist_import_duplicate_track_count">
+        <item quantity="one">重復 %1$s 首</item>
+        <item quantity="other">重復 %1$s 首</item>
+    </plurals>
+    <plurals name="playlist_import_input_duplicate_count">
+        <item quantity="one">輸入內重復：%1$s 首</item>
+        <item quantity="other">輸入內重復：%1$s 首</item>
+    </plurals>
+    <string name="playlist_import_failed_status">加入失敗</string>
+    <string name="playlist_import_text_example">喜歡你 - BEYOND
+唯一 - 鄧紫棋</string>
+    <string name="playlist_import_action">匯入</string>
+    <string name="playlist_import_remote_hint">匯入到遠端歌單“%1$s”。每行使用“歌名 - 歌手”，會遠端搜索 Navidrome 曲庫並加入當前遠端歌單。</string>
+    <string name="playlist_import_local_hint">匯入到“%1$s”。每行使用“歌名 - 歌手”，只會匹配已有曲庫中的歌曲。</string>
+    <string name="playlist_import_title">匯入歌單</string>
+    <string name="playlist_import_text_label">匯入內容</string>
+    <string name="playlist_importing_status">匯入中</string>
+    <string name="playlist_import_invalid_format_status">格式錯誤</string>
+    <string name="playlist_import_line_with_reason">第 %1$s 行：%2$s（%3$s）</string>
+    <string name="playlist_import_line_label">第 %1$s 行：%2$s</string>
+    <string name="playlist_import_line_with_match_count">第 %1$s 行：%2$s（%3$s 個匹配）</string>
+    <plurals name="playlist_import_failed_line_count">
+        <item quantity="one">未匯入 %1$s 行</item>
+        <item quantity="other">未匯入 %1$s 行</item>
+    </plurals>
+    <string name="playlist_detail_loading_title">正在加載歌單詳情</string>
+    <string name="playlists_loading_progress">正在加載歌單目標…</string>
+    <string name="playlists_loading_title">正在加載歌單</string>
+    <string name="playlist_import_multiple_matches_status">多個匹配</string>
+    <string name="playlists_online_sync_hint">當前顯示 Navidrome 遠端歌單，變更會直接同步到伺服器。</string>
+    <string name="playlist_new_title">新建歌單</string>
+    <string name="playlist_import_no_match_status">未匹配</string>
+    <string name="playlists_search_empty_title">沒有匹配的歌單</string>
+    <string name="playlists_unavailable_title">暫無可加入的歌單</string>
+    <string name="playlists_local_empty_title">還沒有普通歌單</string>
+    <string name="playlists_remote_empty_hint">遠端還沒有普通歌單，可以先新建一個空歌單。</string>
+    <string name="playlist_source_tracks_empty">當前來源下沒有歌曲</string>
+    <string name="playlist_opening_status">正在打開歌單</string>
+    <string name="playlist_background_indexing_hint">歌單數據會在頁面顯示後繼續異步整理，請稍候。</string>
+    <string name="playlist_name_label">歌單名稱</string>
+    <string name="playlists_background_loading_hint">歌單列表和歌曲內容會在後台繼續準備，請稍候。</string>
+    <string name="playlist_tracks_loading_hint">正在讀取歌單中的歌曲，請稍候。</string>
+    <string name="playlist_named_tracks_loading_hint">正在讀取“%1$s”中的歌曲，請稍候。</string>
+    <string name="playlists_supported_track_types_hint">普通歌單支持本機歌曲和 Subsonic-compatible 歌曲混合收藏。</string>
+    <string name="playlist_remove_track_action">移出歌單</string>
+    <string name="playlist_rename_action">重命名</string>
+    <string name="playlist_rename_title">重命名歌單</string>
+    <string name="playlist_select_title">選擇一個歌單</string>
+    <string name="playlist_selection_hint">左側會列出普通歌單，點擊後可以查看歌曲並直接播放。</string>
+    <plurals name="playlist_import_existing_track_count">
+        <item quantity="one">已存在 %1$s 首</item>
+        <item quantity="other">已存在 %1$s 首</item>
+    </plurals>
+    <string name="playlist_source_filter_hint">試試切回“%1$s”，或更換其他來源篩選。</string>
+    <string name="playlist_sync_remote_action">同步遠端</string>
+    <string name="playlist_empty_title">歌單還是空的</string>
+</resources>

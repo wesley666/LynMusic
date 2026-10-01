@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_cancel_location_change">Cancel change</string>
+    <string name="startup_copy_error_logs">Copy error logs</string>
+    <string name="startup_location_change_failed">Data location change failed</string>
+    <string name="startup_database_version_recovery_hint">Incompatible database version. Update the app or restore a backup.</string>
+    <string name="startup_preparation_wait_hint">Keep the app open. LynMusic will open automatically when data preparation is complete.</string>
+    <string name="startup_logs_copied">Logs copied</string>
+    <string name="startup_active_folder_recovery_hint">The active data folder is unavailable. Restore the disk or folder and retry. The app will not automatically switch folders.</string>
+    <string name="startup_location_change_retry_hint">The active location has not changed. Check disk space and permissions, then retry or safely cancel the change.</string>
+    <string name="startup_database_version_data_preserved">This version cannot open the local database. The database has been kept to prevent data loss.</string>
+</resources>

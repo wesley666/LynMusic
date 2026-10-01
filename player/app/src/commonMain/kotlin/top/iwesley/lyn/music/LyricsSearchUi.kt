@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import org.jetbrains.compose.resources.StringResource
+
+import top.iwesley.lyn.music.core.model.sourceNameUiText
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +55,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.LyricsDocument
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiPlural
 import top.iwesley.lyn.music.core.model.LyricsSearchApplyMode
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.WorkflowSongCandidate
@@ -73,16 +80,16 @@ internal data class LyricsSearchDialogState(
 )
 
 internal data class LyricsSearchDialogStrings(
-    val formSubtitle: String,
-    val resultsAppliedSubtitle: String,
-    val idleBody: String = "修改搜索条件后点击搜索，结果会显示在这里。",
-    val emptyBody: String = "当前已启用歌词源都没有返回可解析结果，可以继续修改标题、歌手或专辑再试。",
-    val resultsPlaceholderSubtitle: String = "直接歌词结果和 Workflow 歌曲候选会显示在这里。",
-    val backLabel: String = "返回",
-    val cancelLabel: String = "取消",
-    val dismissLabel: String = "关闭",
-    val searchIdleLabel: String = "搜索",
-    val searchLoadingLabel: String = "搜索中...",
+    val formSubtitle: UiText,
+    val resultsAppliedSubtitle: UiText,
+    val idleBody: UiText = uiText(Res.string.lyrics_search_ready_hint),
+    val emptyBody: UiText = uiText(Res.string.lyrics_search_sources_empty_hint),
+    val resultsPlaceholderSubtitle: UiText = uiText(Res.string.lyrics_search_results_placeholder),
+    val backLabel: UiText = uiText(Res.string.common_back),
+    val cancelLabel: UiText = uiText(Res.string.common_cancel),
+    val dismissLabel: UiText = uiText(Res.string.common_close),
+    val searchIdleLabel: UiText = uiText(Res.string.common_search),
+    val searchLoadingLabel: UiText = uiText(Res.string.common_searching),
 )
 
 @Composable
@@ -172,7 +179,7 @@ internal fun LyricsSearchOverlayDialog(
                                 )
                             }
                             TextButton(onClick = onDismiss) {
-                                Text(strings.dismissLabel)
+                                Text(strings.dismissLabel.displayText())
                             }
                         }
                         Row(
@@ -239,7 +246,7 @@ internal fun LyricsSearchOverlayDialog(
                                 IconButton(onClick = onDismiss) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
-                                        contentDescription = strings.dismissLabel,
+                                        contentDescription = strings.dismissLabel.displayText(),
                                         tint = primaryTextColor,
                                     )
                                 }
@@ -274,14 +281,14 @@ internal fun LyricsSearchOverlayDialog(
                                 IconButton(onClick = { mobileScreen = LyricsSearchMobileScreen.FORM }) {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                                        contentDescription = strings.backLabel,
+                                        contentDescription = strings.backLabel.displayText(),
                                         tint = primaryTextColor,
                                     )
                                 }
                                 IconButton(onClick = onDismiss) {
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
-                                        contentDescription = strings.dismissLabel,
+                                        contentDescription = strings.dismissLabel.displayText(),
                                         tint = primaryTextColor,
                                     )
                                 }
@@ -354,8 +361,8 @@ private fun LyricsSearchFormPane(
     ) {
         if (showSectionTitle) {
             LyricsSearchSectionTitle(
-                title = "搜索条件",
-                subtitle = strings.formSubtitle,
+                title = uiString(Res.string.lyrics_search_fields_title),
+                subtitle = strings.formSubtitle.displayText(),
             )
         }
         Card(
@@ -389,7 +396,7 @@ private fun LyricsSearchFormPane(
                     ImeAwareOutlinedTextField(
                         value = title,
                         onValueChange = onTitleChanged,
-                        label = { Text("标题") },
+                        label = { Text(uiString(Res.string.common_title)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         singleLine = true,
@@ -400,7 +407,7 @@ private fun LyricsSearchFormPane(
                             ImeAwareOutlinedTextField(
                                 value = artistName,
                                 onValueChange = onArtistChanged,
-                                label = { Text("歌手") },
+                                label = { Text(uiString(Res.string.common_artist)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -409,7 +416,7 @@ private fun LyricsSearchFormPane(
                             ImeAwareOutlinedTextField(
                                 value = albumTitle,
                                 onValueChange = onAlbumChanged,
-                                label = { Text("专辑") },
+                                label = { Text(uiString(Res.string.library_albums_title)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -421,7 +428,7 @@ private fun LyricsSearchFormPane(
                             ImeAwareOutlinedTextField(
                                 value = artistName,
                                 onValueChange = onArtistChanged,
-                                label = { Text("歌手") },
+                                label = { Text(uiString(Res.string.common_artist)) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -430,7 +437,7 @@ private fun LyricsSearchFormPane(
                             ImeAwareOutlinedTextField(
                                 value = albumTitle,
                                 onValueChange = onAlbumChanged,
-                                label = { Text("专辑") },
+                                label = { Text(uiString(Res.string.library_albums_title)) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -448,7 +455,7 @@ private fun LyricsSearchFormPane(
                                 onClick = onDismiss,
                                 modifier = Modifier.weight(1f),
                             ) {
-                                Text(strings.cancelLabel, maxLines = 1)
+                                Text(strings.cancelLabel.displayText(), maxLines = 1)
                             }
                             Button(
                                 onClick = onSearch,
@@ -456,7 +463,7 @@ private fun LyricsSearchFormPane(
                                 modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(),
                             ) {
-                                Text(if (isLoading) strings.searchLoadingLabel else strings.searchIdleLabel, maxLines = 1)
+                                Text(if (isLoading) strings.searchLoadingLabel.displayText() else strings.searchIdleLabel.displayText(), maxLines = 1)
                             }
                         }
                     } else {
@@ -466,7 +473,7 @@ private fun LyricsSearchFormPane(
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(),
                         ) {
-                            Text(if (isLoading) strings.searchLoadingLabel else strings.searchIdleLabel, maxLines = 1)
+                            Text(if (isLoading) strings.searchLoadingLabel.displayText() else strings.searchIdleLabel.displayText(), maxLines = 1)
                         }
                     }
                     error?.let {
@@ -507,12 +514,12 @@ private fun LyricsSearchResultsPane(
     ) {
         if (showSectionTitle) {
             LyricsSearchSectionTitle(
-                title = "搜索结果",
+                title = uiString(Res.string.search_results_title),
                 subtitle = when {
-                    state.isLoading -> "正在请求已启用的歌词源。"
-                    state.directResults.isNotEmpty() || state.workflowResults.isNotEmpty() -> strings.resultsAppliedSubtitle
-                    state.hasResult -> "当前没有可解析结果，可以继续调整搜索条件。"
-                    else -> strings.resultsPlaceholderSubtitle
+                    state.isLoading -> uiString(Res.string.lyrics_querying_sources_label)
+                    state.directResults.isNotEmpty() || state.workflowResults.isNotEmpty() -> strings.resultsAppliedSubtitle.displayText()
+                    state.hasResult -> uiString(Res.string.lyrics_search_results_empty_hint)
+                    else -> strings.resultsPlaceholderSubtitle.displayText()
                 },
             )
         }
@@ -533,7 +540,7 @@ private fun LyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "正在请求已启用的歌词源...",
+                            uiString(Res.string.lyrics_querying_sources_progress),
                             color = secondaryTextColor,
                         )
                     }
@@ -548,7 +555,7 @@ private fun LyricsSearchResultsPane(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         if (state.directResults.isNotEmpty()) {
-                            Text("直接歌词结果", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                            Text(uiString(Res.string.lyrics_search_direct_results), color = primaryTextColor, fontWeight = FontWeight.SemiBold)
                             state.directResults.forEach { candidate ->
                                 Row(
                                     modifier = Modifier
@@ -573,16 +580,15 @@ private fun LyricsSearchResultsPane(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Text(
-                                                candidate.sourceName,
+                                                candidate.sourceNameUiText().displayText(),
+                                                modifier = Modifier.weight(1f).padding(end = 8.dp),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = primaryTextColor,
                                             )
-                                            val lyricsContentType = resolveLyricsSearchContentType(
-                                                candidate.document,
-                                            )
                                             Text(
-                                                "${lyricsContentType.shortLabel} · ${candidate.document.lines.size} 行",
+                                                resolveLyricsSearchContentType(candidate.document)
+                                                    .summaryText(candidate.document.lines.size).displayText(),
                                                 color = secondaryTextColor,
                                             )
                                         }
@@ -603,7 +609,7 @@ private fun LyricsSearchResultsPane(
                                             )
                                         }
                                         Text(
-                                            lyricsSearchPreview(candidate),
+                                            lyricsSearchPreview(candidate).displayText(),
                                             color = secondaryTextColor,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
@@ -613,7 +619,7 @@ private fun LyricsSearchResultsPane(
                             }
                         }
                         if (state.workflowResults.isNotEmpty()) {
-                            Text("Workflow 歌曲候选", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                            Text(uiString(Res.string.lyrics_workflow_candidates_title), color = primaryTextColor, fontWeight = FontWeight.SemiBold)
                             state.workflowResults.forEach { candidate ->
                                 Row(
                                     modifier = Modifier
@@ -657,7 +663,7 @@ private fun LyricsSearchResultsPane(
                                             fontWeight = FontWeight.Medium,
                                         )
                                         Text(
-                                            workflowSearchPreview(candidate),
+                                            workflowSearchPreview(candidate).displayText(),
                                             color = secondaryTextColor,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
@@ -677,8 +683,8 @@ private fun LyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         LyricsSearchEmptyStateCard(
-                            title = "没有找到可用歌词",
-                            body = strings.emptyBody,
+                            title = uiString(Res.string.lyrics_not_found),
+                            body = strings.emptyBody.displayText(),
                         )
                     }
                 }
@@ -691,8 +697,8 @@ private fun LyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         LyricsSearchEmptyStateCard(
-                            title = "准备搜索",
-                            body = strings.idleBody,
+                            title = uiString(Res.string.lyrics_search_ready_title),
+                            body = strings.idleBody.displayText(),
                         )
                     }
                 }
@@ -743,7 +749,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    text = "确认应用方式",
+                    text = uiString(Res.string.lyrics_apply_mode_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.ExtraBold,
                 )
@@ -760,12 +766,12 @@ private fun LyricsSearchApplyConfirmationOverlay(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = confirmation.sourceName,
+                            text = confirmation.sourceName.displayText(),
                             color = shellColors.secondaryText,
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Text(
-                            text = confirmation.title,
+                            text = confirmation.title.displayText(),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
@@ -773,7 +779,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                         )
                         confirmation.metadata?.let { metadata ->
                             Text(
-                                text = metadata,
+                                text = metadata.displayText(),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = shellColors.secondaryText,
                                 maxLines = 1,
@@ -783,7 +789,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                     }
                 }
                 Text(
-                    text = confirmation.preview,
+                    text = confirmation.preview.displayText(),
                     color = shellColors.secondaryText,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -794,7 +800,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                             onClick = { onApply(LyricsSearchApplyMode.FULL) },
                             modifier = modifier,
                         ) {
-                            Text("应用")
+                            Text(uiString(Res.string.common_apply))
                         }
                     }
                     add { modifier ->
@@ -802,7 +808,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                             onClick = { onApply(LyricsSearchApplyMode.LYRICS_ONLY) },
                             modifier = modifier,
                         ) {
-                            Text("仅应用歌词")
+                            Text(uiString(Res.string.lyrics_apply_lyrics_only))
                         }
                     }
                     if (LyricsSearchApplyMode.ARTWORK_ONLY in applyModes) {
@@ -811,7 +817,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                                 onClick = { onApply(LyricsSearchApplyMode.ARTWORK_ONLY) },
                                 modifier = modifier,
                             ) {
-                                Text("仅应用封面")
+                                Text(uiString(Res.string.lyrics_apply_artwork_only))
                             }
                         }
                     }
@@ -820,7 +826,7 @@ private fun LyricsSearchApplyConfirmationOverlay(
                             onClick = onDismiss,
                             modifier = modifier,
                         ) {
-                            Text("取消")
+                            Text(uiString(Res.string.common_cancel))
                         }
                     }
                 }
@@ -859,47 +865,51 @@ fun lyricsSearchApplyModes(artworkLocator: String?): List<LyricsSearchApplyMode>
 }
 
 private sealed interface LyricsSearchApplyConfirmation {
-    val sourceName: String
-    val title: String
-    val metadata: String?
-    val preview: String
+    val sourceName: UiText
+    val title: UiText
+    val metadata: UiText?
+    val preview: UiText
     val artworkLocator: String?
 
     data class Direct(val candidate: LyricsSearchCandidate) : LyricsSearchApplyConfirmation {
-        override val sourceName: String = candidate.sourceName
-        override val title: String = candidate.title?.takeIf { it.isNotBlank() } ?: "歌词结果"
-        override val metadata: String? = buildString {
-            append(resolveLyricsSearchContentType(candidate.document).descriptionLabel)
-            append(" · ")
-            append(candidate.document.lines.size)
-            append(" 行")
-            lyricsSearchCandidateMetadata(candidate)?.let {
-                append(" · ")
-                append(it)
-            }
-        }
-        override val preview: String = lyricsSearchPreview(candidate)
-        override val artworkLocator: String? = candidate.artworkLocator
+        override val sourceName get() = candidate.sourceNameUiText()
+        override val title get() = candidate.title?.takeIf { it.isNotBlank() }?.let(UiText::Raw)
+            ?: uiText(Res.string.lyrics_search_result_label)
+        override val metadata get(): UiText = UiText.Joined(listOfNotNull(
+            resolveLyricsSearchContentType(candidate.document).summaryText(candidate.document.lines.size, describeType = true),
+            lyricsSearchCandidateMetadata(candidate)?.let(UiText::Raw),
+        ))
+        override val preview get() = lyricsSearchPreview(candidate)
+        override val artworkLocator = candidate.artworkLocator
     }
 
     data class Workflow(val candidate: WorkflowSongCandidate) : LyricsSearchApplyConfirmation {
-        override val sourceName: String = candidate.sourceName
-        override val title: String = candidate.title
-        override val metadata: String? = workflowSearchPreview(candidate)
-        override val preview: String =
-            "“应用”或“仅应用歌词”会继续请求该候选的歌词内容。"
-        override val artworkLocator: String? = candidate.imageUrl
+        override val sourceName = UiText.Raw(candidate.sourceName)
+        override val title = UiText.Raw(candidate.title)
+        override val metadata get() = workflowSearchPreview(candidate)
+        override val preview = uiText(Res.string.lyrics_workflow_candidate_apply_hint)
+        override val artworkLocator = candidate.imageUrl
     }
 }
 
 internal enum class LyricsSearchContentType(
-    val shortLabel: String,
-    val descriptionLabel: String,
+    private val shortLabelResource: StringResource,
+    private val descriptionLabelResource: StringResource,
 ) {
-    WORD("逐字", "逐字歌词"),
-    LINE("逐行", "逐行歌词"),
-    PLAIN("纯文本", "纯文本歌词"),
+    WORD(Res.string.lyrics_sync_mode_word, Res.string.lyrics_word_synced_label),
+    LINE(Res.string.lyrics_sync_mode_line, Res.string.lyrics_line_synced_label),
+    PLAIN(Res.string.lyrics_sync_mode_plain_text, Res.string.lyrics_plain_text_label);
+
+    val shortLabel: UiText get() = uiText(shortLabelResource)
+    val descriptionLabel: UiText get() = uiText(descriptionLabelResource)
+
+    fun summaryText(lineCount: Int, describeType: Boolean = false): UiText = lyricsSearchLineCountSummary(
+        uiText(if (describeType) descriptionLabelResource else shortLabelResource), lineCount,
+    )
 }
+
+internal fun lyricsSearchLineCountSummary(typeLabel: UiText, lineCount: Int): UiText =
+    uiText(Res.string.lyrics_result_type_and_line_count, typeLabel, uiPlural(Res.plurals.common_line_count, lineCount, lineCount))
 
 internal fun resolveLyricsSearchContentType(document: LyricsDocument): LyricsSearchContentType {
     return when {
@@ -913,13 +923,13 @@ internal fun resolveLyricsSearchContentType(document: LyricsDocument): LyricsSea
     }
 }
 
-private fun lyricsSearchPreview(candidate: LyricsSearchCandidate): String {
+private fun lyricsSearchPreview(candidate: LyricsSearchCandidate): UiText {
     return candidate.document.lines
         .map { it.text.trim() }
         .filter { it.isNotEmpty() }
         .take(2)
         .joinToString(" / ")
-        .ifBlank { "歌词内容为空" }
+        .takeIf { it.isNotBlank() }?.let(UiText::Raw) ?: uiText(Res.string.lyrics_empty_message)
 }
 
 private fun lyricsSearchCandidateMetadata(candidate: LyricsSearchCandidate): String? {
@@ -936,15 +946,11 @@ private fun lyricsSearchCandidateMetadata(candidate: LyricsSearchCandidate): Str
     }.takeIf { it.isNotBlank() }
 }
 
-private fun workflowSearchPreview(candidate: WorkflowSongCandidate): String {
-    return buildString {
-        append(candidate.artists.joinToString(" / ").ifBlank { "未知歌手" })
-        candidate.album?.takeIf { it.isNotBlank() }?.let {
-            append(" · ")
-            append(it)
-        }
-    }.ifBlank { "歌曲候选" }
-}
+private fun workflowSearchPreview(candidate: WorkflowSongCandidate): UiText = UiText.Joined(listOfNotNull(
+    candidate.artists.joinToString(" / ").takeIf { it.isNotBlank() }?.let(UiText::Raw)
+        ?: uiText(Res.string.common_unknown_singer),
+    candidate.album?.takeIf { it.isNotBlank() }?.let(UiText::Raw),
+))
 
 @Composable
 private fun LyricsSearchSectionTitle(

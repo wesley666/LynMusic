@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.tags
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +16,12 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -35,6 +43,49 @@ import top.iwesley.lyn.music.domain.serializeLyricsDocument
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MusicTagsStoreTest {
+    @Test
+    fun describedTagFormatFollowsLanguageWithoutResettingDraft() = runTest {
+        val originalLanguage = AppLanguageRuntime.appLanguage.value
+        val track = sampleTrack()
+        val snapshot = sampleSnapshot().copy(tagLabel = "AVFoundation", tagLabelText = uiText(Res.string.tag_format_read_only, "AVFoundation"))
+        val repository = FakeMusicTagsRepository(listOf(track), mapOf(track.id to snapshot))
+        val store = createStore(repository, testScheduler)
+        try {
+            advanceUntilIdle()
+            store.dispatch(MusicTagsIntent.TitleChanged("用户输入的标题"))
+            advanceUntilIdle()
+            val state = store.state.value
+            assertEquals(snapshot.tagLabelText, state.rowMetadata[track.id]?.tagLabelText)
+            assertEquals("AVFoundation", state.rowMetadata[track.id]?.tagLabel)
+            val labels = listOf(
+                AppLanguage.English to "Tag format: AVFoundation · read-only",
+                AppLanguage.SimplifiedChinese to "标签格式：AVFoundation · 只读",
+                AppLanguage.TraditionalChinese to "標籤格式：AVFoundation · 只讀",
+            )
+            labels.forEach { (language, expected) ->
+                AppLanguageRuntime.update(language)
+                advanceUntilIdle()
+                assertEquals(expected, resolveUiText(state.tagFormatText(track.id), language))
+                assertSame(state, store.state.value)
+            }
+            assertEquals("用户输入的标题", state.draft.title)
+            assertTrue(state.isDirty)
+            assertEquals(0, repository.saveCalls)
+        } finally {
+            AppLanguageRuntime.update(originalLanguage)
+        }
+    }
+
+    @Test
+    fun rawTagFormatsAndMissingMetadataDoNotUseAnotherTracksDescription() = runTest {
+        val state = MusicTagsState(
+            selectedTrackId = "selected",
+            selectedSnapshot = sampleSnapshot().copy(tagLabelText = uiText(Res.string.tag_format_read_only, "AVFoundation")),
+            rowMetadata = mapOf("raw" to MusicTagsRowMetadata(tagLabel = "ID3v2.3 原文")),
+        )
+        assertEquals("Tag format: ID3v2.3 原文", resolveUiText(state.tagFormatText("raw"), AppLanguage.English))
+        assertEquals("Tag format: Shown after reading", resolveUiText(state.tagFormatText("missing"), AppLanguage.English))
+    }
 
     @Test
     fun `loads first local track and initializes draft from snapshot`() = runTest {
@@ -48,10 +99,10 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(track.id, state.selectedTrackId)
-        assertEquals("情歌", state.draft.title)
-        assertEquals("梁静茹", state.draft.artistName)
-        assertEquals("ID3v2.3", state.rowMetadata[track.id]?.tagLabel)
+        assertLocalizedEquals(track.id, state.selectedTrackId)
+        assertLocalizedEquals("情歌", state.draft.title)
+        assertLocalizedEquals("梁静茹", state.draft.artistName)
+        assertLocalizedEquals("ID3v2.3", state.rowMetadata[track.id]?.tagLabel)
     }
 
     @Test
@@ -74,8 +125,8 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertTrue(state.showDiscardChangesDialog)
-        assertEquals(MusicTagsPendingTrackAction.SelectOnly(second.id), state.pendingTrackAction)
-        assertEquals(first.id, state.selectedTrackId)
+        assertLocalizedEquals(MusicTagsPendingTrackAction.SelectOnly(second.id), state.pendingTrackAction)
+        assertLocalizedEquals(first.id, state.selectedTrackId)
     }
 
     @Test
@@ -100,8 +151,8 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertFalse(state.showDiscardChangesDialog)
-        assertEquals(second.id, state.selectedTrackId)
-        assertEquals("丝路", state.draft.title)
+        assertLocalizedEquals(second.id, state.selectedTrackId)
+        assertLocalizedEquals("丝路", state.draft.title)
         assertFalse(state.isDirty)
     }
 
@@ -125,8 +176,8 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertTrue(state.showDiscardChangesDialog)
-        assertEquals(MusicTagsPendingTrackAction.SelectAndPlay(second.id), state.pendingTrackAction)
-        assertEquals(first.id, state.selectedTrackId)
+        assertLocalizedEquals(MusicTagsPendingTrackAction.SelectAndPlay(second.id), state.pendingTrackAction)
+        assertLocalizedEquals(first.id, state.selectedTrackId)
     }
 
     @Test
@@ -152,9 +203,9 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertFalse(state.showDiscardChangesDialog)
-        assertEquals(second.id, state.selectedTrackId)
+        assertLocalizedEquals(second.id, state.selectedTrackId)
         assertFalse(state.isDirty)
-        assertEquals(
+        assertLocalizedEquals(
             MusicTagsEffect.PlayTracks(listOf(first, second), 1),
             effect.await(),
         )
@@ -178,7 +229,7 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertFalse(state.showDiscardChangesDialog)
-        assertEquals(
+        assertLocalizedEquals(
             MusicTagsEffect.PlayTracks(listOf(track), 0),
             effect.await(),
         )
@@ -220,10 +271,10 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("标签已保存。", state.message)
+        assertLocalizedEquals("标签已保存。", state.message)
         assertFalse(state.isDirty)
-        assertEquals("新的情歌", state.selectedTrack?.title)
-        assertEquals("新的情歌", state.draft.title)
+        assertLocalizedEquals("新的情歌", state.selectedTrack?.title)
+        assertLocalizedEquals("新的情歌", state.draft.title)
     }
 
     @Test
@@ -236,7 +287,7 @@ class MusicTagsStoreTest {
         val store = createStore(repository, testScheduler)
 
         advanceUntilIdle()
-        assertEquals("旧歌词", store.state.value.draft.embeddedLyrics)
+        assertLocalizedEquals("旧歌词", store.state.value.draft.embeddedLyrics)
 
         store.dispatch(MusicTagsIntent.EmbeddedLyricsChanged("新的第一行\n新的第二行"))
         advanceUntilIdle()
@@ -244,14 +295,14 @@ class MusicTagsStoreTest {
 
         store.dispatch(MusicTagsIntent.ResetDraft)
         advanceUntilIdle()
-        assertEquals("旧歌词", store.state.value.draft.embeddedLyrics)
+        assertLocalizedEquals("旧歌词", store.state.value.draft.embeddedLyrics)
 
         store.dispatch(MusicTagsIntent.EmbeddedLyricsChanged("新的第一行\n新的第二行"))
         store.dispatch(MusicTagsIntent.Save)
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("新的第一行\n新的第二行", state.draft.embeddedLyrics)
+        assertLocalizedEquals("新的第一行\n新的第二行", state.draft.embeddedLyrics)
         assertFalse(state.isDirty)
     }
 
@@ -290,9 +341,9 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("标签已刷新。", state.message)
-        assertEquals("外部改过的标题", state.selectedTrack?.title)
-        assertEquals("外部改过的标题", state.draft.title)
+        assertLocalizedEquals("标签已刷新。", state.message)
+        assertLocalizedEquals("外部改过的标题", state.selectedTrack?.title)
+        assertLocalizedEquals("外部改过的标题", state.draft.title)
         assertFalse(state.isRefreshing)
     }
 
@@ -312,9 +363,9 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("写回失败", state.message)
+        assertLocalizedEquals("标签保存失败。\n写回失败", state.message)
         assertTrue(state.isDirty)
-        assertEquals("失败版本", state.draft.title)
+        assertLocalizedEquals("失败版本", state.draft.title)
     }
 
     @Test
@@ -333,7 +384,7 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("当前平台暂不支持本地标签写回。", state.message)
+        assertLocalizedEquals("当前平台暂不支持本地标签写回。", state.message)
         assertTrue(state.isDirty)
     }
 
@@ -367,19 +418,19 @@ class MusicTagsStoreTest {
         store.dispatch(MusicTagsIntent.OpenOnlineLyricsSearch)
         advanceUntilIdle()
 
-        assertEquals("草稿标题", store.state.value.onlineLyricsSearch.title)
-        assertEquals("草稿歌手", store.state.value.onlineLyricsSearch.artistName)
-        assertEquals("草稿专辑", store.state.value.onlineLyricsSearch.albumTitle)
+        assertLocalizedEquals("草稿标题", store.state.value.onlineLyricsSearch.title)
+        assertLocalizedEquals("草稿歌手", store.state.value.onlineLyricsSearch.artistName)
+        assertLocalizedEquals("草稿专辑", store.state.value.onlineLyricsSearch.albumTitle)
 
         store.dispatch(MusicTagsIntent.SearchOnlineLyrics)
         advanceUntilIdle()
 
-        assertEquals(track.id, lyricsRepository.lastSearchTrack?.id)
-        assertEquals("草稿标题", lyricsRepository.lastSearchTrack?.title)
-        assertEquals("草稿歌手", lyricsRepository.lastSearchTrack?.artistName)
-        assertEquals("草稿专辑", lyricsRepository.lastSearchTrack?.albumTitle)
-        assertEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
-        assertEquals(1, store.state.value.onlineLyricsSearch.directResults.size)
+        assertLocalizedEquals(track.id, lyricsRepository.lastSearchTrack?.id)
+        assertLocalizedEquals("草稿标题", lyricsRepository.lastSearchTrack?.title)
+        assertLocalizedEquals("草稿歌手", lyricsRepository.lastSearchTrack?.artistName)
+        assertLocalizedEquals("草稿专辑", lyricsRepository.lastSearchTrack?.albumTitle)
+        assertLocalizedEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
+        assertLocalizedEquals(1, store.state.value.onlineLyricsSearch.directResults.size)
     }
 
     @Test
@@ -415,14 +466,14 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("导入标题", state.draft.title)
-        assertEquals("导入歌手", state.draft.artistName)
-        assertEquals("导入专辑", state.draft.albumTitle)
-        assertEquals(serializeLyricsDocument(lyricsDocument), state.draft.embeddedLyrics)
+        assertLocalizedEquals("导入标题", state.draft.title)
+        assertLocalizedEquals("导入歌手", state.draft.artistName)
+        assertLocalizedEquals("导入专辑", state.draft.albumTitle)
+        assertLocalizedEquals(serializeLyricsDocument(lyricsDocument), state.draft.embeddedLyrics)
         assertTrue(state.isDirty)
         assertFalse(state.onlineLyricsSearch.isVisible)
-        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
-        assertEquals(0, repository.saveCalls)
+        assertLocalizedEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals(0, repository.saveCalls)
     }
 
     @Test
@@ -455,8 +506,8 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(enhancedRawPayload, state.draft.embeddedLyrics)
-        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals(enhancedRawPayload, state.draft.embeddedLyrics)
+        assertLocalizedEquals("已写入编辑器，点击保存可写回文件。", state.message)
         assertTrue(state.isDirty)
     }
 
@@ -510,17 +561,17 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(track.id, lyricsRepository.lastResolvedWorkflowTrack?.id)
-        assertEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
-        assertEquals("候选标题", state.draft.title)
-        assertEquals("甲 / 乙", state.draft.artistName)
-        assertEquals("候选专辑", state.draft.albumTitle)
-        assertEquals(serializeLyricsDocument(resolvedDocument), state.draft.embeddedLyrics)
-        assertEquals(listOf<Byte>(1, 2, 3), state.draft.pendingArtworkBytes?.toList())
+        assertLocalizedEquals(track.id, lyricsRepository.lastResolvedWorkflowTrack?.id)
+        assertLocalizedEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
+        assertLocalizedEquals("候选标题", state.draft.title)
+        assertLocalizedEquals("甲 / 乙", state.draft.artistName)
+        assertLocalizedEquals("候选专辑", state.draft.albumTitle)
+        assertLocalizedEquals(serializeLyricsDocument(resolvedDocument), state.draft.embeddedLyrics)
+        assertLocalizedEquals(listOf<Byte>(1, 2, 3), state.draft.pendingArtworkBytes?.toList())
         assertFalse(state.draft.clearArtwork)
         assertTrue(state.isDirty)
-        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
-        assertEquals(0, repository.saveCalls)
+        assertLocalizedEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals(0, repository.saveCalls)
     }
 
     @Test
@@ -563,9 +614,9 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(enhancedRawPayload, state.draft.embeddedLyrics)
-        assertEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
-        assertEquals("已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals(enhancedRawPayload, state.draft.embeddedLyrics)
+        assertLocalizedEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
+        assertLocalizedEquals("已写入编辑器，点击保存可写回文件。", state.message)
         assertTrue(state.isDirty)
     }
 
@@ -599,9 +650,9 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("带封面歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals("带封面歌词", state.draft.embeddedLyrics)
         assertNull(state.draft.pendingArtworkBytes)
-        assertEquals("已写入编辑器，封面导入失败：下载失败", state.message)
+        assertLocalizedEquals("已写入编辑器，封面导入失败：读取失败。\n下载失败", state.message)
         assertTrue(state.isDirty)
     }
 
@@ -635,13 +686,13 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("情歌", state.draft.title)
-        assertEquals("梁静茹", state.draft.artistName)
-        assertEquals("静茹 & 情歌", state.draft.albumTitle)
-        assertEquals("新歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals("情歌", state.draft.title)
+        assertLocalizedEquals("梁静茹", state.draft.artistName)
+        assertLocalizedEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertLocalizedEquals("新歌词", state.draft.embeddedLyrics)
         assertNull(state.draft.pendingArtworkBytes)
         assertFalse(state.onlineLyricsSearch.isVisible)
-        assertEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
     }
 
     @Test
@@ -677,13 +728,13 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals("情歌", state.draft.title)
-        assertEquals("梁静茹", state.draft.artistName)
-        assertEquals("静茹 & 情歌", state.draft.albumTitle)
-        assertEquals("旧歌词", state.draft.embeddedLyrics)
-        assertEquals(listOf<Byte>(9, 8, 7), state.draft.pendingArtworkBytes?.toList())
+        assertLocalizedEquals("情歌", state.draft.title)
+        assertLocalizedEquals("梁静茹", state.draft.artistName)
+        assertLocalizedEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertLocalizedEquals("旧歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals(listOf<Byte>(9, 8, 7), state.draft.pendingArtworkBytes?.toList())
         assertFalse(state.onlineLyricsSearch.isVisible)
-        assertEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
     }
 
     @Test
@@ -725,15 +776,15 @@ class MusicTagsStoreTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(track.id, lyricsRepository.lastResolvedWorkflowTrack?.id)
-        assertEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
-        assertEquals("情歌", state.draft.title)
-        assertEquals("梁静茹", state.draft.artistName)
-        assertEquals("静茹 & 情歌", state.draft.albumTitle)
-        assertEquals("工作流新歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals(track.id, lyricsRepository.lastResolvedWorkflowTrack?.id)
+        assertLocalizedEquals(workflowCandidate, lyricsRepository.lastResolvedWorkflowCandidate)
+        assertLocalizedEquals("情歌", state.draft.title)
+        assertLocalizedEquals("梁静茹", state.draft.artistName)
+        assertLocalizedEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertLocalizedEquals("工作流新歌词", state.draft.embeddedLyrics)
         assertNull(state.draft.pendingArtworkBytes)
         assertFalse(state.onlineLyricsSearch.isVisible)
-        assertEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals("歌词已写入编辑器，点击保存可写回文件。", state.message)
     }
 
     @Test
@@ -785,13 +836,13 @@ class MusicTagsStoreTest {
         val state = store.state.value
         assertNull(lyricsRepository.lastResolvedWorkflowTrack)
         assertNull(lyricsRepository.lastResolvedWorkflowCandidate)
-        assertEquals("情歌", state.draft.title)
-        assertEquals("梁静茹", state.draft.artistName)
-        assertEquals("静茹 & 情歌", state.draft.albumTitle)
-        assertEquals("旧歌词", state.draft.embeddedLyrics)
-        assertEquals(listOf<Byte>(6, 5, 4), state.draft.pendingArtworkBytes?.toList())
+        assertLocalizedEquals("情歌", state.draft.title)
+        assertLocalizedEquals("梁静茹", state.draft.artistName)
+        assertLocalizedEquals("静茹 & 情歌", state.draft.albumTitle)
+        assertLocalizedEquals("旧歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals(listOf<Byte>(6, 5, 4), state.draft.pendingArtworkBytes?.toList())
         assertFalse(state.onlineLyricsSearch.isVisible)
-        assertEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
+        assertLocalizedEquals("封面已写入编辑器，点击保存可写回文件。", state.message)
     }
 
     @Test
@@ -825,9 +876,9 @@ class MusicTagsStoreTest {
 
         val state = store.state.value
         assertTrue(state.onlineLyricsSearch.isVisible)
-        assertEquals("旧歌词", state.draft.embeddedLyrics)
+        assertLocalizedEquals("旧歌词", state.draft.embeddedLyrics)
         assertNull(state.draft.pendingArtworkBytes)
-        assertEquals("封面导入失败：下载失败", state.message)
+        assertLocalizedEquals("封面导入失败：读取失败。\n下载失败", state.message)
     }
 
     private fun createStore(

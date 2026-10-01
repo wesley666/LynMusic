@@ -547,7 +547,9 @@ class NavidromeEngineTest {
         assertEquals(0, report.discoveredAudioFileCount)
         assertTrue(report.tracks.isEmpty())
         assertTrue(report.failures.isEmpty())
-        assertEquals(listOf("当前 Navidrome 账号下没有可同步的歌曲。"), report.warnings)
+        val warning = report.warnings.single()
+        assertEquals("当前 Navidrome 账号下没有可同步的歌曲。", warning.diagnostic)
+        assertNotNull(warning.text)
     }
 
     @Test

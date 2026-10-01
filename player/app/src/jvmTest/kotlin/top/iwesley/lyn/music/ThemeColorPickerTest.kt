@@ -6,6 +6,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ThemeColorPickerTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `argb and hsv conversion round trips preset colors`() {
         listOf(

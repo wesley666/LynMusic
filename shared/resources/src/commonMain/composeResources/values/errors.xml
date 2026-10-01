@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="data_location_platform_unsupported">Changing the data location is unavailable on this platform.</string>
+    <string name="storage_management_platform_unsupported">Storage management is unavailable on this platform.</string>
+    <string name="device_info_platform_unsupported">Device information is unavailable on this platform.</string>
+    <string name="audio_tags_platform_unsupported">Audio tag editing is unavailable on this platform.</string>
+    <string name="artwork_picker_platform_unsupported">Choosing artwork is unavailable on this platform.</string>
+    <string name="vlc_picker_platform_unsupported">Choosing a VLC path is unavailable on this platform.</string>
+    <string name="offline_download_platform_unsupported">Offline downloads are unavailable on this platform.</string>
+    <string name="folder_picker_open_failed">Unable to show the folder picker.</string>
+    <string name="folder_selection_unrecognized">Unable to recognize the selected folder.</string>
+    <string name="folder_access_expired">Folder access is invalid. Grant access again.</string>
+    <string name="local_track_location_invalid">The local song location is invalid.</string>
+    <string name="local_track_source_missing">The source for this local song no longer exists.</string>
+    <string name="local_track_file_missing">The local song file no longer exists.</string>
+    <string name="folder_scan_unreadable_index_preserved">Audio files were found but could not be read. The existing index was preserved.</string>
+    <string name="folder_contents_read_failed">Unable to read the folder contents.</string>
+    <string name="file_provider_no_readable_files">The file provider returned no readable files.</string>
+    <string name="local_track_path_unresolved">Unable to resolve the local song path.</string>
+    <string name="ios_files_tag_writing_unsupported">Songs imported from the iOS Files app do not support tag writing.</string>
+    <string name="local_track_file_url_invalid">The local song file URL is invalid.</string>
+    <string name="lyrics_image_creation_failed">Unable to create the image.</string>
+    <string name="photo_library_write_permission_missing">Photo library write access is unavailable.</string>
+    <string name="lyrics_image_save_failed">Unable to save the image to the photo library.</string>
+    <string name="lyrics_temporary_image_creation_failed">Unable to create a temporary image file.</string>
+    <string name="offline_subsonic_source_unavailable">The Subsonic-compatible source is unavailable.</string>
+    <string name="offline_emby_source_unavailable">The Emby source is unavailable.</string>
+    <string name="offline_local_track_unnecessary">Local songs do not need offline downloads.</string>
+    <string name="offline_download_address_unavailable">No download address is available for this remote source.</string>
+    <string name="offline_webdav_source_unavailable">The WebDAV source is unavailable.</string>
+    <string name="offline_samba_source_unavailable">The Samba source is unavailable.</string>
+    <string name="offline_download_http_failed">Download failed: HTTP %1$s.</string>
+    <string name="lyrics_image_save_cancelled">Save cancelled.</string>
+    <string name="lyrics_image_data_unreadable">Unable to read the image data.</string>
+    <string name="lyrics_image_png_export_failed">Unable to export PNG data.</string>
+    <string name="font_import_format_unsupported">Only .ttf and .otf fonts can be imported.</string>
+    <string name="font_file_delete_failed">Unable to delete the font file.</string>
+    <string name="system_clipboard_unavailable">The system clipboard is unavailable.</string>
+    <string name="lyrics_image_file_creation_failed">Unable to create the image file.</string>
+    <string name="lyrics_image_file_write_failed">Unable to write the image file.</string>
+    <string name="font_selection_unreadable">Unable to read the selected font.</string>
+    <string name="cast_lan_address_unavailable">Unable to obtain the phone's LAN address.</string>
+    <string name="cast_proxy_port_unavailable">Unable to obtain the cast proxy port.</string>
+</resources>

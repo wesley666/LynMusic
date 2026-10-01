@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_request_failed">%1$s %2$s request failed: %3$s</string>
+    <string name="server_http_failed">%1$s %2$s failed, HTTP %3$d</string>
+    <string name="server_response_not_object">%1$s %2$s did not return a JSON object.</string>
+    <string name="server_response_failed">%1$s %2$s returned a failure status.</string>
+    <string name="server_response_empty">%1$s %2$s returned an empty response.</string>
+    <string name="server_field_empty">%1$s %2$s is empty.</string>
+    <string name="server_response_field_missing">The %1$s response is missing %2$s.</string>
+    <string name="server_response_field_empty">The %1$s response has an empty %2$s.</string>
+    <string name="server_response_field_invalid">%1$s %2$s is missing or has an invalid format.</string>
+    <string name="server_response_not_array">The %1$s %2$s response is not an array.</string>
+    <string name="server_response_item_invalid">The %1$s %2$s response has an invalid item at index %3$d.</string>
+    <string name="emby_items_page_timeout">Emby Items timed out: StartIndex=%1$d, Limit=%2$d. Retrying with smaller pages did not succeed.</string>
+</resources>

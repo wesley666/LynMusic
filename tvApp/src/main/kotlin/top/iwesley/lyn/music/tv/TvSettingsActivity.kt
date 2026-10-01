@@ -1,5 +1,16 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.lastErrorUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.displayText
+
+import top.iwesley.lyn.music.uiDisplayText
+import top.iwesley.lyn.music.uiString
+
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -154,27 +165,31 @@ class TvSettingsActivity : TvComponentActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         var appComponentResult by mutableStateOf(tvAppComponentResult())
         setContent {
-            val component = appComponentResult.getOrNull()
-            if (component == null) {
-                TvMainTheme {
-                    TvSettingsUnavailableScreen(
-                        onRetry = {
-                            appComponentResult = tvAppComponentResult()
-                        },
+            ProvideUiLanguage {
+                val component = appComponentResult.getOrNull()
+                if (component == null) {
+                    TvMainTheme {
+                        TvSettingsUnavailableScreen(
+                            onRetry = {
+                                appComponentResult = tvAppComponentResult()
+                            },
+                            onBack = ::finish,
+                        )
+                    }
+                    return@ProvideUiLanguage
+                }
+                val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
+                ProvideTvSettingsDensity(appDisplayScalePreset) {
+                    TvSettingsApp(
+                        component = component,
+                        pickLocalFolder = { (application as LynMusicApplication).pickLocalFolder() },
                         onBack = ::finish,
                     )
                 }
-                return@setContent
+
+
             }
-            val appDisplayScalePreset by component.appDisplayScalePreset.collectAsState()
-            ProvideTvSettingsDensity(appDisplayScalePreset) {
-                TvSettingsApp(
-                    component = component,
-                    pickLocalFolder = { (application as LynMusicApplication).pickLocalFolder() },
-                    onBack = ::finish,
-                )
-            }
-        }
+}
     }
 
     companion object {
@@ -224,6 +239,7 @@ private fun TvSettingsScreen(
 ) {
     BackHandler(onBack = onBack)
     var selectedSection by remember { mutableStateOf(TvSettingsSection.Sources) }
+    val generalFocusRequester = remember { FocusRequester() }
     val sourcesFocusRequester = remember { FocusRequester() }
     val storageFocusRequester = remember { FocusRequester() }
     val aboutDeviceFocusRequester = remember { FocusRequester() }
@@ -231,6 +247,7 @@ private fun TvSettingsScreen(
     val contentInitialFocusRequester = remember { FocusRequester() }
     val focusCoordinator = remember { TvSettingsFocusCoordinator() }
     val selectedSectionFocusRequester = when (selectedSection) {
+        TvSettingsSection.General -> generalFocusRequester
         TvSettingsSection.Sources -> sourcesFocusRequester
         TvSettingsSection.Storage -> storageFocusRequester
         TvSettingsSection.AboutDevice -> aboutDeviceFocusRequester
@@ -247,6 +264,7 @@ private fun TvSettingsScreen(
         TvSettingsNavigationPane(
             selectedSection = selectedSection,
             showAppUpdateBadge = settingsState.appUpdateHasNewVersion == true,
+            generalFocusRequester = generalFocusRequester,
             sourcesFocusRequester = sourcesFocusRequester,
             storageFocusRequester = storageFocusRequester,
             aboutDeviceFocusRequester = aboutDeviceFocusRequester,
@@ -264,6 +282,13 @@ private fun TvSettingsScreen(
                 .fillMaxHeight(),
         ) {
             when (selectedSection) {
+                TvSettingsSection.General -> TvLanguageSettingsPane(
+                    state = settingsState,
+                    onIntent = onSettingsIntent,
+                    initialFocusRequester = contentInitialFocusRequester,
+                    leftFocusRequester = generalFocusRequester,
+                    focusCoordinator = focusCoordinator,
+                )
                 TvSettingsSection.Sources -> TvSourcesSettingsPane(
                     state = importState,
                     onIntent = onImportIntent,
@@ -310,6 +335,7 @@ private fun TvSettingsScreen(
 private fun TvSettingsNavigationPane(
     selectedSection: TvSettingsSection,
     showAppUpdateBadge: Boolean,
+    generalFocusRequester: FocusRequester,
     sourcesFocusRequester: FocusRequester,
     storageFocusRequester: FocusRequester,
     aboutDeviceFocusRequester: FocusRequester,
@@ -327,7 +353,7 @@ private fun TvSettingsNavigationPane(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = "设置",
+            text = uiString(Res.string.settings_title),
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.ExtraBold,
             style = MaterialTheme.typography.headlineMedium,
@@ -339,7 +365,8 @@ private fun TvSettingsNavigationPane(
                 selected = selectedSection == section,
                 showUpdateBadge = showAppUpdateBadge && section == TvSettingsSection.AboutApp,
                 focusRequester = when (section) {
-                    TvSettingsSection.Sources -> sourcesFocusRequester
+                    TvSettingsSection.General -> generalFocusRequester
+        TvSettingsSection.Sources -> sourcesFocusRequester
                     TvSettingsSection.Storage -> storageFocusRequester
                     TvSettingsSection.AboutDevice -> aboutDeviceFocusRequester
                     TvSettingsSection.AboutApp -> aboutAppFocusRequester
@@ -425,19 +452,51 @@ private fun TvSettingsSectionCard(
             )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    section.title,
+                    section.title.displayText(),
                     color = if (focused) focusedContentColor else if (selected) Color.White else primaryContentColor,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                 )
                 Text(
-                    section.subtitle,
+                    section.subtitle.displayText(),
                     color = subtitleColor,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TvLanguageSettingsPane(
+    state: SettingsState,
+    onIntent: (SettingsIntent) -> Unit,
+    initialFocusRequester: FocusRequester,
+    leftFocusRequester: FocusRequester,
+    focusCoordinator: TvSettingsFocusCoordinator,
+) {
+    val listState = rememberLazyListState()
+    val languages = top.iwesley.lyn.music.core.model.AppLanguage.entries
+    val keys = remember { languages.map { "language:${it.storageValue}" } }
+    val chain = rememberTvSettingsFocusChain(
+        focusRows = keys.map { listOf(it) },
+        initialFocusRequester = initialFocusRequester,
+        leftFocusRequester = leftFocusRequester,
+        listState = listState,
+        focusCoordinator = focusCoordinator,
+    )
+    LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { TvSettingsPaneHeader(uiString(Res.string.language_title), uiString(Res.string.language_description)) }
+        items(languages.size) { index ->
+            val language = languages[index]
+            TvSettingsActionButton(
+                onClick = { onIntent(SettingsIntent.AppLanguageChanged(language)) },
+                style = if (state.appLanguage == language) TvSettingsActionButtonStyle.Selected else TvSettingsActionButtonStyle.Outlined,
+                focusKey = keys[index],
+                focusChain = chain,
+            ) { color -> Text(top.iwesley.lyn.music.appLanguageLabel(language), color = color) }
         }
     }
 }
@@ -505,8 +564,8 @@ private fun TvSourcesSettingsPane(
     pendingDelete?.let { sourceWithStatus ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除来源") },
-            text = { Text("确认删除“${sourceWithStatus.source.label.ifBlank { sourceTypeTitle(sourceWithStatus.source.type) }}”吗？") },
+            title = { Text(uiString(Res.string.source_delete_action)) },
+            text = { Text(uiString(Res.string.tv_source_delete_confirmation, sourceWithStatus.source.label.ifBlank { sourceTypeTitle(sourceWithStatus.source.type) })) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -514,12 +573,12 @@ private fun TvSourcesSettingsPane(
                         onIntent(ImportIntent.DeleteSource(sourceWithStatus.source.id))
                     },
                 ) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(uiString(Res.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) {
-                    Text("取消")
+                    Text(uiString(Res.string.common_cancel))
                 }
             },
         )
@@ -547,8 +606,8 @@ private fun TvSourcesSettingsPane(
     ) {
         item {
             TvSettingsPaneHeader(
-                title = "来源",
-                subtitle = "管理本机、Samba、WebDAV、Navidrome、Subsonic 和 Emby 音乐来源。",
+                title = uiString(Res.string.sources_title),
+                subtitle = uiString(Res.string.tv_source_management_description),
             )
         }
         if (sourceFocusRows.isEmpty()) {
@@ -561,7 +620,7 @@ private fun TvSourcesSettingsPane(
         state.message?.let { message ->
             item {
                 TvSettingsMessageCard(
-                    message = message,
+                    message = message.uiDisplayText(),
                     onClear = { onIntent(ImportIntent.ClearMessage) },
                     focusKey = "sources:message:clear",
                     focusChain = focusChain,
@@ -571,7 +630,7 @@ private fun TvSourcesSettingsPane(
         if (showPageTestMessage) {
             item {
                 TvSettingsMessageCard(
-                    message = state.testMessage.orEmpty(),
+                    message = state.testMessage.uiDisplayText(),
                     onClear = { onIntent(ImportIntent.ClearTestMessage) },
                     focusKey = "sources:test-message:clear",
                     focusChain = focusChain,
@@ -590,8 +649,8 @@ private fun TvSourcesSettingsPane(
         if (state.sources.isEmpty()) {
             item {
                 TvSettingsEmptyCard(
-                    title = "还没有来源",
-                    body = "添加本地文件夹、Samba、WebDAV、Navidrome、Subsonic 或 Emby 后，曲库会开始扫描音乐。",
+                    title = uiString(Res.string.tv_sources_empty_title),
+                    body = uiString(Res.string.tv_source_add_hint),
                 )
             }
         } else {
@@ -627,7 +686,7 @@ private fun TvAddSourcePanel(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("新增来源", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+        Text(uiString(Res.string.tv_source_add_action), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
         addSourceFocusRows(capabilities).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 row.forEach { focusKey ->
@@ -648,7 +707,7 @@ private fun TvAddSourcePanel(
                         ) { contentColor ->
                             Icon(Icons.Rounded.Folder, contentDescription = null, tint = contentColor)
                             Spacer(Modifier.width(8.dp))
-                            Text("本地文件夹", color = contentColor)
+                            Text(uiString(Res.string.source_local_folder_label), color = contentColor)
                         }
 
                         "sources:add:samba" -> TvAddTypeButton(
@@ -864,7 +923,7 @@ private fun TvRemoteSourceCreatorDialog(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Text(
-                    text = "新增${sourceTypeTitle(type)}来源",
+                    text = uiString(Res.string.tv_source_add_named_type, sourceTypeTitle(type)),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.headlineSmall,
@@ -925,7 +984,7 @@ private fun TvRemoteSourceCreatorDialog(
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         state.testMessage?.let { message ->
                             Text(
-                                text = message,
+                                text = message.uiDisplayText(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 2,
@@ -948,14 +1007,14 @@ private fun TvRemoteSourceCreatorDialog(
                         focusKey = "$focusPrefix:test",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("测试", color = contentColor)
+                        Text(uiString(Res.string.tv_source_test_connection), color = contentColor)
                     }
                     TvSettingsActionButton(
                         onClick = { onIntent(ImportIntent.DismissRemoteSourceCreator) },
                         focusKey = "$focusPrefix:cancel",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("取消", color = contentColor)
+                        Text(uiString(Res.string.common_cancel), color = contentColor)
                     }
                     TvSettingsActionButton(
                         onClick = {
@@ -973,7 +1032,7 @@ private fun TvRemoteSourceCreatorDialog(
                         focusKey = "$focusPrefix:submit",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("添加并扫描", color = contentColor)
+                        Text(uiString(Res.string.tv_source_add_and_scan), color = contentColor)
                     }
                 }
             }
@@ -1038,7 +1097,7 @@ private fun TvSambaSourceForm(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TvSettingsTextField(
-            label = "名称",
+            label = uiString(Res.string.common_name),
             value = state.sambaLabel,
             onValueChange = { onIntent(ImportIntent.SambaLabelChanged(it)) },
             placeholder = "Samba",
@@ -1047,7 +1106,7 @@ private fun TvSambaSourceForm(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
-                label = "服务器",
+                label = uiString(Res.string.tv_source_server_label),
                 value = state.sambaServer,
                 onValueChange = { onIntent(ImportIntent.SambaServerChanged(it)) },
                 placeholder = "192.168.31.115",
@@ -1056,7 +1115,7 @@ private fun TvSambaSourceForm(
                 focusChain = focusChain,
             )
             TvSettingsTextField(
-                label = "端口",
+                label = uiString(Res.string.common_port),
                 value = state.sambaPort,
                 onValueChange = { onIntent(ImportIntent.SambaPortChanged(it)) },
                 placeholder = "445",
@@ -1066,16 +1125,16 @@ private fun TvSambaSourceForm(
             )
         }
         TvSettingsTextField(
-            label = "路径",
+            label = uiString(Res.string.common_path),
             value = state.sambaPath,
             onValueChange = { onIntent(ImportIntent.SambaPathChanged(it)) },
-            placeholder = "共享文件/Music",
+            placeholder = uiString(Res.string.tv_source_samba_path_example),
             focusKey = "$focusPrefix:path",
             focusChain = focusChain,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
-                label = "用户名",
+                label = uiString(Res.string.common_username),
                 value = state.sambaUsername,
                 onValueChange = { onIntent(ImportIntent.SambaUsernameChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1083,7 +1142,7 @@ private fun TvSambaSourceForm(
                 focusChain = focusChain,
             )
             TvSettingsTextField(
-                label = "密码",
+                label = uiString(Res.string.common_password),
                 value = state.sambaPassword,
                 onValueChange = { onIntent(ImportIntent.SambaPasswordChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1104,7 +1163,7 @@ private fun TvWebDavSourceForm(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TvSettingsTextField(
-            label = "名称",
+            label = uiString(Res.string.common_name),
             value = state.webDavLabel,
             onValueChange = { onIntent(ImportIntent.WebDavLabelChanged(it)) },
             placeholder = "WebDAV",
@@ -1112,16 +1171,16 @@ private fun TvWebDavSourceForm(
             focusChain = focusChain,
         )
         TvSettingsTextField(
-            label = "根地址",
+            label = uiString(Res.string.tv_source_root_address),
             value = state.webDavRootUrl,
             onValueChange = { onIntent(ImportIntent.WebDavRootUrlChanged(it)) },
-            placeholder = "http://192.168.31.115:5005/共享文件/music/",
+            placeholder = uiString(Res.string.source_webdav_url_example),
             focusKey = "$focusPrefix:root",
             focusChain = focusChain,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
-                label = "用户名",
+                label = uiString(Res.string.common_username),
                 value = state.webDavUsername,
                 onValueChange = { onIntent(ImportIntent.WebDavUsernameChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1129,7 +1188,7 @@ private fun TvWebDavSourceForm(
                 focusChain = focusChain,
             )
             TvSettingsTextField(
-                label = "密码",
+                label = uiString(Res.string.common_password),
                 value = state.webDavPassword,
                 onValueChange = { onIntent(ImportIntent.WebDavPasswordChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1139,7 +1198,7 @@ private fun TvWebDavSourceForm(
             )
         }
         TvSettingsSwitchRow(
-            title = "允许不安全 TLS",
+            title = uiString(Res.string.tv_source_allow_insecure_tls),
             checked = state.webDavAllowInsecureTls,
             onCheckedChange = { onIntent(ImportIntent.WebDavAllowInsecureTlsChanged(it)) },
             focusKey = "$focusPrefix:tls",
@@ -1157,7 +1216,7 @@ private fun TvNavidromeSourceForm(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TvSettingsTextField(
-            label = "名称",
+            label = uiString(Res.string.common_name),
             value = state.navidromeLabel,
             onValueChange = { onIntent(ImportIntent.NavidromeLabelChanged(it)) },
             placeholder = "Navidrome",
@@ -1165,7 +1224,7 @@ private fun TvNavidromeSourceForm(
             focusChain = focusChain,
         )
         TvSettingsTextField(
-            label = "服务器地址",
+            label = uiString(Res.string.common_server_address),
             value = state.navidromeBaseUrl,
             onValueChange = { onIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
             placeholder = "http://192.168.31.115:32700",
@@ -1174,7 +1233,7 @@ private fun TvNavidromeSourceForm(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
-                label = "用户名",
+                label = uiString(Res.string.common_username),
                 value = state.navidromeUsername,
                 onValueChange = { onIntent(ImportIntent.NavidromeUsernameChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1182,7 +1241,7 @@ private fun TvNavidromeSourceForm(
                 focusChain = focusChain,
             )
             TvSettingsTextField(
-                label = "密码",
+                label = uiString(Res.string.common_password),
                 value = state.navidromePassword,
                 onValueChange = { onIntent(ImportIntent.NavidromePasswordChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1204,7 +1263,7 @@ private fun TvSubsonicSourceForm(
     val apiKeyMode = state.subsonicAuthMode == SubsonicAuthMode.API_KEY
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TvSettingsTextField(
-            label = "名称",
+            label = uiString(Res.string.common_name),
             value = state.subsonicLabel,
             onValueChange = { onIntent(ImportIntent.SubsonicLabelChanged(it)) },
             placeholder = "Subsonic",
@@ -1212,7 +1271,7 @@ private fun TvSubsonicSourceForm(
             focusChain = focusChain,
         )
         TvSettingsTextField(
-            label = "服务器地址",
+            label = uiString(Res.string.common_server_address),
             value = state.subsonicBaseUrl,
             onValueChange = { onIntent(ImportIntent.SubsonicBaseUrlChanged(it)) },
             placeholder = "https://music.example.com",
@@ -1220,7 +1279,7 @@ private fun TvSubsonicSourceForm(
             focusChain = focusChain,
         )
         TvSettingsSwitchRow(
-            title = "API Key 鉴权",
+            title = uiString(Res.string.tv_source_api_key_authentication),
             checked = apiKeyMode,
             onCheckedChange = {
                 onIntent(
@@ -1244,7 +1303,7 @@ private fun TvSubsonicSourceForm(
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TvSettingsTextField(
-                    label = "用户名",
+                    label = uiString(Res.string.common_username),
                     value = state.subsonicUsername,
                     onValueChange = { onIntent(ImportIntent.SubsonicUsernameChanged(it)) },
                     modifier = Modifier.weight(1f),
@@ -1252,7 +1311,7 @@ private fun TvSubsonicSourceForm(
                     focusChain = focusChain,
                 )
                 TvSettingsTextField(
-                    label = "密码",
+                    label = uiString(Res.string.common_password),
                     value = state.subsonicCredential,
                     onValueChange = { onIntent(ImportIntent.SubsonicCredentialChanged(it)) },
                     modifier = Modifier.weight(1f),
@@ -1274,7 +1333,7 @@ private fun TvEmbySourceForm(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         TvSettingsTextField(
-            label = "名称",
+            label = uiString(Res.string.common_name),
             value = state.embyLabel,
             onValueChange = { onIntent(ImportIntent.EmbyLabelChanged(it)) },
             placeholder = "Emby",
@@ -1282,7 +1341,7 @@ private fun TvEmbySourceForm(
             focusChain = focusChain,
         )
         TvSettingsTextField(
-            label = "服务器地址",
+            label = uiString(Res.string.common_server_address),
             value = state.embyBaseUrl,
             onValueChange = { onIntent(ImportIntent.EmbyBaseUrlChanged(it)) },
             placeholder = "https://media.example.com",
@@ -1291,7 +1350,7 @@ private fun TvEmbySourceForm(
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
-                label = "用户名",
+                label = uiString(Res.string.common_username),
                 value = state.embyUsername,
                 onValueChange = { onIntent(ImportIntent.EmbyUsernameChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1299,7 +1358,7 @@ private fun TvEmbySourceForm(
                 focusChain = focusChain,
             )
             TvSettingsTextField(
-                label = "密码",
+                label = uiString(Res.string.common_password),
                 value = state.embyPassword,
                 onValueChange = { onIntent(ImportIntent.EmbyPasswordChanged(it)) },
                 modifier = Modifier.weight(1f),
@@ -1348,7 +1407,7 @@ private fun TvSourceCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (source.enabled) "已启用" else "已停用",
+                        text = if (source.enabled) uiString(Res.string.common_enabled) else uiString(Res.string.common_inactive),
                         color = if (source.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelLarge,
                     )
@@ -1382,7 +1441,7 @@ private fun TvSourceCard(
             ) { contentColor ->
                 Icon(Icons.Rounded.Sync, contentDescription = null, tint = contentColor)
                 Spacer(Modifier.width(6.dp))
-                Text("重扫", color = contentColor)
+                Text(uiString(Res.string.common_rescan), color = contentColor)
             }
             TvSettingsActionButton(
                 onClick = { onIntent(ImportIntent.ToggleSourceEnabled(source.id, !source.enabled)) },
@@ -1390,7 +1449,7 @@ private fun TvSourceCard(
                 focusKey = "sources:${source.id}:toggle",
                 focusChain = focusChain,
             ) { contentColor ->
-                Text(if (source.enabled) "停用" else "启用", color = contentColor)
+                Text(if (source.enabled) uiString(Res.string.common_deactivate) else uiString(Res.string.common_enable), color = contentColor)
             }
             if (source.type != ImportSourceType.LOCAL_FOLDER) {
                 TvSettingsActionButton(
@@ -1402,7 +1461,7 @@ private fun TvSourceCard(
                 ) { contentColor ->
                     Icon(Icons.Rounded.Edit, contentDescription = null, tint = contentColor)
                     Spacer(Modifier.width(6.dp))
-                    Text("编辑", color = contentColor)
+                    Text(uiString(Res.string.common_edit), color = contentColor)
                 }
             }
             TvSettingsActionButton(
@@ -1414,7 +1473,7 @@ private fun TvSourceCard(
             ) { contentColor ->
                 Icon(Icons.Rounded.Delete, contentDescription = null, tint = contentColor)
                 Spacer(Modifier.width(6.dp))
-                Text("删除", color = contentColor)
+                Text(uiString(Res.string.common_delete), color = contentColor)
             }
         }
     }
@@ -1450,7 +1509,7 @@ private fun TvRemoteSourceEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Text(
-                    text = "编辑${sourceTypeTitle(editor.type)}来源",
+                    text = uiString(Res.string.tv_source_edit_named_type, sourceTypeTitle(editor.type)),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.headlineSmall,
@@ -1463,7 +1522,7 @@ private fun TvRemoteSourceEditorDialog(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     TvSettingsTextField(
-                        label = "名称",
+                        label = uiString(Res.string.common_name),
                         value = editor.label,
                         onValueChange = { onIntent(ImportIntent.RemoteSourceLabelChanged(it)) },
                         focusKey = "$focusPrefix:label",
@@ -1473,7 +1532,7 @@ private fun TvRemoteSourceEditorDialog(
                         ImportSourceType.SAMBA -> {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 TvSettingsTextField(
-                                    label = "服务器",
+                                    label = uiString(Res.string.tv_source_server_label),
                                     value = editor.server,
                                     onValueChange = { onIntent(ImportIntent.RemoteSourceServerChanged(it)) },
                                     modifier = Modifier.weight(1f),
@@ -1481,17 +1540,17 @@ private fun TvRemoteSourceEditorDialog(
                                     focusChain = focusChain,
                                 )
                                 TvSettingsTextField(
-                                    label = "端口",
+                                    label = uiString(Res.string.common_port),
                                     value = editor.port,
                                     onValueChange = { onIntent(ImportIntent.RemoteSourcePortChanged(it)) },
-                                    placeholder = "可选",
+                                    placeholder = uiString(Res.string.tv_settings_optional_field),
                                     modifier = Modifier.width(140.dp),
                                     focusKey = "$focusPrefix:port",
                                     focusChain = focusChain,
                                 )
                             }
                             TvSettingsTextField(
-                                label = "路径",
+                                label = uiString(Res.string.common_path),
                                 value = editor.path,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
                                 focusKey = "$focusPrefix:path",
@@ -1501,7 +1560,7 @@ private fun TvRemoteSourceEditorDialog(
 
                         ImportSourceType.WEBDAV -> {
                             TvSettingsTextField(
-                                label = "根地址",
+                                label = uiString(Res.string.tv_source_root_address),
                                 value = editor.rootUrl,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
                                 focusKey = "$focusPrefix:root",
@@ -1511,7 +1570,7 @@ private fun TvRemoteSourceEditorDialog(
 
                         ImportSourceType.NAVIDROME -> {
                             TvSettingsTextField(
-                                label = "服务器地址",
+                                label = uiString(Res.string.common_server_address),
                                 value = editor.rootUrl,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
                                 focusKey = "$focusPrefix:root",
@@ -1521,7 +1580,7 @@ private fun TvRemoteSourceEditorDialog(
 
                         ImportSourceType.SUBSONIC -> {
                             TvSettingsTextField(
-                                label = "服务器地址",
+                                label = uiString(Res.string.common_server_address),
                                 value = editor.rootUrl,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
                                 focusKey = "$focusPrefix:root",
@@ -1531,7 +1590,7 @@ private fun TvRemoteSourceEditorDialog(
 
                         ImportSourceType.EMBY -> {
                             TvSettingsTextField(
-                                label = "服务器地址",
+                                label = uiString(Res.string.common_server_address),
                                 value = editor.rootUrl,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
                                 focusKey = "$focusPrefix:root",
@@ -1543,7 +1602,7 @@ private fun TvRemoteSourceEditorDialog(
                     }
                     if (editor.type == ImportSourceType.SUBSONIC) {
                         TvSettingsSwitchRow(
-                            title = "API Key 鉴权",
+                            title = uiString(Res.string.tv_source_api_key_authentication),
                             checked = editor.subsonicAuthMode == SubsonicAuthMode.API_KEY,
                             onCheckedChange = {
                                 onIntent(
@@ -1561,7 +1620,7 @@ private fun TvRemoteSourceEditorDialog(
                             label = "API Key",
                             value = editor.password,
                             onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
-                            placeholder = if (editor.hasStoredCredential) "留空则沿用已保存 API Key" else "",
+                            placeholder = if (editor.hasStoredCredential) uiString(Res.string.tv_source_saved_api_key_hint) else "",
                             password = true,
                             focusKey = "$focusPrefix:password",
                             focusChain = focusChain,
@@ -1569,7 +1628,7 @@ private fun TvRemoteSourceEditorDialog(
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             TvSettingsTextField(
-                                label = "用户名",
+                                label = uiString(Res.string.common_username),
                                 value = editor.username,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceUsernameChanged(it)) },
                                 modifier = Modifier.weight(1f),
@@ -1577,10 +1636,10 @@ private fun TvRemoteSourceEditorDialog(
                                 focusChain = focusChain,
                             )
                             TvSettingsTextField(
-                                label = "密码",
+                                label = uiString(Res.string.common_password),
                                 value = editor.password,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
-                                placeholder = if (editor.hasStoredCredential) "留空则沿用已保存密码" else "",
+                                placeholder = if (editor.hasStoredCredential) uiString(Res.string.tv_source_saved_password_hint) else "",
                                 modifier = Modifier.weight(1f),
                                 password = true,
                                 focusKey = "$focusPrefix:password",
@@ -1590,7 +1649,7 @@ private fun TvRemoteSourceEditorDialog(
                     }
                     if (editor.type == ImportSourceType.WEBDAV) {
                         TvSettingsSwitchRow(
-                            title = "允许不安全 TLS",
+                            title = uiString(Res.string.tv_source_allow_insecure_tls),
                             checked = editor.allowInsecureTls,
                             onCheckedChange = { onIntent(ImportIntent.RemoteSourceAllowInsecureTlsChanged(it)) },
                             focusKey = "$focusPrefix:tls",
@@ -1608,7 +1667,7 @@ private fun TvRemoteSourceEditorDialog(
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         state.testMessage?.let { message ->
                             Text(
-                                text = message,
+                                text = message.uiDisplayText(),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 2,
@@ -1622,14 +1681,14 @@ private fun TvRemoteSourceEditorDialog(
                         focusKey = "$focusPrefix:test",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("测试", color = contentColor)
+                        Text(uiString(Res.string.tv_source_test_connection), color = contentColor)
                     }
                     TvSettingsActionButton(
                         onClick = { onIntent(ImportIntent.DismissRemoteSourceEditor) },
                         focusKey = "$focusPrefix:cancel",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("取消", color = contentColor)
+                        Text(uiString(Res.string.common_cancel), color = contentColor)
                     }
                     TvSettingsActionButton(
                         onClick = { onIntent(ImportIntent.SaveRemoteSource) },
@@ -1638,7 +1697,7 @@ private fun TvRemoteSourceEditorDialog(
                         focusKey = "$focusPrefix:submit",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("保存并扫描", color = contentColor)
+                        Text(uiString(Res.string.tv_source_save_and_scan), color = contentColor)
                     }
                 }
             }
@@ -1691,8 +1750,8 @@ private fun TvStorageSettingsPane(
     ) {
         item {
             TvSettingsPaneHeader(
-                title = "空间管理",
-                subtitle = "查看 TV 端可管理缓存，并按分类清理。",
+                title = uiString(Res.string.settings_storage_management_title),
+                subtitle = uiString(Res.string.tv_storage_management_hint),
             )
         }
         if (storageFocusRows.isEmpty()) {
@@ -1705,7 +1764,7 @@ private fun TvStorageSettingsPane(
         state.message?.let { message ->
             item {
                 TvSettingsMessageCard(
-                    message = message,
+                    message = message.uiDisplayText(),
                     onClear = { onIntent(SettingsIntent.ClearMessage) },
                     focusKey = "storage:message:clear",
                     focusChain = focusChain,
@@ -1713,7 +1772,7 @@ private fun TvStorageSettingsPane(
             }
         }
         item {
-            TvSettingsInfoCard(title = "当前可管理空间") {
+            TvSettingsInfoCard(title = uiString(Res.string.storage_manageable_usage)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1722,7 +1781,7 @@ private fun TvStorageSettingsPane(
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = state.storageSnapshot?.let { formatTvStorageSize(it.totalSizeBytes) }
-                                ?: if (state.storageLoading) "正在统计空间..." else "暂未读取",
+                                ?: if (state.storageLoading) uiString(Res.string.storage_calculating_usage_progress) else uiString(Res.string.common_not_read),
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.ExtraBold,
                             style = MaterialTheme.typography.headlineSmall,
@@ -1745,7 +1804,7 @@ private fun TvStorageSettingsPane(
                     ) { contentColor ->
                         Icon(Icons.Rounded.Sync, contentDescription = null, tint = contentColor)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (state.storageLoading) "刷新中" else "刷新", color = contentColor)
+                        Text(if (state.storageLoading) uiString(Res.string.common_refreshing) else uiString(Res.string.common_refresh), color = contentColor)
                     }
                 }
             }
@@ -1753,8 +1812,8 @@ private fun TvStorageSettingsPane(
         if (categories.isEmpty()) {
             item {
                 TvSettingsEmptyCard(
-                    title = if (state.storageLoading) "正在统计空间" else "没有可管理空间",
-                    body = if (state.storageLoading) "正在读取当前平台支持的存储目录。" else "当前平台还没有暴露可清理的空间分类。",
+                    title = if (state.storageLoading) uiString(Res.string.storage_calculating_usage) else uiString(Res.string.storage_no_manageable_data),
+                    body = if (state.storageLoading) uiString(Res.string.storage_reading_locations_description) else uiString(Res.string.storage_no_cleanup_categories),
                 )
             }
         } else {
@@ -1804,7 +1863,7 @@ private fun TvStorageCategoryCard(
                 focusKey = focusKey,
                 focusChain = focusChain,
             ) { contentColor ->
-                Text(if (clearing) "清理中..." else "清除", color = contentColor)
+                Text(if (clearing) uiString(Res.string.storage_cleaning_progress) else uiString(Res.string.common_clean_up), color = contentColor)
             }
         }
     }
@@ -1839,12 +1898,12 @@ private fun TvAboutDeviceSettingsPane(
     ) {
         item {
             TvSettingsPaneHeader(
-                title = "关于本机",
-                subtitle = "查看当前 TV 或车机的系统、屏幕和硬件信息。",
+                title = uiString(Res.string.about_device_title),
+                subtitle = uiString(Res.string.tv_device_information_hint),
             )
         }
         item {
-            TvSettingsInfoCard(title = state.deviceInfoSnapshot?.deviceModel?.takeIf { it.isNotBlank() } ?: "设备信息") {
+            TvSettingsInfoCard(title = state.deviceInfoSnapshot?.deviceModel?.takeIf { it.isNotBlank() } ?: uiString(Res.string.tv_device_information_title)) {
                 TvSettingsActionButton(
                     onClick = { onIntent(SettingsIntent.LoadDeviceInfo(force = true)) },
                     enabled = !state.deviceInfoLoading,
@@ -1853,40 +1912,40 @@ private fun TvAboutDeviceSettingsPane(
                 ) { contentColor ->
                     Icon(Icons.Rounded.Sync, contentDescription = null, tint = contentColor)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (state.deviceInfoLoading) "读取中" else "刷新", color = contentColor)
+                    Text(if (state.deviceInfoLoading) uiString(Res.string.tv_settings_reading_label) else uiString(Res.string.common_refresh), color = contentColor)
                 }
             }
         }
         item {
             TvDeviceInfoGroup(
-                title = "系统",
+                title = uiString(Res.string.device_system_label),
                 rows = listOf(
-                    "系统名称" to deviceInfoValue(state.deviceInfoSnapshot?.systemName, state.deviceInfoLoading),
-                    "系统版本" to deviceInfoValue(state.deviceInfoSnapshot?.systemVersion, state.deviceInfoLoading),
-                    "设备型号" to deviceInfoValue(state.deviceInfoSnapshot?.deviceModel, state.deviceInfoLoading),
+                    uiString(Res.string.device_system_name) to deviceInfoValue(state.deviceInfoSnapshot?.systemName, state.deviceInfoLoading),
+                    uiString(Res.string.device_system_version) to deviceInfoValue(state.deviceInfoSnapshot?.systemVersion, state.deviceInfoLoading),
+                    uiString(Res.string.device_model_label) to deviceInfoValue(state.deviceInfoSnapshot?.deviceModel, state.deviceInfoLoading),
                 ),
             )
         }
         item {
             val snapshot = state.deviceInfoSnapshot
             TvDeviceInfoGroup(
-                title = "显示",
+                title = uiString(Res.string.device_display_label),
                 rows = listOf(
-                    "分辨率" to deviceInfoValue(snapshot?.resolution, state.deviceInfoLoading),
-                    "应用 DP 分辨率" to deviceDpResolution(snapshot, density.density, state.deviceInfoLoading),
-                    "系统像素密度" to deviceDensity(snapshot?.systemDensityScale, state.deviceInfoLoading),
-                    "字体缩放" to "%.2f".format(density.fontScale),
+                    uiString(Res.string.display_resolution_label) to deviceInfoValue(snapshot?.resolution, state.deviceInfoLoading),
+                    uiString(Res.string.display_app_resolution_dp) to deviceDpResolution(snapshot, density.density, state.deviceInfoLoading),
+                    uiString(Res.string.display_system_density) to deviceDensity(snapshot?.systemDensityScale, state.deviceInfoLoading),
+                    uiString(Res.string.display_font_scale) to "%.2f".format(density.fontScale),
                 ),
             )
         }
         item {
             TvDeviceInfoGroup(
-                title = "硬件",
+                title = uiString(Res.string.device_hardware_label),
                 rows = listOf(
-                    "CPU" to deviceInfoValue(state.deviceInfoSnapshot?.cpuDescription, state.deviceInfoLoading),
-                    "内存" to (
+                    "CPU" to deviceInfoValue(state.deviceInfoSnapshot?.cpuDescriptionText?.displayText(), state.deviceInfoLoading),
+                    uiString(Res.string.device_memory_label) to (
                         state.deviceInfoSnapshot?.totalMemoryBytes?.let(::formatTvStorageSize)
-                            ?: if (state.deviceInfoLoading) "读取中..." else "不可用"
+                            ?: if (state.deviceInfoLoading) uiString(Res.string.tv_settings_reading_progress) else uiString(Res.string.common_unavailable)
                         ),
                 ),
             )
@@ -1927,8 +1986,8 @@ private fun TvAboutAppSettingsPane(
     ) {
         item {
             TvSettingsPaneHeader(
-                title = "关于应用",
-                subtitle = "查看版本、开发者、项目地址和公众号信息。",
+                title = uiString(Res.string.about_app_title),
+                subtitle = uiString(Res.string.tv_about_app_information_hint),
             )
         }
         item {
@@ -1938,21 +1997,21 @@ private fun TvAboutAppSettingsPane(
         }
         item {
             TvDeviceInfoGroup(
-                title = "基本信息",
+                title = uiString(Res.string.common_basic_information),
                 rows = listOf(
-                    "应用名称" to "LynMusic",
-                    "版本号" to BuildMetadata.versionDisplay,
-                    "平台名称" to platformName,
-                    "编译时间" to BuildMetadata.buildTimeUtc,
+                    uiString(Res.string.tv_about_app_name) to "LynMusic",
+                    uiString(Res.string.about_version) to BuildMetadata.versionDisplay,
+                    uiString(Res.string.device_platform_label) to platformName,
+                    uiString(Res.string.about_build_time) to BuildMetadata.buildTimeUtc,
                 ),
             )
         }
         item {
-            TvSettingsInfoCard(title = "版本更新") {
+            TvSettingsInfoCard(title = uiString(Res.string.settings_app_updates_title)) {
                 when (appUpdateUiModel.status) {
                     AppUpdateUiStatus.Checking -> {
                         Text(
-                            text = appUpdateUiModel.message.orEmpty(),
+                            text = appUpdateUiModel.message.uiDisplayText(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -1960,16 +2019,16 @@ private fun TvAboutAppSettingsPane(
 
                     AppUpdateUiStatus.Error -> {
                         Text(
-                            text = appUpdateUiModel.message.orEmpty(),
+                            text = appUpdateUiModel.message.uiDisplayText(),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
 
                     AppUpdateUiStatus.UpdateAvailable -> {
-                        TvSettingsFieldRow(label = "最新版本", value = appUpdateUiModel.latestVersion.orEmpty())
+                        TvSettingsFieldRow(label = uiString(Res.string.update_latest_version), value = appUpdateUiModel.latestVersion.orEmpty())
                         Text(
-                            text = appUpdateUiModel.message.orEmpty(),
+                            text = appUpdateUiModel.message.uiDisplayText(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -1977,7 +2036,7 @@ private fun TvAboutAppSettingsPane(
 
                     AppUpdateUiStatus.UpToDate -> {
                         Text(
-                            text = appUpdateUiModel.message.orEmpty(),
+                            text = appUpdateUiModel.message.uiDisplayText(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -1987,7 +2046,7 @@ private fun TvAboutAppSettingsPane(
                 }
                 appUpdateUiModel.errorMessage?.let { errorMessage ->
                     Text(
-                        text = errorMessage,
+                        text = errorMessage.uiDisplayText(),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -2006,7 +2065,7 @@ private fun TvAboutAppSettingsPane(
                         )
                         Spacer(Modifier.width(6.dp))
                     }
-                    Text(if (appUpdateChecking) "检查中" else "检查更新", color = contentColor)
+                    Text(if (appUpdateChecking) uiString(Res.string.common_checking) else uiString(Res.string.update_check_action), color = contentColor)
                 }
                 if (appUpdateUiModel.status == AppUpdateUiStatus.UpdateAvailable) {
                     TvSettingsActionButton(
@@ -2017,25 +2076,25 @@ private fun TvAboutAppSettingsPane(
                         focusKey = "about-app:open-release",
                         focusChain = focusChain,
                     ) { contentColor ->
-                        Text("打开下载页", color = contentColor)
+                        Text(uiString(Res.string.update_open_download_page), color = contentColor)
                     }
                 }
             }
         }
         item {
             TvDeviceInfoGroup(
-                title = "开发者",
+                title = uiString(Res.string.about_developer_label),
                 rows = listOf(
-                    "名称" to "Wesley",
-                    "项目地址" to LynMusicUpdateLinks.PROJECT_URL,
+                    uiString(Res.string.common_name) to "Wesley",
+                    uiString(Res.string.about_project_website) to LynMusicUpdateLinks.PROJECT_URL,
                 ),
             )
         }
         item {
-            TvSettingsInfoCard(title = "微信公众号") {
-                TvSettingsFieldRow(label = "账号", value = "锋风")
+            TvSettingsInfoCard(title = uiString(Res.string.about_wechat_account)) {
+                TvSettingsFieldRow(label = uiString(Res.string.common_account), value = uiString(Res.string.about_author_name))
                 Text(
-                    text = "公众号二维码",
+                    text = uiString(Res.string.about_wechat_qr_code),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
@@ -2052,7 +2111,7 @@ private fun TvAboutAppSettingsPane(
                     )
                 }
                 Text(
-                    text = "扫码关注公众号，获取更新和交流信息。",
+                    text = uiString(Res.string.about_wechat_follow_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -2126,7 +2185,7 @@ private fun TvAboutAppQrImage(
     ) {
         Image(
             painter = painterResource(id = R.drawable.about_app_wechat_qr),
-            contentDescription = "公众号二维码",
+            contentDescription = uiString(Res.string.about_wechat_qr_code),
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
@@ -2463,14 +2522,14 @@ private fun TvSettingsMessageCard(
     focusKey: String? = null,
     focusChain: TvSettingsFocusChain? = null,
 ) {
-    TvSettingsInfoCard(title = "提示") {
+    TvSettingsInfoCard(title = uiString(Res.string.tv_settings_notice_title)) {
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TvSettingsActionButton(
             onClick = onClear,
             focusKey = focusKey,
             focusChain = focusChain,
         ) { contentColor ->
-            Text("知道了", color = contentColor)
+            Text(uiString(Res.string.common_got_it), color = contentColor)
         }
     }
 }
@@ -2723,14 +2782,14 @@ private fun TvSettingsUnavailableScreen(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("设置页不可用", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-            Text("组件初始化失败，请检查存储状态后重试。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(uiString(Res.string.tv_settings_unavailable_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+            Text(uiString(Res.string.startup_component_initialization_failed), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TvButton(onClick = onRetry) {
-                    Text("重试")
+                    Text(uiString(Res.string.common_retry))
                 }
                 TvOutlinedButton(onClick = onBack) {
-                    Text("返回")
+                    Text(uiString(Res.string.common_back))
                 }
             }
         }
@@ -2765,14 +2824,18 @@ private fun tvSettingsStableDensityScale(fallbackDensity: Float): Float {
 }
 
 private enum class TvSettingsSection(
-    val title: String,
-    val subtitle: String,
+    private val titleResource: org.jetbrains.compose.resources.StringResource,
+    private val subtitleResource: org.jetbrains.compose.resources.StringResource,
     val icon: ImageVector,
 ) {
-    Sources("来源", "导入和扫描音乐", Icons.Rounded.Folder),
-    Storage("空间管理", "缓存和本机文件", Icons.Rounded.Storage),
-    AboutDevice("关于本机", "系统和硬件信息", Icons.Rounded.Info),
-    AboutApp("关于应用", "版本和项目地址", Icons.Rounded.Settings),
+    General(Res.string.settings_general_title, Res.string.language_description, Icons.Rounded.Settings),
+    Sources(Res.string.sources_title, Res.string.tv_source_import_title, Icons.Rounded.Folder),
+    Storage(Res.string.settings_storage_management_title, Res.string.tv_storage_caches_title, Icons.Rounded.Storage),
+    AboutDevice(Res.string.about_device_title, Res.string.tv_device_information_description, Icons.Rounded.Info),
+    AboutApp(Res.string.about_app_title, Res.string.tv_about_app_version_description, Icons.Rounded.Settings);
+
+    val title: UiText get() = uiText(titleResource)
+    val subtitle: UiText get() = uiText(subtitleResource)
 }
 
 private fun ImportScanOperation.sourceIdOrNull(): String? {
@@ -2785,9 +2848,10 @@ private fun ImportScanOperation.sourceIdOrNull(): String? {
     }
 }
 
+@Composable
 private fun sourceTypeTitle(type: ImportSourceType): String {
     return when (type) {
-        ImportSourceType.LOCAL_FOLDER -> "本地文件夹"
+        ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
         ImportSourceType.SAMBA -> "Samba"
         ImportSourceType.WEBDAV -> "WebDAV"
         ImportSourceType.NAVIDROME -> "Navidrome"
@@ -2818,21 +2882,24 @@ private fun sourceDisplayReference(source: ImportSource): String {
     }
 }
 
+@Composable
 private fun sourceStatusText(
     sourceWithStatus: SourceWithStatus,
     latestSummary: top.iwesley.lyn.music.core.model.ImportScanSummary?,
 ): String {
-    latestSummary?.let { return formatImportScanSummary(it) }
+    latestSummary?.let { return formatImportScanSummary(it).displayText() }
     val status = sourceWithStatus.indexState
+    val lastError = status?.lastErrorUiText()
     return when {
-        status?.lastError?.isNotBlank() == true -> "上次扫描失败：${status.lastError}"
-        status != null -> "曲目 ${status.trackCount} 首 · ${formatTimestamp(status.lastScannedAt)}"
-        else -> "尚未扫描"
+        lastError != null -> uiString(Res.string.tv_source_last_scan_error, lastError)
+        status != null -> uiString(Res.string.tv_source_track_summary, status.trackCount, formatTimestamp(status.lastScannedAt))
+        else -> uiString(Res.string.tv_source_not_scanned_hint)
     }
 }
 
+@Composable
 private fun formatTimestamp(value: Long?): String {
-    if (value == null || value <= 0L) return "未扫描"
+    if (value == null || value <= 0L) return uiString(Res.string.tv_source_not_scanned_status)
     return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(value))
 }
 
@@ -2844,23 +2911,25 @@ private val storageCategoryOrder = listOf(
     AppStorageCategory.TagEditTemp,
 )
 
+@Composable
 private fun tvStorageCategoryTitle(category: AppStorageCategory): String {
     return when (category) {
-        AppStorageCategory.Artwork -> "封面缓存"
-        AppStorageCategory.PlaybackCache -> "播放缓存"
-        AppStorageCategory.OfflineDownloads -> "离线音乐"
-        AppStorageCategory.LyricsShareTemp -> "歌词分享临时文件"
-        AppStorageCategory.TagEditTemp -> "标签编辑临时文件"
+        AppStorageCategory.Artwork -> uiString(Res.string.storage_artwork_cache)
+        AppStorageCategory.PlaybackCache -> uiString(Res.string.storage_playback_cache)
+        AppStorageCategory.OfflineDownloads -> uiString(Res.string.storage_offline_music)
+        AppStorageCategory.LyricsShareTemp -> uiString(Res.string.storage_lyrics_share_temporary_files)
+        AppStorageCategory.TagEditTemp -> uiString(Res.string.storage_tags_temporary_files)
     }
 }
 
+@Composable
 private fun tvStorageCategoryDescription(category: AppStorageCategory): String {
     return when (category) {
-        AppStorageCategory.Artwork -> "下载封面、扫描封面和标签编辑生成的本地封面文件。"
-        AppStorageCategory.PlaybackCache -> "SMB 播放时落到本地的临时音频缓存。"
-        AppStorageCategory.OfflineDownloads -> "手动下载到本机的非本地音乐文件。"
-        AppStorageCategory.LyricsShareTemp -> "生成歌词分享图时写入的临时图片。"
-        AppStorageCategory.TagEditTemp -> "编辑标签封面时写入的临时中转文件。"
+        AppStorageCategory.Artwork -> uiString(Res.string.tv_storage_artwork_cache_description)
+        AppStorageCategory.PlaybackCache -> uiString(Res.string.tv_storage_samba_cache_description)
+        AppStorageCategory.OfflineDownloads -> uiString(Res.string.tv_storage_offline_music_description)
+        AppStorageCategory.LyricsShareTemp -> uiString(Res.string.tv_storage_lyrics_share_temporary_description)
+        AppStorageCategory.TagEditTemp -> uiString(Res.string.tv_storage_tags_temporary_description)
     }
 }
 
@@ -2880,10 +2949,12 @@ private fun formatTvStorageSize(sizeBytes: Long): String {
     }
 }
 
+@Composable
 private fun deviceInfoValue(value: String?, loading: Boolean): String {
-    return value?.takeIf { it.isNotBlank() } ?: if (loading) "读取中..." else "不可用"
+    return value?.takeIf { it.isNotBlank() } ?: if (loading) uiString(Res.string.tv_settings_reading_progress) else uiString(Res.string.common_unavailable)
 }
 
+@Composable
 private fun deviceDpResolution(
     snapshot: DeviceInfoSnapshot?,
     density: Float,
@@ -2891,10 +2962,11 @@ private fun deviceDpResolution(
 ): String {
     val width = snapshot?.resolutionWidthPx
     val height = snapshot?.resolutionHeightPx
-    if (width == null || height == null || density <= 0f) return if (loading) "读取中..." else "不可用"
+    if (width == null || height == null || density <= 0f) return if (loading) uiString(Res.string.tv_settings_reading_progress) else uiString(Res.string.common_unavailable)
     return "${(width / density).toInt()} × ${(height / density).toInt()} dp"
 }
 
+@Composable
 private fun deviceDensity(value: Float?, loading: Boolean): String {
-    return value?.takeIf { it > 0f }?.let { "%.2f".format(it) } ?: if (loading) "读取中..." else "不可用"
+    return value?.takeIf { it > 0f }?.let { "%.2f".format(it) } ?: if (loading) uiString(Res.string.tv_settings_reading_progress) else uiString(Res.string.common_unavailable)
 }

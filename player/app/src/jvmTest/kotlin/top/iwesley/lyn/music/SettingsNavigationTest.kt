@@ -9,6 +9,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SettingsNavigationTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `custom data location visibility follows dedicated platform capability`() {
         val desktop = desktopPlatform()

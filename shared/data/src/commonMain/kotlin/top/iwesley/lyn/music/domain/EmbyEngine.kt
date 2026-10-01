@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.uiText
 import io.ktor.http.DEFAULT_PORT
 import io.ktor.http.URLBuilder
 import io.ktor.http.appendPathSegments
@@ -18,6 +24,7 @@ import top.iwesley.lyn.music.core.model.EmbyCredential
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
 import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanReport
+import top.iwesley.lyn.music.core.model.ImportScanWarning
 import top.iwesley.lyn.music.core.model.ImportScanPhase
 import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
@@ -85,12 +92,12 @@ data class EmbyRecentTrackPayload(
 
 fun normalizeEmbyBaseUrl(rawUrl: String?): String {
     val value = rawUrl.orEmpty().trim()
-    require(value.isNotBlank()) { "请填写 Emby 服务器地址。" }
-    require('?' !in value && '#' !in value) { "Emby 地址不能包含 query 或 fragment。" }
-    val parsed = parseUrl(value) ?: error("Emby 地址无效。")
-    require(parsed.protocol.name in setOf("http", "https")) { "Emby 地址只支持 http 或 https。" }
-    require(parsed.host.isNotBlank()) { "Emby 地址缺少主机名。" }
-    require(parsed.user == null && parsed.password == null) { "请不要在 Emby URL 中内嵌用户名或密码。" }
+    requireUi(value.isNotBlank()) { uiText(Res.string.server_address_required, "Emby") }
+    requireUi('?' !in value && '#' !in value) { uiText(Res.string.server_address_no_query, "Emby") }
+    val parsed = parseUrl(value) ?: throw UiTextException(uiText(Res.string.server_address_invalid, "Emby"))
+    requireUi(parsed.protocol.name in setOf("http", "https")) { uiText(Res.string.server_address_http_required, "Emby") }
+    requireUi(parsed.host.isNotBlank()) { uiText(Res.string.server_address_host_required, "Emby") }
+    requireUi(parsed.user == null && parsed.password == null) { uiText(Res.string.server_address_no_credentials, "Emby") }
     val decodedSegments = parsed.encodedPath
         .split('/')
         .filter { it.isNotBlank() }
@@ -130,9 +137,9 @@ suspend fun authenticateEmby(
     logger: DiagnosticLogger = NoopDiagnosticLogger,
     timeoutMillis: Long? = null,
 ): EmbyCredential {
-    require(draft.username.isNotBlank()) { "请填写 Emby 用户名。" }
-    require(draft.password.isNotBlank()) { "请填写 Emby 密码。" }
-    require(deviceId.isNotBlank()) { "Emby 设备 ID 为空。" }
+    requireUi(draft.username.isNotBlank()) { uiText(Res.string.server_username_required, "Emby") }
+    requireUi(draft.password.isNotBlank()) { uiText(Res.string.server_password_required, "Emby") }
+    requireUi(deviceId.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "DeviceId") }
     val baseUrl = normalizeEmbyBaseUrl(draft.baseUrl)
     val request = LyricsRequest(
         method = RequestMethod.POST,
@@ -151,14 +158,16 @@ suspend fun authenticateEmby(
     )
     logEmbyRequest(logger, "AuthenticateByName", request.url)
     val response = httpClient.request(request).getOrElse { throwable ->
-        throw IllegalStateException("Emby 登录请求失败: ${throwable.message.orEmpty()}", throwable)
+        throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Emby", "AuthenticateByName", throwable.uiErrorDetail()), throwable)
     }
-    require(response.statusCode in 200..299) { "Emby 登录失败，HTTP ${response.statusCode}" }
-    val payload = parseEmbyObject(response.body, "登录")
-    val token = payload.string("AccessToken") ?: error("Emby 登录响应缺少 AccessToken。")
-    val userId = payload["User"].asObjectOrNull()?.string("Id") ?: error("Emby 登录响应缺少用户 ID。")
-    require(token.isNotBlank()) { "Emby 登录响应 AccessToken 为空。" }
-    require(userId.isNotBlank()) { "Emby 登录响应用户 ID 为空。" }
+    if (response.statusCode !in 200..299) {
+        throw RemoteSourceHttpArgumentException(response.statusCode, uiText(Res.string.server_http_failed, "Emby", "AuthenticateByName", response.statusCode))
+    }
+    val payload = parseEmbyObject(response.body, "AuthenticateByName")
+    val token = payload.string("AccessToken") ?: throw UiTextException(uiText(Res.string.server_response_field_missing, "Emby", "AccessToken"))
+    val userId = payload["User"].asObjectOrNull()?.string("Id") ?: throw UiTextException(uiText(Res.string.server_response_field_missing, "Emby", "User.Id"))
+    requireUi(token.isNotBlank()) { uiText(Res.string.server_response_field_empty, "Emby", "AccessToken") }
+    requireUi(userId.isNotBlank()) { uiText(Res.string.server_response_field_empty, "Emby", "User.Id") }
     return EmbyCredential(userId = userId, accessToken = token)
 }
 
@@ -180,9 +189,9 @@ suspend fun testEmbyConnection(
     logger: DiagnosticLogger = NoopDiagnosticLogger,
     timeoutMillis: Long? = null,
 ) {
-    require(credential.userId.isNotBlank()) { "Emby 用户 ID 为空。" }
-    require(credential.accessToken.isNotBlank()) { "Emby token 为空。" }
-    require(deviceId.isNotBlank()) { "Emby 设备 ID 为空。" }
+    requireUi(credential.userId.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "User.Id") }
+    requireUi(credential.accessToken.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "AccessToken") }
+    requireUi(deviceId.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "DeviceId") }
     requestEmbyJson(
         httpClient = httpClient,
         credential = credential,
@@ -219,9 +228,9 @@ suspend fun scanEmbyLibrary(
     timeoutMillis: Long? = null,
 ): ImportScanReport {
     val baseUrl = normalizeEmbyBaseUrl(draft.baseUrl)
-    require(credential.userId.isNotBlank()) { "Emby 用户 ID 为空。" }
-    require(credential.accessToken.isNotBlank()) { "Emby token 为空。" }
-    require(deviceId.isNotBlank()) { "Emby 设备 ID 为空。" }
+    requireUi(credential.userId.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "User.Id") }
+    requireUi(credential.accessToken.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "AccessToken") }
+    requireUi(deviceId.isNotBlank()) { uiText(Res.string.server_field_empty, "Emby", "DeviceId") }
     val tracks = mutableListOf<ImportedTrackCandidate>()
     val failures = mutableListOf<ImportScanFailure>()
     val seenItemIds = linkedSetOf<String>()
@@ -284,7 +293,12 @@ suspend fun scanEmbyLibrary(
     )
     return ImportScanReport(
         tracks = tracks,
-        warnings = if (discoveredAudioFileCount == 0) listOf("当前 Emby 账号下没有可同步的歌曲。") else emptyList(),
+        warnings = if (discoveredAudioFileCount == 0) listOf(
+            ImportScanWarning(
+                diagnostic = "当前 Emby 账号下没有可同步的歌曲。",
+                text = uiText(Res.string.source_account_no_syncable_tracks, "Emby"),
+            ),
+        ) else emptyList(),
         discoveredAudioFileCount = discoveredAudioFileCount,
         failures = failures,
         totalTrackCount = totalTrackCount,
@@ -561,7 +575,7 @@ internal suspend fun createEmbyPlaylist(
         operation = "CreatePlaylist",
         logger = logger,
     )
-    val id = payload.string("Id") ?: error("Emby 创建歌单响应缺少 Id。")
+    val id = payload.string("Id") ?: throw UiTextException(uiText(Res.string.server_response_field_missing, "Emby", "Id"))
     return EmbyPlaylistSummaryPayload(
         id = id,
         name = payload.string("Name")?.trim().orEmpty().ifBlank { name },
@@ -855,8 +869,8 @@ private suspend fun requestEmbyItemsPageWithRetry(
             )
         }
     }
-    throw IllegalStateException(
-        "Emby Items 请求超时: StartIndex=$startIndex, Limit=${retryPageSizes.last()}，已尝试降低分页大小后仍失败。",
+    throw UiTextException(
+        uiText(Res.string.emby_items_page_timeout, startIndex, retryPageSizes.last()),
         lastTimeout,
     )
 }
@@ -949,7 +963,7 @@ private suspend fun requestEmbyJson(
         operation = operation,
         logger = logger,
         notFoundAsNull = false,
-    ) ?: error("Emby $operation 返回为空。")
+    ) ?: throw UiTextException(uiText(Res.string.server_response_empty, "Emby", operation))
     return parseEmbyObject(payload, operation)
 }
 
@@ -1071,7 +1085,7 @@ private suspend fun requestEmbyText(
         logger = logger,
         notFoundAsNull = false,
         timeoutMillis = timeoutMillis,
-    ) ?: error("Emby $operation 返回为空。")
+    ) ?: throw UiTextException(uiText(Res.string.server_response_empty, "Emby", operation))
 }
 
 private suspend fun requestEmbyTextOrNull(
@@ -1100,10 +1114,12 @@ private suspend fun requestEmbyTextOrNull(
     )
     logEmbyRequest(logger, operation, request.url)
     val response = httpClient.request(request).getOrElse { throwable ->
-        throw IllegalStateException("Emby $operation 请求失败: ${throwable.message.orEmpty()}", throwable)
+        throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Emby", operation, throwable.uiErrorDetail()), throwable)
     }
     if (response.statusCode == 404 && notFoundAsNull) return null
-    require(response.statusCode in 200..299) { "Emby $operation 失败，HTTP ${response.statusCode}" }
+    if (response.statusCode !in 200..299) {
+        throw RemoteSourceHttpArgumentException(response.statusCode, uiText(Res.string.server_http_failed, "Emby", operation, response.statusCode))
+    }
     return response.body
 }
 
@@ -1308,7 +1324,7 @@ private fun normalizeEmbyPathSegment(value: String): String {
 
 private fun parseEmbyObject(payload: String, context: String): JsonObject {
     return embyJson.parseToJsonElement(payload) as? JsonObject
-        ?: error("Emby $context 返回不是 JSON 对象。")
+        ?: throw UiTextException(uiText(Res.string.server_response_not_object, "Emby", context))
 }
 
 private fun Throwable.isEmbyTimeoutFailure(): Boolean {

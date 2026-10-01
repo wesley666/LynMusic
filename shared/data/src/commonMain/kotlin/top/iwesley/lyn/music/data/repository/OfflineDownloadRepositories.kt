@@ -1,11 +1,18 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.errorMessageForStorage
+import top.iwesley.lyn.music.core.model.resolveUiTextForStorage
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.OfflineDownload
 import top.iwesley.lyn.music.core.model.OfflineDownloadGateway
@@ -36,7 +43,7 @@ object NoopOfflineDownloadRepository : OfflineDownloadRepository {
     override suspend fun restoreIncompleteDownloads() = Unit
 
     override suspend fun download(track: Track, quality: NavidromeAudioQuality): Result<Unit> {
-        return Result.failure(IllegalStateException("当前未配置离线下载仓库。"))
+        return Result.failure(UiTextException(uiText(Res.string.offline_repository_unavailable)))
     }
 
     override suspend fun cancelDownload(trackId: String): Result<Unit> = Result.success(Unit)
@@ -57,25 +64,27 @@ class DefaultOfflineDownloadRepository(
 
     override suspend fun restoreIncompleteDownloads() {
         gateway.cleanupPartialFiles()
-        database.offlineDownloadDao().getAll()
+        val incomplete = database.offlineDownloadDao().getAll()
             .filter { row -> row.status in incompleteStatuses }
-            .forEach { row ->
-                database.offlineDownloadDao().upsert(
-                    row.copy(
-                        status = OfflineDownloadStatus.Failed.name,
-                        updatedAt = offlineDownloadNow(),
-                        errorMessage = "上次下载未完成。",
-                    ),
-                )
-            }
+        if (incomplete.isEmpty()) return
+        val errorMessage = resolveUiTextForStorage(
+            uiText(Res.string.offline_download_interrupted), "The previous download did not finish.",
+        )
+        incomplete.forEach { row ->
+            database.offlineDownloadDao().upsert(
+                row.copy(
+                    status = OfflineDownloadStatus.Failed.name,
+                    updatedAt = offlineDownloadNow(),
+                    errorMessage = errorMessage,
+                ),
+            )
+        }
     }
 
     override suspend fun download(track: Track, quality: NavidromeAudioQuality): Result<Unit> {
         return runCatching {
-            val sourceType = offlineDownloadSourceType(track)
-            require(sourceType != null && sourceType != ImportSourceType.LOCAL_FOLDER) {
-                "本地音乐不需要离线下载。"
-            }
+            val sourceType = offlineDownloadSourceType(track)?.takeUnless { it == ImportSourceType.LOCAL_FOLDER }
+                ?: throw UiTextArgumentException(uiText(Res.string.offline_local_track_unnecessary))
             val effectiveQuality = sourceType.effectiveOfflineDownloadQuality(quality)
             val existing = database.offlineDownloadDao().getByTrackId(track.id)
             val existingLocal = existing?.localMediaLocator?.takeIf { gateway.exists(it) }
@@ -116,6 +125,9 @@ class DefaultOfflineDownloadRepository(
                 )
             } catch (throwable: Throwable) {
                 if (throwable is CancellationException) throw throwable
+                val errorMessage = throwable.errorMessageForStorage(
+                    uiText(Res.string.offline_download_failed_notice), "Download failed.",
+                )
                 database.offlineDownloadDao().upsert(
                     OfflineDownloadEntity(
                         trackId = track.id,
@@ -127,7 +139,7 @@ class DefaultOfflineDownloadRepository(
                         downloadedBytes = 0L,
                         totalBytes = null,
                         updatedAt = offlineDownloadNow(),
-                        errorMessage = throwable.message ?: "下载失败。",
+                        errorMessage = errorMessage,
                     ),
                 )
                 throw throwable
@@ -169,12 +181,13 @@ class DefaultOfflineDownloadRepository(
         val row = database.offlineDownloadDao().getByTrackId(trackId) ?: return null
         val local = row.localMediaLocator?.takeIf { it.isNotBlank() } ?: return null
         if (gateway.exists(local)) return local
+        val errorMessage = resolveUiTextForStorage(uiText(Res.string.offline_file_missing), "The offline file does not exist.")
         database.offlineDownloadDao().upsert(
             row.copy(
                 status = OfflineDownloadStatus.Failed.name,
                 localMediaLocator = null,
                 updatedAt = offlineDownloadNow(),
-                errorMessage = "离线文件不存在。",
+                errorMessage = errorMessage,
             ),
         )
         return null

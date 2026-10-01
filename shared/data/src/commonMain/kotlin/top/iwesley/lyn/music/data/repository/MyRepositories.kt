@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlin.math.max
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -25,6 +27,8 @@ import top.iwesley.lyn.music.core.model.SubsonicAuthMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.warn
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.DailyRecommendationEntity
 import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
@@ -187,7 +191,9 @@ class RoomMyRepository(
                     }
                 }
             if (failures.isNotEmpty()) {
-                error("远程最近播放同步失败，已显示本地统计。")
+                throw UiTextException(
+                    uiText(Res.string.recent_remote_sync_failed_fallback),
+                )
             }
         }
     }

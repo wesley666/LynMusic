@@ -46,6 +46,7 @@ kotlin {
             dependsOn(macosMain)
         }
         commonMain.dependencies {
+            implementation(project(":shared:resources"))
             implementation(libs.kyant.backdrop)
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
@@ -63,6 +64,7 @@ kotlin {
             implementation(compose.materialIconsExtended)
         }
         commonTest.dependencies {
+            implementation(libs.kotlinx.coroutines.test)
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
@@ -78,6 +80,7 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(libs.kotlin.testJunit)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

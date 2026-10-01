@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.platform.nativeUiString as uiString
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -57,25 +66,29 @@ class AndroidLocalFolderPickerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            AndroidLocalFolderPickerScreen(
-                onRefreshPermissionStateRegistered = { refresh ->
-                    refreshPermissionState = refresh
-                },
-                onCancel = {
-                    setResult(Activity.RESULT_CANCELED)
-                    finish()
-                },
-                onSelectDirectory = { root, directory ->
-                    setResult(
-                        Activity.RESULT_OK,
-                        Intent()
-                            .putExtra(EXTRA_SELECTED_PATH, directory.absolutePath)
-                            .putExtra(EXTRA_SELECTED_LABEL, directory.selectionLabel(root)),
-                    )
-                    finish()
-                },
-            )
-        }
+            ProvideUiLanguage {
+                AndroidLocalFolderPickerScreen(
+                    onRefreshPermissionStateRegistered = { refresh ->
+                        refreshPermissionState = refresh
+                    },
+                    onCancel = {
+                        setResult(Activity.RESULT_CANCELED)
+                        finish()
+                    },
+                    onSelectDirectory = { root, directory ->
+                        setResult(
+                            Activity.RESULT_OK,
+                            Intent()
+                                .putExtra(EXTRA_SELECTED_PATH, directory.absolutePath)
+                                .putExtra(EXTRA_SELECTED_LABEL, directory.selectionLabel(root)),
+                        )
+                        finish()
+                    },
+                )
+
+
+            }
+}
     }
 
     override fun onResume() {
@@ -93,7 +106,7 @@ class AndroidLocalFolderPickerActivity : ComponentActivity() {
             return Intent(context, AndroidLocalFolderPickerActivity::class.java)
         }
 
-        fun selectionFromResult(data: Intent?): LocalFolderSelection? {
+        suspend fun selectionFromResult(data: Intent?): LocalFolderSelection? {
             val path = data?.getStringExtra(EXTRA_SELECTED_PATH)
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
@@ -101,7 +114,7 @@ class AndroidLocalFolderPickerActivity : ComponentActivity() {
             val label = data.getStringExtra(EXTRA_SELECTED_LABEL)
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
-                ?: File(path).name.ifBlank { "本地音乐" }
+                ?: File(path).name.ifBlank { resolveNativeUiString(Res.string.folder_picker_local_music_title) }
             return LocalFolderSelection(
                 label = label,
                 persistentReference = path,
@@ -201,16 +214,16 @@ private fun AndroidLocalFolderPermissionScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "需要文件管理权限",
+            text = uiString(Res.string.folder_picker_permission_required_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(12.dp))
         Text(
             text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                "授予“管理所有文件”后，可以浏览内置存储和 U 盘目录，用于导入本地音乐。"
+                uiString(Res.string.folder_picker_manage_files_permission_hint)
             } else {
-                "授予存储读写权限后，可以浏览内置存储和 U 盘目录，用于导入本地音乐。"
+                uiString(Res.string.folder_picker_storage_permission_hint)
             },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -227,10 +240,10 @@ private fun AndroidLocalFolderPermissionScreen(
                     }
                 },
             ) {
-                Text("去授权")
+                Text(uiString(Res.string.folder_picker_grant_permission))
             }
             OutlinedButton(onClick = onCancel) {
-                Text("取消")
+                Text(uiString(Res.string.common_cancel))
             }
         }
     }
@@ -302,8 +315,8 @@ private fun AndroidStorageRootList(
             .padding(20.dp),
     ) {
         AndroidPickerHeader(
-            title = "选择存储位置",
-            subtitle = "请选择内置存储或 U 盘",
+            title = uiString(Res.string.folder_picker_select_storage),
+            subtitle = uiString(Res.string.folder_picker_storage_selection_hint),
             onCancel = onCancel,
         )
         Spacer(Modifier.height(12.dp))
@@ -315,7 +328,7 @@ private fun AndroidStorageRootList(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "没有找到可读取的存储位置",
+                    text = uiString(Res.string.folder_picker_storage_unavailable),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -359,7 +372,7 @@ private fun AndroidDirectoryList(
             .padding(20.dp),
     ) {
         AndroidPickerHeader(
-            title = directory.selectionLabel(root),
+            title = directory.selectionUiLabel(root),
             subtitle = directory.absolutePath,
             onCancel = onCancel,
         )
@@ -371,10 +384,10 @@ private fun AndroidDirectoryList(
                 onClick = onNavigateUp,
                 enabled = directory != root.root,
             ) {
-                Text("上一级")
+                Text(uiString(Res.string.folder_picker_parent_folder))
             }
             Button(onClick = onSelectCurrent) {
-                Text("选择当前目录")
+                Text(uiString(Res.string.folder_picker_select_current_folder))
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -386,7 +399,7 @@ private fun AndroidDirectoryList(
                         .weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("正在读取目录...")
+                    Text(uiString(Res.string.folder_picker_loading_folder))
                 }
             }
 
@@ -398,7 +411,7 @@ private fun AndroidDirectoryList(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = listing.errorMessage.orEmpty(),
+                        text = listing.errorMessage?.nativeDisplayText().orEmpty(),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -412,7 +425,7 @@ private fun AndroidDirectoryList(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "当前目录为空",
+                        text = uiString(Res.string.folder_picker_folder_empty),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -465,7 +478,7 @@ private fun AndroidPickerHeader(
         }
         Spacer(Modifier.width(12.dp))
         OutlinedButton(onClick = onCancel) {
-            Text("取消")
+            Text(uiString(Res.string.common_cancel))
         }
     }
 }
@@ -483,7 +496,7 @@ private fun AndroidStorageRootRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = if (root.isRemovable) "U盘" else "存储",
+            text = if (root.isRemovable) uiString(Res.string.folder_picker_usb_drive_label) else uiString(Res.string.folder_picker_storage_label),
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.width(52.dp),
@@ -492,7 +505,7 @@ private fun AndroidStorageRootRow(
             modifier = Modifier.weight(1f),
         ) {
             Text(
-                text = root.label,
+                text = root.uiLabel?.nativeDisplayText() ?: root.label,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -522,9 +535,9 @@ private fun AndroidDirectoryEntryRow(
     ) {
         Text(
             text = when {
-                entry.isDirectory -> "目录"
-                entry.isAudio -> "音频"
-                else -> "文件"
+                entry.isDirectory -> uiString(Res.string.folder_picker_folder_type)
+                entry.isAudio -> uiString(Res.string.folder_picker_audio_type)
+                else -> uiString(Res.string.folder_picker_file_type)
             },
             color = if (entry.isDirectory || entry.isAudio) {
                 MaterialTheme.colorScheme.primary
@@ -545,7 +558,7 @@ private fun AndroidDirectoryEntryRow(
             )
             Text(
                 text = if (entry.isDirectory) {
-                    "点击进入"
+                    uiString(Res.string.folder_picker_open_folder)
                 } else {
                     formatAndroidFileSize(entry.file.length())
                 },
@@ -561,7 +574,7 @@ private fun AndroidDirectoryEntryRow(
 private data class AndroidDirectoryListing(
     val entries: List<AndroidDirectoryEntry> = emptyList(),
     val isLoading: Boolean = false,
-    val errorMessage: String? = null,
+    val errorMessage: UiText? = null,
 )
 
 private data class AndroidDirectoryEntry(
@@ -594,7 +607,7 @@ private fun File.loadAndroidDirectoryListing(): AndroidDirectoryListing {
         AndroidDirectoryListing(entries = entries)
     }.getOrElse { throwable ->
         AndroidDirectoryListing(
-            errorMessage = throwable.message?.takeIf { it.isNotBlank() } ?: "无法读取当前目录",
+            errorMessage = throwable.uiErrorText(uiText(Res.string.folder_picker_folder_unreadable)),
         )
     }
 }
@@ -655,3 +668,8 @@ private val androidAudioFileExtensions = setOf(
 private const val EXTRA_SELECTED_PATH = "top.iwesley.lyn.music.platform.extra.SELECTED_PATH"
 private const val EXTRA_SELECTED_LABEL = "top.iwesley.lyn.music.platform.extra.SELECTED_LABEL"
 private const val LOCAL_IMPORT_LOG_TAG = "LocalImport"
+
+/** The label returned for a saved source stays independent from its UI translation. */
+@Composable
+private fun File.selectionUiLabel(root: AndroidStorageRoot): String =
+    if (this == root.root || name.isBlank()) root.uiLabel?.nativeDisplayText() ?: root.label else name

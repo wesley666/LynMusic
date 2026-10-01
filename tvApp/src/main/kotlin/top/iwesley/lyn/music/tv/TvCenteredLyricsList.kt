@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.uiString
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -40,8 +43,8 @@ internal fun TvCenteredLyricsList(
     isLoading: Boolean,
     modifier: Modifier = Modifier,
     listModifier: Modifier = Modifier,
-    loadingMessage: String = "歌词加载中...",
-    emptyMessage: String = "暂无歌词",
+    loadingMessage: String = uiString(Res.string.desktop_lyrics_loading),
+    emptyMessage: String = uiString(Res.string.desktop_lyrics_unavailable),
     messageContent: @Composable (String, Modifier) -> Unit,
 ) {
     val visibleLines = remember(lyrics) {

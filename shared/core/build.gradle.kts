@@ -15,7 +15,9 @@ val sharedAppVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.composeCompiler)
 }
 
 abstract class GenerateBuildMetadataTask : DefaultTask() {
@@ -100,8 +102,13 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":shared:resources"))
+            api(libs.compose.runtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
+        }
+        jvmTest.dependencies {
+            implementation(compose.desktop.currentOs)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

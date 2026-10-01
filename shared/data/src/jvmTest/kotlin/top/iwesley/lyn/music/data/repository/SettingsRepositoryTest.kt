@@ -619,7 +619,7 @@ class SettingsRepositoryTest {
             )
         }
 
-        assertEquals("歌词源名称已存在。", error.message)
+        assertEquals("lyrics_source_name_already_exists", error.message)
     }
 
     @Test
@@ -635,7 +635,7 @@ class SettingsRepositoryTest {
             )
         }
 
-        assertEquals("歌词源名称已存在。", error.message)
+        assertEquals("lyrics_source_name_already_exists", error.message)
     }
 
     @Test
@@ -672,7 +672,7 @@ class SettingsRepositoryTest {
             )
         }
 
-        assertEquals("歌词源名称已存在。", error.message)
+        assertEquals("lyrics_source_name_already_exists", error.message)
     }
 
     @Test
@@ -706,7 +706,7 @@ class SettingsRepositoryTest {
             )
         }
 
-        assertEquals("Workflow 源 id 不支持修改。", error.message)
+        assertEquals("lyrics_workflow_id_immutable", error.message)
     }
 }
 

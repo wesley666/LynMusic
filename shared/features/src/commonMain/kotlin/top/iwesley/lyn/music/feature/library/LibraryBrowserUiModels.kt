@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.library
 
+import top.iwesley.lyn.music.core.model.UiText
+
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.PlaylistDetail
@@ -41,8 +43,8 @@ data class LibraryBrowserUiState(
     val isLoadingMoreAlbums: Boolean = false,
     val isLoadingMoreArtists: Boolean = false,
     val capabilities: LibraryBrowserCapabilities = LibraryBrowserCapabilities(),
-    val message: String? = null,
-    val errorMessage: String? = null,
+    val message: UiText? = null,
+    val errorMessage: UiText? = null,
 )
 
 data class LibraryBrowserCount(
@@ -134,12 +136,12 @@ data class PlaylistBrowserUiState(
     val isLoading: Boolean = false,
     val isOnline: Boolean = false,
     val sourceId: String? = null,
-    val errorMessage: String? = null,
+    val errorMessage: UiText? = null,
 )
 
 fun LibraryState.toBrowserUiState(
     favoriteTrackIds: Set<String> = emptySet(),
-    message: String? = null,
+    message: UiText? = null,
 ): LibraryBrowserUiState {
     val albumCountByArtistId = albumCountByArtistId(filteredTracks)
     return LibraryBrowserUiState(
@@ -177,7 +179,7 @@ fun LibraryState.toBrowserUiState(
 }
 
 fun FavoritesState.toBrowserUiState(
-    message: String? = this.message,
+    message: UiText? = this.message,
 ): LibraryBrowserUiState {
     val albumCountByArtistId = albumCountByArtistId(filteredTracks)
     return LibraryBrowserUiState(
@@ -213,7 +215,7 @@ fun FavoritesState.toBrowserUiState(
 }
 
 fun OnlineLibraryState.toBrowserUiState(
-    message: String? = errorMessage,
+    message: UiText? = errorMessage,
 ): LibraryBrowserUiState {
     val hasActiveQuery = query.isNotBlank()
     return LibraryBrowserUiState(
@@ -312,7 +314,7 @@ private fun albumCountByArtistId(tracks: List<Track>): Map<String, Int> {
 }
 
 fun OnlineFavoritesState.toBrowserUiState(
-    message: String? = errorMessage ?: this.message,
+    message: UiText? = errorMessage ?: this.message,
 ): LibraryBrowserUiState {
     val favoriteTrackIds = tracks.mapTo(linkedSetOf()) { it.id }
     val visibleTracks = filteredTracks

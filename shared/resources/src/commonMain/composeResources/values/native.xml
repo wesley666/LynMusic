@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="lyrics_image_saved_photos">Image saved to Photos</string>
+    <string name="lyrics_image_saved_file">Image saved to file</string>
+    <string name="lyrics_save_image_title">Save lyrics image</string>
+    <string name="lyrics_image_clipboard">Lyrics image</string>
+    <string name="lyrics_text_clipboard">Lyrics text</string>
+    <string name="font_sans_serif">Sans serif</string>
+    <string name="font_serif">Serif</string>
+    <string name="font_monospace">Monospace</string>
+    <string name="lyrics_image_unsupported">Lyrics images are unavailable on this platform.</string>
+    <string name="font_system_unavailable">System fonts are unavailable on this platform.</string>
+    <string name="font_import_unsupported">Font importing is unavailable on this platform.</string>
+    <string name="font_sans_medium">Sans serif medium</string>
+    <string name="font_sans_black">Sans serif black</string>
+    <string name="font_serif_mono">Serif monospace</string>
+    <string name="font_sans_condensed">Sans serif condensed</string>
+    <string name="font_sans_condensed_medium">Sans serif condensed medium</string>
+    <string name="font_cursive">Cursive</string>
+    <string name="font_casual">Casual</string>
+</resources>

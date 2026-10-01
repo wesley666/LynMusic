@@ -7,6 +7,11 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 
 class LyricsScrollTargetTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `returns first line when synced lyrics has no highlighted line yet`() {
         val lyrics = syncedLyricsDocument(

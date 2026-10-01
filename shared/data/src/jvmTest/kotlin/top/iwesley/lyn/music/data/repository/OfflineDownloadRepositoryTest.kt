@@ -1,15 +1,27 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.resources.*
+
 import androidx.room.Room
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.OfflineDownloadGateway
 import top.iwesley.lyn.music.core.model.OfflineDownloadProgress
 import top.iwesley.lyn.music.core.model.OfflineDownloadResult
@@ -22,6 +34,121 @@ import top.iwesley.lyn.music.data.db.OfflineDownloadEntity
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 class OfflineDownloadRepositoryTest {
+    @Test
+    fun unconfiguredDownloadsExposeDescription() = runTest {
+        val result = NoopOfflineDownloadRepository.download(navidromeTrack(), NavidromeAudioQuality.Original)
+        val exception = assertIs<UiTextException>(result.exceptionOrNull())
+        assertEquals("Offline downloads are not configured.", resolveUiText(exception.text, AppLanguage.English))
+        assertEquals("目前尚未設定離線下載儲存庫。", resolveUiText(exception.text, AppLanguage.TraditionalChinese))
+        assertEquals("offline_repository_unavailable", exception.message)
+    }
+    @Test
+    fun describedFailureStoresSaveTimeLanguageAndKeepsOriginalExceptionAfterReopening() = runTest {
+        val previous = AppLanguageRuntime.appLanguage.value
+        try {
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                AppLanguageRuntime.update(language)
+                val path = Files.createTempFile("lynmusic-offline-error", ".db")
+                fun openDatabase() = buildLynMusicDatabase(Room.databaseBuilder<LynMusicDatabase>(name = path.absolutePathString()))
+                var database = openDatabase()
+                val failure = IllegalStateException("wrapper", UiTextException(uiText(Res.string.offline_write_failed)))
+                val gateway = RecordingOfflineDownloadGateway(failure = failure)
+                try {
+                    val repository = DefaultOfflineDownloadRepository(database, gateway)
+                    val result = repository.download(navidromeTrack(), NavidromeAudioQuality.Original)
+                    assertSame(failure, result.exceptionOrNull())
+                    val expected = resolveUiText(uiText(Res.string.offline_write_failed), language)
+                    assertEquals(OfflineDownloadStatus.Failed.name, database.offlineDownloadDao().getByTrackId("track-1")?.status)
+                    assertEquals(expected, database.offlineDownloadDao().getByTrackId("track-1")?.errorMessage)
+                    database.close()
+                    database = openDatabase()
+                    val reopened = DefaultOfflineDownloadRepository(database, gateway)
+                    for (next in listOf(AppLanguage.English, AppLanguage.TraditionalChinese, AppLanguage.SimplifiedChinese, AppLanguage.English)) {
+                        AppLanguageRuntime.update(next)
+                        assertEquals(expected, reopened.downloads.first().getValue("track-1").errorMessage)
+                        assertEquals(expected, database.offlineDownloadDao().getByTrackId("track-1")?.errorMessage)
+                        assertEquals(1, gateway.downloadRequests.size)
+                    }
+                } finally {
+                    database.close()
+                    Files.deleteIfExists(path)
+                }
+            }
+        } finally { AppLanguageRuntime.update(previous) }
+    }
+
+    @Test
+    fun emptyMessagesResourceReadFailuresAndHttpErrorsSaveTextWithoutReplacingBusinessFailure() = runTest {
+        val previous = AppLanguageRuntime.appLanguage.value
+        val database = createOfflineTestDatabase()
+        try {
+            AppLanguageRuntime.update(AppLanguage.TraditionalChinese)
+            val http = runCatching { top.iwesley.lyn.music.domain.checkOfflineDownloadHttpStatus(503) }.exceptionOrNull()!!
+            val cases = listOf(
+                IllegalStateException("第三方中文详情 %1\$s ") to "第三方中文详情 %1\$s ",
+                IllegalStateException() to resolveUiText(uiText(Res.string.offline_download_failed_notice), AppLanguage.TraditionalChinese),
+                IllegalStateException(" ") to resolveUiText(uiText(Res.string.offline_download_failed_notice), AppLanguage.TraditionalChinese),
+                UiTextException(uiText(Res.string.ui_error_with_context, "missing second argument")) to "Download failed.",
+                http to resolveUiText(uiText(Res.string.offline_download_http_failed, 503), AppLanguage.TraditionalChinese),
+            )
+            for ((index, case) in cases.withIndex()) {
+                val (failure, expected) = case
+                val repository = DefaultOfflineDownloadRepository(database, RecordingOfflineDownloadGateway(failure = failure))
+                val track = navidromeTrack(trackId = "failed-$index")
+                assertSame(failure, repository.download(track, NavidromeAudioQuality.Original).exceptionOrNull())
+                assertEquals(expected, database.offlineDownloadDao().getByTrackId(track.id)?.errorMessage)
+            }
+            val cancelled = CancellationException("cancelled")
+            val repository = DefaultOfflineDownloadRepository(database, RecordingOfflineDownloadGateway(failure = cancelled))
+            assertSame(cancelled, repository.download(navidromeTrack(), NavidromeAudioQuality.Original).exceptionOrNull())
+            val row = database.offlineDownloadDao().getByTrackId("track-1")
+            assertEquals(OfflineDownloadStatus.Pending.name, row?.status)
+            assertNull(row?.errorMessage)
+        } finally {
+            database.close()
+            AppLanguageRuntime.update(previous)
+        }
+    }
+
+    @Test
+    fun interruptedAndMissingFilesSaveCurrentLanguageAndHistoricalTextStaysVerbatim() = runTest {
+        val previous = AppLanguageRuntime.appLanguage.value
+        val database = createOfflineTestDatabase()
+        try {
+            for (language in listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)) {
+                AppLanguageRuntime.update(language)
+                database.offlineDownloadDao().deleteAll()
+                database.offlineDownloadDao().upsert(offlineRow("pending", status = OfflineDownloadStatus.Pending))
+                database.offlineDownloadDao().upsert(offlineRow("downloading", status = OfflineDownloadStatus.Downloading))
+                database.offlineDownloadDao().upsert(completedRow("missing", localMediaLocator = "offline://missing", quality = NavidromeAudioQuality.Original))
+                val history = "历史错误 source_key(arg1=用户来源)"
+                database.offlineDownloadDao().upsert(offlineRow("history", status = OfflineDownloadStatus.Failed).copy(errorMessage = history))
+                val gateway = RecordingOfflineDownloadGateway()
+                val repository = DefaultOfflineDownloadRepository(database, gateway)
+                repository.restoreIncompleteDownloads()
+                val interrupted = resolveUiText(uiText(Res.string.offline_download_interrupted), language)
+                for (id in listOf("pending", "downloading")) {
+                    assertEquals(OfflineDownloadStatus.Failed.name, database.offlineDownloadDao().getByTrackId(id)?.status)
+                    assertEquals(interrupted, database.offlineDownloadDao().getByTrackId(id)?.errorMessage)
+                }
+                assertNull(repository.resolveOfflineMediaLocator("missing"))
+                val missing = resolveUiText(uiText(Res.string.offline_file_missing), language)
+                assertEquals(missing, database.offlineDownloadDao().getByTrackId("missing")?.errorMessage)
+                assertNull(database.offlineDownloadDao().getByTrackId("missing")?.localMediaLocator)
+                for (next in listOf(AppLanguage.English, AppLanguage.TraditionalChinese, AppLanguage.SimplifiedChinese)) {
+                    AppLanguageRuntime.update(next)
+                    assertEquals(interrupted, repository.downloads.first().getValue("pending").errorMessage)
+                    assertEquals(missing, repository.downloads.first().getValue("missing").errorMessage)
+                    assertEquals(history, repository.downloads.first().getValue("history").errorMessage)
+                    assertEquals(emptyList(), gateway.downloadRequests)
+                    assertEquals(1, gateway.cleanupPartialCalls)
+                }
+            }
+        } finally {
+            database.close()
+            AppLanguageRuntime.update(previous)
+        }
+    }
 
     @Test
     fun `download stores navidrome quality and completes without content length`() = runTest {
@@ -64,6 +191,8 @@ class OfflineDownloadRepositoryTest {
         val result = repository.download(localTrack(), NavidromeAudioQuality.Original)
 
         assertTrue(result.isFailure)
+        val exception = assertIs<UiTextArgumentException>(result.exceptionOrNull())
+        assertEquals("offline_local_track_unnecessary", exception.message)
         assertNull(database.offlineDownloadDao().getByTrackId("local-track"))
         assertEquals(emptyList(), gateway.downloadRequests)
     }
@@ -112,6 +241,7 @@ class OfflineDownloadRepositoryTest {
         assertEquals(OfflineDownloadStatus.Failed.name, row?.status)
         assertEquals(NavidromeAudioQuality.Kbps128.name, row?.quality)
         assertEquals("offline://old.flac", row?.localMediaLocator)
+        assertEquals("network closed", row?.errorMessage)
         assertEquals("offline://old.flac", repository.resolveOfflineMediaLocator("track-1"))
         assertEquals(emptyList(), gateway.deletedLocators)
     }

@@ -1,5 +1,15 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.Font
@@ -117,10 +127,22 @@ private fun showJvmCrashWindowAndWait(report: String) {
 
 private fun buildJvmCrashFrame(report: String, onClosed: () -> Unit): JFrame {
     val closed = AtomicBoolean(false)
-    val frame = JFrame("LynMusic 崩溃报告")
+    val frame = JFrame()
+    val textScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    fun bindText(description: kotlinx.coroutines.flow.Flow<UiText?>, update: (String) -> Unit) {
+        textScope.launch {
+            observeResolvedUiText(description) { value, isCurrent ->
+                SwingUtilities.invokeLater {
+                    if (!closed.get() && isCurrent()) update(value.orEmpty())
+                }
+            }
+        }
+    }
+    bindText(flowOf(uiText(Res.string.crash_report_title))) { frame.title = it }
 
     fun closeWindow() {
         if (closed.compareAndSet(false, true)) {
+            textScope.cancel()
             frame.dispose()
             onClosed()
         }
@@ -132,19 +154,24 @@ private fun buildJvmCrashFrame(report: String, onClosed: () -> Unit): JFrame {
         font = Font(Font.MONOSPACED, Font.PLAIN, 12)
         caretPosition = 0
     }
-    val copyButton = JButton("复制堆栈").apply {
+    val copyDescription = MutableStateFlow<UiText?>(uiText(Res.string.crash_copy_stack_trace))
+    val copyButton = JButton().apply {
         addActionListener {
             Toolkit.getDefaultToolkit()
                 .systemClipboard
                 .setContents(StringSelection(report), null)
-            text = "已复制"
+            copyDescription.value = uiText(Res.string.common_copied)
         }
     }
-    val exitButton = JButton("退出").apply {
+    val exitButton = JButton().apply {
         addActionListener {
             closeWindow()
         }
     }
+    bindText(copyDescription) { copyButton.text = it }
+    bindText(flowOf(uiText(Res.string.common_exit))) { exitButton.text = it }
+    val instructions = JLabel()
+    bindText(flowOf(uiText(Res.string.crash_desktop_report_instructions))) { instructions.text = it }
     val buttonPanel = JPanel().apply {
         add(copyButton)
         add(exitButton)
@@ -152,7 +179,7 @@ private fun buildJvmCrashFrame(report: String, onClosed: () -> Unit): JFrame {
     val contentPanel = JPanel(BorderLayout(0, 12)).apply {
         border = EmptyBorder(16, 16, 16, 16)
         add(
-            JLabel("LynMusic 遇到未捕获异常。应用将退出，你可以复制下面的崩溃堆栈给开发者用于排查。"),
+            instructions,
             BorderLayout.NORTH,
         )
         add(JScrollPane(reportText), BorderLayout.CENTER)

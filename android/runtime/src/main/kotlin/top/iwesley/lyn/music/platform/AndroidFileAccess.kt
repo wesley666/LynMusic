@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
 import android.Manifest
 import android.annotation.TargetApi
 import android.content.Context
@@ -22,6 +26,7 @@ internal data class AndroidStorageRoot(
     val label: String,
     val root: File,
     val isRemovable: Boolean,
+    val uiLabel: UiText? = null,
 )
 
 internal fun hasManageAllFilesAccess(context: Context): Boolean {
@@ -99,7 +104,7 @@ internal fun listAndroidStorageRoots(
     val normalizedPrimary = primaryRoot.canonicalFileOrSelf()
     val roots = linkedMapOf<String, AndroidStorageRoot>()
 
-    fun addRoot(root: File, label: String, isRemovable: Boolean, source: String) {
+    fun addRoot(root: File, label: String, isRemovable: Boolean, source: String, uiLabel: UiText? = null) {
         if (!root.exists() || !root.isDirectory || !root.canRead()) {
             logger.info(LOCAL_IMPORT_LOG_TAG) {
                 "storage-root-skip source=$source path=${root.absolutePath} exists=${root.exists()} " +
@@ -111,6 +116,7 @@ internal fun listAndroidStorageRoots(
         if (!roots.containsKey(normalizedRoot.absolutePath)) {
             roots[normalizedRoot.absolutePath] = AndroidStorageRoot(
                 label = label,
+                uiLabel = uiLabel,
                 root = normalizedRoot,
                 isRemovable = isRemovable,
             )
@@ -130,13 +136,14 @@ internal fun listAndroidStorageRoots(
             "hasDirectLocalFileAccess=${hasDirectLocalFileAccess(context)}"
     }
 
-    addRoot(primaryRoot, label = "内置存储", isRemovable = false, source = "primary")
+    addRoot(primaryRoot, label = "内置存储", isRemovable = false, source = "primary", uiLabel = uiText(Res.string.folder_picker_internal_storage))
 
     val storageVolumeRoots = listStorageVolumeRoots(context, logger)
     storageVolumeRoots.forEach { root ->
         addRoot(
             root = root.root,
             label = root.label,
+            uiLabel = root.uiLabel,
             isRemovable = root.isRemovable,
             source = "storage-volume",
         )
@@ -158,6 +165,7 @@ internal fun listAndroidStorageRoots(
             addRoot(
                 root = root,
                 label = "U 盘 ${root.name}",
+                uiLabel = uiText(Res.string.folder_picker_usb_drive_named, root.name),
                 isRemovable = true,
                 source = "external-files-dir",
             )
@@ -167,6 +175,7 @@ internal fun listAndroidStorageRoots(
         addRoot(
             root = root,
             label = "U 盘 ${root.name}",
+            uiLabel = uiText(Res.string.folder_picker_usb_drive_named, root.name),
             isRemovable = true,
             source = "mnt-usb-fallback",
         )
@@ -277,6 +286,7 @@ private fun listStorageVolumeRoots(
         val root = directory ?: return@mapNotNull null
         AndroidStorageRoot(
             label = description.ifBlank { "U 盘 ${root.name}" },
+            uiLabel = if (description.isBlank()) uiText(Res.string.folder_picker_usb_drive_named, root.name) else null,
             root = root,
             isRemovable = true,
         )

@@ -11,7 +11,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -55,9 +55,9 @@ class PlayerStoreManualLyricsSearchTest {
 
         val state = store.state.value
         assertTrue(state.isManualLyricsSearchVisible)
-        assertEquals("显示标题", state.manualLyricsTitle)
-        assertEquals("显示歌手", state.manualLyricsArtistName)
-        assertEquals("显示专辑", state.manualLyricsAlbumTitle)
+        assertLocalizedEquals("显示标题", state.manualLyricsTitle)
+        assertLocalizedEquals("显示歌手", state.manualLyricsArtistName)
+        assertLocalizedEquals("显示专辑", state.manualLyricsAlbumTitle)
         scope.cancel()
     }
 
@@ -101,23 +101,23 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
-        assertEquals("手动标题", lyricsRepository.lastSearchTrack?.title)
-        assertEquals("手动歌手", lyricsRepository.lastSearchTrack?.artistName)
-        assertEquals("手动专辑", lyricsRepository.lastSearchTrack?.albumTitle)
-        assertEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
-        assertEquals(listOf(candidate), store.state.value.manualLyricsResults)
+        assertLocalizedEquals("手动标题", lyricsRepository.lastSearchTrack?.title)
+        assertLocalizedEquals("手动歌手", lyricsRepository.lastSearchTrack?.artistName)
+        assertLocalizedEquals("手动专辑", lyricsRepository.lastSearchTrack?.albumTitle)
+        assertLocalizedEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
+        assertLocalizedEquals(listOf(candidate), store.state.value.manualLyricsResults)
 
         store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(candidate))
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(track.id, lyricsRepository.appliedTrackId)
-        assertEquals(candidate, lyricsRepository.appliedCandidate)
-        assertEquals(candidate.document, state.lyrics)
-        assertEquals(0, state.highlightedLineIndex)
+        assertLocalizedEquals(track.id, lyricsRepository.appliedTrackId)
+        assertLocalizedEquals(candidate, lyricsRepository.appliedCandidate)
+        assertLocalizedEquals(candidate.document, state.lyrics)
+        assertLocalizedEquals(0, state.highlightedLineIndex)
         assertFalse(state.isManualLyricsSearchVisible)
         assertTrue(state.manualLyricsResults.isEmpty())
-        assertEquals("/tmp/manual-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals("/tmp/manual-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         scope.cancel()
     }
 
@@ -156,8 +156,8 @@ class PlayerStoreManualLyricsSearchTest {
 
         val state = store.state.value
         assertTrue(state.isManualLyricsSearchVisible)
-        assertEquals("歌词应用失败", state.message)
-        assertEquals(null, state.lyrics)
+        assertLocalizedEquals("歌词应用失败。\n歌词应用失败", state.message)
+        assertLocalizedEquals(null, state.lyrics)
         scope.cancel()
     }
 
@@ -199,9 +199,9 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedMode)
-        assertEquals(candidate.document, state.lyrics)
-        assertEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedMode)
+        assertLocalizedEquals(candidate.document, state.lyrics)
+        assertLocalizedEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         assertFalse(state.isManualLyricsSearchVisible)
         scope.cancel()
     }
@@ -249,7 +249,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        assertEquals(currentLyrics, store.state.value.lyrics)
+        assertLocalizedEquals(currentLyrics, store.state.value.lyrics)
 
         store.dispatch(PlayerIntent.OpenManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
@@ -264,10 +264,10 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedMode)
-        assertEquals(currentLyrics, state.lyrics)
-        assertEquals(0, state.highlightedLineIndex)
-        assertEquals("/tmp/artwork-only-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedMode)
+        assertLocalizedEquals(currentLyrics, state.lyrics)
+        assertLocalizedEquals(0, state.highlightedLineIndex)
+        assertLocalizedEquals("/tmp/artwork-only-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         assertFalse(state.isManualLyricsSearchVisible)
         scope.cancel()
     }
@@ -314,8 +314,8 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
-        assertEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
-        assertEquals(listOf(externalCandidate), store.state.value.manualLyricsResults)
+        assertLocalizedEquals(false, lyricsRepository.lastIncludeTrackProvidedCandidate)
+        assertLocalizedEquals(listOf(externalCandidate), store.state.value.manualLyricsResults)
         scope.cancel()
     }
 
@@ -351,8 +351,8 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
-        assertEquals(true, lyricsRepository.lastIncludeTrackProvidedCandidate)
-        assertEquals(listOf(currentTrackCandidate), store.state.value.manualLyricsResults)
+        assertLocalizedEquals(true, lyricsRepository.lastIncludeTrackProvidedCandidate)
+        assertLocalizedEquals(listOf(currentTrackCandidate), store.state.value.manualLyricsResults)
         scope.cancel()
     }
 
@@ -393,20 +393,20 @@ class PlayerStoreManualLyricsSearchTest {
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
-        assertEquals(listOf(workflowCandidate), store.state.value.manualWorkflowSongResults)
-        assertEquals("原始标题", lyricsRepository.lastWorkflowSearchTrack?.title)
+        assertLocalizedEquals(listOf(workflowCandidate), store.state.value.manualWorkflowSongResults)
+        assertLocalizedEquals("原始标题", lyricsRepository.lastWorkflowSearchTrack?.title)
 
         store.dispatch(PlayerIntent.ApplyWorkflowSongCandidate(workflowCandidate))
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(track.id, lyricsRepository.appliedTrackId)
-        assertEquals(workflowCandidate, lyricsRepository.appliedWorkflowCandidate)
-        assertEquals(appliedDocument, state.lyrics)
-        assertEquals(0, state.highlightedLineIndex)
+        assertLocalizedEquals(track.id, lyricsRepository.appliedTrackId)
+        assertLocalizedEquals(workflowCandidate, lyricsRepository.appliedWorkflowCandidate)
+        assertLocalizedEquals(appliedDocument, state.lyrics)
+        assertLocalizedEquals(0, state.highlightedLineIndex)
         assertFalse(state.isManualLyricsSearchVisible)
         assertTrue(state.manualWorkflowSongResults.isEmpty())
-        assertEquals("https://img.example.com/cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals("https://img.example.com/cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         scope.cancel()
     }
 
@@ -443,8 +443,8 @@ class PlayerStoreManualLyricsSearchTest {
 
         val state = store.state.value
         assertTrue(state.isManualLyricsSearchVisible)
-        assertEquals("工作流歌词应用失败", state.message)
-        assertEquals(null, state.lyrics)
+        assertLocalizedEquals("歌词应用失败。\n工作流歌词应用失败", state.message)
+        assertLocalizedEquals(null, state.lyrics)
         scope.cancel()
     }
 
@@ -493,9 +493,9 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedWorkflowMode)
-        assertEquals(appliedDocument, state.lyrics)
-        assertEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedWorkflowMode)
+        assertLocalizedEquals(appliedDocument, state.lyrics)
+        assertLocalizedEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         assertFalse(state.isManualLyricsSearchVisible)
         scope.cancel()
     }
@@ -541,7 +541,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        assertEquals(currentLyrics, store.state.value.lyrics)
+        assertLocalizedEquals(currentLyrics, store.state.value.lyrics)
 
         store.dispatch(PlayerIntent.OpenManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
@@ -556,10 +556,10 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedWorkflowMode)
-        assertEquals(currentLyrics, state.lyrics)
-        assertEquals(0, state.highlightedLineIndex)
-        assertEquals("/tmp/workflow-artwork-only.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
+        assertLocalizedEquals(LyricsSearchApplyMode.ARTWORK_ONLY, lyricsRepository.appliedWorkflowMode)
+        assertLocalizedEquals(currentLyrics, state.lyrics)
+        assertLocalizedEquals(0, state.highlightedLineIndex)
+        assertLocalizedEquals("/tmp/workflow-artwork-only.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         assertFalse(state.isManualLyricsSearchVisible)
         scope.cancel()
     }

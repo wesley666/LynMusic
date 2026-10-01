@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyrics_share_album_label">專輯：</string>
+    <string name="lyrics_share_album_artist_summary">專輯：%1$s    歌手：%2$s</string>
+    <string name="lyrics_share_artist_label">歌手：</string>
+    <string name="lyrics_share_artwork_colors">封面取色</string>
+    <string name="lyrics_share_blank_line">空白行</string>
+    <string name="lyrics_share_fetch_priority_hint">會先使用本機快取與內嵌歌詞，拿不到時再按當前標題和歌手請求。</string>
+    <string name="lyrics_share_clear_selection">清空選擇</string>
+    <string name="lyrics_share_close_fullscreen">關閉全屏預覽</string>
+    <string name="lyrics_share_copy_action">複製</string>
+    <string name="lyrics_share_copy_image">複製圖片</string>
+    <string name="lyrics_share_copy_text">複製文字</string>
+    <string name="lyrics_share_copying_progress">複製中...</string>
+    <string name="lyrics_share_copying_label">複製中</string>
+    <string name="lyrics_share_current_track">當前歌曲</string>
+    <string name="lyrics_share_fetching_lyrics">正在請求歌詞...</string>
+    <string name="lyrics_share_font_button">字體 · %1$s</string>
+    <string name="lyrics_share_format_label">格式</string>
+    <string name="lyrics_share_preview_description">歌詞分享預覽</string>
+    <string name="lyrics_share_lyrics_missing">暫時沒有歌詞</string>
+    <string name="lyrics_share_note_format">便簽</string>
+    <string name="lyrics_share_preview_title">預覽</string>
+    <string name="lyrics_share_quality_label">音質</string>
+    <string name="lyrics_share_loading_fonts">正在讀取系統字體...</string>
+    <string name="lyrics_share_save_locally">儲存到本機</string>
+    <string name="lyrics_share_saving_label">儲存中</string>
+    <string name="lyrics_share_saving_progress">儲存中...</string>
+    <string name="lyrics_share_manual_search">手動搜索歌詞</string>
+    <string name="lyrics_share_seek_to_position">跳轉到 %1$s 播放</string>
+    <string name="lyrics_share_select_action">點選</string>
+    <string name="lyrics_share_apply_result_hint">點選任一結果即可直接應用到當前歌曲。</string>
+    <string name="lyrics_share_select_lines">選句</string>
+    <string name="lyrics_share_select_lyrics">請選擇歌詞</string>
+    <string name="lyrics_share_note_preview_hint">點選左側歌詞行後，這裡會生成一張便簽樣式的分享圖片。</string>
+    <string name="lyrics_share_selected_badge">已選</string>
+    <string name="lyrics_share_size_label">大小</string>
+    <string name="lyrics_share_track_information">歌曲信息</string>
+    <string name="lyrics_share_updating_preview">更新預覽中</string>
+    <string name="lyrics_share_view_track_information">查看歌曲信息</string>
+</resources>

@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.resources.*
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import top.iwesley.lyn.music.cast.upnp.android.UpnpRendererMedia
+import top.iwesley.lyn.music.core.model.uiText
 
 internal class TvRendererActivityPlaybackSession(
     context: Context,
@@ -149,7 +152,8 @@ internal class TvRendererActivityPlaybackSession(
                         status = TvRendererPlaybackStatus.Failed,
                         positionMs = currentPositionMs(),
                         durationMs = currentDurationMs(),
-                        errorMessage = error.message ?: "投屏播放失败",
+                        errorMessage = error.message,
+                        errorText = if (error.message.isNullOrBlank()) uiText(Res.string.renderer_playback_failed) else null,
                     )
                 }
             })

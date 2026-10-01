@@ -2,6 +2,13 @@
 
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -91,7 +98,7 @@ internal class IosLocalFolderPicker : NSObject(), UIDocumentPickerDelegateProtoc
 
     suspend fun pick(): LocalFolderSelection? = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { pending ->
-            check(continuation == null) { "已有文件夹选择器正在显示。" }
+            checkUi(continuation == null) { uiText(Res.string.ios_folder_picker_active) }
             val controller = UIDocumentPickerViewController(
                 forOpeningContentTypes = listOf(UTTypeFolder),
                 asCopy = false,
@@ -111,7 +118,7 @@ internal class IosLocalFolderPicker : NSObject(), UIDocumentPickerDelegateProtoc
             val presenter = topIosViewController()
             if (presenter == null) {
                 clearPendingPicker()
-                pending.resumeWith(Result.failure(IllegalStateException("无法显示文件夹选择器。")))
+                pending.resumeWith(Result.failure(UiTextException(uiText(Res.string.folder_picker_open_failed))))
             } else {
                 presenter.presentViewController(controller, animated = true, completion = null)
             }
@@ -164,13 +171,13 @@ private fun topIosViewController(): UIViewController? {
 
 private fun createIosLocalFolderSelection(url: NSURL): LocalFolderSelection {
     val started = url.startAccessingSecurityScopedResource()
-    check(started) { "未能取得所选文件夹的访问权限。" }
+    checkUi(started) { uiText(Res.string.ios_folder_access_failed) }
     return try {
         val normalizedUrl = url.URLByStandardizingPath ?: url
         val identity = normalizedUrl.absoluteString
             ?.trimEnd('/')
             ?.takeIf { it.isNotBlank() }
-            ?: error("无法识别所选文件夹。")
+            ?: throw UiTextException(uiText(Res.string.folder_selection_unrecognized))
         val bookmark = createIosBookmark(url)
         LocalFolderSelection(
             label = url.lastPathComponent?.takeIf { it.isNotBlank() } ?: "本地音乐",
@@ -188,7 +195,8 @@ private fun createIosBookmark(url: NSURL): NSData = memScoped {
         includingResourceValuesForKeys = null,
         relativeToURL = null,
         error = error.ptr,
-    ) ?: error(error.value?.localizedDescription ?: "无法保存文件夹访问权限。")
+    ) ?: throw (error.value?.localizedDescription?.let { IllegalStateException(it) }
+        ?: UiTextException(uiText(Res.string.ios_folder_bookmark_failed)))
 }
 
 internal class IosScopedFolderAccess private constructor(
@@ -206,7 +214,7 @@ internal class IosScopedFolderAccess private constructor(
     companion object {
         fun open(persistentReference: String): IosScopedFolderAccess {
             val reference = parseIosLocalFolderReference(persistentReference)
-                ?: error("文件夹授权信息无效，请重新授权。")
+                ?: throw UiTextException(uiText(Res.string.folder_access_expired))
             return memScoped {
                 val stale = alloc<BooleanVar>()
                 stale.value = false
@@ -217,9 +225,10 @@ internal class IosScopedFolderAccess private constructor(
                     relativeToURL = null,
                     bookmarkDataIsStale = stale.ptr,
                     error = error.ptr,
-                ) ?: error(error.value?.localizedDescription ?: "文件夹权限已失效，请重新授权。")
-                check(url.startAccessingSecurityScopedResource()) {
-                    "无法访问文件夹，请检查文件提供方状态或重新授权。"
+                ) ?: throw (error.value?.localizedDescription?.let { IllegalStateException(it) }
+                    ?: UiTextException(uiText(Res.string.ios_folder_permission_expired)))
+                checkUi(url.startAccessingSecurityScopedResource()) {
+                    uiText(Res.string.ios_folder_access_unavailable)
                 }
                 val refreshed = if (stale.value) {
                     runCatching {
@@ -251,10 +260,10 @@ internal class IosLocalFileAccessService(
 
     private suspend fun open(locator: String, optional: Boolean): IosLocalTrackAccess? {
         val (sourceId, relativePath) = parseIosLocalMediaLocator(locator)
-            ?: error("本地歌曲定位信息无效。")
+            ?: throw UiTextException(uiText(Res.string.local_track_location_invalid))
         val source = database.importSourceDao().getById(sourceId)
             ?.takeIf { it.type == ImportSourceType.LOCAL_FOLDER.name }
-            ?: error("本地歌曲来源已不存在。")
+            ?: throw UiTextException(uiText(Res.string.local_track_source_missing))
         val access = IosScopedFolderAccess.open(source.rootReference)
         return try {
             val url = resolveIosChildUrl(access.rootUrl, relativePath)
@@ -262,12 +271,12 @@ internal class IosLocalFileAccessService(
             if (originalPath == null || !NSFileManager.defaultManager.fileExistsAtPath(originalPath)) {
                 access.close()
                 if (optional) return null
-                error("本地歌曲文件已不存在。")
+                throw UiTextException(uiText(Res.string.local_track_file_missing))
             }
             val coordinatedUrl = coordinatedReadableUrl(url)
             val path = coordinatedUrl.path
-            check(path != null && NSFileManager.defaultManager.fileExistsAtPath(path)) {
-                "本地歌曲文件已不存在。"
+            checkUi(path != null && NSFileManager.defaultManager.fileExistsAtPath(path)) {
+                uiText(Res.string.local_track_file_missing)
             }
             IosLocalTrackAccess(coordinatedUrl, access)
         } catch (throwable: Throwable) {
@@ -314,16 +323,13 @@ internal class IosLocalFolderScanner {
                                 ),
                             )
                         }.onFailure { throwable ->
-                            failures += ImportScanFailure(
-                                relativePath = file.relativePath,
-                                reason = iosLocalReadFailureReason(throwable),
-                            )
+                            failures += iosAudioImportFailure(file.relativePath, throwable)
                         }
                     }
                 }
             }
             if (supportedDiscovered > 0 && tracks.isEmpty()) {
-                error("发现了音频文件，但均无法读取；已保留原索引。")
+                throw UiTextException(uiText(Res.string.folder_scan_unreadable_index_preserved))
             }
             ImportScanReport(
                 tracks = tracks,
@@ -472,18 +478,19 @@ private fun coordinatedDirectoryContents(url: NSURL): List<*> {
                 error = error.ptr,
             )
             if (contents == null) {
-                accessorFailure = IllegalStateException(error.value?.localizedDescription ?: "无法读取文件夹内容。")
+                accessorFailure = error.value?.localizedDescription?.let { IllegalStateException(it) }
+                    ?: UiTextException(uiText(Res.string.folder_contents_read_failed))
             }
         }
     }
     accessorFailure?.let { throw it }
-    return contents ?: error("无法读取文件夹内容。")
+    return contents ?: throw UiTextException(uiText(Res.string.folder_contents_read_failed))
 }
 
 private fun coordinatedReadableUrl(url: NSURL): NSURL {
     var coordinated: NSURL? = null
     coordinateIosRead(url) { coordinated = it }
-    return coordinated ?: error("文件提供方未返回可读文件。")
+    return coordinated ?: throw UiTextException(uiText(Res.string.file_provider_no_readable_files))
 }
 
 private fun <T> coordinateIosRead(url: NSURL, accessor: (NSURL) -> T): T {
@@ -503,17 +510,17 @@ private fun <T> coordinateIosRead(url: NSURL, accessor: (NSURL) -> T): T {
             throw IllegalStateException(errorValue.localizedDescription)
         }
     }
-    return accessorResult?.getOrThrow() ?: error("文件提供方未返回可读文件。")
+    return accessorResult?.getOrThrow() ?: throw UiTextException(uiText(Res.string.file_provider_no_readable_files))
 }
 
 private fun resolveIosChildUrl(rootUrl: NSURL, relativePath: String): NSURL {
     val segments = relativePath.replace('\\', '/').split('/').filter { it.isNotBlank() }
-    check(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
-        "本地歌曲相对路径无效。"
+    checkUi(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
+        uiText(Res.string.ios_local_path_invalid)
     }
     return segments.fold(rootUrl) { current, segment ->
         current.URLByAppendingPathComponent(segment, isDirectory = false)
-            ?: error("无法解析本地歌曲路径。")
+            ?: throw UiTextException(uiText(Res.string.local_track_path_unresolved))
     }
 }
 
@@ -560,9 +567,7 @@ private suspend fun readIosAudioMetadataCoordinated(url: NSURL): IosAudioMetadat
     withContext(Dispatchers.Default) {
         coordinateIosRead(url) { coordinatedUrl ->
             val path = coordinatedUrl.path
-            check(path != null && NSFileManager.defaultManager.fileExistsAtPath(path)) {
-                "文件已不存在或文件提供方当前离线。"
-            }
+            checkIosAudioFileAvailable(path != null && NSFileManager.defaultManager.fileExistsAtPath(path))
             runCatching {
                 runBlocking { readIosAudioMetadata(coordinatedUrl) }
             }.getOrNull()
@@ -678,7 +683,8 @@ internal class IosAudioTagGateway(
                 comment = metadata?.comment,
                 composer = metadata?.composer,
                 isCompilation = metadata?.isCompilation ?: false,
-                tagLabel = "AVFoundation · 只读",
+                tagLabel = "AVFoundation",
+                tagLabelText = uiText(Res.string.tag_format_read_only, "AVFoundation"),
                 trackNumber = metadata?.trackNumber ?: track.trackNumber,
                 discNumber = metadata?.discNumber ?: track.discNumber,
                 embeddedLyrics = metadata?.embeddedLyrics,
@@ -690,7 +696,7 @@ internal class IosAudioTagGateway(
     }
 
     override suspend fun write(track: Track, patch: AudioTagPatch): Result<AudioTagSnapshot> =
-        Result.failure(UnsupportedOperationException("iOS 文件 App 来源暂不支持写入标签。"))
+        Result.failure(UiTextUnsupportedException(uiText(Res.string.ios_files_tag_writing_unsupported)))
 }
 
 internal class IosSameNameLyricsFileGateway(
@@ -745,7 +751,7 @@ internal class IosAppleLocalMediaAccessResolver(
         val fileUrl = access.url.absoluteString
         if (fileUrl.isNullOrBlank()) {
             access.close()
-            error("本地歌曲文件 URL 无效。")
+            throw UiTextException(uiText(Res.string.local_track_file_url_invalid))
         }
         return AppleLocalMediaAccess(
             locator = AppleResolvedMediaLocator.FileUrl(fileUrl),
@@ -753,6 +759,3 @@ internal class IosAppleLocalMediaAccessResolver(
         )
     }
 }
-
-private fun iosLocalReadFailureReason(throwable: Throwable): String =
-    throwable.message?.takeIf { it.isNotBlank() } ?: "文件无法读取或文件提供方离线。"

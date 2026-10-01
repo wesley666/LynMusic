@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_picker_artwork_title">Select an image file</string>
+    <string name="desktop_picker_image_files">Image files</string>
+    <string name="desktop_picker_font_title">Import a font for lyric sharing</string>
+    <string name="desktop_picker_font_files">Font files</string>
+    <string name="desktop_picker_music_folder_title">Select a local music folder</string>
+    <string name="desktop_picker_data_location_title">Select the LynMusic data location</string>
+</resources>

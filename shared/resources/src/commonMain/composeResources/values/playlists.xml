@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_add_action">Add</string>
+    <string name="playlists_create_empty_hint">Add the current song from the player, or create an empty playlist.</string>
+    <string name="playlists_add_current_track_hint">Add the current song from the player to play and manage it here.</string>
+    <string name="playlist_add_track_title">Add to a playlist</string>
+    <string name="playlist_add_to_favorites">Add to favorites</string>
+    <string name="playlist_import_added_status">Added</string>
+    <plurals name="playlist_import_added_track_count">
+        <item quantity="one">Added %1$s song</item>
+        <item quantity="other">Added %1$s songs</item>
+    </plurals>
+    <string name="playlists_search_empty_hint">Adjust your search, or clear it to see all playlists.</string>
+    <string name="playlist_import_already_added_status">Already added</string>
+    <string name="playlist_import_assistant_title">Assistant</string>
+    <string name="playlists_back_to_list">Back to playlists</string>
+    <string name="playlist_create_and_add">Create and add</string>
+    <string name="playlist_create_action">Create</string>
+    <string name="playlist_delete_synced_confirmation">Delete “%1$s”? Both the local playlist and its synced remote copy will be deleted.</string>
+    <string name="playlist_delete_title">Delete playlist</string>
+    <string name="playlist_delete_remote_confirmation">Delete remote playlist “%1$s”? This will be synced to the server.</string>
+    <plurals name="playlist_import_duplicate_track_count">
+        <item quantity="one">%1$s duplicate song</item>
+        <item quantity="other">%1$s duplicate songs</item>
+    </plurals>
+    <plurals name="playlist_import_input_duplicate_count">
+        <item quantity="one">Duplicates in input: %1$s song</item>
+        <item quantity="other">Duplicates in input: %1$s songs</item>
+    </plurals>
+    <string name="playlist_import_failed_status">Failed to add</string>
+    <string name="playlist_import_text_example">Imagine - John Lennon
+Hello - Adele</string>
+    <string name="playlist_import_action">Import</string>
+    <string name="playlist_import_remote_hint">Import into remote playlist “%1$s”. Use “Song - Artist” on each line. LynMusic will search Navidrome and add matching songs.</string>
+    <string name="playlist_import_local_hint">Import into “%1$s”. Use “Song - Artist” on each line. Only songs in the existing library are matched.</string>
+    <string name="playlist_import_title">Import playlist</string>
+    <string name="playlist_import_text_label">Import text</string>
+    <string name="playlist_importing_status">Importing</string>
+    <string name="playlist_import_invalid_format_status">Invalid format</string>
+    <string name="playlist_import_line_with_reason">Line %1$s: %2$s (%3$s)</string>
+    <string name="playlist_import_line_label">Line %1$s: %2$s</string>
+    <string name="playlist_import_line_with_match_count">Line %1$s: %2$s (%3$s matches)</string>
+    <plurals name="playlist_import_failed_line_count">
+        <item quantity="one">%1$s line not imported</item>
+        <item quantity="other">%1$s lines not imported</item>
+    </plurals>
+    <string name="playlist_detail_loading_title">Loading playlist details</string>
+    <string name="playlists_loading_progress">Loading playlists…</string>
+    <string name="playlists_loading_title">Loading playlists</string>
+    <string name="playlist_import_multiple_matches_status">Multiple matches</string>
+    <string name="playlists_online_sync_hint">Navidrome remote playlists are shown. Changes are synced directly to the server.</string>
+    <string name="playlist_new_title">New playlist</string>
+    <string name="playlist_import_no_match_status">No match</string>
+    <string name="playlists_search_empty_title">No matching playlists</string>
+    <string name="playlists_unavailable_title">No playlists available</string>
+    <string name="playlists_local_empty_title">No regular playlists yet</string>
+    <string name="playlists_remote_empty_hint">No remote playlists yet. Create an empty playlist to get started.</string>
+    <string name="playlist_source_tracks_empty">No songs in this source</string>
+    <string name="playlist_opening_status">Opening playlist</string>
+    <string name="playlist_background_indexing_hint">Playlist data is still being organized in the background. Please wait.</string>
+    <string name="playlist_name_label">Playlist name</string>
+    <string name="playlists_background_loading_hint">Playlists and songs are loading in the background. Please wait.</string>
+    <string name="playlist_tracks_loading_hint">Reading playlist songs. Please wait.</string>
+    <string name="playlist_named_tracks_loading_hint">Reading songs in “%1$s”. Please wait.</string>
+    <string name="playlists_supported_track_types_hint">Regular playlists can contain both local songs and Subsonic-compatible songs.</string>
+    <string name="playlist_remove_track_action">Remove from playlist</string>
+    <string name="playlist_rename_action">Rename</string>
+    <string name="playlist_rename_title">Rename playlist</string>
+    <string name="playlist_select_title">Select a playlist</string>
+    <string name="playlist_selection_hint">Select a playlist on the left to view its songs and start playback.</string>
+    <plurals name="playlist_import_existing_track_count">
+        <item quantity="one">%1$s song already present</item>
+        <item quantity="other">%1$s songs already present</item>
+    </plurals>
+    <string name="playlist_source_filter_hint">Switch back to “%1$s” or select another source filter.</string>
+    <string name="playlist_sync_remote_action">Sync remote playlists</string>
+    <string name="playlist_empty_title">This playlist is empty</string>
+</resources>

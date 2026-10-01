@@ -36,21 +36,35 @@ class JvmDeviceInfoGatewayTest {
         assertEquals(3024, snapshot.resolutionWidthPx)
         assertEquals(1964, snapshot.resolutionHeightPx)
         assertNull(snapshot.systemDensityScale)
-        assertEquals("Apple M3 · aarch64 · 8 核", snapshot.cpuDescription)
+        assertEquals("Apple M3 · aarch64", snapshot.cpuDescription)
+        assertEquals(8, snapshot.logicalCoreCount)
         assertEquals(16L * 1024 * 1024 * 1024, snapshot.totalMemoryBytes)
         assertNull(snapshot.deviceModel)
     }
 
     @Test
-    fun `cpu description falls back to architecture and core count`() {
+    fun `cpu description falls back to architecture`() {
         assertEquals(
-            "arm64 · 10 核",
+            "arm64",
             formatJvmCpuDescription(
                 processorIdentifier = null,
                 osArch = "arm64",
-                logicalCoreCount = 10,
             ),
         )
+    }
+
+    @Test
+    fun `cached snapshot contains no translated placeholders`() = runTest {
+        val gateway = JvmDeviceInfoGateway(FakeJvmDeviceInfoProvider(JvmDeviceInfoRaw(
+            systemName = "",
+            systemVersion = "",
+            logicalCoreCount = 1,
+        )))
+        val snapshot = gateway.loadDeviceInfoSnapshot().getOrThrow()
+        assertEquals("", snapshot.systemName)
+        assertEquals("", snapshot.systemVersion)
+        assertNull(snapshot.cpuDescription)
+        assertEquals(1, snapshot.logicalCoreCount)
     }
 
     @Test

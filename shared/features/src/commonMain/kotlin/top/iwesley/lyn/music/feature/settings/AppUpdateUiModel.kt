@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.feature.settings
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import top.iwesley.lyn.music.core.model.LynMusicUpdateLinks
 
 enum class AppUpdateUiStatus {
@@ -12,10 +19,10 @@ enum class AppUpdateUiStatus {
 
 data class AppUpdateUiModel(
     val status: AppUpdateUiStatus,
-    val message: String? = null,
+    val message: UiText? = null,
     val latestVersion: String? = null,
     val downloadUrl: String = LynMusicUpdateLinks.RELEASES_URL,
-    val errorMessage: String? = null,
+    val errorMessage: UiText? = null,
 )
 
 fun SettingsState.toAppUpdateUiModel(): AppUpdateUiModel {
@@ -23,12 +30,12 @@ fun SettingsState.toAppUpdateUiModel(): AppUpdateUiModel {
     return when {
         appUpdateChecking -> AppUpdateUiModel(
             status = AppUpdateUiStatus.Checking,
-            message = "正在检查最新版本...",
+            message = uiText(Res.string.update_checking_latest_version),
         )
 
         release != null && appUpdateHasNewVersion == true -> AppUpdateUiModel(
             status = AppUpdateUiStatus.UpdateAvailable,
-            message = "发现可用更新，可以到公众号获取云盘链接或者 GitHub 下载。",
+            message = uiText(Res.string.update_download_channels_hint),
             latestVersion = release.tagName,
             downloadUrl = release.htmlUrl.takeIf { it.isNotBlank() } ?: LynMusicUpdateLinks.RELEASES_URL,
             errorMessage = appUpdateError,
@@ -41,7 +48,7 @@ fun SettingsState.toAppUpdateUiModel(): AppUpdateUiModel {
 
         release != null && appUpdateHasNewVersion == false -> AppUpdateUiModel(
             status = AppUpdateUiStatus.UpToDate,
-            message = "当前已是最新版本。",
+            message = uiText(Res.string.update_already_latest),
         )
 
         else -> AppUpdateUiModel(status = AppUpdateUiStatus.Idle)

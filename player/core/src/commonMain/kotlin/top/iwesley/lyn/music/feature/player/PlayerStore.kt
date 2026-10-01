@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.playbackErrorText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -61,7 +70,7 @@ import top.iwesley.lyn.music.data.repository.PlaybackRepository
 const val MIN_SLEEP_TIMER_MINUTES = 1
 const val MAX_SLEEP_TIMER_MINUTES = 999
 const val SLEEP_TIMER_TICK_MS = 1_000L
-private const val PLAYBACK_UNSEEKABLE_MESSAGE = "歌曲可能正在转码，不支持快进。"
+private val PLAYBACK_UNSEEKABLE_MESSAGE: UiText get() = uiText(Res.string.player_transcoding_seek_unavailable)
 
 val SLEEP_TIMER_PRESET_MINUTES = listOf(10, 15, 20, 30, 45, 60)
 
@@ -93,7 +102,7 @@ data class PlayerState(
     val hasManualLyricsSearchResult: Boolean = false,
     val manualLyricsResults: List<LyricsSearchCandidate> = emptyList(),
     val manualWorkflowSongResults: List<WorkflowSongCandidate> = emptyList(),
-    val manualLyricsError: String? = null,
+    val manualLyricsError: UiText? = null,
     val isLyricsShareVisible: Boolean = false,
     val selectedLyricsShareTemplate: LyricsShareTemplate = LyricsShareTemplate.NOTE,
     val supportsLyricsShareFontSelection: Boolean = false,
@@ -101,14 +110,14 @@ data class PlayerState(
     val selectedLyricsShareFontKey: String? = null,
     val selectedLyricsShareFontDisplayName: String? = null,
     val isLyricsShareFontsLoading: Boolean = false,
-    val lyricsShareFontsError: String? = null,
+    val lyricsShareFontsError: UiText? = null,
     val selectedLyricsLineIndices: Set<Int> = emptySet(),
     val shareCardModel: LyricsShareCardModel? = null,
     val sharePreviewBytes: ByteArray? = null,
     val sharePreviewSelection: Set<Int> = emptySet(),
     val sharePreviewTemplate: LyricsShareTemplate? = null,
     val sharePreviewFontKey: String? = null,
-    val sharePreviewError: String? = null,
+    val sharePreviewError: UiText? = null,
     val isShareRendering: Boolean = false,
     val isShareSaving: Boolean = false,
     val isShareCopying: Boolean = false,
@@ -116,9 +125,9 @@ data class PlayerState(
     val castState: CastSessionState = CastSessionState(),
     val castQueueIndex: Int? = null,
     val isCastSheetVisible: Boolean = false,
-    val castMessage: String? = null,
-    val shareMessage: String? = null,
-    val message: String? = null,
+    val castMessage: UiText? = null,
+    val shareMessage: UiText? = null,
+    val message: UiText? = null,
 ) {
     val hasFreshSharePreview: Boolean
         get() = sharePreviewBytes != null &&
@@ -344,7 +353,7 @@ class PlayerStore(
             PlayerIntent.StopCast -> stopCast()
             PlayerIntent.ClearCastMessage -> updateState { it.copy(castMessage = null) }
             PlayerIntent.CastNotificationPermissionDenied -> updateState {
-                it.copy(message = "通知权限未开启，后台投屏通知可能不显示。")
+                it.copy(message = uiText(Res.string.cast_notification_permission_disabled))
             }
             is PlayerIntent.ExpandedChanged -> updateState { it.copy(isExpanded = intent.value) }
             is PlayerIntent.QueueVisibilityChanged -> updateState {
@@ -434,7 +443,8 @@ class PlayerStore(
     private fun applyPlaybackSnapshot(snapshot: PlaybackSnapshot) {
         val previousTrackId = state.value.snapshot.currentTrack?.id
         val trackChanged = previousTrackId != snapshot.currentTrack?.id
-        val playbackErrorKey = snapshot.errorMessage?.let { message ->
+        val errorText = snapshot.playbackErrorText()
+        val playbackErrorKey = errorText?.let { message ->
             PlaybackErrorKey(trackId = snapshot.currentTrack?.id, message = message)
         }
         val shouldShowPlaybackError = playbackErrorKey != null && playbackErrorKey != lastPlaybackErrorKey
@@ -472,7 +482,7 @@ class PlayerStore(
                 manualLyricsError = if (trackChanged) null else current.manualLyricsError,
                 castMessage = if (trackChanged) null else current.castMessage,
                 message = when {
-                    shouldShowPlaybackError -> snapshot.errorMessage
+                    shouldShowPlaybackError -> errorText
                     trackChanged -> null
                     else -> current.message
                 },
@@ -621,7 +631,7 @@ class PlayerStore(
             updateState {
                 it.copy(
                     isCastSheetVisible = true,
-                    castMessage = "当前平台暂不支持投屏。",
+                    castMessage = uiText(Res.string.cast_platform_unsupported_notice),
                 )
             }
             return
@@ -637,7 +647,7 @@ class PlayerStore(
 
     private suspend fun refreshCastDevices() {
         if (!castGateway.isSupported) {
-            updateState { it.copy(castMessage = "当前平台暂不支持投屏。") }
+            updateState { it.copy(castMessage = uiText(Res.string.cast_platform_unsupported_notice)) }
             return
         }
         castGateway.startDiscovery()
@@ -646,11 +656,11 @@ class PlayerStore(
     private suspend fun castToDevice(deviceId: String) {
         val snapshot = state.value.snapshot
         val track = snapshot.currentTrack ?: run {
-            updateState { it.copy(castMessage = "没有正在播放的歌曲。") }
+            updateState { it.copy(castMessage = uiText(Res.string.player_idle_notice)) }
             return
         }
         val resolved = resolveCastMediaRequest(track = track, snapshot = snapshot).getOrElse { error ->
-            updateState { it.copy(castMessage = error.message ?: "当前歌曲暂不支持投屏。") }
+            updateState { it.copy(castMessage = error.uiErrorText(uiText(Res.string.cast_track_unsupported_notice))) }
             return
         }
         closeCurrentCastProxySession()
@@ -718,7 +728,7 @@ class PlayerStore(
         val resolved = resolveCastMediaRequest(track = track, snapshot = targetSnapshot).getOrElse { error ->
             updateState {
                 it.copy(
-                    castMessage = error.message ?: "当前歌曲暂不支持投屏。",
+                    castMessage = error.uiErrorText(uiText(Res.string.cast_track_unsupported_notice)),
                     isQueueVisible = if (closeQueue) false else it.isQueueVisible,
                 )
             }
@@ -1161,7 +1171,7 @@ class PlayerStore(
                     hasManualLyricsSearchResult = false,
                     manualLyricsResults = emptyList(),
                     manualWorkflowSongResults = emptyList(),
-                    manualLyricsError = "标题不能为空",
+                    manualLyricsError = uiText(Res.string.track_title_required),
                 )
             }
             return
@@ -1195,7 +1205,7 @@ class PlayerStore(
                 hasManualLyricsSearchResult = true,
                 manualLyricsResults = directResult.getOrDefault(emptyList()),
                 manualWorkflowSongResults = workflowResult.getOrDefault(emptyList()),
-                manualLyricsError = directResult.exceptionOrNull()?.message ?: workflowResult.exceptionOrNull()?.message,
+                manualLyricsError = directResult.exceptionOrNull()?.uiErrorText() ?: workflowResult.exceptionOrNull()?.uiErrorText(),
                 message = null,
             )
         }
@@ -1210,7 +1220,7 @@ class PlayerStore(
         val result = runCatching {
             lyricsRepository.applyLyricsCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
-            updateState { it.copy(message = throwable.message ?: applyFailureMessage(mode)) }
+            updateState { it.copy(message = throwable.uiErrorText(applyFailureMessage(mode))) }
             return
         }
         val document = result.document ?: state.value.lyrics
@@ -1245,7 +1255,7 @@ class PlayerStore(
         val result = runCatching {
             lyricsRepository.applyWorkflowSongCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
-            updateState { it.copy(message = throwable.message ?: applyFailureMessage(mode)) }
+            updateState { it.copy(message = throwable.uiErrorText(applyFailureMessage(mode))) }
             return
         }
         val document = result.document ?: state.value.lyrics
@@ -1324,7 +1334,7 @@ class PlayerStore(
                 updateState {
                     it.copy(
                         shareCardModel = model,
-                        sharePreviewError = "生成分享图片失败: ${throwable.message.orEmpty()}",
+                        sharePreviewError = uiText(Res.string.lyrics_share_image_generation_failed, throwable.uiErrorDetail()),
                         isShareRendering = false,
                     )
                 }
@@ -1346,7 +1356,7 @@ class PlayerStore(
                 isShareSaving = false,
                 shareMessage = result.fold(
                     onSuccess = { saved -> saved.message },
-                    onFailure = { throwable -> "保存图片失败: ${throwable.message.orEmpty()}" },
+                    onFailure = { throwable -> uiText(Res.string.lyrics_share_save_image_failed, throwable.uiErrorDetail()) },
                 ),
             )
         }
@@ -1360,8 +1370,8 @@ class PlayerStore(
             it.copy(
                 isShareCopying = false,
                 shareMessage = result.fold(
-                    onSuccess = { "图片已复制" },
-                    onFailure = { throwable -> "复制图片失败: ${throwable.message.orEmpty()}" },
+                    onSuccess = { uiText(Res.string.lyrics_share_image_copied) },
+                    onFailure = { throwable -> uiText(Res.string.lyrics_share_copy_image_failed, throwable.uiErrorDetail()) },
                 ),
             )
         }
@@ -1372,7 +1382,7 @@ class PlayerStore(
             lyrics = state.value.lyrics,
             selectedLineIndices = state.value.selectedLyricsLineIndices,
         ) ?: run {
-            updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
+            updateState { it.copy(shareMessage = uiText(Res.string.lyrics_share_line_selection_required)) }
             return
         }
         updateState { it.copy(isShareCopying = true, shareMessage = null) }
@@ -1381,8 +1391,8 @@ class PlayerStore(
             it.copy(
                 isShareCopying = false,
                 shareMessage = result.fold(
-                    onSuccess = { "文字已复制" },
-                    onFailure = { throwable -> "复制文字失败: ${throwable.message.orEmpty()}" },
+                    onSuccess = { uiText(Res.string.lyrics_share_text_copied) },
+                    onFailure = { throwable -> uiText(Res.string.lyrics_share_copy_text_failed, throwable.uiErrorDetail()) },
                 ),
             )
         }
@@ -1390,7 +1400,7 @@ class PlayerStore(
 
     private suspend fun obtainLyricsSharePreviewBytes(): ByteArray? {
         if (state.value.selectedLyricsLineIndices.isEmpty()) {
-            updateState { it.copy(shareMessage = "请先选择至少一句歌词") }
+            updateState { it.copy(shareMessage = uiText(Res.string.lyrics_share_line_selection_required)) }
             return null
         }
         if (state.value.hasFreshSharePreview) {
@@ -1461,12 +1471,10 @@ class PlayerStore(
                 val normalizedFonts = fonts
                     .mapNotNull { option ->
                         option.fontKey.trim().takeIf { it.isNotEmpty() }?.let { normalizedFontKey ->
-                            LyricsShareFontOption(
+                            option.copy(
                                 fontKey = normalizedFontKey,
                                 displayName = option.displayName.trim().ifBlank { normalizedFontKey },
                                 previewText = option.previewText.ifBlank { option.displayName.ifBlank { normalizedFontKey } },
-                                isPrioritized = option.isPrioritized,
-                                kind = option.kind,
                                 fontFilePath = option.fontFilePath?.trim()?.takeIf { it.isNotEmpty() },
                             )
                         }
@@ -1482,7 +1490,7 @@ class PlayerStore(
                     updateState {
                         it.copy(
                             isLyricsShareFontsLoading = false,
-                            lyricsShareFontsError = "读取系统字体失败",
+                            lyricsShareFontsError = uiText(Res.string.font_system_list_read_failed),
                         )
                     }
                     return
@@ -1524,7 +1532,7 @@ class PlayerStore(
                 updateState { current ->
                     current.copy(
                         isLyricsShareFontsLoading = false,
-                        lyricsShareFontsError = "读取系统字体失败",
+                        lyricsShareFontsError = uiText(Res.string.font_system_list_read_failed),
                     )
                 }
             },
@@ -1683,11 +1691,11 @@ class PlayerStore(
         return currentSharePreviewRequestId
     }
 
-    private fun applyFailureMessage(mode: LyricsSearchApplyMode): String {
+    private fun applyFailureMessage(mode: LyricsSearchApplyMode): UiText {
         return if (mode == LyricsSearchApplyMode.ARTWORK_ONLY) {
-            "封面应用失败。"
+            uiText(Res.string.lyrics_apply_artwork_failed)
         } else {
-            "歌词应用失败。"
+            uiText(Res.string.lyrics_apply_lyrics_failed)
         }
     }
 
@@ -1802,7 +1810,7 @@ private fun resolveLyricsShareFontSelection(
 
 private data class PlaybackErrorKey(
     val trackId: String?,
-    val message: String,
+    val message: UiText,
 )
 
 private data class ResolvedCastMediaRequest(

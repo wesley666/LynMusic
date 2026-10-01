@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_cleanup_failed">新資料位置已啟用，但舊目錄清理失敗，請在空間管理中重試：%1$s</string>
+    <string name="startup_cleanup_record_ignored">已忽略無效的舊資料清理記錄，未刪除任何目錄：%1$s</string>
+    <string name="startup_pending_record_cancelled">已安全取消損壞的資料位置切換記錄，未移動或刪除任何目錄：%1$s</string>
+    <string name="startup_cleanup_phase_invalid">舊資料清理設定損壞：無效的 cleanup_phase=%1$s。未刪除任何目錄。</string>
+    <string name="startup_cleanup_identity_invalid">舊資料清理設定損壞：%1$s。未刪除任何目錄。</string>
+    <string name="startup_cleanup_identity_missing">清理記錄缺少目錄身分或 operation ID</string>
+    <string name="startup_cleanup_identity_value_invalid">無效的 %1$s=%2$s</string>
+    <string name="startup_pending_path_invalid">遷移設定損壞：%1$s 缺失或不是絕對路徑。</string>
+    <string name="startup_pending_field_missing">遷移設定損壞：%1$s 缺失。</string>
+    <string name="startup_pending_field_invalid">遷移設定損壞：無效的 %1$s=%2$s。</string>
+    <string name="startup_pending_identity_incomplete">遷移設定損壞：操作身分欄位不完整。</string>
+    <string name="startup_copy_verification_failed">遷移檔案驗證失敗，目前位置未切換。</string>
+</resources>

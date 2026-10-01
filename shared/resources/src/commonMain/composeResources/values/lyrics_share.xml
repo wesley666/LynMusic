@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyrics_share_album_label">Album:</string>
+    <string name="lyrics_share_album_artist_summary">Album: %1$s    Artist: %2$s</string>
+    <string name="lyrics_share_artist_label">Artist:</string>
+    <string name="lyrics_share_artwork_colors">Artwork colors</string>
+    <string name="lyrics_share_blank_line">Blank line</string>
+    <string name="lyrics_share_fetch_priority_hint">Cached and embedded lyrics are used first. Otherwise, lyrics are requested using the current title and artist.</string>
+    <string name="lyrics_share_clear_selection">Clear selection</string>
+    <string name="lyrics_share_close_fullscreen">Close fullscreen preview</string>
+    <string name="lyrics_share_copy_action">Copy</string>
+    <string name="lyrics_share_copy_image">Copy image</string>
+    <string name="lyrics_share_copy_text">Copy text</string>
+    <string name="lyrics_share_copying_progress">Copying...</string>
+    <string name="lyrics_share_copying_label">Copying</string>
+    <string name="lyrics_share_current_track">Current song</string>
+    <string name="lyrics_share_fetching_lyrics">Fetching lyrics...</string>
+    <string name="lyrics_share_font_button">Font · %1$s</string>
+    <string name="lyrics_share_format_label">Format</string>
+    <string name="lyrics_share_preview_description">Lyrics sharing preview</string>
+    <string name="lyrics_share_lyrics_missing">No lyrics yet</string>
+    <string name="lyrics_share_note_format">Note</string>
+    <string name="lyrics_share_preview_title">Preview</string>
+    <string name="lyrics_share_quality_label">Quality</string>
+    <string name="lyrics_share_loading_fonts">Reading system fonts...</string>
+    <string name="lyrics_share_save_locally">Save locally</string>
+    <string name="lyrics_share_saving_label">Saving</string>
+    <string name="lyrics_share_saving_progress">Saving...</string>
+    <string name="lyrics_share_manual_search">Search lyrics manually</string>
+    <string name="lyrics_share_seek_to_position">Seek to %1$s</string>
+    <string name="lyrics_share_select_action">Select</string>
+    <string name="lyrics_share_apply_result_hint">Select a result to apply it directly to the current song.</string>
+    <string name="lyrics_share_select_lines">Select lines</string>
+    <string name="lyrics_share_select_lyrics">Select lyrics</string>
+    <string name="lyrics_share_note_preview_hint">Select lyrics on the left to create a note-style sharing image here.</string>
+    <string name="lyrics_share_selected_badge">Selected</string>
+    <string name="lyrics_share_size_label">Size</string>
+    <string name="lyrics_share_track_information">Song information</string>
+    <string name="lyrics_share_updating_preview">Updating preview</string>
+    <string name="lyrics_share_view_track_information">View song information</string>
+</resources>

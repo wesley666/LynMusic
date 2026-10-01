@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -33,10 +38,10 @@ class DefaultAppUpdateRepository(
             ),
         ).mapCatching { response ->
             if (response.statusCode !in 200..299) {
-                error("检查更新失败：HTTP ${response.statusCode}")
+                throw UiTextException(uiText(Res.string.update_http_failed, response.statusCode))
             }
             if (response.body.isBlank()) {
-                error("检查更新失败：响应为空。")
+                throw UiTextException(uiText(Res.string.update_empty_response))
             }
             response.body.toAppReleaseInfo(releasesUrl)
         }
@@ -46,7 +51,7 @@ class DefaultAppUpdateRepository(
         val root = appUpdateJson.parseToJsonElement(this).jsonObject
         val tagName = root.stringField("tag_name").trim()
         if (tagName.isBlank()) {
-            error("检查更新失败：缺少版本号。")
+            throw UiTextException(uiText(Res.string.update_version_missing))
         }
         return AppReleaseInfo(
             tagName = tagName,
@@ -70,7 +75,7 @@ class DefaultAppUpdateRepository(
 
 object UnsupportedAppUpdateRepository : AppUpdateRepository {
     override suspend fun latestRelease(): Result<AppReleaseInfo> {
-        return Result.failure(UnsupportedOperationException("当前平台暂不支持检查更新。"))
+        return Result.failure(UiTextUnsupportedException(uiText(Res.string.update_unsupported)))
     }
 }
 

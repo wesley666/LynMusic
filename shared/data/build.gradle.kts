@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.androidx.room)
     alias(libs.plugins.ksp)
@@ -28,6 +30,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":shared:resources"))
             implementation(project(":shared:core"))
             implementation(libs.androidx.room.runtime)
             implementation(libs.androidx.sqlite.bundled)
@@ -46,6 +49,7 @@ kotlin {
             implementation(libs.jaudiotagger)
         }
         jvmTest.dependencies {
+            implementation(compose.desktop.currentOs)
             implementation(libs.kotlin.testJunit)
             implementation(libs.kotlinx.coroutines.test)
         }

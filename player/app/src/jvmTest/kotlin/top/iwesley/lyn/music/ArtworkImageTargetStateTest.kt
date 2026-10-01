@@ -7,6 +7,11 @@ import kotlin.test.assertSame
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 
 class ArtworkImageTargetStateTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `changed artwork request rejects previously resolved target`() {
         val previousRequest = requestKey(locator = "https://example.com/previous.jpg")

@@ -8,6 +8,11 @@ import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 
 class LayoutProfileTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `mobile portrait layout uses shared mobile and portrait rules`() {
         val profile = buildLayoutProfile(

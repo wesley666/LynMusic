@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.observeResolvedUiText
+import kotlinx.coroutines.flow.MutableStateFlow
+
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -88,10 +93,15 @@ class AndroidDesktopLyricsOverlayService : Service() {
     private var currentLyrics: LyricsDocument? = null
     private var lyricsLoading = false
     private var lyricsLoadJob: Job? = null
+    private var latestPlaybackSnapshot: PlaybackSnapshot? = null
+
+    private val displayedDescription = MutableStateFlow<UiText?>(null)
+    private var closeDescription = ""
 
     override fun onCreate() {
         super.onCreate()
         preferencesStore = AndroidAppPreferencesStore(applicationContext)
+        initializeNativeUiStrings(applicationContext)
         preferredPosition = preferencesStore.desktopLyricsPosition.value
         positionSaveController = DesktopLyricsPositionSaveController(
             scope = serviceScope,
@@ -101,7 +111,17 @@ class AndroidDesktopLyricsOverlayService : Service() {
         ) { position -> preferencesStore.setDesktopLyricsPosition(position) }
         lyricsRepository = createServiceLyricsRepository()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        serviceScope.launch {
+            observeResolvedUiText(displayedDescription) { text, _ ->
+                if (text == null) hideOverlay() else showText(text)
+            }
+        }
         observeDesktopLyrics()
+        serviceScope.observeDesktopLyricsLanguage(
+            latestSnapshot = { latestPlaybackSnapshot.takeIf { preferencesStore.showDesktopLyrics.value } },
+            updateCloseDescription = { closeDescription = it; closeButtonView?.contentDescription = it },
+            render = ::renderSnapshot,
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -131,6 +151,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        refreshAndroidSystemAppLanguage(newConfig)
         viewportCache.clear()
         overlayView?.let { view ->
             view.requestApplyInsets()
@@ -167,6 +188,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
     }
 
     private fun updateForSnapshot(snapshot: PlaybackSnapshot) {
+        latestPlaybackSnapshot = snapshot
         if (!canDrawOverlays(applicationContext)) {
             handleOverlayPermissionRevoked()
             return
@@ -191,7 +213,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
                 if (currentLyricsRequestKey != requestKey) return@launch
                 currentLyrics = result?.document
                 lyricsLoading = false
-                renderSnapshot(snapshot)
+                latestPlaybackSnapshot?.let(::renderSnapshot)
             }
         }
         renderSnapshot(snapshot)
@@ -207,11 +229,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
             highlightedLineIndex = highlightedLineIndex,
             isLyricsLoading = lyricsLoading,
         )
-        if (text == null) {
-            hideOverlay()
-        } else {
-            showText(text)
-        }
+        displayedDescription.value = text
     }
 
     private fun showText(text: String) {
@@ -238,6 +256,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
     }
 
     private fun hideOverlay() {
+        displayedDescription.value = null
         mainHandler.removeCallbacks(hideControlsRunnable)
         cancelScheduledOverlayLayout()
         overlayLayoutState.clear()
@@ -285,7 +304,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
             setOnTouchListener(::handleDragTouch)
         }
         val closeButton = CloseOverlayButton(this).apply {
-            contentDescription = "关闭桌面歌词"
+            contentDescription = closeDescription
             visibility = View.GONE
             isClickable = true
             isFocusable = true
@@ -602,6 +621,7 @@ class AndroidDesktopLyricsOverlayService : Service() {
     }
 
     private fun clearLyricsState() {
+        latestPlaybackSnapshot = null
         lyricsLoadJob?.cancel()
         lyricsLoadJob = null
         currentLyricsRequestKey = null

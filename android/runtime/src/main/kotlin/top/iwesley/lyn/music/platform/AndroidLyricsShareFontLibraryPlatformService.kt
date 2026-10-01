@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import android.content.Context
 import android.graphics.Typeface
 import androidx.activity.ComponentActivity
@@ -46,9 +52,9 @@ class AndroidLyricsShareFontLibraryPlatformService internal constructor(
             val document = DocumentFile.fromSingleUri(context, uri)
             val originalName = document?.name ?: uri.lastPathSegment.orEmpty()
             val extension = normalizeAndroidImportedLyricsShareFontExtension(originalName)
-                ?: error("仅支持导入 .ttf 或 .otf 字体。")
+                ?: throw UiTextException(uiText(Res.string.font_import_format_unsupported))
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: error("无法读取所选字体。")
+                ?: throw UiTextException(uiText(Res.string.font_selection_unreadable))
             val contentHash = sha256HexAndroid(bytes)
             val sanitizedOriginalName = sanitizeAndroidImportedLyricsShareFontName(originalName.substringBeforeLast('.'))
             val outputFile = File(rootDirectory, "${contentHash}__${sanitizedOriginalName}.$extension")
@@ -69,7 +75,7 @@ class AndroidLyricsShareFontLibraryPlatformService internal constructor(
         runCatching {
             val file = resolveImportedFontFile(fontKey) ?: return@runCatching Unit
             if (file.exists() && !file.delete()) {
-                error("删除字体文件失败。")
+                throw UiTextException(uiText(Res.string.font_file_delete_failed))
             }
         }
     }

@@ -20,12 +20,17 @@ import top.iwesley.lyn.music.core.model.LyricsShareCardModel
 import top.iwesley.lyn.music.core.model.LyricsShareCardSpec
 import top.iwesley.lyn.music.core.model.LyricsShareTemplate
 import top.iwesley.lyn.music.core.model.PlaybackArtworkBackgroundPalette
+import top.iwesley.lyn.music.core.model.UiTextException
 import top.iwesley.lyn.music.core.model.argbWithAlpha
 import top.iwesley.lyn.music.core.model.buildLyricsShareTitleArtistLine
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 import top.iwesley.lyn.music.core.model.derivePlaybackArtworkBackgroundPalette
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.resources.*
 
 internal object SkiaLyricsShareRenderer {
-    fun render(
+    suspend fun render(
         model: LyricsShareCardModel,
         artworkImage: Image?,
         importedFontPath: String? = null,
@@ -36,14 +41,14 @@ internal object SkiaLyricsShareRenderer {
         }
     }
 
-    private fun renderNoteLyricsShareImage(
+    private suspend fun renderNoteLyricsShareImage(
         model: LyricsShareCardModel,
         artworkImage: Image?,
         importedFontPath: String?,
     ): ByteArray {
         val width = LyricsShareCardSpec.LAYOUT_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareCardSpec.OUTER_PADDING_PX * 2f - LyricsShareCardSpec.PAPER_PADDING_HORIZONTAL_PX * 2f
-        val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
+        val footerText = resolveUiText(buildLyricsShareTitleArtistLine(model.title, model.artistName), AppLanguageRuntime.effectiveLanguage.value)
 
         val lyricsTypeface = resolveSkiaLyricsShareTypeface(
             text = model.lyricsLines.joinToString(separator = "\n"),
@@ -233,14 +238,14 @@ internal object SkiaLyricsShareRenderer {
         return encodeSkiaSurface(surface)
     }
 
-    private fun renderArtworkTintLyricsShareImage(
+    private suspend fun renderArtworkTintLyricsShareImage(
         model: LyricsShareCardModel,
         artworkImage: Image?,
         importedFontPath: String?,
     ): ByteArray {
         val width = LyricsShareArtworkTintSpec.LAYOUT_WIDTH_PX.toFloat()
         val contentWidth = width - LyricsShareArtworkTintSpec.OUTER_PADDING_PX * 2f
-        val footerText = buildLyricsShareTitleArtistLine(model.title, model.artistName)
+        val footerText = resolveUiText(buildLyricsShareTitleArtistLine(model.title, model.artistName), AppLanguageRuntime.effectiveLanguage.value)
         val palette = model.artworkBackgroundPalette ?: sampleSkiaLyricsShareArtworkBackgroundPalette(artworkImage)
 
         val lyricsTypeface = resolveSkiaLyricsShareTypeface(
@@ -851,7 +856,10 @@ private fun sampleSkiaLyricsShareArtworkBackgroundPalette(
 
 private fun encodeSkiaSurface(surface: Surface): ByteArray {
     val encoded = surface.makeImageSnapshot().encodeToData(EncodedImageFormat.PNG, 100)
-        ?: error("无法导出 PNG 数据。")
+        ?: throw UiTextException(
+            text = uiText(Res.string.lyrics_image_png_export_failed),
+            diagnosticMessage = "无法导出 PNG 数据。",
+        )
     return encoded.bytes
 }
 

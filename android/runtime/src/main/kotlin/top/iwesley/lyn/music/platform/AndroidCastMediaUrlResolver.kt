@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import android.content.Context
 import android.net.ConnectivityManager
 import java.net.Inet4Address
@@ -49,7 +55,7 @@ internal class AndroidCastMediaUrlResolver(
     ): Result<CastProxySession> {
         return runCatching {
             val resource = resolveResource(track)
-                ?: error("当前歌曲暂不支持投屏。")
+                ?: throw UiTextException(uiText(Res.string.cast_track_unsupported_notice))
             AndroidCastProxyForegroundService.start(appContext)
             val port = runCatching { server.ensureStarted() }.getOrElse { throwable ->
                 AndroidCastProxyForegroundService.stop(appContext)
@@ -61,7 +67,7 @@ internal class AndroidCastMediaUrlResolver(
                     resource.close()
                     server.stopIfIdle()
                     AndroidCastProxyForegroundService.stop(appContext)
-                    error("无法获取手机局域网地址。")
+                    throw UiTextException(uiText(Res.string.cast_lan_address_unavailable))
                 }
             val entry = registry.register(resource)
             val uri = "http://$host:$port/cast/stream/${entry.token}"

@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
 import com.github.sardine.Sardine
 import com.github.sardine.SardineFactory
 import com.github.sardine.impl.SardineException
@@ -38,7 +41,15 @@ import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
 import top.iwesley.lyn.music.core.model.debug
-import top.iwesley.lyn.music.core.model.describeWebDavHttpFailure
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.WebDavOperation
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.webDavHttpFailureText
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
@@ -131,12 +142,12 @@ internal fun testJvmWebDavConnection(
         }
         val resource = sardine.list(rootUrl.ensureTrailingSlash(), 0)
             .firstOrNull()
-            ?: error("WebDAV 根目录不可访问。")
+            ?: throw UiTextException(uiText(Res.string.webdav_root_inaccessible))
         if (!resource.isDirectory) {
-            error("WebDAV 根 URL 不是目录。")
+            throw UiTextException(uiText(Res.string.webdav_root_not_directory))
         }
     } catch (throwable: Throwable) {
-        throw throwable.asJvmWebDavIOException("测试连接", authEnabled)
+        throw throwable.asJvmWebDavIOException(WebDavOperation.TestConnection, authEnabled)
     } finally {
         sardine.shutdownQuietly()
     }
@@ -290,7 +301,7 @@ internal suspend fun readJvmWebDavSameNameLyrics(
         password = password,
         allowInsecureTls = source.allowInsecureTls,
         authEnabled = authEnabled,
-        operation = "读取同名歌词",
+        operation = WebDavOperation.ReadLyrics,
     ) ?: return null
     if (bytes.isEmpty() || bytes.size > SAME_NAME_LRC_MAX_BYTES) return null
     logger.debug(WEBDAV_LOG_TAG) {
@@ -325,7 +336,7 @@ private fun collectJvmWebDavTracks(
     val resources = try {
         sardine.list(directoryUrl, 1)
     } catch (throwable: Throwable) {
-        throw throwable.asJvmWebDavIOException("扫描", authEnabled)
+        throw throwable.asJvmWebDavIOException(WebDavOperation.Scan, authEnabled)
     }
 
     resources.forEach { resource ->
@@ -471,7 +482,7 @@ private fun readJvmWebDavRemoteMetadata(
         startByte = 0L,
         length = initialHeadBytes,
         authEnabled = authEnabled,
-        operation = "标签探测",
+        operation = WebDavOperation.ProbeMetadata,
     )
     val requiredHeadBytes = RemoteAudioMetadataProbe.requiredExpandedHeadBytes(relativePath, headBytes)
     if (requiredHeadBytes != null && requiredHeadBytes > headBytes.size) {
@@ -494,7 +505,7 @@ private fun readJvmWebDavRemoteMetadata(
             startByte = 0L,
             length = expandedHeadBytes,
             authEnabled = authEnabled,
-            operation = "标签探测",
+            operation = WebDavOperation.ProbeMetadata,
         )
         logger.debug(WEBDAV_LOG_TAG) {
             "metadata-range-expand source=$sourceId url=$requestUrl bytes=${headBytes.size}"
@@ -520,7 +531,7 @@ private fun readJvmWebDavRemoteMetadata(
                 startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
                 length = requestedTailBytes,
                 authEnabled = authEnabled,
-                operation = "标签探测",
+                operation = WebDavOperation.ProbeMetadata,
                 allowFullResponseFallback = false,
             )
         }
@@ -565,11 +576,11 @@ private fun buildJvmSardine(
     return sardine
 }
 
-private fun Throwable.asJvmWebDavIOException(operation: String, authEnabled: Boolean): IOException {
+internal fun Throwable.asJvmWebDavIOException(operation: WebDavOperation, authEnabled: Boolean): IOException {
     val sardineException = this as? SardineException
     if (sardineException != null) {
-        return IOException(
-            describeWebDavHttpFailure(
+        return WebDavUiIOException(
+            webDavHttpFailureText(
                 operation = operation,
                 statusCode = sardineException.statusCode,
                 authSent = authEnabled,
@@ -578,8 +589,8 @@ private fun Throwable.asJvmWebDavIOException(operation: String, authEnabled: Boo
             this,
         )
     }
-    return if (this is IOException) this else IOException(
-        "WebDAV $operation 失败: ${message ?: this::class.simpleName.orEmpty()}",
+    return if (this is IOException) this else WebDavUiIOException(
+        uiErrorText(uiText(Res.string.webdav_operation_failed, operation.text)),
         this,
     )
 }
@@ -612,6 +623,13 @@ private fun resolveJvmWebDavContentLength(
         password = password,
         allowInsecureTls = allowInsecureTls,
     )
+    return probeJvmWebDavContentLength(
+        connection = connection,
+        authSent = buildBasicAuthorizationHeader(username, password) != null,
+    )
+}
+
+internal fun probeJvmWebDavContentLength(connection: HttpURLConnection, authSent: Boolean): Long {
     return try {
         connection.requestMethod = "GET"
         connection.instanceFollowRedirects = true
@@ -626,7 +644,16 @@ private fun resolveJvmWebDavContentLength(
             }
 
             in 200..299 -> connection.getHeaderFieldLong("Content-Length", 0L)
-            else -> throw IOException("WebDAV content length probe failed with HTTP $statusCode")
+            else -> throw WebDavUiIOException(
+                text = webDavHttpFailureText(
+                    operation = WebDavOperation.Playback,
+                    statusCode = statusCode,
+                    authSent = authSent,
+                    serverDetail = connection.getHeaderField("WWW-Authenticate").orEmpty()
+                        .ifBlank { connection.responseMessage.orEmpty() },
+                ),
+                diagnosticMessage = "WebDAV content length probe failed with HTTP $statusCode",
+            )
         }
     } finally {
         connection.inputStreamOrNull()?.close()
@@ -687,7 +714,7 @@ fun downloadJvmWebDavHead(
         startByte = 0L,
         length = rangeBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         authEnabled = username.isNotBlank(),
-        operation = "标签探测",
+        operation = WebDavOperation.ProbeMetadata,
     )
     target.outputStream().use { output ->
         output.write(bytes)
@@ -703,7 +730,7 @@ private fun downloadJvmWebDavRange(
     startByte: Long,
     length: Int,
     authEnabled: Boolean,
-    operation: String,
+    operation: WebDavOperation,
     allowFullResponseFallback: Boolean = true,
 ): ByteArray {
     if (length <= 0) return ByteArray(0)
@@ -728,8 +755,8 @@ private fun downloadJvmWebDavRange(
         connection.connect()
         val statusCode = connection.responseCode
         if (statusCode !in 200..299) {
-            throw IOException(
-                describeWebDavHttpFailure(
+            throw WebDavUiIOException(
+                webDavHttpFailureText(
                     operation = operation,
                     statusCode = statusCode,
                     authSent = authEnabled,
@@ -757,7 +784,7 @@ private fun downloadJvmWebDavOptionalFile(
     password: String,
     allowInsecureTls: Boolean,
     authEnabled: Boolean,
-    operation: String,
+    operation: WebDavOperation,
 ): ByteArray? {
     val requestedLength = (SAME_NAME_LRC_MAX_BYTES + 1L).toInt()
     val connection = openJvmWebDavConnection(
@@ -779,8 +806,8 @@ private fun downloadJvmWebDavOptionalFile(
                 readJvmWebDavBytes(input, requestedLength)
             }
 
-            else -> throw IOException(
-                describeWebDavHttpFailure(
+            else -> throw WebDavUiIOException(
+                webDavHttpFailureText(
                     operation = operation,
                     statusCode = statusCode,
                     authSent = authEnabled,
@@ -911,3 +938,10 @@ private const val WEBDAV_LOG_TAG = "WebDav"
 const val WEBDAV_METADATA_RANGE_BYTES = 262_144L
 private const val WEBDAV_MAX_METADATA_RANGE_BYTES = 2_097_152L
 private val CONTENT_RANGE_TOTAL_PATTERN = Regex("""bytes\s+\d+-\d+/(\d+)""")
+
+/** Retains IOException-based retry behavior while preserving a UI description. */
+internal class WebDavUiIOException(
+    override val text: UiText,
+    cause: Throwable? = null,
+    diagnosticMessage: String? = null,
+) : IOException(diagnosticMessage ?: (text).diagnosticMessage(), cause), UiTextFailure

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="offline_repository_unavailable">当前未配置离线下载仓库。</string>
+    <string name="offline_file_empty">下载文件为空。</string>
+    <string name="offline_write_failed">离线文件写入失败。</string>
+    <string name="offline_xml_response">服务器返回 XML 响应。</string>
+    <string name="offline_subsonic_xml_response">服务器返回 Subsonic XML 响应。</string>
+    <string name="offline_source_download_failed">%1$s 下载失败：%2$s</string>
+    <string name="offline_failure_with_code">%1$s (code=%2$s)</string>
+    <string name="offline_download_interrupted">上次下载未完成。</string>
+    <string name="offline_file_missing">离线文件不存在。</string>
+</resources>

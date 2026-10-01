@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.*
@@ -11,6 +13,8 @@ import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.darwin.dispatch_get_main_queue
 import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
 
 @OptIn(ExperimentalForeignApi::class)
 internal actual class AppleNativePlayer actual constructor(
@@ -114,7 +118,7 @@ internal actual class AppleNativePlayer actual constructor(
             `object` = item,
             queue = NSOperationQueue.mainQueue,
             usingBlock = {
-                onFailed?.invoke(item.error?.localizedDescription ?: "$platformLabel 播放失败。")
+                onFailed?.invoke(item.error?.localizedDescription)
             },
         )
     }
@@ -123,10 +127,10 @@ internal actual class AppleNativePlayer actual constructor(
 @OptIn(ExperimentalForeignApi::class)
 private fun AppleResolvedMediaLocator.toUrl(): NSURL {
     return when (this) {
-        is AppleResolvedMediaLocator.FileUrl -> requireNotNull(NSURL.URLWithString(url))
-        is AppleResolvedMediaLocator.RemoteUrl -> requireNotNull(NSURL.URLWithString(url))
+        is AppleResolvedMediaLocator.FileUrl -> NSURL.URLWithString(url) ?: throw UiTextException(uiText(Res.string.apple_invalid_media_url))
+        is AppleResolvedMediaLocator.RemoteUrl -> NSURL.URLWithString(url) ?: throw UiTextException(uiText(Res.string.apple_invalid_media_url))
         is AppleResolvedMediaLocator.AbsolutePath -> NSURL.fileURLWithPath(path)
-        is AppleResolvedMediaLocator.Unsupported -> error(message)
+        is AppleResolvedMediaLocator.Unsupported -> throw UiTextException(messageText)
     }
 }
 

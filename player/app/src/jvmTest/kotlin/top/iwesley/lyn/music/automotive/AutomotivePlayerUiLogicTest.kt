@@ -12,6 +12,11 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.shouldExitAutomotivePureModeOnBack
 
 class AutomotivePlayerUiLogicTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `pure mode hides top and playback controls without changing their slots`() {
         val normal = resolveAutomotivePureModePresentation(isPureMode = false)

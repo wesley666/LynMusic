@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiErrorText
+
 import java.net.URI
 import java.net.URLDecoder
 import kotlin.time.Instant
@@ -287,7 +291,7 @@ class EmbyEngineTest {
             )
         }
 
-        assertTrue(failure.message.orEmpty().contains("Emby Items 请求失败"))
+        assertEquals("Emby Items 请求失败：Emby server unavailable", resolveUiText(failure.uiErrorText(), AppLanguage.SimplifiedChinese))
         assertEquals(1, httpClient.requests.size)
         assertEquals("100", httpClient.requests.single().queryParam("Limit"))
     }

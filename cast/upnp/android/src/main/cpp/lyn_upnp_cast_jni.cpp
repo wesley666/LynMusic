@@ -171,7 +171,7 @@ public:
 
     std::string StartDiscovery() {
         if (ctrl_point_.AsPointer() == nullptr) {
-            return "UPnP 控制点未初始化。";
+            return "lyn_ui:cast_control_uninitialized";
         }
         const NPT_Result result = ctrl_point_->Discover(
             NPT_HttpUrl("239.255.255.250", 1900, "*"),
@@ -179,7 +179,7 @@ public:
             2,
             NPT_TimeInterval(0.),
             NPT_TimeInterval(0.));
-        return NPT_FAILED(result) ? "搜索投屏设备失败。" : std::string();
+        return NPT_FAILED(result) ? "lyn_ui:cast_discovery_failed" : std::string();
     }
 
     std::string ListDevices() {
@@ -206,7 +206,7 @@ public:
         PLT_DeviceDataReference device;
         const NPT_Result find_result = FindDevice(device_id, device);
         if (NPT_FAILED(find_result)) {
-            return "未找到选中的投屏设备。";
+            return "lyn_ui:cast_device_not_found";
         }
 
         media_controller_->Stop(device, 0, nullptr);
@@ -219,13 +219,13 @@ public:
             metadata.c_str(),
             nullptr);
         if (NPT_FAILED(uri_result)) {
-            return "发送投屏地址失败。";
+            return "lyn_ui:cast_send_uri_failed";
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
         const NPT_Result play_result = media_controller_->Play(device, 0, "1", nullptr);
         if (NPT_FAILED(play_result)) {
-            return "启动投屏播放失败。";
+            return "lyn_ui:cast_start_failed";
         }
         return std::string();
     }
@@ -234,27 +234,27 @@ public:
         PLT_DeviceDataReference device;
         const NPT_Result find_result = FindDevice(device_id, device);
         if (NPT_FAILED(find_result)) {
-            return "未找到选中的投屏设备。";
+            return "lyn_ui:cast_device_not_found";
         }
         const NPT_Result play_result = media_controller_->Play(device, 0, "1", nullptr);
-        return NPT_FAILED(play_result) ? "恢复投屏播放失败。" : std::string();
+        return NPT_FAILED(play_result) ? "lyn_ui:cast_resume_failed" : std::string();
     }
 
     std::string PauseCast(const std::string& device_id) {
         PLT_DeviceDataReference device;
         const NPT_Result find_result = FindDevice(device_id, device);
         if (NPT_FAILED(find_result)) {
-            return "未找到选中的投屏设备。";
+            return "lyn_ui:cast_device_not_found";
         }
         const NPT_Result pause_result = media_controller_->Pause(device, 0, nullptr);
-        return NPT_FAILED(pause_result) ? "暂停投屏失败。" : std::string();
+        return NPT_FAILED(pause_result) ? "lyn_ui:cast_pause_failed" : std::string();
     }
 
     std::string SeekCast(const std::string& device_id, NPT_Int64 position_ms) {
         PLT_DeviceDataReference device;
         const NPT_Result find_result = FindDevice(device_id, device);
         if (NPT_FAILED(find_result)) {
-            return "未找到选中的投屏设备。";
+            return "lyn_ui:cast_device_not_found";
         }
         const std::string target = FormatSeekTarget(position_ms);
         const NPT_Result seek_result = media_controller_->Seek(
@@ -263,17 +263,17 @@ public:
             "REL_TIME",
             target.c_str(),
             nullptr);
-        return NPT_FAILED(seek_result) ? "调整投屏进度失败。" : std::string();
+        return NPT_FAILED(seek_result) ? "lyn_ui:cast_seek_failed" : std::string();
     }
 
     std::string StopCast(const std::string& device_id) {
         PLT_DeviceDataReference device;
         const NPT_Result find_result = FindDevice(device_id, device);
         if (NPT_FAILED(find_result)) {
-            return "未找到选中的投屏设备。";
+            return "lyn_ui:cast_device_not_found";
         }
         const NPT_Result stop_result = media_controller_->Stop(device, 0, nullptr);
-        return NPT_FAILED(stop_result) ? "停止投屏失败。" : std::string();
+        return NPT_FAILED(stop_result) ? "lyn_ui:cast_stop_failed" : std::string();
     }
 
     std::string QueryPlaybackState(const std::string& device_id) {
@@ -391,7 +391,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativeStartD
     jobject,
     jlong handle) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->StartDiscovery();
     return error.empty() ? Success(env) : Error(env, error);
 }
@@ -415,7 +415,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativeCastMe
     jstring uri,
     jstring metadata) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->CastMedia(
         ToString(env, device_id),
         ToString(env, uri),
@@ -430,7 +430,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativePlayCa
     jlong handle,
     jstring device_id) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->PlayCast(ToString(env, device_id));
     return error.empty() ? Success(env) : Error(env, error);
 }
@@ -442,7 +442,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativePauseC
     jlong handle,
     jstring device_id) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->PauseCast(ToString(env, device_id));
     return error.empty() ? Success(env) : Error(env, error);
 }
@@ -455,7 +455,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativeSeekCa
     jstring device_id,
     jlong position_ms) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->SeekCast(
         ToString(env, device_id),
         static_cast<NPT_Int64>(position_ms));
@@ -480,7 +480,7 @@ Java_top_iwesley_lyn_music_cast_upnp_android_AndroidUpnpCastGateway_nativeStopCa
     jlong handle,
     jstring device_id) {
     auto* engine = FromHandle(handle);
-    if (engine == nullptr) return Error(env, "UPnP 控制点未初始化。");
+    if (engine == nullptr) return Error(env, "lyn_ui:cast_control_uninitialized");
     const std::string error = engine->StopCast(ToString(env, device_id));
     return error.empty() ? Success(env) : Error(env, error);
 }

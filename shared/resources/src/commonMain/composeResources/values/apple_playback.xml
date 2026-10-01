@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="apple_media_empty">Apple platforms cannot play an empty media locator.</string>
+    <string name="apple_android_uri_unsupported">Apple platforms do not support Android content URIs.</string>
+    <string name="apple_samba_unsupported">Apple platforms do not support Samba media locators in v1.</string>
+    <string name="apple_webdav_unsupported">Apple platforms do not support WebDAV media locators in v1.</string>
+    <string name="apple_media_unsupported">Apple platforms do not support this media locator.</string>
+    <string name="apple_playback_failed">%1$s playback failed.</string>
+    <string name="apple_local_access_failed">%1$s could not access the local song.</string>
+    <string name="apple_invalid_media_url">The media URL is invalid.</string>
+    <string name="ios_folder_picker_active">A folder picker is already open.</string>
+    <string name="ios_folder_access_failed">Could not obtain access to the selected folder.</string>
+    <string name="ios_folder_bookmark_failed">Could not save folder access permissions.</string>
+    <string name="ios_folder_permission_expired">Folder access has expired. Please grant access again.</string>
+    <string name="ios_folder_access_unavailable">Cannot access the folder. Check the file provider or grant access again.</string>
+    <string name="ios_local_path_invalid">The local song's relative path is invalid.</string>
+</resources>

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.automotive
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.uiString
+
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -211,7 +215,7 @@ private fun AutomotivePlaybackPane(
                     ) {
                         AutomotiveRoundIconButton(
                             icon = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = "收起播放页",
+                            contentDescription = uiString(Res.string.player_collapse),
                             onClick = { onPlayerIntent(PlayerIntent.ExpandedChanged(false)) },
                             buttonSize = topControlButtonSize,
                             iconSize = 34.dp * topControlIconScale,
@@ -221,14 +225,14 @@ private fun AutomotivePlaybackPane(
                         ) {
                             AutomotiveRoundIconButton(
                                 icon = Icons.Rounded.Search,
-                                contentDescription = "搜索歌词",
+                                contentDescription = uiString(Res.string.lyrics_search_action),
                                 onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
                                 buttonSize = topControlButtonSize,
                                 iconSize = 30.dp * topControlIconScale,
                             )
                             AutomotiveRoundIconButton(
                                 icon = Icons.Rounded.Fullscreen,
-                                contentDescription = "纯净模式",
+                                contentDescription = uiString(Res.string.player_clean_mode),
                                 onClick = { onPureModeChanged(true) },
                                 buttonSize = topControlButtonSize,
                                 iconSize = 30.dp * topControlIconScale,
@@ -339,7 +343,7 @@ private fun AutomotiveTrackAndProgress(
                     Spacer(Modifier.width(if (compactVertical) 2.dp else 4.dp))
                     AutomotiveRoundIconButton(
                         icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        contentDescription = if (isFavorite) "取消喜欢" else "喜欢",
+                        contentDescription = if (isFavorite) uiString(Res.string.favorites_remove_track) else uiString(Res.string.favorites_likes_title),
                         onClick = onToggleFavorite,
                         buttonSize = inlineActionButtonSize,
                         iconSize = inlineActionIconSize,
@@ -499,7 +503,7 @@ private fun AutomotiveMetadataNavigationRow(
     val artistLabel = automotiveMetadataValue(
         primary = snapshot.currentDisplayArtistName,
         fallback = track.artistName,
-    ) ?: "未知艺人"
+    ) ?: uiString(Res.string.common_unknown_artist)
     val albumLabel = automotiveMetadataValue(
         primary = snapshot.currentDisplayAlbumTitle,
         fallback = track.albumTitle,
@@ -686,7 +690,7 @@ private fun AutomotivePlaybackControls(
         if (layout.showSecondaryControls) {
             AutomotiveRoundIconButton(
                 icon = playbackModeIcon(snapshot.mode),
-                contentDescription = "切换播放模式",
+                contentDescription = uiString(Res.string.player_change_playback_mode),
                 onClick = { onPlayerIntent(PlayerIntent.CycleMode) },
                 buttonSize = layout.actionButtonSize,
                 iconSize = layout.actionIconSize,
@@ -695,7 +699,7 @@ private fun AutomotivePlaybackControls(
         }
         AutomotiveRoundIconButton(
             icon = Icons.Rounded.SkipPrevious,
-            contentDescription = "上一首",
+            contentDescription = uiString(Res.string.player_previous_track),
             onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) },
             buttonSize = layout.skipButtonSize,
             iconSize = layout.skipIconSize,
@@ -703,7 +707,7 @@ private fun AutomotivePlaybackControls(
         Spacer(Modifier.width(layout.controlGap))
         AutomotiveRoundIconButton(
             icon = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-            contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+            contentDescription = if (snapshot.isPlaying) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
             onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) },
             buttonSize = layout.playButtonSize,
             iconSize = layout.playIconSize,
@@ -711,7 +715,7 @@ private fun AutomotivePlaybackControls(
         Spacer(Modifier.width(layout.controlGap))
         AutomotiveRoundIconButton(
             icon = Icons.Rounded.SkipNext,
-            contentDescription = "下一首",
+            contentDescription = uiString(Res.string.player_next_track),
             onClick = { onPlayerIntent(PlayerIntent.SkipNext) },
             buttonSize = layout.skipButtonSize,
             iconSize = layout.skipIconSize,
@@ -720,7 +724,7 @@ private fun AutomotivePlaybackControls(
             Spacer(Modifier.width(layout.controlGap))
             AutomotiveRoundIconButton(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                contentDescription = "播放队列",
+                contentDescription = uiString(Res.string.player_queue_title),
                 onClick = onOpenQueue,
                 buttonSize = layout.actionButtonSize,
                 iconSize = layout.actionIconSize,

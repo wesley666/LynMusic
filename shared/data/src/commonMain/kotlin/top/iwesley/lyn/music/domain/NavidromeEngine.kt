@@ -1,5 +1,16 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.uiText
 import io.ktor.http.DEFAULT_PORT
 import io.ktor.http.URLBuilder
 import io.ktor.http.appendPathSegments
@@ -18,6 +29,7 @@ import kotlinx.serialization.json.contentOrNull
 import top.iwesley.lyn.music.core.model.DiagnosticLogLevel
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.ImportScanReport
+import top.iwesley.lyn.music.core.model.ImportScanWarning
 import top.iwesley.lyn.music.core.model.ImportScanPhase
 import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
@@ -85,12 +97,12 @@ private fun prepareSubsonicResolvedSource(
     val normalizedCredential = credential.trim().takeIf { authMode == SubsonicAuthMode.API_KEY } ?: credential
     when (authMode) {
         SubsonicAuthMode.PASSWORD -> {
-            require(username.isNotBlank()) { "请填写 $serverLabel 用户名。" }
-            require(credential.isNotBlank()) { "请填写 $serverLabel 密码。" }
+            requireUi(username.isNotBlank()) { uiText(Res.string.server_username_required, serverLabel) }
+            requireUi(credential.isNotBlank()) { uiText(Res.string.server_password_required, serverLabel) }
         }
 
         SubsonicAuthMode.API_KEY -> {
-            require(normalizedCredential.isNotBlank()) { "请填写 $serverLabel API Key。" }
+            requireUi(normalizedCredential.isNotBlank()) { uiText(Res.string.server_api_key_required, serverLabel) }
         }
     }
     return NavidromeResolvedSource(
@@ -138,12 +150,12 @@ fun normalizeSubsonicBaseUrl(rawUrl: String?): String {
 
 private fun normalizeSubsonicBaseUrl(rawUrl: String?, serverLabel: String): String {
     val value = rawUrl.orEmpty().trim()
-    require(value.isNotBlank()) { "请填写 $serverLabel 服务器地址。" }
-    require('?' !in value && '#' !in value) { "$serverLabel 地址不能包含 query 或 fragment。" }
-    val parsed = parseUrl(value) ?: error("$serverLabel 地址无效。")
-    require(parsed.protocol.name in setOf("http", "https")) { "$serverLabel 地址只支持 http 或 https。" }
-    require(parsed.host.isNotBlank()) { "$serverLabel 地址缺少主机名。" }
-    require(parsed.user == null && parsed.password == null) { "请不要在 $serverLabel URL 中内嵌用户名或密码。" }
+    requireUi(value.isNotBlank()) { uiText(Res.string.server_address_required, serverLabel) }
+    requireUi('?' !in value && '#' !in value) { uiText(Res.string.server_address_no_query, serverLabel) }
+    val parsed = parseUrl(value) ?: throw UiTextException(uiText(Res.string.server_address_invalid, serverLabel))
+    requireUi(parsed.protocol.name in setOf("http", "https")) { uiText(Res.string.server_address_http_required, serverLabel) }
+    requireUi(parsed.host.isNotBlank()) { uiText(Res.string.server_address_host_required, serverLabel) }
+    requireUi(parsed.user == null && parsed.password == null) { uiText(Res.string.server_address_no_credentials, serverLabel) }
     val pathSegments = parsed.encodedPath
         .split('/')
         .filter { it.isNotBlank() }
@@ -477,8 +489,8 @@ suspend fun requestNavidromeSongPage(
 
 private fun prepareNavidromeResolvedSource(draft: NavidromeSourceDraft): NavidromeResolvedSource {
     val baseUrl = normalizeNavidromeBaseUrl(draft.baseUrl)
-    require(draft.username.isNotBlank()) { "请填写 Navidrome 用户名。" }
-    require(draft.password.isNotBlank()) { "请填写 Navidrome 密码。" }
+    requireUi(draft.username.isNotBlank()) { uiText(Res.string.server_username_required, "Navidrome") }
+    requireUi(draft.password.isNotBlank()) { uiText(Res.string.server_password_required, "Navidrome") }
     return NavidromeResolvedSource(
         baseUrl = baseUrl,
         username = draft.username.trim(),
@@ -525,7 +537,7 @@ private suspend fun scanNavidromeNativeStreaming(
 
         val batch = mutableListOf<ImportedTrackCandidate>()
         page.songs.forEach { candidate ->
-            require(candidate.songId.isNotBlank()) { "Navidrome /api/song 返回缺少歌曲 ID。" }
+            requireUi(candidate.songId.isNotBlank()) { uiText(Res.string.server_response_field_missing, "Navidrome", "/api/song Id") }
             if (!seenSongIds.add(candidate.songId)) return@forEach
             discoveredAudioFileCount += 1
             when (classifyAudioExtensionForImport(candidate.suffix, supportedImportExtensions)) {
@@ -565,7 +577,12 @@ private suspend fun scanNavidromeNativeStreaming(
     return ImportStreamingScanReport(
         discoveredAudioFileCount = discoveredAudioFileCount,
         importedTrackCount = importedTrackCount,
-        warnings = if (discoveredAudioFileCount == 0) listOf("当前 ${source.displayName} 账号下没有可同步的歌曲。") else emptyList(),
+        warnings = if (discoveredAudioFileCount == 0) listOf(
+            ImportScanWarning(
+                diagnostic = "当前 ${source.displayName} 账号下没有可同步的歌曲。",
+                text = uiText(Res.string.source_account_no_syncable_tracks, source.displayName),
+            ),
+        ) else emptyList(),
         failures = failures,
         totalTrackCount = totalTrackCount,
     )
@@ -684,7 +701,12 @@ private suspend fun scanSubsonicCompatibleLibrary(
     )
     return ImportScanReport(
         tracks = tracks,
-        warnings = if (discoveredAudioFileCount == 0) listOf("当前 ${source.displayName} 账号下没有可同步的歌曲。") else emptyList(),
+        warnings = if (discoveredAudioFileCount == 0) listOf(
+            ImportScanWarning(
+                diagnostic = "当前 ${source.displayName} 账号下没有可同步的歌曲。",
+                text = uiText(Res.string.source_account_no_syncable_tracks, source.displayName),
+            ),
+        ) else emptyList(),
         discoveredAudioFileCount = discoveredAudioFileCount,
         failures = failures,
         totalTrackCount = totalTrackCount,
@@ -721,9 +743,10 @@ private data class NavidromeServerVersion(
 }
 
 private class NavidromeNativeApiIncompatibleException(
-    message: String,
+    override val text: UiText,
     cause: Throwable? = null,
-) : IllegalStateException(message, cause)
+    override val httpStatusCode: Int? = null,
+) : IllegalStateException((text).diagnosticMessage(), cause), UiTextFailure, RemoteSourceHttpFailure
 
 private suspend fun requestNavidromeServerInfo(
     httpClient: LyricsHttpClient,
@@ -766,22 +789,22 @@ private suspend fun requestNavidromeNativeToken(
             timeoutMillis = timeoutMillis,
         ),
     ).getOrElse { throwable ->
-        throw IllegalStateException("Navidrome native 登录请求失败: ${throwable.message.orEmpty()}", throwable)
+        throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Navidrome", "/auth/login", throwable.uiErrorDetail()), throwable)
     }
     if (loginResponse.statusCode.isNavidromeNativeIncompatibleStatus()) {
-        throw NavidromeNativeApiIncompatibleException("Navidrome native 登录接口不可用，HTTP ${loginResponse.statusCode}")
+        throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_http_failed, "Navidrome", "/auth/login", loginResponse.statusCode), httpStatusCode = loginResponse.statusCode)
     }
     if (loginResponse.statusCode !in 200..299) {
-        throw IllegalStateException("Navidrome native 登录失败，HTTP ${loginResponse.statusCode}")
+        throw RemoteSourceHttpException(loginResponse.statusCode, uiText(Res.string.server_http_failed, "Navidrome", "/auth/login", loginResponse.statusCode))
     }
     val loginPayload = try {
         subsonicJson.parseToJsonElement(loginResponse.body) as? JsonObject
     } catch (exception: Exception) {
-        throw NavidromeNativeApiIncompatibleException("Navidrome native 登录响应缺少 token。", exception)
-    } ?: throw NavidromeNativeApiIncompatibleException("Navidrome native 登录响应缺少 token。")
+        throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_field_missing, "Navidrome", "token"), exception)
+    } ?: throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_field_missing, "Navidrome", "token"))
     val token = loginPayload.string("token")
     if (token.isNullOrBlank()) {
-        throw NavidromeNativeApiIncompatibleException("Navidrome native 登录响应缺少 token。")
+        throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_field_missing, "Navidrome", "token"))
     }
     if (logger !== NoopDiagnosticLogger) {
         logger.log(
@@ -820,25 +843,25 @@ private suspend fun requestNavidromeNativeSongPage(
             timeoutMillis = timeoutMillis,
         ),
     ).getOrElse { throwable ->
-        throw IllegalStateException("Navidrome native 歌曲分页请求失败: ${throwable.message.orEmpty()}", throwable)
+        throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Navidrome", "/api/song", throwable.uiErrorDetail()), throwable)
     }
     if (response.statusCode.isNavidromeNativeIncompatibleStatus()) {
-        throw NavidromeNativeApiIncompatibleException("Navidrome native 歌曲分页接口不可用，HTTP ${response.statusCode}")
+        throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_http_failed, "Navidrome", "/api/song", response.statusCode), httpStatusCode = response.statusCode)
     }
     if (response.statusCode !in 200..299) {
-        throw IllegalStateException("Navidrome native 歌曲分页失败，HTTP ${response.statusCode}")
+        throw RemoteSourceHttpException(response.statusCode, uiText(Res.string.server_http_failed, "Navidrome", "/api/song", response.statusCode))
     }
     val root = try {
         subsonicJson.parseToJsonElement(response.body)
     } catch (exception: Exception) {
-        throw NavidromeNativeApiIncompatibleException("Navidrome /api/song 返回不是 native song 数组。", exception)
+        throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_not_array, "Navidrome", "/api/song"), exception)
     }
     val songArray = root as? JsonArray
-        ?: throw NavidromeNativeApiIncompatibleException("Navidrome /api/song 返回不是 native song 数组。")
+        ?: throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_not_array, "Navidrome", "/api/song"))
     val songs = songArray
         .mapIndexed { index, element ->
             val song = element as? JsonObject
-                ?: throw NavidromeNativeApiIncompatibleException("Navidrome /api/song 第 ${start + index} 条歌曲格式错误。")
+                ?: throw NavidromeNativeApiIncompatibleException(uiText(Res.string.server_response_item_invalid, "Navidrome", "/api/song", start + index))
             song.toNavidromeNativeSongCandidate()
         }
     return NavidromeNativeSongPage(
@@ -852,7 +875,7 @@ private fun buildNavidromeNativeUrl(
     vararg pathSegments: String,
     queryParameters: Map<String, String> = emptyMap(),
 ): String {
-    val parsed = parseUrl(normalizeNavidromeBaseUrl(baseUrl)) ?: error("Navidrome 地址无效。")
+    val parsed = parseUrl(normalizeNavidromeBaseUrl(baseUrl)) ?: throw UiTextException(uiText(Res.string.server_address_invalid, "Navidrome"))
     return URLBuilder(parsed).apply {
         appendPathSegments(pathSegments.toList())
         queryParameters.forEach { (key, value) -> parameters.append(key, value) }
@@ -869,8 +892,8 @@ suspend fun testNavidromeConnection(
     logger: DiagnosticLogger = NoopDiagnosticLogger,
     timeoutMillis: Long? = null,
 ) {
-    require(draft.username.isNotBlank()) { "请填写 Navidrome 用户名。" }
-    require(draft.password.isNotBlank()) { "请填写 Navidrome 密码。" }
+    requireUi(draft.username.isNotBlank()) { uiText(Res.string.server_username_required, "Navidrome") }
+    requireUi(draft.password.isNotBlank()) { uiText(Res.string.server_password_required, "Navidrome") }
     val resolved = NavidromeResolvedSource(
         baseUrl = normalizeNavidromeBaseUrl(draft.baseUrl),
         username = draft.username.trim(),
@@ -1478,7 +1501,7 @@ private suspend fun requestNavidromeJsonWithoutAddressFallback(
         )
     }
     val response = httpClient.request(request).getOrElse { throwable ->
-        throw IllegalStateException("${source.displayName} $endpoint 请求失败: ${throwable.message.orEmpty()}", throwable)
+        throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, source.displayName, endpoint, throwable.uiErrorDetail()), throwable)
     }
     if (logger !== NoopDiagnosticLogger) {
         logger.log(
@@ -1499,15 +1522,18 @@ private suspend fun requestNavidromeJsonWithoutAddressFallback(
             },
         )
     }
-    require(response.statusCode in 200..299) { "${source.displayName} $endpoint 失败，HTTP ${response.statusCode}" }
+    if (response.statusCode !in 200..299) {
+        throw RemoteSourceHttpArgumentException(response.statusCode, uiText(Res.string.server_http_failed, source.displayName, endpoint, response.statusCode))
+    }
     val root = subsonicJson.parseToJsonElement(response.body) as? JsonObject
-        ?: error("${source.displayName} $endpoint 返回不是 JSON 对象。")
+        ?: throw UiTextException(uiText(Res.string.server_response_not_object, source.displayName, endpoint))
     val payload = root["subsonic-response"].asObject("subsonic-response")
     val status = payload.string("status").orEmpty()
     if (!status.equals("ok", ignoreCase = true)) {
         val error = payload["error"].asObjectOrNull()
-        val message = error?.string("message").orEmpty().ifBlank { "${source.displayName} $endpoint 返回失败状态。" }
-        error(message)
+        val message = error?.string("message").orEmpty()
+        if (message.isNotBlank()) error(message)
+        throw UiTextException(uiText(Res.string.server_response_failed, source.displayName, endpoint))
     }
     return payload
 }
@@ -1764,7 +1790,7 @@ fun String?.toSubsonicAuthMode(): SubsonicAuthMode {
 }
 
 private fun JsonElement?.asObject(context: String): JsonObject {
-    return this as? JsonObject ?: error("Navidrome $context 缺失或格式错误。")
+    return this as? JsonObject ?: throw UiTextException(uiText(Res.string.server_response_field_invalid, "Navidrome / Subsonic", context))
 }
 
 private fun JsonElement?.asObjectOrNull(): JsonObject? = this as? JsonObject

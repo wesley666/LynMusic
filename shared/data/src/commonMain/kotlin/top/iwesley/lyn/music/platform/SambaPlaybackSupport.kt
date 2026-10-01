@@ -1,11 +1,15 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
 import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.joinSambaPath
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 
 data class ResolvedSambaSourceSpec(
@@ -37,7 +41,7 @@ fun resolveSambaSourceSpec(
         else -> normalizeSambaPath(joinSambaPath(requireNotNull(shareName), source.directoryPath.orEmpty()))
     }
     val sambaPath = parseSambaPath(storedPath)
-        ?: error("SMB source path is missing a share name.")
+        ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
     return ResolvedSambaSourceSpec(
         sourceId = source.id,
         endpoint = formatSambaEndpoint(source.server.orEmpty(), parsedPort, storedPath),

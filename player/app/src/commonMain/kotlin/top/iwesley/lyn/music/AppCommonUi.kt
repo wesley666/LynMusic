@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.plus
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.lastErrorUiText
+
+import top.iwesley.lyn.music.core.model.uiPlural
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -190,7 +198,7 @@ internal fun OfflineDownloadRowIndicator(state: OfflineDownloadRowIndicatorState
         OfflineDownloadRowIndicatorState.Downloaded -> {
             Icon(
                 imageVector = Icons.Rounded.DownloadDone,
-                contentDescription = "已下载离线音乐",
+                contentDescription = uiString(Res.string.offline_downloaded_music_badge),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(14.dp),
             )
@@ -199,7 +207,7 @@ internal fun OfflineDownloadRowIndicator(state: OfflineDownloadRowIndicatorState
 }
 
 internal data class OfflineBatchDownloadStatusSummary(
-    val label: String,
+    val label: UiText,
     val progress: Float?,
 )
 
@@ -215,25 +223,25 @@ internal fun offlineBatchDownloadStatusSummary(
             downloadsByTrackId[trackId]?.downloadedBytes?.coerceAtLeast(0L) ?: 0L,
         )
     }
-    val prefix = "正在批量下载 $processedCount/${batch.totalCount} 首"
+    val prefix = uiPlural(Res.plurals.offline_download_progress, batch.totalCount, processedCount, batch.totalCount)
     if (batch.unknownCount > 0) {
         return OfflineBatchDownloadStatusSummary(
-            label = "$prefix · 已下载 ${formatOfflineDownloadSizeLabel(downloadedBytes)} · ${batch.unknownCount} 首未知",
+            label = uiText(Res.string.offline_batch_size_summary, prefix, formatOfflineDownloadSizeLabel(downloadedBytes), batch.unknownCount),
             progress = null,
         )
     }
     val estimatedTotalBytes = batch.estimatedTotalBytes.takeIf { it > 0L }
         ?: return OfflineBatchDownloadStatusSummary(
-            label = "$prefix · 等待中",
+            label = uiText(Res.string.offline_waiting_summary, prefix),
             progress = null,
         )
     val totalLabel = if (batch.approximate) {
-        "约 ${formatOfflineDownloadSizeLabel(estimatedTotalBytes)}"
+        uiText(Res.string.about_named_app, formatOfflineDownloadSizeLabel(estimatedTotalBytes))
     } else {
-        formatOfflineDownloadSizeLabel(estimatedTotalBytes)
+        UiText.Raw(formatOfflineDownloadSizeLabel(estimatedTotalBytes))
     }
     return OfflineBatchDownloadStatusSummary(
-        label = "$prefix · ${formatOfflineDownloadSizeLabel(downloadedBytes)} / $totalLabel",
+        label = prefix + UiText.Raw(" · ${formatOfflineDownloadSizeLabel(downloadedBytes)} / ") + totalLabel,
         progress = (downloadedBytes.toDouble() / estimatedTotalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat(),
     )
 }
@@ -273,13 +281,13 @@ internal fun OfflineBatchDownloadStatusBar(
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Text(
-                            text = "取消批量下载？",
+                            text = uiString(Res.string.offline_cancel_batch_title),
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "将停止当前正在下载的歌曲，并取消后续未开始的下载。已完成的歌曲不会删除。",
+                            text = uiString(Res.string.offline_cancel_batch_description),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -294,7 +302,7 @@ internal fun OfflineBatchDownloadStatusBar(
                                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             ) {
-                                Text("继续下载")
+                                Text(uiString(Res.string.offline_continue_download))
                             }
                             TextButton(
                                 onClick = {
@@ -303,7 +311,7 @@ internal fun OfflineBatchDownloadStatusBar(
                                 },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                             ) {
-                                Text("取消下载")
+                                Text(uiString(Res.string.offline_cancel_download))
                             }
                         }
                     }
@@ -328,7 +336,7 @@ internal fun OfflineBatchDownloadStatusBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = summary.label,
+                    text = summary.label.displayText(),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodySmall,
@@ -342,7 +350,7 @@ internal fun OfflineBatchDownloadStatusBar(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Close,
-                        contentDescription = "取消批量下载",
+                        contentDescription = uiString(Res.string.offline_cancel_batch_action),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )
@@ -384,7 +392,7 @@ internal fun BatchOperationButton(
         Icon(Icons.Rounded.Checklist, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "批量操作",
+            text = uiString(Res.string.library_batch_actions),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -417,18 +425,18 @@ internal fun TrackSelectionActionBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "已选择 $selectedCount 首",
+                text = uiString(Res.plurals.library_selected_track_count, (selectedCount).toInt(), selectedCount),
                 modifier = Modifier.weight(1f),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             TextButton(onClick = onCancelSelection) {
-                Text("取消")
+                Text(uiString(Res.string.common_cancel))
             }
         }
         Text(
-            text = "预计下载大小：$downloadSizeEstimateLabel",
+            text = uiString(Res.string.offline_estimated_size, downloadSizeEstimateLabel),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
@@ -445,7 +453,7 @@ internal fun TrackSelectionActionBar(
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
-                    text = if (allVisibleSelected) "取消全选" else "全选",
+                    text = if (allVisibleSelected) uiString(Res.string.common_deselect_all) else uiString(Res.string.common_select_all),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -458,7 +466,7 @@ internal fun TrackSelectionActionBar(
                 Icon(Icons.Rounded.Download, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "下载选中歌曲",
+                    text = uiString(Res.string.offline_download_selected_tracks),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -486,14 +494,14 @@ internal fun BatchDownloadQualityBottomSheet(
         CompositionLocalProvider(LocalDensity provides appDensity) {
             Column(modifier = Modifier.padding(bottom = 20.dp)) {
                 Text(
-                    text = "选择下载音质",
+                    text = uiString(Res.string.offline_download_quality_title),
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "将下载 $selectedCount 首歌曲",
+                    text = uiString(Res.plurals.offline_download_track_count, (selectedCount).toInt(), selectedCount),
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -606,7 +614,7 @@ internal fun FavoriteToggleButton(
     ) {
         Icon(
             imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-            contentDescription = if (isFavorite) "取消喜欢" else "标记为喜欢",
+            contentDescription = if (isFavorite) uiString(Res.string.favorites_remove_track) else uiString(Res.string.favorites_add_track),
             tint = if (enabled) tint else tint.copy(alpha = 0.46f),
             modifier = Modifier.size(iconSize),
         )
@@ -618,7 +626,7 @@ internal fun DetailBackButton(
     onClick: () -> Unit,
 ) {
     TextButton(onClick = onClick) {
-        Text("返回")
+        Text(uiString(Res.string.common_back))
     }
 }
 
@@ -701,20 +709,20 @@ internal fun AlbumRow(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = album.title,
+                    text = album.title.ifBlank { uiString(Res.string.common_unknown_album) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = album.artistName ?: "未知艺人",
+                    text = album.artistName ?: uiString(Res.string.common_unknown_artist),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
-                text = "${album.trackCount} 首",
+                text = uiString(Res.plurals.common_track_count_short, (album.trackCount).toInt(), album.trackCount),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -765,7 +773,7 @@ internal fun ArtistRow(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = artist.name,
+                    text = artist.name.ifBlank { uiString(Res.string.common_unknown_artist) },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
@@ -788,17 +796,24 @@ internal fun ArtistRow(
     }
 }
 
+internal fun artistSummaryLabelText(
+    trackCount: Int?,
+    albumCount: Int?,
+    unknownLabel: String? = null,
+): UiText {
+    val parts = buildList {
+        trackCount?.let { add(uiPlural(Res.plurals.common_track_count, (it).toInt(), it)) }
+        albumCount?.let { add(uiPlural(Res.plurals.common_album_count, (it).toInt(), it)) }
+    }
+    return if (parts.isEmpty()) unknownLabel?.let(UiText::Raw) ?: uiText(Res.string.source_online_artist_label) else UiText.Joined(parts)
+}
+
+@Composable
 internal fun artistSummaryLabel(
     trackCount: Int?,
     albumCount: Int?,
-    unknownLabel: String = "在线艺人",
-): String {
-    val parts = buildList {
-        trackCount?.let { add("$it 首歌曲") }
-        albumCount?.let { add("$it 张专辑") }
-    }
-    return parts.joinToString(" · ").ifBlank { unknownLabel }
-}
+    unknownLabel: String? = null,
+): String = artistSummaryLabelText(trackCount, albumCount, unknownLabel).displayText()
 
 @Composable
 internal fun TrackRow(
@@ -868,7 +883,7 @@ internal fun TrackRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        track.artistName ?: "未知艺人",
+                        track.artistName ?: uiString(Res.string.common_unknown_artist),
                         modifier = Modifier
                             .weight(1f, fill = false)
                             .then(artistClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
@@ -882,7 +897,7 @@ internal fun TrackRow(
             if (showAlbumTitle) {
                 Box(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = track.albumTitle?.trim()?.takeIf { it.isNotEmpty() } ?: "未知专辑",
+                        text = track.albumTitle?.trim()?.takeIf { it.isNotEmpty() } ?: uiString(Res.string.common_unknown_album),
                         modifier = albumClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1042,7 +1057,7 @@ internal fun TrackOfflineActionMenuItems(
     val status = download?.status
     if (status == OfflineDownloadStatus.Pending || status == OfflineDownloadStatus.Downloading) {
         DropdownMenuItem(
-            text = { Text("取消下载") },
+            text = { Text(uiString(Res.string.offline_cancel_download)) },
             leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
             trailingIcon = { DownloadMenuTrailingSizeText(offlineDownloadProgressSizeLabel(download)) },
             onClick = {
@@ -1083,9 +1098,9 @@ internal fun TrackOfflineActionMenuItems(
             text = {
                 Text(
                     when (status) {
-                        OfflineDownloadStatus.Completed -> "已离线"
-                        OfflineDownloadStatus.Failed -> "重试下载离线音乐"
-                        else -> "下载离线音乐"
+                        OfflineDownloadStatus.Completed -> uiString(Res.string.offline_available_badge)
+                        OfflineDownloadStatus.Failed -> uiString(Res.string.offline_retry_download)
+                        else -> uiString(Res.string.offline_download_for_playback)
                     },
                 )
             },
@@ -1100,7 +1115,7 @@ internal fun TrackOfflineActionMenuItems(
     }
     if (download?.hasLocalFileReference == true || status == OfflineDownloadStatus.Completed) {
         DropdownMenuItem(
-            text = { Text("删除离线音乐", color = MaterialTheme.colorScheme.error) },
+            text = { Text(uiString(Res.string.storage_delete_offline_music), color = MaterialTheme.colorScheme.error) },
             leadingIcon = {
                 Icon(
                     Icons.Rounded.Delete,
@@ -1121,7 +1136,7 @@ private fun DownloadMenuAvailableSpaceItem(label: String) {
     DropdownMenuItem(
         text = {
             Text(
-                text = "下载路径可用空间",
+                text = uiString(Res.string.offline_destination_free_space),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1142,17 +1157,23 @@ private fun DownloadMenuTrailingSizeText(label: String) {
     )
 }
 
+internal fun navidromeDownloadMenuLabelText(
+    quality: NavidromeAudioQuality,
+    download: OfflineDownload?,
+): UiText {
+    val prefix = when {
+        isCurrentOfflineDownloadQuality(download, quality) -> uiText(Res.string.offline_downloaded_status)
+        download?.status == OfflineDownloadStatus.Completed -> uiText(Res.string.offline_download_again)
+        else -> uiText(Res.string.common_download)
+    }
+    return UiText.Joined(listOf(prefix, navidromeQualityText(quality)), " ")
+}
+
+@Composable
 internal fun navidromeDownloadMenuLabel(
     quality: NavidromeAudioQuality,
     download: OfflineDownload?,
-): String {
-    val prefix = when {
-        isCurrentOfflineDownloadQuality(download, quality) -> "已下载"
-        download?.status == OfflineDownloadStatus.Completed -> "重新下载"
-        else -> "下载"
-    }
-    return "$prefix ${navidromeQualityLabel(quality)}"
-}
+): String = navidromeDownloadMenuLabelText(quality, download).displayText()
 
 internal fun isCurrentOfflineDownloadQuality(
     download: OfflineDownload?,
@@ -1163,15 +1184,16 @@ internal fun isCurrentOfflineDownloadQuality(
         download.quality == quality
 }
 
-private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String {
-    return when (quality) {
-        NavidromeAudioQuality.Original -> "原始音质"
-        NavidromeAudioQuality.Kbps320 -> "320 kbps"
-        NavidromeAudioQuality.Kbps192 -> "192 kbps"
-        NavidromeAudioQuality.Kbps128 -> "128 kbps"
-    }
+private fun navidromeQualityText(quality: NavidromeAudioQuality): UiText = when (quality) {
+    NavidromeAudioQuality.Original -> uiText(Res.string.player_original_quality)
+    NavidromeAudioQuality.Kbps320 -> UiText.Raw("320 kbps")
+    NavidromeAudioQuality.Kbps192 -> UiText.Raw("192 kbps")
+    NavidromeAudioQuality.Kbps128 -> UiText.Raw("128 kbps")
 }
+@Composable
+private fun navidromeQualityLabel(quality: NavidromeAudioQuality): String = navidromeQualityText(quality).displayText()
 
+@Composable
 private fun downloadMenuTrailingSizeLabel(
     track: Track,
     download: OfflineDownload?,
@@ -1186,10 +1208,10 @@ private fun downloadMenuTrailingSizeLabel(
     }
     if (quality != null && quality != NavidromeAudioQuality.Original) {
         return estimatedNavidromeTranscodedSizeBytes(track, quality)
-            ?.let { "约 ${formatOfflineDownloadSize(it)}" }
-            ?: "未知"
+            ?.let { uiString(Res.string.about_named_app, formatOfflineDownloadSize(it)) }
+            ?: uiString(Res.string.common_unknown)
     }
-    return track.sizeBytes.takeIf { it > 0L }?.let(::formatOfflineDownloadSize) ?: "未知"
+    return track.sizeBytes.takeIf { it > 0L }?.let(::formatOfflineDownloadSize) ?: uiString(Res.string.common_unknown)
 }
 
 private fun offlineDownloadProgressSizeLabel(download: OfflineDownload?): String {
@@ -1202,16 +1224,22 @@ private fun offlineDownloadProgressSizeLabel(download: OfflineDownload?): String
     }
 }
 
+internal fun offlineAvailableSpaceLabelText(
+    availableSpaceBytes: Long?,
+    loading: Boolean,
+): UiText {
+    return when {
+        loading -> uiText(Res.string.common_calculating)
+        availableSpaceBytes == null -> uiText(Res.string.common_unknown)
+        else -> UiText.Raw(formatOfflineAvailableSpaceGb(availableSpaceBytes))
+    }
+}
+
+@Composable
 internal fun offlineAvailableSpaceLabel(
     availableSpaceBytes: Long?,
     loading: Boolean,
-): String {
-    return when {
-        loading -> "计算中"
-        availableSpaceBytes == null -> "未知"
-        else -> formatOfflineAvailableSpaceGb(availableSpaceBytes)
-    }
-}
+): String = offlineAvailableSpaceLabelText(availableSpaceBytes, loading).displayText()
 
 internal fun formatOfflineAvailableSpaceGb(sizeBytes: Long): String {
     val gigabytes = sizeBytes.coerceAtLeast(0L).toDouble() / 1024.0 / 1024.0 / 1024.0
@@ -1295,7 +1323,7 @@ internal fun SourceCard(
     enabled: Boolean,
     compact: Boolean,
     onEdit: (() -> Unit)?,
-    editLabel: String = "编辑",
+    editLabel: String = uiString(Res.string.common_edit),
     onToggleEnabled: () -> Unit,
     onRescan: (() -> Unit)?,
     isRescanning: Boolean,
@@ -1332,7 +1360,7 @@ internal fun SourceCard(
                     Text(
                         when (state.source.type) {
                             top.iwesley.lyn.music.core.model.ImportSourceType.LOCAL_FOLDER ->
-                                displayLocalFolderReference(state.source.rootReference)
+                                displayLocalFolderReference(state.source.rootReference).displayText()
                             top.iwesley.lyn.music.core.model.ImportSourceType.SAMBA -> top.iwesley.lyn.music.core.model.formatSambaEndpoint(
                                 server = state.source.server,
                                 port = state.source.port,
@@ -1381,10 +1409,10 @@ internal fun SourceCard(
                     label = {
                         Text(
                             when {
-                                !sourceEnabled -> "已禁用"
-                                isOnlineSource -> "在线模式"
-                                state.indexState?.lastError == null -> "扫描正常"
-                                else -> "扫描失败"
+                                !sourceEnabled -> uiString(Res.string.common_disabled)
+                                isOnlineSource -> uiString(Res.string.source_online_mode_label)
+                                state.indexState?.lastError == null -> uiString(Res.string.source_scan_success_status)
+                                else -> uiString(Res.string.source_scan_failed_status)
                             },
                         )
                     },
@@ -1400,20 +1428,20 @@ internal fun SourceCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        text = presentation.summaryText,
+                        text = presentation.summaryText.displayText(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     if (presentation.showFailuresButton) {
                         TextButton(onClick = { onShowScanFailures?.invoke(presentation.summary) }) {
-                            Text("查看失败")
+                            Text(uiString(Res.string.import_view_failures))
                         }
                     }
                 }
             }
-            state.indexState?.lastError?.takeIf { it.isNotBlank() }?.let {
+            state.indexState?.lastErrorUiText()?.let {
                 Text(
-                    text = it,
+                    text = it.displayText(),
                     color = if (sourceEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1444,27 +1472,37 @@ private fun SourceScanProgressRow(progress: ImportScanProgress) {
     }
 }
 
+internal fun importSourceTrackCountLabelText(
+    indexMode: ImportSourceIndexMode,
+    localTrackCount: Int?,
+    remoteTrackCount: Int?,
+): UiText {
+    return if (indexMode == ImportSourceIndexMode.ONLINE) {
+        remoteTrackCount?.let { uiPlural(Res.plurals.source_remote_track_count, (it.coerceAtLeast(0)).toInt(), it.coerceAtLeast(0)) } ?: uiText(Res.string.source_online_track_count_unknown)
+    } else {
+        uiPlural(Res.plurals.common_track_count, (localTrackCount?.coerceAtLeast(0) ?: 0).toInt(), localTrackCount?.coerceAtLeast(0) ?: 0)
+    }
+}
+
+@Composable
 internal fun importSourceTrackCountLabel(
     indexMode: ImportSourceIndexMode,
     localTrackCount: Int?,
     remoteTrackCount: Int?,
-): String {
-    return if (indexMode == ImportSourceIndexMode.ONLINE) {
-        remoteTrackCount?.let { "${it.coerceAtLeast(0)} 首远端歌曲" } ?: "远端歌曲数未知"
+): String = importSourceTrackCountLabelText(indexMode, localTrackCount, remoteTrackCount).displayText()
+
+internal fun importScanProgressLabelText(progress: ImportScanProgress): UiText {
+    if (progress.phase == ImportScanPhase.Persisting) return uiText(Res.string.startup_updating_library)
+    val total = progress.totalTrackCount?.takeIf { it > 0 }
+    return if (total == null) {
+        uiPlural(Res.plurals.import_completed_track_count, (progress.importedTrackCount.coerceAtLeast(0)).toInt(), progress.importedTrackCount.coerceAtLeast(0))
     } else {
-        "${localTrackCount?.coerceAtLeast(0) ?: 0} 首歌曲"
+        uiText(Res.string.import_track_progress, progress.importedTrackCount.coerceAtLeast(0), total)
     }
 }
 
-internal fun importScanProgressLabel(progress: ImportScanProgress): String {
-    if (progress.phase == ImportScanPhase.Persisting) return "正在更新曲库…"
-    val total = progress.totalTrackCount?.takeIf { it > 0 }
-    return if (total == null) {
-        "已导入第 ${progress.importedTrackCount.coerceAtLeast(0)} 首"
-    } else {
-        "正在导入第 ${progress.importedTrackCount.coerceAtLeast(0)}/$total 首"
-    }
-}
+@Composable
+internal fun importScanProgressLabel(progress: ImportScanProgress): String = importScanProgressLabelText(progress).displayText()
 
 internal fun importScanProgressFraction(progress: ImportScanProgress): Float? {
     if (progress.phase == ImportScanPhase.Persisting) return null
@@ -1472,6 +1510,7 @@ internal fun importScanProgressFraction(progress: ImportScanProgress): Float? {
     return progress.importedTrackCount.toFloat().coerceIn(0f, total.toFloat()) / total.toFloat()
 }
 
+@Composable
 private fun remoteSourceAddressSummary(
     lanRootReference: String,
     wanRootReference: String?,
@@ -1479,9 +1518,9 @@ private fun remoteSourceAddressSummary(
     val lan = lanRootReference.takeIf { it.isNotBlank() }
     val wan = wanRootReference?.takeIf { it.isNotBlank() }
     return when {
-        lan != null && wan != null -> "局域网/首选: $lan\n广域网: $wan"
+        lan != null && wan != null -> uiString(Res.string.source_network_addresses_summary, lan, wan)
         lan != null -> lan
-        wan != null -> "广域网: $wan"
+        wan != null -> uiString(Res.string.source_wan_address_summary, wan)
         else -> ""
     }
 }
@@ -1555,7 +1594,7 @@ private fun SourceCardTextActions(
                             Icon(Icons.Rounded.Sync, null)
                         }
                         Spacer(Modifier.width(6.dp))
-                        Text(if (isRescanning) "重扫中" else "重扫")
+                        Text(if (isRescanning) uiString(Res.string.source_rescanning_status) else uiString(Res.string.common_rescan))
                     }
                 }
             }
@@ -1564,7 +1603,7 @@ private fun SourceCardTextActions(
             OutlinedButton(onClick = onToggleEnabled, enabled = enabled) {
                 Icon(if (sourceEnabled) Icons.Rounded.Block else Icons.Rounded.CheckCircle, null)
                 Spacer(Modifier.width(6.dp))
-                Text(if (sourceEnabled) "禁用" else "启用")
+                Text(if (sourceEnabled) uiString(Res.string.common_disable) else uiString(Res.string.common_enable))
             }
             OutlinedButton(
                 onClick = onDelete,
@@ -1573,7 +1612,7 @@ private fun SourceCardTextActions(
             ) {
                 Icon(Icons.Rounded.Delete, null)
                 Spacer(Modifier.width(6.dp))
-                Text("删除")
+                Text(uiString(Res.string.common_delete))
             }
         }
     }
@@ -1601,7 +1640,7 @@ private fun SourceCardCompactActions(
                         onClick = edit,
                         enabled = enabled,
                         imageVector = Icons.Rounded.Tune,
-                        contentDescription = "$editLabel 来源",
+                        contentDescription = uiString(Res.string.source_type_label, editLabel),
                     )
                 }
                 if (sourceEnabled) {
@@ -1610,7 +1649,7 @@ private fun SourceCardCompactActions(
                             onClick = rescan,
                             enabled = enabled,
                             imageVector = Icons.Rounded.Sync,
-                            contentDescription = if (isRescanning) "重扫中" else "重扫来源",
+                            contentDescription = if (isRescanning) uiString(Res.string.source_rescanning_status) else uiString(Res.string.source_rescan_action),
                             loading = isRescanning,
                         )
                     }
@@ -1622,13 +1661,13 @@ private fun SourceCardCompactActions(
                 onClick = onToggleEnabled,
                 enabled = enabled,
                 imageVector = if (sourceEnabled) Icons.Rounded.Block else Icons.Rounded.CheckCircle,
-                contentDescription = if (sourceEnabled) "禁用来源" else "启用来源",
+                contentDescription = if (sourceEnabled) uiString(Res.string.source_disable_action) else uiString(Res.string.source_enable_action),
             )
             SourceCardIconActionButton(
                 onClick = onDelete,
                 enabled = enabled,
                 imageVector = Icons.Rounded.Delete,
-                contentDescription = "删除来源",
+                contentDescription = uiString(Res.string.source_delete_action),
                 tint = MaterialTheme.colorScheme.error,
             )
         }
@@ -1671,7 +1710,7 @@ private val SourceCardCompactActionButtonSize = 42.dp
 
 internal data class SourceScanSummaryPresentation(
     val summary: ImportScanSummary,
-    val summaryText: String,
+    val summaryText: UiText,
     val showFailuresButton: Boolean,
 )
 
@@ -1702,11 +1741,11 @@ internal fun buildSourceScanSummaryPresentation(
 private fun onlineSourceScanSummaryText(
     remoteTrackCount: Int?,
     summaryDiscoveredTrackCount: Int,
-): String {
+): UiText {
     val resolvedTrackCount = remoteTrackCount ?: summaryDiscoveredTrackCount.takeIf { it > 0 }
     return resolvedTrackCount
-        ?.let { "在线模式已启用，需在曲库来源选择在线来源。远端共有 ${it.coerceAtLeast(0)} 首歌曲。" }
-        ?: "在线模式已启用，未写入本地曲库索引。"
+        ?.let { uiPlural(Res.plurals.online_source_summary, (it.coerceAtLeast(0)).toInt(), it.coerceAtLeast(0)) }
+        ?: uiText(Res.string.source_online_index_exclusion_hint)
 }
 
 @Composable
@@ -1755,7 +1794,7 @@ internal fun LyricsSourceCard(
                 PriorityBadge(priority = source.priority)
             }
             Text(
-                if (source.enabled) "已启用" else "已停用",
+                if (source.enabled) uiString(Res.string.common_enabled) else uiString(Res.string.common_inactive),
                 color = MaterialTheme.colorScheme.primary
             )
         }
@@ -1784,21 +1823,21 @@ internal fun LyricsSourceCard(
                 is top.iwesley.lyn.music.core.model.WorkflowLyricsSourceConfig -> {
                     MainShellAssistChip(
                         onClick = {},
-                        label = { Text("WORKFLOW") },
+                        label = { Text(uiString(Res.string.settings_workflow_source)) },
                         leadingIcon = { Icon(Icons.Rounded.CloudSync, null) })
                     MainShellAssistChip(
                         onClick = {},
-                        label = { Text("${source.lyrics.steps.size} 步") },
+                        label = { Text(uiString(Res.plurals.workflow_step_count, (source.lyrics.steps.size).toInt(), source.lyrics.steps.size)) },
                         leadingIcon = { Icon(Icons.Rounded.GraphicEq, null) })
                 }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onToggleEnabled) {
-                Text(if (source.enabled) "停用" else "启用")
+                Text(if (source.enabled) uiString(Res.string.common_deactivate) else uiString(Res.string.common_enable))
             }
             TextButton(onClick = onDelete) {
-                Text("删除")
+                Text(uiString(Res.string.common_delete))
             }
         }
     }
@@ -1866,7 +1905,7 @@ internal fun BannerCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(message, modifier = Modifier.weight(1f))
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(uiString(Res.string.common_close)) }
         }
     }
 }
@@ -2607,11 +2646,12 @@ internal fun <T : Enum<T>> EnumSelector(
     }
 }
 
+@Composable
 internal fun modeLabel(mode: PlaybackMode): String {
     return when (mode) {
-        PlaybackMode.ORDER -> "顺序播放"
-        PlaybackMode.SHUFFLE -> "随机播放"
-        PlaybackMode.REPEAT_ONE -> "单曲循环"
+        PlaybackMode.ORDER -> uiString(Res.string.player_sequential_mode)
+        PlaybackMode.SHUFFLE -> uiString(Res.string.player_shuffle_mode)
+        PlaybackMode.REPEAT_ONE -> uiString(Res.string.player_repeat_one_mode)
     }
 }
 
@@ -2644,12 +2684,13 @@ internal fun formatLyricsCandidateDuration(durationSeconds: Int): String {
     }
 }
 
+@Composable
 internal fun trackDisplayFormat(track: Track): String {
     return track.relativePath
         .substringAfterLast('.', "")
         .takeIf { it.isNotBlank() }
         ?.uppercase()
-        ?: "未知"
+        ?: uiString(Res.string.common_unknown)
 }
 
 internal fun formatTrackAudioQuality(track: Track): String? {
@@ -2665,31 +2706,35 @@ internal fun formatTrackAudioQuality(track: Track): String? {
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
-internal fun formatTrackTechnicalSummary(track: Track): String {
-    return listOfNotNull(
-        trackDisplayFormat(track),
-        formatTrackAudioQuality(track),
-        formatTrackSize(track.sizeBytes),
-    ).joinToString(" · ")
-}
+internal fun formatTrackTechnicalSummaryText(track: Track): UiText = UiText.Joined(listOfNotNull(
+    track.relativePath.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.uppercase()?.let(UiText::Raw) ?: uiText(Res.string.common_unknown),
+    formatTrackAudioQuality(track)?.let(UiText::Raw),
+    formatTrackSizeText(track.sizeBytes),
+))
+@Composable
+internal fun formatTrackTechnicalSummary(track: Track): String = formatTrackTechnicalSummaryText(track).displayText()
 
 private fun formatSamplingRate(samplingRateHz: Int): String {
     val decimals = if (samplingRateHz % 1_000 == 0) 0 else 1
     return "${roundTo(samplingRateHz / 1_000.0, decimals)}kHz"
 }
 
-internal fun formatTrackSize(sizeBytes: Long): String {
-    if (sizeBytes <= 0L) return "未知"
+internal fun formatTrackSizeText(sizeBytes: Long): UiText {
+    if (sizeBytes <= 0L) return uiText(Res.string.common_unknown)
     val kb = 1024.0
     val mb = kb * 1024.0
     val gb = mb * 1024.0
-    return when {
+    val value = when {
         sizeBytes >= gb -> "${roundTo((sizeBytes / gb), 2)} GB"
         sizeBytes >= mb -> "${roundTo((sizeBytes / mb), 1)} MB"
         sizeBytes >= kb -> "${roundTo((sizeBytes / kb), 0)} KB"
         else -> "$sizeBytes B"
     }
+    return UiText.Raw(value)
 }
+
+@Composable
+internal fun formatTrackSize(sizeBytes: Long): String = formatTrackSizeText(sizeBytes).displayText()
 
 private fun roundTo(value: Double, decimals: Int): String {
     if (decimals <= 0) return value.roundToInt().toString()
@@ -2697,3 +2742,14 @@ private fun roundTo(value: Double, decimals: Int): String {
     val rounded = (value * factor).roundToInt() / factor
     return rounded.toString()
 }
+
+@Composable
+internal fun BannerCard(message: top.iwesley.lyn.music.core.model.UiText, onDismiss: () -> Unit) =
+    BannerCard(message.displayText(), onDismiss)
+
+@Composable
+internal fun ToastCard(message: top.iwesley.lyn.music.core.model.UiText, modifier: Modifier = Modifier) =
+    ToastCard(message.displayText(), modifier)
+
+@Composable
+private fun DownloadMenuTrailingSizeText(value: top.iwesley.lyn.music.core.model.UiText) = DownloadMenuTrailingSizeText(value.displayText())

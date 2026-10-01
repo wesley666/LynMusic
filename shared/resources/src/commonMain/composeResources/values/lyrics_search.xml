@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lyrics_workflow_candidate_apply_hint">Apply or Apply lyrics only will fetch the lyrics for this candidate.</string>
+    <string name="lyrics_sync_mode_line">Line by line</string>
+    <string name="lyrics_sync_mode_plain_text">Plain text</string>
+    <string name="lyrics_sync_mode_word">Word by word</string>
+</resources>

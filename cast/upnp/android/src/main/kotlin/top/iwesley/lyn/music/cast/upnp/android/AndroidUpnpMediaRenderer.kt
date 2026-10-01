@@ -1,11 +1,15 @@
 package top.iwesley.lyn.music.cast.upnp.android
 
+import top.iwesley.lyn.music.resources.*
+
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.Build
 import java.util.UUID
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 
@@ -23,7 +27,7 @@ class AndroidUpnpMediaRenderer(
         get() = nativeHandle != 0L
 
     @Synchronized
-    fun start(): String? {
+    fun start(): UiText? {
         if (nativeHandle != 0L) return null
         val handle = runCatching {
             System.loadLibrary("lyn_upnp_cast")
@@ -34,17 +38,17 @@ class AndroidUpnpMediaRenderer(
             )
         }.getOrElse { throwable ->
             logger.error(RENDERER_LOG_TAG, throwable) { "load-native-upnp-renderer-failed" }
-            return "当前设备暂不支持 DLNA 接收。"
+            return uiText(Res.string.renderer_unavailable)
         }
         if (handle == 0L) {
-            return "DLNA 接收端初始化失败。"
+            return uiText(Res.string.renderer_initialize_failed)
         }
         nativeHandle = handle
         acquireMulticastLock()
         val error = nativeStartRenderer(handle)
         if (error != null) {
             release()
-            return error
+            return nativeRendererErrorText(error)
         }
         updateTransportState(UpnpRendererTransportState.NoMediaPresent)
         logger.info(RENDERER_LOG_TAG) { "upnp-renderer-started name=$friendlyName" }

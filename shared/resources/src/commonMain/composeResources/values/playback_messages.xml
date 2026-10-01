@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cast_search_nearby">Search for nearby devices</string>
+    <string name="cast_unknown_device">Unknown device</string>
+    <string name="cast_searching">Searching for nearby devices</string>
+    <string name="cast_connecting_device">Connecting to %1$s</string>
+    <string name="cast_connecting">Connecting to a device</string>
+    <string name="cast_connected_device">Casting to %1$s</string>
+    <string name="cast_casting">Casting</string>
+    <string name="cast_failed">Casting failed.</string>
+    <string name="cast_platform_unsupported">Casting is not supported on this platform.</string>
+    <string name="cast_device_unsupported">Casting is not supported on this device.</string>
+    <string name="cast_control_uninitialized">The UPnP control point is not initialized.</string>
+    <string name="cast_discovery_failed">Failed to search for casting devices.</string>
+    <string name="cast_device_not_found">The selected casting device was not found.</string>
+    <string name="cast_send_uri_failed">Failed to send the casting URL.</string>
+    <string name="cast_start_failed">Failed to start casting playback.</string>
+    <string name="cast_resume_failed">Failed to resume casting playback.</string>
+    <string name="cast_pause_failed">Failed to pause casting.</string>
+    <string name="cast_seek_failed">Failed to seek during casting.</string>
+    <string name="cast_stop_failed">Failed to stop casting.</string>
+    <string name="playback_vlc_unavailable">VLC was not detected. Install VLC or choose its path in Settings.</string>
+    <string name="playback_vlc_initializing">Initializing VLC. VLC may need to be installed.</string>
+    <string name="playback_media_failed">The desktop player cannot play this media.</string>
+    <string name="playback_access_failed">Failed to access the song: %1$s</string>
+    <string name="playback_unknown_error">Unknown error</string>
+    <plurals name="cast_devices_found">
+        <item quantity="one">Found %1$s device</item>
+        <item quantity="other">Found %1$s devices</item>
+    </plurals>
+</resources>

@@ -9,6 +9,11 @@ import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.platform.loadBundledDefaultCoverBytes
 
 class BundledDefaultCoverResourceTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
 
     @Test
     fun `bundled default cover bytes are readable and decodable`() {

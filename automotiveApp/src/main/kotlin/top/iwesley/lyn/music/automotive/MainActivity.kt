@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.automotive
 
+import top.iwesley.lyn.music.core.model.ProvideUiLanguage
+
+import top.iwesley.lyn.music.resources.*
+
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Build
@@ -69,22 +73,26 @@ class MainActivity : ComponentActivity() {
         handleExternalAudioOpenIntent(intent)
 
         setContent {
-            val appComponent = appComponentResult.getOrNull()
-            if (appComponent != null) {
-                val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
-                ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                    App(
-                        component = appComponent,
-                        startupAutoOpenGate = startupAutoOpenViewModel.gate,
+            ProvideUiLanguage {
+                val appComponent = appComponentResult.getOrNull()
+                if (appComponent != null) {
+                    val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
+                    ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
+                        App(
+                            component = appComponent,
+                            startupAutoOpenGate = startupAutoOpenViewModel.gate,
+                        )
+                    }
+                } else {
+                    StartupDatabaseErrorScreen(
+                        error = appComponentResult.exceptionOrNull(),
+                        showDetails = false,
                     )
                 }
-            } else {
-                StartupDatabaseErrorScreen(
-                    error = appComponentResult.exceptionOrNull(),
-                    showDetails = false,
-                )
+
+
             }
-        }
+}
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -122,7 +130,7 @@ class MainActivity : ComponentActivity() {
             )
             if (requestId != externalAudioOpenRequestId) return@launch
             if (tracks.isEmpty()) {
-                Toast.makeText(this@MainActivity, "无法打开该音频文件。", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, top.iwesley.lyn.music.platform.resolveNativeUiString(Res.string.playback_audio_open_failed), Toast.LENGTH_SHORT).show()
                 return@launch
             }
             component.playerStore.dispatch(PlayerIntent.PlayTransientTracks(tracks, 0))

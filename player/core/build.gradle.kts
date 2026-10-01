@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
     alias(libs.plugins.androidLibrary)
 }
 
@@ -26,6 +28,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":shared:resources"))
             api(project(":cast:api"))
             implementation(project(":shared:core"))
             implementation(project(":shared:data"))
@@ -38,6 +41,7 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {
+            implementation(compose.desktop.currentOs)
             implementation(libs.kotlin.testJunit)
             implementation(libs.kotlinx.coroutines.test)
         }

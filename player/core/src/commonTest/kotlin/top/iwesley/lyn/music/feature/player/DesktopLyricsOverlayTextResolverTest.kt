@@ -7,6 +7,11 @@ import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 
 class DesktopLyricsOverlayTextResolverTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `highlighted visible line wins`() {
         val lyrics = lyricsDocument(
@@ -15,7 +20,7 @@ class DesktopLyricsOverlayTextResolverTest {
         )
 
         assertEquals(
-            "第二句",
+            top.iwesley.lyn.music.core.model.UiText.Raw("第二句"),
             resolveDesktopLyricsOverlayText(
                 lyrics = lyrics,
                 highlightedLineIndex = 1,
@@ -33,7 +38,7 @@ class DesktopLyricsOverlayTextResolverTest {
         )
 
         assertEquals(
-            "可见歌词",
+            top.iwesley.lyn.music.core.model.UiText.Raw("可见歌词"),
             resolveDesktopLyricsOverlayText(
                 lyrics = lyrics,
                 highlightedLineIndex = 0,

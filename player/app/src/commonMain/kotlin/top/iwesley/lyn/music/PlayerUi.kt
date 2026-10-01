@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiText
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -134,7 +139,8 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.cast.CastSessionState
 import top.iwesley.lyn.music.cast.CastSessionStatus
-import top.iwesley.lyn.music.cast.castSessionStatusLabel
+import top.iwesley.lyn.music.cast.castSessionStatusText
+import top.iwesley.lyn.music.cast.displayNameText
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
@@ -401,20 +407,20 @@ internal fun QueueDrawer(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("播放队列", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                            Text(uiString(Res.string.player_queue_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                             Text(
-                                "${state.snapshot.queue.size} 首 · ${modeLabel(state.snapshot.mode)}",
+                                uiString(Res.plurals.player_queue_summary, (state.snapshot.queue.size).toInt(), state.snapshot.queue.size, modeLabel(state.snapshot.mode)),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         TextButton(onClick = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) }) {
-                            Text("关闭")
+                            Text(uiString(Res.string.common_close))
                         }
                     }
                     if (state.snapshot.queue.isEmpty()) {
                         EmptyStateCard(
-                            title = "当前没有播放队列",
-                            body = "从曲库或喜欢页播放歌曲后，这里会显示当前队列。",
+                            title = uiString(Res.string.player_restored_queue_empty),
+                            body = uiString(Res.string.player_queue_empty_hint),
                         )
                     } else {
                         LazyColumn(
@@ -552,7 +558,7 @@ private fun MiniPlayerBar(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                    text = snapshot.currentDisplayArtistName ?: uiString(Res.string.common_unknown_artist),
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -650,9 +656,9 @@ private fun AutomotiveLandscapeMiniPlayerBar(
 ) {
     val actionTint = Color.White.copy(alpha = 0.96f)
     val supportingText = lyricsText
-        ?.takeIf { hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = it) }
+        ?.takeIf { hasMiniPlayerLyricsContent(showPortraitLyrics = true, lyricsText = it, loadingText = MINI_PLAYER_LYRICS_LOADING_TEXT) }
         ?: snapshot.currentDisplayArtistName
-        ?: "未知艺人"
+        ?: uiString(Res.string.common_unknown_artist)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -679,7 +685,7 @@ private fun AutomotiveLandscapeMiniPlayerBar(
                         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipPrevious) }, modifier = Modifier.size(46.dp)) {
                             Icon(
                                 imageVector = Icons.Rounded.SkipPrevious,
-                                contentDescription = "上一首",
+                                contentDescription = uiString(Res.string.player_previous_track),
                                 tint = actionTint,
                                 modifier = Modifier.size(26.dp),
                             )
@@ -690,7 +696,7 @@ private fun AutomotiveLandscapeMiniPlayerBar(
                         IconButton(onClick = { onPlayerIntent(PlayerIntent.TogglePlayPause) }, modifier = Modifier.size(58.dp)) {
                             Icon(
                                 imageVector = if (snapshot.isPlaying) Icons.Rounded.PauseCircle else Icons.Rounded.PlayCircle,
-                                contentDescription = if (snapshot.isPlaying) "暂停" else "播放",
+                                contentDescription = if (snapshot.isPlaying) uiString(Res.string.player_pause) else uiString(Res.string.player_play),
                                 tint = actionTint,
                                 modifier = Modifier.size(44.dp),
                             )
@@ -701,7 +707,7 @@ private fun AutomotiveLandscapeMiniPlayerBar(
                         IconButton(onClick = { onPlayerIntent(PlayerIntent.SkipNext) }, modifier = Modifier.size(46.dp)) {
                             Icon(
                                 imageVector = Icons.Rounded.SkipNext,
-                                contentDescription = "下一首",
+                                contentDescription = uiString(Res.string.player_next_track),
                                 tint = actionTint,
                                 modifier = Modifier.size(26.dp),
                             )
@@ -819,14 +825,14 @@ private fun MiniPlayerHydratingBar(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = "正在恢复上次播放",
+                text = uiString(Res.string.player_restoring_playback_title),
                 color = glassStyle?.content ?: LocalContentColor.current,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "播放队列和进度会在后台继续加载。",
+                text = uiString(Res.string.player_restoring_playback_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = glassStyle?.secondaryContent ?: Color.White.copy(alpha = 0.78f),
                 maxLines = 1,
@@ -861,6 +867,7 @@ private fun MobileMiniPlayerBar(
     val showLyrics = hasMiniPlayerLyricsContent(
         showPortraitLyrics = showPortraitLyrics,
         lyricsText = lyricsText,
+        loadingText = MINI_PLAYER_LYRICS_LOADING_TEXT,
     )
     var preferLyricsView by remember(snapshot.currentTrack?.id) { mutableStateOf(false) }
     LaunchedEffect(snapshot.currentTrack?.id, showLyrics) {
@@ -943,7 +950,7 @@ private fun MobileMiniPlayerBar(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                        text = snapshot.currentDisplayArtistName ?: uiString(Res.string.common_unknown_artist),
                         style = MaterialTheme.typography.bodySmall,
                         color = glassStyle?.secondaryContent ?: Color.White.copy(alpha = 0.72f),
                         maxLines = 1,
@@ -983,17 +990,7 @@ private fun MobileMiniPlayerBar(
 
 @Composable
 private fun rememberMiniPlayerLyricsText(state: PlayerState): String? {
-    return remember(
-        state.lyrics,
-        state.highlightedLineIndex,
-        state.isLyricsLoading,
-    ) {
-        resolveMiniPlayerLyricsText(
-            lyrics = state.lyrics,
-            highlightedLineIndex = state.highlightedLineIndex,
-            isLyricsLoading = state.isLyricsLoading,
-        )
-    }
+    return resolveMiniPlayerLyricsText(state.lyrics, state.highlightedLineIndex, state.isLyricsLoading)
 }
 
 @Composable
@@ -1030,16 +1027,12 @@ private fun resolveHighlightedOrFirstLyricsText(
         ?.takeIf { it.isNotEmpty() }
 }
 
-internal fun resolveMiniPlayerLyricsText(
-    lyrics: LyricsDocument?,
-    highlightedLineIndex: Int,
-    isLyricsLoading: Boolean,
-): String? {
-    return resolveHighlightedOrFirstLyricsText(
-        lyrics = lyrics,
-        highlightedLineIndex = highlightedLineIndex,
-    ) ?: if (isLyricsLoading) MINI_PLAYER_LYRICS_LOADING_TEXT else null
-}
+internal fun resolveMiniPlayerLyricsDescription(lyrics: LyricsDocument?, highlightedLineIndex: Int, isLyricsLoading: Boolean): UiText? =
+    resolveHighlightedOrFirstLyricsText(lyrics, highlightedLineIndex)?.let(UiText::Raw)
+        ?: if (isLyricsLoading) uiText(Res.string.player_preparing_lyrics) else null
+@Composable
+internal fun resolveMiniPlayerLyricsText(lyrics: LyricsDocument?, highlightedLineIndex: Int, isLyricsLoading: Boolean): String? =
+    resolveMiniPlayerLyricsDescription(lyrics, highlightedLineIndex, isLyricsLoading)?.displayText()
 
 internal fun resolveCompactPlayerLyricsText(
     lyrics: LyricsDocument?,
@@ -1114,13 +1107,14 @@ internal fun resolvePlayerSeekPositionMs(
 internal fun hasMiniPlayerLyricsContent(
     showPortraitLyrics: Boolean,
     lyricsText: String?,
+    loadingText: String? = null,
 ): Boolean {
     return showPortraitLyrics &&
         !lyricsText.isNullOrBlank() &&
-        lyricsText != MINI_PLAYER_LYRICS_LOADING_TEXT
+        lyricsText != loadingText
 }
 
-private const val MINI_PLAYER_LYRICS_LOADING_TEXT = "正在准备歌词"
+private val MINI_PLAYER_LYRICS_LOADING_TEXT: String @Composable get() = uiString(Res.string.player_preparing_lyrics)
 
 @Composable
 private fun MiniPlayerPlaybackProgress(
@@ -1393,7 +1387,7 @@ private fun PlayerOverlay(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.KeyboardArrowDown,
-                                    contentDescription = "收起播放页",
+                                    contentDescription = uiString(Res.string.player_collapse),
                                     tint = Color.White.copy(alpha = 0.92f),
                                     modifier = Modifier.size(34.dp),
                                 )
@@ -1410,7 +1404,7 @@ private fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Share,
-                                            contentDescription = "分享歌词",
+                                            contentDescription = uiString(Res.string.lyrics_share_action),
                                             tint = if (state.lyrics != null && !state.isLyricsLoading) {
                                                 Color.White.copy(alpha = 0.92f)
                                             } else {
@@ -1425,7 +1419,7 @@ private fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Search,
-                                            contentDescription = "手动搜索",
+                                            contentDescription = uiString(Res.string.lyrics_manual_search_action),
                                             tint = Color.White.copy(alpha = 0.92f),
                                             modifier = Modifier.size(24.dp),
                                         )
@@ -1436,7 +1430,7 @@ private fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Fullscreen,
-                                            contentDescription = "纯净模式",
+                                            contentDescription = uiString(Res.string.player_clean_mode),
                                             tint = Color.White.copy(alpha = 0.92f),
                                             modifier = Modifier.size(24.dp),
                                         )
@@ -1454,7 +1448,7 @@ private fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Share,
-                                            contentDescription = "分享歌词",
+                                            contentDescription = uiString(Res.string.lyrics_share_action),
                                             tint = if (state.lyrics != null && !state.isLyricsLoading) {
                                                 Color.White.copy(alpha = 0.92f)
                                             } else {
@@ -1469,7 +1463,7 @@ private fun PlayerOverlay(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.Search,
-                                            contentDescription = "手动搜索",
+                                            contentDescription = uiString(Res.string.lyrics_manual_search_action),
                                             tint = Color.White.copy(alpha = 0.92f),
                                             modifier = Modifier.size(24.dp),
                                         )
@@ -1552,7 +1546,7 @@ private fun PlayerOverlay(
                             sleepTimer = state.sleepTimer,
                             castState = state.castState,
                             isCastSheetVisible = state.isCastSheetVisible,
-                            castMessage = state.castMessage,
+                            castMessage = state.castMessage?.displayText(),
                             track = track,
                             mobilePlayback = mobilePlayback,
                             wide = wide,
@@ -1917,7 +1911,7 @@ private fun PlayerBottomControls(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = snapshot.currentDisplayArtistName ?: "未知艺人",
+                        text = snapshot.currentDisplayArtistName ?: uiString(Res.string.common_unknown_artist),
                         modifier = if (artistNavigationTarget != null) {
                             Modifier
                                 .clip(RoundedCornerShape(8.dp))
@@ -2253,7 +2247,7 @@ private fun QueueToggleButton(
     IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
-            contentDescription = "播放队列",
+            contentDescription = uiString(Res.string.player_queue_title),
             tint = tint,
             modifier = Modifier.size(iconSize),
         )
@@ -2270,7 +2264,7 @@ private fun AddToPlaylistButton(
     IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.Rounded.Add,
-            contentDescription = "加入歌单",
+            contentDescription = uiString(Res.string.playlist_add_track),
             tint = tint,
             modifier = Modifier.size(iconSize),
         )
@@ -2288,7 +2282,7 @@ private fun SleepTimerButton(
     IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.Rounded.Timer,
-            contentDescription = "定时关闭",
+            contentDescription = uiString(Res.string.player_sleep_timer_title),
             tint = if (sleepTimer.isActive) Color(0xFFE5484D) else tint,
             modifier = Modifier.size(iconSize),
         )
@@ -2305,7 +2299,7 @@ private fun CompactPlayerMoreButton(
     IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) {
         Icon(
             imageVector = Icons.Rounded.MoreVert,
-            contentDescription = "更多操作",
+            contentDescription = uiString(Res.string.common_more_actions),
             tint = tint,
             modifier = Modifier.size(iconSize),
         )
@@ -2379,7 +2373,7 @@ private fun CompactPlayerMoreSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "更多操作",
+                    text = uiString(Res.string.common_more_actions),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -2403,7 +2397,7 @@ private fun CompactPlayerMoreSheet(
                 currentPlaybackAudioQuality?.let { qualityText ->
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "当前播放音质",
+                        title = uiString(Res.string.player_current_quality_label),
                         value = qualityText,
                         enabled = true,
                         clickable = false,
@@ -2413,23 +2407,23 @@ private fun CompactPlayerMoreSheet(
                 if (showEqualizerEntry) {
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "均衡器",
-                        value = "音效调节",
+                        title = uiString(Res.string.settings_equalizer_title),
+                        value = uiString(Res.string.player_sound_settings_title),
                         enabled = true,
                         onClick = onOpenEqualizer,
                     )
                 }
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Cast,
-                    title = "投屏",
-                    value = castMessage ?: castSessionStatusLabel(castState),
+                    title = uiString(Res.string.player_cast_action),
+                    value = castMessage ?: castSessionStatusText(castState).displayText(),
                     enabled = true,
                     onClick = onOpenCast,
                 )
                 if (showOfflineDownload) {
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.Download,
-                        title = "离线下载",
+                        title = uiString(Res.string.player_offline_downloads_title),
                         value = offlineDownloadStatus,
                         enabled = true,
                         onClick = onOpenOfflineDownload,
@@ -2437,28 +2431,28 @@ private fun CompactPlayerMoreSheet(
                 }
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Person,
-                    title = "歌手",
+                    title = uiString(Res.string.common_artist),
                     value = compactPlayerMoreArtistLabel(snapshot, track),
                     enabled = artistTarget != null,
                     onClick = { artistTarget?.let(onOpenLibraryNavigationTarget) },
                 )
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Album,
-                    title = "专辑",
+                    title = uiString(Res.string.library_albums_title),
                     value = compactPlayerMoreAlbumLabel(snapshot, track),
                     enabled = albumTarget != null,
                     onClick = { albumTarget?.let(onOpenLibraryNavigationTarget) },
                 )
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Add,
-                    title = "加入歌单",
-                    value = "收藏到歌单",
+                    title = uiString(Res.string.playlist_add_track),
+                    value = uiString(Res.string.playlist_save_action),
                     enabled = true,
                     onClick = onOpenAddToPlaylist,
                 )
                 CompactPlayerMoreSheetRow(
                     icon = Icons.Rounded.Timer,
-                    title = "定时关闭",
+                    title = uiString(Res.string.player_sleep_timer_title),
                     value = sleepTimerStatusText(sleepTimer),
                     enabled = true,
                     onClick = onOpenSleepTimer,
@@ -2481,7 +2475,7 @@ private fun CastDeviceBottomSheet(
     val shellColors = mainShellColors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val appDensity = LocalDensity.current
-    val statusText = castMessage ?: castState.errorMessage ?: castSessionStatusLabel(castState)
+    val statusText = castMessage ?: castSessionStatusText(castState).displayText()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -2511,7 +2505,7 @@ private fun CastDeviceBottomSheet(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "投屏",
+                    text = uiString(Res.string.player_cast_action),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -2544,7 +2538,7 @@ private fun CastDeviceBottomSheet(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("重新搜索", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(uiString(Res.string.cast_search_again_action), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (castState.isCasting) {
                         Button(
@@ -2557,15 +2551,15 @@ private fun CastDeviceBottomSheet(
                                 modifier = Modifier.size(18.dp),
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("停止投屏", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(uiString(Res.string.cast_stop_action), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
                 if (castState.devices.isEmpty()) {
                     CompactPlayerMoreSheetRow(
                         icon = Icons.Rounded.Cast,
-                        title = if (castState.isSearching) "正在搜索设备" else "未发现设备",
-                        value = if (castState.isSearching) "请确认电视和手机在同一网络" else "点击重新搜索再试一次",
+                        title = if (castState.isSearching) uiString(Res.string.cast_searching_devices_status) else uiString(Res.string.cast_devices_empty_title),
+                        value = if (castState.isSearching) uiString(Res.string.cast_same_network_hint) else uiString(Res.string.cast_search_retry_hint),
                         enabled = false,
                         onClick = {},
                     )
@@ -2580,10 +2574,10 @@ private fun CastDeviceBottomSheet(
                             val isSelected = castState.selectedDeviceId == device.id
                             CompactPlayerMoreSheetRow(
                                 icon = Icons.Rounded.Cast,
-                                title = device.name,
+                                title = device.displayNameText().displayText(),
                                 value = when {
-                                    isSelected && castState.isCasting -> "正在播放"
-                                    isSelected && castState.isConnecting -> "正在连接"
+                                    isSelected && castState.isCasting -> uiString(Res.string.player_playing_status)
+                                    isSelected && castState.isConnecting -> uiString(Res.string.player_connecting_status)
                                     else -> device.description ?: device.location ?: "DLNA Renderer"
                                 },
                                 enabled = !castState.isConnecting,
@@ -2694,7 +2688,7 @@ private fun SleepTimerDialog(
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
-        title = { Text("定时关闭", fontWeight = FontWeight.Bold) },
+        title = { Text(uiString(Res.string.player_sleep_timer_title), fontWeight = FontWeight.Bold) },
         text = {
             SleepTimerPickerContent(
                 sleepTimer = sleepTimer,
@@ -2707,7 +2701,7 @@ private fun SleepTimerDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("完成")
+                Text(uiString(Res.string.common_done))
             }
         },
     )
@@ -2731,7 +2725,7 @@ private fun SleepTimerPickerContent(
     ) {
         if (showTitle) {
             Text(
-                text = "定时关闭",
+                text = uiString(Res.string.player_sleep_timer_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
@@ -2796,9 +2790,9 @@ private fun SleepTimerPickerControls(
             ) {
                 Text(
                     text = if (sleepTimer.isActive) {
-                        "已定时 ${formatSleepTimerRemaining(sleepTimer.remainingMs)}"
+                        uiString(Res.string.player_sleep_timer_scheduled, formatSleepTimerRemaining(sleepTimer.remainingMs))
                     } else {
-                        "选择关闭时间"
+                        uiString(Res.string.player_sleep_timer_stop_time)
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -2806,7 +2800,7 @@ private fun SleepTimerPickerControls(
             }
             if (sleepTimer.isActive) {
                 TextButton(onClick = onCancelTimer) {
-                    Text("关闭定时")
+                    Text(uiString(Res.string.player_sleep_timer_disable))
                 }
             }
         }
@@ -2832,14 +2826,14 @@ private fun SleepTimerPickerControls(
                 value = customMinutesText,
                 onValueChange = { onCustomMinutesTextChanged(it.filter { char -> char.isDigit() }.take(3)) },
                 modifier = Modifier.weight(1f),
-                label = { Text("自定义分钟") },
+                label = { Text(uiString(Res.string.player_sleep_timer_custom_minutes)) },
                 singleLine = true,
             )
             Button(
                 onClick = { customMinutes?.let(onStartTimer) },
                 enabled = customMinutes != null,
             ) {
-                Text("开始")
+                Text(uiString(Res.string.common_start))
             }
         }
     }
@@ -2932,22 +2926,24 @@ private fun CompactPlayerMoreSheetRow(
     }
 }
 
+@Composable
 private fun compactPlayerMoreArtistLabel(
     snapshot: PlaybackSnapshot,
     track: Track,
 ): String {
     return snapshot.currentDisplayArtistName?.trim()?.takeIf { it.isNotBlank() }
         ?: track.artistName?.trim()?.takeIf { it.isNotBlank() }
-        ?: "未知艺人"
+        ?: uiString(Res.string.common_unknown_artist)
 }
 
+@Composable
 private fun compactPlayerMoreAlbumLabel(
     snapshot: PlaybackSnapshot,
     track: Track,
 ): String {
     return snapshot.currentDisplayAlbumTitle?.trim()?.takeIf { it.isNotBlank() }
         ?: track.albumTitle?.trim()?.takeIf { it.isNotBlank() }
-        ?: "本地曲目"
+        ?: uiString(Res.string.source_local_track_label)
 }
 
 private fun compactPlayerMoreTrackTitle(
@@ -2957,13 +2953,19 @@ private fun compactPlayerMoreTrackTitle(
     return snapshot.currentDisplayTitle.ifBlank { track.title }
 }
 
+internal fun formatCurrentNavidromePlaybackAudioQualityText(
+    track: Track,
+    audioQuality: NavidromeAudioQuality?,
+): UiText? {
+    if (parseSubsonicCompatibleSongLocator(track.mediaLocator) == null) return null
+    return audioQuality?.let { navidromeAudioQualityLabelText(it) }
+}
+
+@Composable
 internal fun formatCurrentNavidromePlaybackAudioQuality(
     track: Track,
     audioQuality: NavidromeAudioQuality?,
-): String? {
-    if (parseSubsonicCompatibleSongLocator(track.mediaLocator) == null) return null
-    return audioQuality?.let(::navidromeAudioQualityLabel)
-}
+): String? = formatCurrentNavidromePlaybackAudioQualityText(track, audioQuality)?.displayText()
 
 internal fun formatCurrentPlaybackAudioFormat(audioFormat: PlaybackAudioFormat?): String? {
     audioFormat ?: return null
@@ -2974,33 +2976,38 @@ internal fun formatCurrentPlaybackAudioFormat(audioFormat: PlaybackAudioFormat?)
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
-internal fun formatAndroidCurrentPlaybackAudioQuality(
-    track: Track,
-    audioFormat: PlaybackAudioFormat?,
-    navidromeQuality: NavidromeAudioQuality?,
-): String? {
-    val navidromeFallbackBitRate = navidromeQuality
-        ?.takeIf { parseSubsonicCompatibleSongLocator(track.mediaLocator) != null }
-        ?.let(::formatNavidromePlaybackBitRateFallback)
-    return listOfNotNull(
-        audioFormat?.samplingRateHz?.takeIf { it > 0 }?.let(::formatPlaybackSamplingRate),
-        audioFormat?.bitRateBps?.takeIf { it > 0 }?.let(::formatPlaybackBitRate) ?: navidromeFallbackBitRate,
-        audioFormat?.channelCount?.takeIf { it > 0 }?.let { "${it}ch" },
-    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+internal fun formatAndroidCurrentPlaybackAudioQualityText(track: Track, audioFormat: PlaybackAudioFormat?, navidromeQuality: NavidromeAudioQuality?): UiText? {
+    val fallback = navidromeQuality?.takeIf { parseSubsonicCompatibleSongLocator(track.mediaLocator) != null }?.let {
+        if (it == NavidromeAudioQuality.Original) uiText(Res.string.common_original)
+        else UiText.Raw("${it.maxBitRateKbps}kbps")
+    }
+    val parts = listOfNotNull(
+        audioFormat?.samplingRateHz?.takeIf { it > 0 }?.let { UiText.Raw(formatPlaybackSamplingRate(it)) },
+        audioFormat?.bitRateBps?.takeIf { it > 0 }?.let { UiText.Raw(formatPlaybackBitRate(it)) } ?: fallback,
+        audioFormat?.channelCount?.takeIf { it > 0 }?.let { UiText.Raw("${it}ch") },
+    )
+    return parts.takeIf { it.isNotEmpty() }?.let { UiText.Joined(it) }
 }
+@Composable
+internal fun formatAndroidCurrentPlaybackAudioQuality(track: Track, audioFormat: PlaybackAudioFormat?, navidromeQuality: NavidromeAudioQuality?): String? =
+    formatAndroidCurrentPlaybackAudioQualityText(track, audioFormat, navidromeQuality)?.displayText()
 
-internal fun compactPlayerOfflineDownloadStatusLabel(download: OfflineDownload?): String {
+internal fun compactPlayerOfflineDownloadStatusLabelText(download: OfflineDownload?): UiText {
     return when (download?.status) {
         OfflineDownloadStatus.Pending,
-        OfflineDownloadStatus.Downloading -> "正在下载"
-        OfflineDownloadStatus.Completed -> "已离线"
-        OfflineDownloadStatus.Failed -> "下载失败"
-        null -> "下载到本机"
+        OfflineDownloadStatus.Downloading -> uiText(Res.string.offline_downloading_status)
+        OfflineDownloadStatus.Completed -> uiText(Res.string.offline_available_badge)
+        OfflineDownloadStatus.Failed -> uiText(Res.string.offline_download_failed_status)
+        null -> uiText(Res.string.offline_download_to_device)
     }
 }
 
+@Composable
+internal fun compactPlayerOfflineDownloadStatusLabel(download: OfflineDownload?): String = compactPlayerOfflineDownloadStatusLabelText(download).displayText()
+
+@Composable
 private fun formatNavidromePlaybackBitRateFallback(quality: NavidromeAudioQuality): String {
-    return quality.maxBitRateKbps?.let { "${it}kbps" } ?: "原始"
+    return quality.maxBitRateKbps?.let { "${it}kbps" } ?: uiString(Res.string.common_original)
 }
 
 private fun formatPlaybackSamplingRate(samplingRateHz: Int): String {
@@ -3031,13 +3038,16 @@ internal fun formatSleepTimerRemaining(remainingMs: Long): String {
     }
 }
 
-internal fun sleepTimerStatusText(sleepTimer: SleepTimerState): String {
+internal fun sleepTimerStatusTextText(sleepTimer: SleepTimerState): UiText {
     return if (sleepTimer.isActive) {
-        "剩余 ${formatSleepTimerRemaining(sleepTimer.remainingMs)}"
+        uiText(Res.string.player_sleep_timer_remaining, formatSleepTimerRemaining(sleepTimer.remainingMs))
     } else {
-        "未开启"
+        uiText(Res.string.player_feature_not_enabled)
     }
 }
+
+@Composable
+internal fun sleepTimerStatusText(sleepTimer: SleepTimerState): String = sleepTimerStatusTextText(sleepTimer).displayText()
 
 @Composable
 private fun PlaybackProgress(
@@ -3397,9 +3407,9 @@ private fun QueueTrackRow(
                 )
                 Text(
                     text = buildString {
-                        append(track.artistName ?: "未知艺人")
+                        append(track.artistName ?: uiString(Res.string.common_unknown_artist))
                         if (isCurrent) {
-                            append(if (isPlaying) " · 正在播放" else " · 当前歌曲")
+                            append(if (isPlaying) uiString(Res.string.player_playing_track_badge) else uiString(Res.string.player_current_track_badge))
                         }
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

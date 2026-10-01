@@ -4,7 +4,15 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.resources.Res
+import top.iwesley.lyn.music.resources.update_http_failed
+import top.iwesley.lyn.music.resources.update_empty_response
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
@@ -71,7 +79,15 @@ class AppUpdateRepositoryTest {
         val result = DefaultAppUpdateRepository(httpClient).latestRelease()
 
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("HTTP 404"))
+        val failure = assertIs<UiTextException>(result.exceptionOrNull())
+        assertEquals(uiText(Res.string.update_http_failed, 404), failure.text)
+        for ((language, expected) in listOf(
+            AppLanguage.English to "Update check failed: HTTP 404",
+            AppLanguage.SimplifiedChinese to "检查更新失败：HTTP 404",
+            AppLanguage.TraditionalChinese to "檢查更新失敗：HTTP 404",
+        )) {
+            assertEquals(expected, resolveUiText(failure.text, language))
+        }
     }
 
     @Test
@@ -83,7 +99,15 @@ class AppUpdateRepositoryTest {
         val result = DefaultAppUpdateRepository(httpClient).latestRelease()
 
         assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("响应为空"))
+        val failure = assertIs<UiTextException>(result.exceptionOrNull())
+        assertEquals(uiText(Res.string.update_empty_response), failure.text)
+        for ((language, expected) in listOf(
+            AppLanguage.English to "Update check failed: the response is empty.",
+            AppLanguage.SimplifiedChinese to "检查更新失败：响应为空。",
+            AppLanguage.TraditionalChinese to "檢查更新失敗：回應為空。",
+        )) {
+            assertEquals(expected, resolveUiText(failure.text, language))
+        }
     }
 
     @Test

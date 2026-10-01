@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.testing.navidromeAudioQualityLabel
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
@@ -9,29 +13,34 @@ import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.core.model.navidromeAudioQualityOrDefault
 
 class AppDisplayScalePresetTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
-    fun `preset scales stay fixed`() {
+    fun `preset scales stay fixed`() = runTest {
         assertEquals(0.9f, AppDisplayScalePreset.Compact.scale)
         assertEquals(1.0f, AppDisplayScalePreset.Default.scale)
         assertEquals(1.1f, AppDisplayScalePreset.Large.scale)
     }
 
     @Test
-    fun `invalid preset name falls back to default`() {
+    fun `invalid preset name falls back to default`() = runTest {
         assertEquals(AppDisplayScalePreset.Default, appDisplayScalePresetOrDefault(null))
         assertEquals(AppDisplayScalePreset.Default, appDisplayScalePresetOrDefault("unknown"))
         assertEquals(AppDisplayScalePreset.Compact, appDisplayScalePresetOrDefault("Compact"))
     }
 
     @Test
-    fun `effective density multiplies base density by preset scale`() {
+    fun `effective density multiplies base density by preset scale`() = runTest {
         assertEquals(2.7f, effectiveAppDisplayDensity(3f, AppDisplayScalePreset.Compact), 0.0001f)
         assertEquals(3.0f, effectiveAppDisplayDensity(3f, AppDisplayScalePreset.Default), 0.0001f)
         assertEquals(3.3f, effectiveAppDisplayDensity(3f, AppDisplayScalePreset.Large), 0.0001f)
     }
 
     @Test
-    fun `navidrome audio quality names and labels stay fixed`() {
+    fun `navidrome audio quality names and labels stay fixed`() = runTest {
         assertEquals(null, NavidromeAudioQuality.Original.maxBitRateKbps)
         assertEquals(320, NavidromeAudioQuality.Kbps320.maxBitRateKbps)
         assertEquals(192, NavidromeAudioQuality.Kbps192.maxBitRateKbps)
@@ -41,7 +50,7 @@ class AppDisplayScalePresetTest {
     }
 
     @Test
-    fun `invalid navidrome audio quality name falls back to supplied default`() {
+    fun `invalid navidrome audio quality name falls back to supplied default`() = runTest {
         assertEquals(
             NavidromeAudioQuality.Kbps192,
             navidromeAudioQualityOrDefault(null, NavidromeAudioQuality.Kbps192),

@@ -1,5 +1,10 @@
 package top.iwesley.lyn.music
 
+import androidx.compose.runtime.Composable
+
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.*
+
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,18 +33,20 @@ import top.iwesley.lyn.music.platform.JvmAppInstanceLock
 import top.iwesley.lyn.music.platform.JvmDataLocationManager
 import top.iwesley.lyn.music.platform.JvmDataLocationProgress
 import top.iwesley.lyn.music.platform.createJvmAppComponent
+import top.iwesley.lyn.music.platform.initializeJvmAppLanguage
 import top.iwesley.lyn.music.platform.isJvmWindowsOs
 
 @OptIn(ExperimentalComposeUiApi::class)
-fun main() {
+suspend fun main() {
+    initializeJvmAppLanguage()
     installJvmUncaughtExceptionHandler()
     val osName = System.getProperty("os.name").orEmpty()
     val instanceLock = if (isJvmWindowsOs(osName)) {
         runCatching { JvmAppInstanceLock.tryAcquire() }.getOrElse { error ->
-            showDesktopStartupMessage("无法启动 LynMusic：${error.message ?: error}")
+            showDesktopStartupMessage(uiText(Res.string.startup_failed_with_details, error.message ?: error))
             return
         } ?: run {
-            showDesktopStartupMessage("LynMusic 已在运行")
+            showDesktopStartupMessage(uiText(Res.string.startup_already_running))
             return
         }
     } else {
@@ -47,184 +54,188 @@ fun main() {
     }
     try {
         application {
-            val dataLocationManager = remember { JvmDataLocationManager() }
-            val startupAutoOpenGate = remember { StartupAutoOpenGate() }
-            val applicationScope = rememberCoroutineScope()
-            var startupAttempt by remember { mutableIntStateOf(0) }
-            var requiresDataLocationOperation by remember { mutableStateOf(false) }
-            var startupState by remember {
-                mutableStateOf(initialJvmDesktopStartupState())
-            }
-            val restartStartup = {
-                requiresDataLocationOperation = false
-                startupState = initialJvmDesktopStartupState()
-                startupAttempt += 1
-            }
-            LaunchedEffect(startupAttempt) {
-                val initializedStartup = initializeJvmDesktopStartup(dataLocationManager)
-                startupState = initializedStartup.state
-                requiresDataLocationOperation = initializedStartup.requiresDataLocationOperation
-            }
-            LaunchedEffect(startupAttempt, requiresDataLocationOperation) {
-                if (!requiresDataLocationOperation) return@LaunchedEffect
-                startupState = JvmDesktopStartupState.Preparing(
-                    JvmDataLocationProgress("正在读取数据位置…"),
-                )
-                val progressUpdates = Channel<JvmDataLocationProgress>(Channel.CONFLATED)
-                val progressJob = launch {
-                    for (progress in progressUpdates) {
-                        startupState = JvmDesktopStartupState.Preparing(progress)
+            ProvideUiLanguage {
+                val dataLocationManager = remember { JvmDataLocationManager() }
+                val startupAutoOpenGate = remember { StartupAutoOpenGate() }
+                val applicationScope = rememberCoroutineScope()
+                var startupAttempt by remember { mutableIntStateOf(0) }
+                var requiresDataLocationOperation by remember { mutableStateOf(false) }
+                var startupState by remember {
+                    mutableStateOf(initialJvmDesktopStartupState())
+                }
+                val restartStartup = {
+                    requiresDataLocationOperation = false
+                    startupState = initialJvmDesktopStartupState()
+                    startupAttempt += 1
+                }
+                LaunchedEffect(startupAttempt) {
+                    val initializedStartup = initializeJvmDesktopStartup(dataLocationManager)
+                    startupState = initializedStartup.state
+                    requiresDataLocationOperation = initializedStartup.requiresDataLocationOperation
+                }
+                LaunchedEffect(startupAttempt, requiresDataLocationOperation) {
+                    if (!requiresDataLocationOperation) return@LaunchedEffect
+                    startupState = JvmDesktopStartupState.Preparing(
+                        JvmDataLocationProgress(uiText(Res.string.startup_reading_location)),
+                    )
+                    val progressUpdates = Channel<JvmDataLocationProgress>(Channel.CONFLATED)
+                    val progressJob = launch {
+                        for (progress in progressUpdates) {
+                            startupState = JvmDesktopStartupState.Preparing(progress)
+                        }
                     }
+                    val locationResult = dataLocationManager.applyPendingChange { progress ->
+                        progressUpdates.trySend(progress)
+                        Unit
+                    }.onFailure { error ->
+                        logJvmStartupFailure(stage = "data-location", error = error)
+                    }
+                    progressUpdates.close()
+                    progressJob.join()
+                    startupState = locationResult.fold(
+                        onSuccess = {
+                            withContext(Dispatchers.IO) {
+                                createJvmDesktopComponentState(dataLocationManager)
+                            }
+                        },
+                        onFailure = { error ->
+                            JvmDesktopStartupState.DataLocationFailed(
+                                error = error,
+                                canCancelChange = withContext(Dispatchers.IO) {
+                                    dataLocationManager.hasPendingChangeSafely()
+                                },
+                            )
+                        },
+                    )
+                    requiresDataLocationOperation = false
                 }
-                val locationResult = dataLocationManager.applyPendingChange { progress ->
-                    progressUpdates.trySend(progress)
-                    Unit
-                }.onFailure { error ->
-                    logJvmStartupFailure(stage = "data-location", error = error)
+
+                val latestStartupState by rememberUpdatedState(startupState)
+                val componentForDisposal = (startupState as? JvmDesktopStartupState.Ready)?.component
+                DisposableEffect(componentForDisposal) {
+                    onDispose { componentForDisposal?.dispose() }
                 }
-                progressUpdates.close()
-                progressJob.join()
-                startupState = locationResult.fold(
-                    onSuccess = {
-                        withContext(Dispatchers.IO) {
-                            createJvmDesktopComponentState(dataLocationManager)
+                val desktopWindowChrome = remember {
+                    defaultDesktopWindowChrome(System.getProperty("os.name").orEmpty())
+                }
+                val windowState = rememberWindowState(
+                    size = DpSize(1440.dp, 900.dp),
+                )
+                SwingWindow(
+                    onCloseRequest = closeRequest@{
+                        val currentStartupState = latestStartupState
+                        if (!shouldAllowDesktopWindowClose(currentStartupState)) {
+                            return@closeRequest
+                        }
+                        val currentComponent = (currentStartupState as? JvmDesktopStartupState.Ready)?.component
+                        val settingsStore = currentComponent?.settingsStore
+                        val supportsMacOsWindowCloseBehavior =
+                            currentComponent?.platform?.capabilities?.supportsMacOsWindowCloseBehavior == true
+                        val persistenceCompleted = if (supportsMacOsWindowCloseBehavior && settingsStore != null) {
+                            runBlocking {
+                                withTimeoutOrNull(WINDOW_CLOSE_PREFERENCE_FLUSH_TIMEOUT_MILLIS) {
+                                    settingsStore.awaitMinimizeWindowOnClosePersistence()
+                                    true
+                                } ?: false
+                            }
+                        } else {
+                            true
+                        }
+                        val minimizeWindowOnClose = resolveMinimizeWindowOnClosePreference(
+                            persistenceCompleted = persistenceCompleted,
+                            currentValue = settingsStore?.state?.value?.minimizeWindowOnClose == true,
+                            persistedValue = settingsStore?.persistedMinimizeWindowOnClose == true,
+                        )
+                        val shouldMinimize = shouldMinimizeDesktopWindowOnClose(
+                            supportsMacOsWindowCloseBehavior = supportsMacOsWindowCloseBehavior,
+                            minimizeWindowOnClose = minimizeWindowOnClose,
+                        )
+                        if (shouldMinimize) {
+                            windowState.isMinimized = true
+                        } else {
+                            try {
+                                currentComponent?.dispose()
+                            } finally {
+                                exitApplication()
+                            }
                         }
                     },
-                    onFailure = { error ->
-                        JvmDesktopStartupState.DataLocationFailed(
-                            error = error,
-                            canCancelChange = withContext(Dispatchers.IO) {
-                                dataLocationManager.hasPendingChangeSafely()
-                            },
-                        )
+                    title = "LynMusic",
+                    state = windowState,
+                    icon = painterResource("desktop-icon.png"),
+                    init = { composeWindow ->
+                        composeWindow.minimumSize = Dimension(1200, 720)
+                        applyDesktopWindowChrome(composeWindow, desktopWindowChrome)
                     },
-                )
-                requiresDataLocationOperation = false
-            }
+                ) {
+                    when (val current = startupState) {
+                        JvmDesktopStartupState.Starting ->
+                            JvmDesktopStartingScreen()
 
-            val latestStartupState by rememberUpdatedState(startupState)
-            val componentForDisposal = (startupState as? JvmDesktopStartupState.Ready)?.component
-            DisposableEffect(componentForDisposal) {
-                onDispose { componentForDisposal?.dispose() }
-            }
-            val desktopWindowChrome = remember {
-                defaultDesktopWindowChrome(System.getProperty("os.name").orEmpty())
-            }
-            val windowState = rememberWindowState(
-                size = DpSize(1440.dp, 900.dp),
-            )
-            SwingWindow(
-                onCloseRequest = closeRequest@{
-                    val currentStartupState = latestStartupState
-                    if (!shouldAllowDesktopWindowClose(currentStartupState)) {
-                        return@closeRequest
-                    }
-                    val currentComponent = (currentStartupState as? JvmDesktopStartupState.Ready)?.component
-                    val settingsStore = currentComponent?.settingsStore
-                    val supportsMacOsWindowCloseBehavior =
-                        currentComponent?.platform?.capabilities?.supportsMacOsWindowCloseBehavior == true
-                    val persistenceCompleted = if (supportsMacOsWindowCloseBehavior && settingsStore != null) {
-                        runBlocking {
-                            withTimeoutOrNull(WINDOW_CLOSE_PREFERENCE_FLUSH_TIMEOUT_MILLIS) {
-                                settingsStore.awaitMinimizeWindowOnClosePersistence()
-                                true
-                            } ?: false
-                        }
-                    } else {
-                        true
-                    }
-                    val minimizeWindowOnClose = resolveMinimizeWindowOnClosePreference(
-                        persistenceCompleted = persistenceCompleted,
-                        currentValue = settingsStore?.state?.value?.minimizeWindowOnClose == true,
-                        persistedValue = settingsStore?.persistedMinimizeWindowOnClose == true,
-                    )
-                    val shouldMinimize = shouldMinimizeDesktopWindowOnClose(
-                        supportsMacOsWindowCloseBehavior = supportsMacOsWindowCloseBehavior,
-                        minimizeWindowOnClose = minimizeWindowOnClose,
-                    )
-                    if (shouldMinimize) {
-                        windowState.isMinimized = true
-                    } else {
-                        try {
-                            currentComponent?.dispose()
-                        } finally {
-                            exitApplication()
-                        }
-                    }
-                },
-                title = "LynMusic",
-                state = windowState,
-                icon = painterResource("desktop-icon.png"),
-                init = { composeWindow ->
-                    composeWindow.minimumSize = Dimension(1200, 720)
-                    applyDesktopWindowChrome(composeWindow, desktopWindowChrome)
-                },
-            ) {
-                when (val current = startupState) {
-                    JvmDesktopStartupState.Starting ->
-                        JvmDesktopStartingScreen()
+                        is JvmDesktopStartupState.Preparing ->
+                            StartupDataLocationProgressScreen(
+                                message = current.progress.message.displayText(),
+                                fraction = current.progress.fraction,
+                            )
 
-                    is JvmDesktopStartupState.Preparing ->
-                        StartupDataLocationProgressScreen(
-                            message = current.progress.message,
-                            fraction = current.progress.fraction,
-                        )
-
-                    is JvmDesktopStartupState.DataLocationFailed ->
-                        StartupDataLocationErrorScreen(
-                            error = current.error,
-                            canCancelChange = current.canCancelChange,
-                            onRetry = retry@{
-                                if (startupState !is JvmDesktopStartupState.DataLocationFailed) return@retry
-                                restartStartup()
-                            },
-                            onCancelChange = cancel@{
-                                if (startupState !is JvmDesktopStartupState.DataLocationFailed) return@cancel
-                                startupState = JvmDesktopStartupState.Preparing(
-                                    JvmDataLocationProgress("正在取消数据位置切换…"),
-                                )
-                                applicationScope.launch {
-                                    dataLocationManager.cancelPendingChange().fold(
-                                        onSuccess = {
-                                            restartStartup()
-                                        },
-                                        onFailure = { error ->
-                                            startupState = JvmDesktopStartupState.DataLocationFailed(
-                                                error = error,
-                                                canCancelChange = withContext(Dispatchers.IO) {
-                                                    dataLocationManager.hasPendingChangeSafely()
-                                                },
-                                            )
-                                        },
+                        is JvmDesktopStartupState.DataLocationFailed ->
+                            StartupDataLocationErrorScreen(
+                                error = current.error,
+                                canCancelChange = current.canCancelChange,
+                                onRetry = retry@{
+                                    if (startupState !is JvmDesktopStartupState.DataLocationFailed) return@retry
+                                    restartStartup()
+                                },
+                                onCancelChange = cancel@{
+                                    if (startupState !is JvmDesktopStartupState.DataLocationFailed) return@cancel
+                                    startupState = JvmDesktopStartupState.Preparing(
+                                        JvmDataLocationProgress(uiText(Res.string.startup_canceling_location_change)),
                                     )
-                                }
-                            },
-                            onExitApplication = { exitApplication() },
-                        )
+                                    applicationScope.launch {
+                                        dataLocationManager.cancelPendingChange().fold(
+                                            onSuccess = {
+                                                restartStartup()
+                                            },
+                                            onFailure = { error ->
+                                                startupState = JvmDesktopStartupState.DataLocationFailed(
+                                                    error = error,
+                                                    canCancelChange = withContext(Dispatchers.IO) {
+                                                        dataLocationManager.hasPendingChangeSafely()
+                                                    },
+                                                )
+                                            },
+                                        )
+                                    }
+                                },
+                                onExitApplication = { exitApplication() },
+                            )
 
-                    is JvmDesktopStartupState.Ready ->
-                        App(
-                            component = current.component,
-                            startupAutoOpenGate = startupAutoOpenGate,
-                            desktopWindowChrome = desktopWindowChrome,
-                            onExitApplicationRequest = {
-                                try {
-                                    current.component.dispose()
-                                } finally {
-                                    exitApplication()
-                                }
-                            },
-                            startupWarning = current.startupWarning,
-                        )
+                        is JvmDesktopStartupState.Ready ->
+                            App(
+                                component = current.component,
+                                startupAutoOpenGate = startupAutoOpenGate,
+                                desktopWindowChrome = desktopWindowChrome,
+                                onExitApplicationRequest = {
+                                    try {
+                                        current.component.dispose()
+                                    } finally {
+                                        exitApplication()
+                                    }
+                                },
+                                startupWarning = current.startupWarning,
+                            )
 
-                    is JvmDesktopStartupState.ComponentFailed ->
-                        StartupDatabaseErrorScreen(
-                            error = current.error,
-                            showDetails = true,
-                        )
+                        is JvmDesktopStartupState.ComponentFailed ->
+                            StartupDatabaseErrorScreen(
+                                error = current.error,
+                                showDetails = true,
+                            )
+                    }
                 }
+
+
             }
-        }
+}
     } finally {
         instanceLock?.close()
     }
@@ -282,7 +293,8 @@ private fun createJvmDesktopComponentState(
     },
 )
 
-private fun showDesktopStartupMessage(message: String) {
+private suspend fun showDesktopStartupMessage(description: UiText) {
+    val message = resolveUiText(description, AppLanguageRuntime.effectiveLanguage.value)
     runCatching {
         JOptionPane.showMessageDialog(null, message, "LynMusic", JOptionPane.INFORMATION_MESSAGE)
     }.onFailure {
@@ -299,7 +311,7 @@ internal sealed interface JvmDesktopStartupState {
     ) : JvmDesktopStartupState
     data class Ready(
         val component: LynMusicAppComponent,
-        val startupWarning: String?,
+        val startupWarning: top.iwesley.lyn.music.core.model.UiText?,
     ) : JvmDesktopStartupState
     data class ComponentFailed(val error: Throwable) : JvmDesktopStartupState
 }
@@ -312,7 +324,7 @@ internal fun resolveJvmDesktopStartupAfterLocationCheck(
     createComponentState: () -> JvmDesktopStartupState,
 ): JvmDesktopStartupState = if (requiresDataLocationOperation) {
     JvmDesktopStartupState.Preparing(
-        JvmDataLocationProgress("正在读取数据位置…"),
+        JvmDataLocationProgress(uiText(Res.string.startup_reading_location)),
     )
 } else {
     createComponentState()

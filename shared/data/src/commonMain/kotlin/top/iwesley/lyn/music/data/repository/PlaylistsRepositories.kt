@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -130,9 +137,9 @@ class RoomPlaylistRepository(
     override suspend fun createPlaylist(name: String): Result<PlaylistSummary> {
         return runCatching {
             val displayName = name.trim()
-            require(displayName.isNotBlank()) { "歌单名称不能为空。" }
+            requireUi(displayName.isNotBlank()) { uiText(Res.string.playlist_name_required) }
             val normalizedName = normalizePlaylistName(displayName)
-            require(database.playlistDao().getByNormalizedName(normalizedName) == null) { "歌单已存在。" }
+            requireUi(database.playlistDao().getByNormalizedName(normalizedName) == null) { uiText(Res.string.playlist_already_exists) }
             val entity = PlaylistEntity(
                 id = newId("playlist"),
                 name = displayName,
@@ -148,19 +155,19 @@ class RoomPlaylistRepository(
 
     override suspend fun renamePlaylist(playlistId: String, name: String): Result<PlaylistSummary> {
         return runCatching {
-            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            val playlist = database.playlistDao().getById(playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
             val displayName = name.trim()
-            require(displayName.isNotBlank()) { "歌单名称不能为空。" }
+            requireUi(displayName.isNotBlank()) { uiText(Res.string.playlist_name_required) }
             val normalizedName = normalizePlaylistName(displayName)
             val duplicate = database.playlistDao().getByNormalizedName(normalizedName)
-            require(duplicate == null || duplicate.id == playlistId) { "歌单已存在。" }
+            requireUi(duplicate == null || duplicate.id == playlistId) { uiText(Res.string.playlist_already_exists) }
 
             val bindings = database.playlistRemoteBindingDao().getByPlaylistId(playlistId)
             val writableBindings = localPlaylistMutationRemoteBindings(playlist, bindings)
             writableBindings.forEach { binding ->
                 if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
                     val resolvedSource = resolveEmbySource(database, secureCredentialStore, binding.sourceId, addressSelector)
-                        ?: error("Emby 来源不可用，无法重命名歌单。")
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_rename, "Emby"))
                     updateEmbyPlaylistName(
                         httpClient = httpClient,
                         source = resolvedSource,
@@ -173,7 +180,7 @@ class RoomPlaylistRepository(
                         sourceId = binding.sourceId,
                         requireLocalIndex = false,
                     )
-                        ?: error("Subsonic-compatible 来源不可用，无法重命名歌单。")
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_rename, "Subsonic-compatible"))
                     requestNavidromeJson(
                         httpClient = httpClient,
                         source = resolvedSource,
@@ -213,7 +220,7 @@ class RoomPlaylistRepository(
 
     override suspend fun deletePlaylist(playlistId: String): Result<Unit> {
         return runCatching {
-            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            val playlist = database.playlistDao().getById(playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
             val bindings = localPlaylistMutationRemoteBindings(
                 playlist = playlist,
                 bindings = database.playlistRemoteBindingDao().getByPlaylistId(playlistId),
@@ -221,7 +228,7 @@ class RoomPlaylistRepository(
             bindings.forEach { binding ->
                 if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
                     val resolvedSource = resolveEmbySource(database, secureCredentialStore, binding.sourceId, addressSelector)
-                        ?: error("Emby 来源不可用，无法删除歌单。")
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_delete, "Emby"))
                     deleteEmbyPlaylist(
                         httpClient = httpClient,
                         source = resolvedSource,
@@ -233,7 +240,7 @@ class RoomPlaylistRepository(
                         sourceId = binding.sourceId,
                         requireLocalIndex = false,
                     )
-                        ?: error("Subsonic-compatible 来源不可用，无法删除歌单。")
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_delete, "Subsonic-compatible"))
                     requestNavidromeJson(
                         httpClient = httpClient,
                         source = resolvedSource,
@@ -250,9 +257,9 @@ class RoomPlaylistRepository(
 
     override suspend fun addTrackToPlaylist(playlistId: String, track: Track): Result<Unit> {
         return runCatching {
-            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            val playlist = database.playlistDao().getById(playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
             if (database.playlistTrackDao().getByPlaylistIdAndTrackId(playlistId, track.id) != null) {
-                error("歌曲已在歌单中。")
+                throw UiTextException(uiText(Res.string.playlist_track_already_present))
             }
             val subsonicSong = parseSubsonicCompatibleSongLocator(track.mediaLocator)
                 ?.takeIf { it.sourceId == track.sourceId }
@@ -275,7 +282,7 @@ class RoomPlaylistRepository(
         text: String,
     ): Result<PlaylistImportReport> {
         return runCatching {
-            database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            database.playlistDao().getById(playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
             val enabledSourceIds = database.importSourceDao().getAll()
                 .filter { it.isLocalIndexedEnabled() }
                 .mapTo(linkedSetOf()) { it.id }
@@ -360,10 +367,10 @@ class RoomPlaylistRepository(
                                 addedCount += 1
                             }
                             .onFailure { throwable ->
-                                failedLines += PlaylistImportFailedLineIssue(
+                                failedLines += playlistImportFailure(
                                     lineNumber = lineNumber,
                                     rawText = rawLine,
-                                    message = throwable.message.orEmpty().ifBlank { "加入失败。" },
+                                    throwable = throwable,
                                 )
                             }
                     }
@@ -410,7 +417,7 @@ class RoomPlaylistRepository(
 
     override suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String): Result<Unit> {
         return runCatching {
-            val playlist = database.playlistDao().getById(playlistId) ?: error("歌单不存在。")
+            val playlist = database.playlistDao().getById(playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
             val row = database.playlistTrackDao().getByPlaylistIdAndTrackId(playlistId, trackId) ?: return@runCatching
             val binding = database.playlistRemoteBindingDao().getByPlaylistIdAndSourceId(playlistId, row.sourceId)
             if (binding != null && row.remoteOrdinal != null && isLocalIndexedSource(row.sourceId)) {
@@ -422,7 +429,7 @@ class RoomPlaylistRepository(
                     )
                 } else {
                     val resolvedSource = resolveSubsonicCompatibleSource(row.sourceId)
-                        ?: error("Subsonic-compatible 来源不可用，无法更新歌单。")
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, "Subsonic-compatible"))
                     requestNavidromeJson(
                         httpClient = httpClient,
                         source = resolvedSource,
@@ -454,7 +461,7 @@ class RoomPlaylistRepository(
             val remoteSources = database.importSourceDao().getAll()
                 .filter { it.subsonicCompatibleSourceType() != null || it.isEmbySource() }
             cleanupRemovedRemoteSources(remoteSources.mapTo(linkedSetOf()) { it.id })
-            val failures = mutableListOf<String>()
+            val failures = mutableListOf<UiText>()
             remoteSources
                 .filter { it.isLocalIndexedEnabled() }
                 .forEach { source ->
@@ -466,11 +473,11 @@ class RoomPlaylistRepository(
                     }
                 }
                     .onFailure { throwable ->
-                        failures += "${source.label}: ${throwable.message.orEmpty()}"
+                        failures += uiText(Res.string.source_error_details, source.label, throwable.uiErrorDetail())
                     }
             }
             if (failures.isNotEmpty()) {
-                error(failures.joinToString("\n"))
+                throw UiTextException(UiText.Joined(failures, separator = "\n"))
             }
         }
     }
@@ -503,7 +510,7 @@ class RoomPlaylistRepository(
         songId: String,
     ) {
         val resolvedSource = resolveSubsonicCompatibleSource(track.sourceId)
-            ?: error("Subsonic-compatible 来源不可用，无法更新歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, "Subsonic-compatible"))
         val binding = ensureRemoteBinding(
             playlist = playlist,
             sourceId = track.sourceId,
@@ -534,7 +541,7 @@ class RoomPlaylistRepository(
         itemId: String,
     ) {
         val resolvedSource = resolveEmbySource(database, secureCredentialStore, track.sourceId, addressSelector)
-            ?: error("Emby 来源不可用，无法更新歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, "Emby"))
         val binding = ensureEmbyRemoteBinding(
             playlist = playlist,
             sourceId = track.sourceId,
@@ -561,7 +568,7 @@ class RoomPlaylistRepository(
         row: PlaylistTrackEntity,
     ) {
         val resolvedSource = resolveEmbySource(database, secureCredentialStore, row.sourceId, addressSelector)
-            ?: error("Emby 来源不可用，无法更新歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, "Emby"))
         val entries = fetchEmbyPlaylistEntries(
             httpClient = httpClient,
             source = resolvedSource,
@@ -571,8 +578,8 @@ class RoomPlaylistRepository(
         val entry = entries.getOrNull(row.remoteOrdinal ?: -1)
             ?.takeIf { embyTrackIdFor(row.sourceId, it.itemId) == row.trackId }
             ?: entries.firstOrNull { embyTrackIdFor(row.sourceId, it.itemId) == row.trackId }
-            ?: error("Emby 远端歌单未找到要移除的歌曲。")
-        val entryId = entry.playlistItemId ?: error("Emby 远端歌单缺少可移除条目 ID。")
+            ?: throw UiTextException(uiText(Res.string.playlist_remote_track_not_found))
+        val entryId = entry.playlistItemId ?: throw UiTextException(uiText(Res.string.playlist_remote_entry_id_missing))
         removeEmbyPlaylistEntries(
             httpClient = httpClient,
             source = resolvedSource,
@@ -609,7 +616,7 @@ class RoomPlaylistRepository(
                 fetchSourcePlaylists(resolvedSource)
                     .firstOrNull { normalizePlaylistName(it.name) == playlist.normalizedName }
             }
-            ?: error("远端歌单创建失败。")
+            ?: throw UiTextException(uiText(Res.string.playlist_remote_creation_failed))
 
         val binding = PlaylistRemoteBindingEntity(
             playlistId = playlist.id,
@@ -651,7 +658,7 @@ class RoomPlaylistRepository(
 
     private suspend fun syncSourcePlaylists(source: ImportSourceEntity) {
         val resolvedSource = source.toSubsonicCompatibleResolvedSource()
-            ?: error("Subsonic-compatible 来源缺少有效凭据，无法同步歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_credentials_missing, "Subsonic-compatible"))
         val remotePlaylists = fetchSourcePlaylists(resolvedSource)
         val remoteIds = remotePlaylists.mapTo(linkedSetOf()) { it.id }
         val existingBindingsByRemoteId = database.playlistRemoteBindingDao().getBySourceId(source.id)
@@ -695,7 +702,7 @@ class RoomPlaylistRepository(
 
     private suspend fun syncEmbySourcePlaylists(source: ImportSourceEntity) {
         val resolvedSource = resolveEmbySource(database, secureCredentialStore, source.id, addressSelector)
-            ?: error("Emby 来源缺少有效凭据，无法同步歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_credentials_missing, "Emby"))
         val remotePlaylists = fetchEmbyPlaylists(
             httpClient = httpClient,
             source = resolvedSource,
@@ -748,7 +755,7 @@ class RoomPlaylistRepository(
         remoteName: String,
     ) {
         val resolvedSource = resolveSubsonicCompatibleSource(sourceId)
-            ?: error("Subsonic-compatible 来源不可用，无法同步歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_sync, "Subsonic-compatible"))
         val remoteEntries = fetchRemotePlaylistEntries(
             resolvedSource = resolvedSource,
             remotePlaylistId = remotePlaylistId,
@@ -799,7 +806,7 @@ class RoomPlaylistRepository(
         remoteName: String,
     ) {
         val resolvedSource = resolveEmbySource(database, secureCredentialStore, sourceId, addressSelector)
-            ?: error("Emby 来源不可用，无法同步歌单。")
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_sync, "Emby"))
         val remoteEntries = fetchEmbyPlaylistEntries(
             httpClient = httpClient,
             source = resolvedSource,

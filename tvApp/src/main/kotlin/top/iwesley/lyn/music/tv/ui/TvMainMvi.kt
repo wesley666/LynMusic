@@ -26,6 +26,7 @@ internal data class TvMediaDetail(
     val id: String,
     val title: String,
     val subtitle: String? = null,
+    val subtitleTrackCount: Int? = null,
 )
 
 internal data class TvSearchDialogState(

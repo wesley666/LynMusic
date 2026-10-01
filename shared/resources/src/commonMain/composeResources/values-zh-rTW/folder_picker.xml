@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="folder_picker_manage_files_permission_hint">授予“管理所有檔案”後，可以瀏覽內建存儲和 U 盤目錄，用於匯入本機音樂。</string>
+    <string name="folder_picker_storage_permission_hint">授予存儲讀寫權限後，可以瀏覽內建存儲和 U 盤目錄，用於匯入本機音樂。</string>
+    <string name="folder_picker_audio_type">音訊</string>
+    <string name="folder_picker_folder_unreadable">無法讀取當前目錄</string>
+    <string name="folder_picker_file_type">檔案</string>
+    <string name="folder_picker_permission_required_title">需要檔案管理權限</string>
+    <string name="folder_picker_folder_type">目錄</string>
+    <string name="folder_picker_grant_permission">去授權</string>
+    <string name="folder_picker_local_music_title">本機音樂</string>
+    <string name="folder_picker_storage_unavailable">沒有找到可讀取的存儲位置</string>
+    <string name="folder_picker_open_folder">點擊進入</string>
+    <string name="folder_picker_parent_folder">上一級</string>
+    <string name="folder_picker_loading_folder">正在讀取目錄...</string>
+    <string name="folder_picker_storage_selection_hint">請選擇內建存儲或 U 盤</string>
+    <string name="folder_picker_select_storage">選擇存儲位置</string>
+    <string name="folder_picker_select_current_folder">選擇當前目錄</string>
+    <string name="folder_picker_storage_label">存儲</string>
+    <string name="folder_picker_folder_empty">當前目錄為空</string>
+    <string name="folder_picker_usb_drive_label">U盤</string>
+</resources>

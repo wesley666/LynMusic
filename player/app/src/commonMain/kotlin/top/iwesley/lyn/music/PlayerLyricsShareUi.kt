@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.UiText
+
+import top.iwesley.lyn.music.core.model.sourceNameUiText
+import top.iwesley.lyn.music.core.model.uiText
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -93,6 +100,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import top.iwesley.lyn.music.core.model.DEFAULT_LYRICS_SHARE_FONT_KEY
+import top.iwesley.lyn.music.core.model.androidLyricsShareBuiltInFontNameText
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsSearchCandidate
 import top.iwesley.lyn.music.core.model.LyricsShareArtworkTintSpec
@@ -270,7 +278,7 @@ internal fun PlayerLyricsPane(
                         )
                     } else {
                         PlayerLyricsPlainMetadataRow(
-                            text = "专辑：${state.snapshot.currentDisplayAlbumTitle ?: "本地曲目"}    歌手：${state.snapshot.currentDisplayArtistName ?: "未知艺人"}",
+                            text = uiString(Res.string.lyrics_share_album_artist_summary, state.snapshot.currentDisplayAlbumTitle ?: uiString(Res.string.source_local_track_label), state.snapshot.currentDisplayArtistName ?: uiString(Res.string.common_unknown_artist)),
                             secondaryTextColor = lyricsSecondaryTextColor,
                             showTrackInfo = true,
                             onShowTrackInfo = { showTrackInfoDialog = true },
@@ -284,7 +292,7 @@ internal fun PlayerLyricsPane(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "正在请求歌词...",
+                        uiString(Res.string.lyrics_share_fetching_lyrics),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = lyricsSecondaryTextColor,
@@ -301,8 +309,8 @@ internal fun PlayerLyricsPane(
             ) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     EmptyStateCard(
-                        title = "暂时没有歌词",
-                        body = "会先使用本地缓存与内嵌歌词，拿不到时再按当前标题和歌手请求。",
+                        title = uiString(Res.string.lyrics_share_lyrics_missing),
+                        body = uiString(Res.string.lyrics_share_fetch_priority_hint),
                     )
                 }
             } else if (lyrics != null && visibleLyricsLines.isNotEmpty()) {
@@ -492,6 +500,8 @@ private fun PlayerLyricsSeekTimeButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val semanticsLabel1 = uiString(Res.string.lyrics_share_seek_to_position, timeText)
+
     val shape = RoundedCornerShape(18.dp)
     Row(
         modifier = modifier
@@ -502,7 +512,7 @@ private fun PlayerLyricsSeekTimeButton(
                 shape = shape,
             )
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "跳转到 $timeText 播放" }
+            .semantics { contentDescription = semanticsLabel1 }
             .padding(
                 horizontal = if (compact) 9.dp else 11.dp,
                 vertical = if (compact) 5.dp else 6.dp,
@@ -590,11 +600,11 @@ private fun PlayerLyricsMetadataRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DesktopLyricsMetadataItem(
-            label = "歌手：",
+            label = uiString(Res.string.lyrics_share_artist_label),
             text = resolvePlayerLyricsMetadataLabel(
                 primary = snapshot.currentDisplayArtistName,
                 fallback = track.artistName,
-                fallbackLabel = "未知艺人",
+                fallbackLabel = uiString(Res.string.common_unknown_artist),
             ),
             target = navigationTargets.artistTarget,
             secondaryTextColor = secondaryTextColor,
@@ -602,11 +612,11 @@ private fun PlayerLyricsMetadataRow(
             modifier = Modifier.widthIn(max = 260.dp),
         )
         DesktopLyricsMetadataItem(
-            label = "专辑：",
+            label = uiString(Res.string.lyrics_share_album_label),
             text = resolvePlayerLyricsMetadataLabel(
                 primary = snapshot.currentDisplayAlbumTitle,
                 fallback = track.albumTitle,
-                fallbackLabel = "本地曲目",
+                fallbackLabel = uiString(Res.string.source_local_track_label),
             ),
             target = navigationTargets.albumTarget,
             secondaryTextColor = secondaryTextColor,
@@ -633,7 +643,7 @@ private fun PlayerTrackInfoButton(
     ) {
         Icon(
             imageVector = Icons.Rounded.Info,
-            contentDescription = "查看歌曲信息",
+            contentDescription = uiString(Res.string.lyrics_share_view_track_information),
             modifier = Modifier.size(18.dp),
             tint = tint,
         )
@@ -658,7 +668,7 @@ private fun PlayerTrackInfoDialog(
         tonalElevation = 0.dp,
         title = {
             Text(
-                text = "歌曲信息",
+                text = uiString(Res.string.lyrics_share_track_information),
                 color = primaryTextColor,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
@@ -667,28 +677,28 @@ private fun PlayerTrackInfoDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlayerTrackInfoDialogLine(
-                    label = "格式",
+                    label = uiString(Res.string.lyrics_share_format_label),
                     value = trackDisplayFormat(track),
                     labelColor = secondaryTextColor,
                     valueColor = primaryTextColor,
                 )
                 audioQuality?.let { quality ->
                     PlayerTrackInfoDialogLine(
-                        label = "音质",
+                        label = uiString(Res.string.lyrics_share_quality_label),
                         value = quality,
                         labelColor = secondaryTextColor,
                         valueColor = primaryTextColor,
                     )
                 }
                 PlayerTrackInfoDialogLine(
-                    label = "大小",
+                    label = uiString(Res.string.lyrics_share_size_label),
                     value = formatTrackSize(track.sizeBytes),
                     labelColor = secondaryTextColor,
                     valueColor = primaryTextColor,
                 )
                 PlayerTrackInfoDialogLine(
-                    label = "路径",
-                    value = track.relativePath.ifBlank { "未知" },
+                    label = uiString(Res.string.common_path),
+                    value = track.relativePath.ifBlank { uiString(Res.string.common_unknown) },
                     labelColor = secondaryTextColor,
                     valueColor = primaryTextColor,
                 )
@@ -699,7 +709,7 @@ private fun PlayerTrackInfoDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
             ) {
-                Text("关闭")
+                Text(uiString(Res.string.common_close))
             }
         },
     )
@@ -793,9 +803,9 @@ internal fun ManualLyricsSearchOverlay(
 ) {
     LyricsSearchOverlayDialog(
         state = LyricsSearchDialogState(
-            headerTitle = "手动搜索歌词",
+            headerTitle = uiString(Res.string.lyrics_share_manual_search),
             headerSubtitle = buildString {
-                append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                append(state.snapshot.currentDisplayTitle.ifBlank { uiString(Res.string.lyrics_share_current_track) })
                 state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }?.let {
                     append(" · ")
                     append(it)
@@ -808,11 +818,11 @@ internal fun ManualLyricsSearchOverlay(
             hasResult = state.hasManualLyricsSearchResult,
             directResults = state.manualLyricsResults,
             workflowResults = state.manualWorkflowSongResults,
-            error = state.manualLyricsError,
+            error = state.manualLyricsError?.displayText(),
         ),
         strings = LyricsSearchDialogStrings(
-            formSubtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
-            resultsAppliedSubtitle = "点选任一结果后选择应用方式。",
+            formSubtitle = uiText(Res.string.lyrics_search_metadata_hint),
+            resultsAppliedSubtitle = uiText(Res.string.lyrics_apply_result_hint),
         ),
         onDismiss = { onPlayerIntent(PlayerIntent.DismissManualLyricsSearch) },
         onTitleChanged = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
@@ -853,8 +863,8 @@ private fun ManualLyricsSearchFormPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = "搜索条件",
-            subtitle = "修改标题、歌手、专辑后重新向已启用歌词源搜索。",
+            title = uiString(Res.string.lyrics_search_fields_title),
+            subtitle = uiString(Res.string.lyrics_search_metadata_hint),
         )
         Card(
             modifier = Modifier
@@ -886,7 +896,7 @@ private fun ManualLyricsSearchFormPane(
                     ImeAwareOutlinedTextField(
                         value = state.manualLyricsTitle,
                         onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
-                        label = { Text("标题") },
+                        label = { Text(uiString(Res.string.common_title)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         singleLine = true,
@@ -903,7 +913,7 @@ private fun ManualLyricsSearchFormPane(
                                         )
                                     )
                                 },
-                                label = { Text("歌手") },
+                                label = { Text(uiString(Res.string.common_artist)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -918,7 +928,7 @@ private fun ManualLyricsSearchFormPane(
                                         )
                                     )
                                 },
-                                label = { Text("专辑") },
+                                label = { Text(uiString(Res.string.library_albums_title)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -936,7 +946,7 @@ private fun ManualLyricsSearchFormPane(
                                         )
                                     )
                                 },
-                                label = { Text("歌手") },
+                                label = { Text(uiString(Res.string.common_artist)) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -951,7 +961,7 @@ private fun ManualLyricsSearchFormPane(
                                         )
                                     )
                                 },
-                                label = { Text("专辑") },
+                                label = { Text(uiString(Res.string.library_albums_title)) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(18.dp),
                                 singleLine = true,
@@ -969,7 +979,7 @@ private fun ManualLyricsSearchFormPane(
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryTextColor),
                         ) {
-                            Text("取消", maxLines = 1)
+                            Text(uiString(Res.string.common_cancel), maxLines = 1)
                         }
                         Button(
                             onClick = { onPlayerIntent(PlayerIntent.SearchManualLyrics) },
@@ -983,7 +993,7 @@ private fun ManualLyricsSearchFormPane(
                             ),
                         ) {
                             Text(
-                                if (state.isManualLyricsSearchLoading) "搜索中..." else "搜索",
+                                if (state.isManualLyricsSearchLoading) uiString(Res.string.common_searching) else uiString(Res.string.common_search),
                                 maxLines = 1
                             )
                         }
@@ -998,7 +1008,7 @@ private fun ManualLyricsSearchFormPane(
                             shape = RoundedCornerShape(18.dp),
                         ) {
                             Text(
-                                text = error,
+                                text = error.displayText(),
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
@@ -1023,12 +1033,12 @@ private fun ManualLyricsSearchResultsPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = "搜索结果",
+            title = uiString(Res.string.search_results_title),
             subtitle = when {
-                state.isManualLyricsSearchLoading -> "正在请求已启用的歌词源。"
-                state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> "点选任一结果即可直接应用到当前歌曲。"
-                state.hasManualLyricsSearchResult -> "当前没有可解析结果，可以继续调整搜索条件。"
-                else -> "直接歌词结果和 Workflow 歌曲候选会显示在这里。"
+                state.isManualLyricsSearchLoading -> uiString(Res.string.lyrics_querying_sources_label)
+                state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() -> uiString(Res.string.lyrics_share_apply_result_hint)
+                state.hasManualLyricsSearchResult -> uiString(Res.string.lyrics_search_results_empty_hint)
+                else -> uiString(Res.string.lyrics_search_results_placeholder)
             },
         )
         Card(
@@ -1047,7 +1057,7 @@ private fun ManualLyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "正在请求已启用的歌词源...",
+                            uiString(Res.string.lyrics_querying_sources_progress),
                             color = secondaryTextColor,
                         )
                     }
@@ -1063,7 +1073,7 @@ private fun ManualLyricsSearchResultsPane(
                     ) {
                         if (state.manualLyricsResults.isNotEmpty()) {
                             Text(
-                                "直接歌词结果",
+                                uiString(Res.string.lyrics_search_direct_results),
                                 color = primaryTextColor,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1097,13 +1107,17 @@ private fun ManualLyricsSearchResultsPane(
                                             verticalAlignment = Alignment.CenterVertically,
                                         ) {
                                             Text(
-                                                candidate.sourceName,
+                                                candidate.sourceNameUiText().displayText(),
+                                                modifier = Modifier.weight(1f).padding(end = 8.dp),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = primaryTextColor,
                                             )
                                             Text(
-                                                "${if (candidate.document.isSynced) "同步" else "纯文本"} · ${candidate.document.lines.size} 行",
+                                                lyricsSearchLineCountSummary(
+                                                    uiText(if (candidate.document.isSynced) Res.string.common_synced else Res.string.lyrics_sync_mode_plain_text),
+                                                    candidate.document.lines.size,
+                                                ).displayText(),
                                                 color = secondaryTextColor,
                                             )
                                         }
@@ -1135,7 +1149,7 @@ private fun ManualLyricsSearchResultsPane(
                         }
                         if (state.manualWorkflowSongResults.isNotEmpty()) {
                             Text(
-                                "Workflow 歌曲候选",
+                                uiString(Res.string.lyrics_workflow_candidates_title),
                                 color = primaryTextColor,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1208,8 +1222,8 @@ private fun ManualLyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         EmptyStateCard(
-                            title = "没有找到可用歌词",
-                            body = "当前已启用歌词源都没有返回可解析结果，可以继续修改标题、歌手或专辑再试。",
+                            title = uiString(Res.string.lyrics_not_found),
+                            body = uiString(Res.string.lyrics_search_sources_empty_hint),
                         )
                     }
                 }
@@ -1222,8 +1236,8 @@ private fun ManualLyricsSearchResultsPane(
                         contentAlignment = Alignment.Center,
                     ) {
                         EmptyStateCard(
-                            title = "准备搜索",
-                            body = "修改搜索条件后点击搜索，结果会显示在这里。",
+                            title = uiString(Res.string.lyrics_search_ready_title),
+                            body = uiString(Res.string.lyrics_search_ready_hint),
                         )
                     }
                 }
@@ -1232,13 +1246,14 @@ private fun ManualLyricsSearchResultsPane(
     }
 }
 
+@Composable
 private fun manualLyricsPreview(candidate: LyricsSearchCandidate): String {
     return candidate.document.lines
         .map { it.text.trim() }
         .filter { it.isNotEmpty() }
         .take(2)
         .joinToString(" / ")
-        .ifBlank { "歌词内容为空" }
+        .ifBlank { uiString(Res.string.lyrics_empty_message) }
 }
 
 private fun manualLyricsCandidateMetadata(candidate: LyricsSearchCandidate): String? {
@@ -1255,14 +1270,15 @@ private fun manualLyricsCandidateMetadata(candidate: LyricsSearchCandidate): Str
     }.takeIf { it.isNotBlank() }
 }
 
+@Composable
 private fun manualWorkflowCandidatePreview(candidate: top.iwesley.lyn.music.core.model.WorkflowSongCandidate): String {
     return buildString {
-        append(candidate.artists.joinToString(" / ").ifBlank { "未知歌手" })
+        append(candidate.artists.joinToString(" / ").ifBlank { uiString(Res.string.common_unknown_singer) })
         candidate.album?.takeIf { it.isNotBlank() }?.let {
             append(" · ")
             append(it)
         }
-    }.ifBlank { "歌曲候选" }
+    }.ifBlank { uiString(Res.string.lyrics_song_candidate_label) }
 }
 
 @Composable
@@ -1272,6 +1288,12 @@ internal fun LyricsShareOverlay(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val semanticsLabel2 = uiString(Res.string.lyrics_share_clear_selection)
+
+    val semanticsLabel3 = if (state.isShareCopying) uiString(Res.string.lyrics_share_copying_label) else uiString(Res.string.lyrics_share_copy_action)
+
+    val semanticsLabel4 = if (state.isShareSaving) uiString(Res.string.lyrics_share_saving_label) else uiString(Res.string.lyrics_share_save_locally)
+
     val lyrics = state.lyrics ?: return
     val shellColors = mainShellColors
     val previewBytes = state.sharePreviewBytes
@@ -1378,14 +1400,14 @@ internal fun LyricsShareOverlay(
                         if (!mobileActions) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(
-                                    "分享歌词",
+                                    uiString(Res.string.lyrics_share_action),
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = primaryTextColor,
                                 )
                                 Text(
                                     buildString {
-                                        append(state.snapshot.currentDisplayTitle.ifBlank { "当前歌曲" })
+                                        append(state.snapshot.currentDisplayTitle.ifBlank { uiString(Res.string.lyrics_share_current_track) })
                                         state.snapshot.currentDisplayArtistName?.takeIf { it.isNotBlank() }
                                             ?.let {
                                                 append(" · ")
@@ -1402,7 +1424,7 @@ internal fun LyricsShareOverlay(
                                 onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                             ) {
-                                Text("关闭")
+                                Text(uiString(Res.string.common_close))
                             }
                         }
                         Column(
@@ -1420,7 +1442,7 @@ internal fun LyricsShareOverlay(
                                     onClick = { onPlayerIntent(PlayerIntent.DismissLyricsShare) },
                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                                 ) {
-                                    Text("关闭")
+                                    Text(uiString(Res.string.common_close))
                                 }
                             }
                         }
@@ -1512,7 +1534,7 @@ internal fun LyricsShareOverlay(
                                     selectedFontDisplayName = state.selectedLyricsShareFontDisplayName,
                                     availableFonts = state.availableLyricsShareFonts,
                                     isLoading = state.isLyricsShareFontsLoading,
-                                    errorMessage = state.lyricsShareFontsError,
+                                    errorMessage = state.lyricsShareFontsError?.displayText(),
                                     onRequestFonts = {
                                         onPlayerIntent(PlayerIntent.RequestLyricsShareFonts)
                                     },
@@ -1529,7 +1551,7 @@ internal fun LyricsShareOverlay(
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .semantics { contentDescription = "清空选择" },
+                                    .semantics { contentDescription = semanticsLabel2 },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                                 contentPadding = mobileActionContentPadding,
                             ) {
@@ -1545,10 +1567,7 @@ internal fun LyricsShareOverlay(
                                 onExpandedChange = { isCopyMenuExpanded = it },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .semantics {
-                                        contentDescription =
-                                            if (state.isShareCopying) "复制中" else "复制"
-                                    },
+                                    .semantics { contentDescription = semanticsLabel3 },
                                 iconOnly = true,
                                 contentPadding = mobileActionContentPadding,
                                 onCopyImage = { onPlayerIntent(PlayerIntent.CopyLyricsShareImage) },
@@ -1559,10 +1578,7 @@ internal fun LyricsShareOverlay(
                                 enabled = exportActionsEnabled,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .semantics {
-                                        contentDescription =
-                                            if (state.isShareSaving) "保存中" else "保存到本地"
-                                    },
+                                    .semantics { contentDescription = semanticsLabel4 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary,
                                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1596,7 +1612,7 @@ internal fun LyricsShareOverlay(
                                     selectedFontDisplayName = state.selectedLyricsShareFontDisplayName,
                                     availableFonts = state.availableLyricsShareFonts,
                                     isLoading = state.isLyricsShareFontsLoading,
-                                    errorMessage = state.lyricsShareFontsError,
+                                    errorMessage = state.lyricsShareFontsError?.displayText(),
                                     onRequestFonts = {
                                         onPlayerIntent(PlayerIntent.RequestLyricsShareFonts)
                                     },
@@ -1611,7 +1627,7 @@ internal fun LyricsShareOverlay(
                                 enabled = state.selectedLyricsLineIndices.isNotEmpty(),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                             ) {
-                                Text("清空")
+                                Text(uiString(Res.string.common_clear))
                             }
                             Spacer(Modifier.width(10.dp))
                             LyricsShareCopyMenuButton(
@@ -1633,7 +1649,7 @@ internal fun LyricsShareOverlay(
                                     disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 ),
                             ) {
-                                Text(if (state.isShareSaving) "保存中..." else "保存到本地")
+                                Text(if (state.isShareSaving) uiString(Res.string.lyrics_share_saving_progress) else uiString(Res.string.lyrics_share_save_locally))
                             }
                         }
                     }
@@ -1680,7 +1696,7 @@ private fun LyricsShareCopyMenuButton(
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Text("复制中...")
+                    Text(uiString(Res.string.lyrics_share_copying_progress))
                 }
             } else if (iconOnly) {
                 Icon(
@@ -1688,7 +1704,7 @@ private fun LyricsShareCopyMenuButton(
                     contentDescription = null,
                 )
             } else {
-                Text("复制")
+                Text(uiString(Res.string.lyrics_share_copy_action))
             }
         }
         DropdownMenu(
@@ -1739,7 +1755,10 @@ private fun LyricsShareCopyMenuButton(
     }
 }
 
-internal fun lyricsShareCopyMenuLabels(): List<String> = listOf("复制图片", "复制文字")
+@Composable
+internal fun lyricsShareCopyMenuLabels(): List<String> = lyricsShareCopyMenuTexts().map { it.displayText() }
+
+internal fun lyricsShareCopyMenuTexts(): List<UiText> = listOf(uiText(Res.string.lyrics_share_copy_image), uiText(Res.string.lyrics_share_copy_text))
 
 internal fun isLyricsShareCopyMenuEnabled(
     selectedLineCount: Int,
@@ -1791,6 +1810,7 @@ private fun LyricsShareFontMenuButton(
         selectedFontKey = selectedFontKey,
         selectedFontDisplayName = selectedFontDisplayName,
         availableFonts = availableFonts,
+        isAndroid = currentPlatformDescriptor.isAndroidPlatform(),
     )
     LaunchedEffect(expanded, isLoading, availableFonts, errorMessage) {
         if (!expanded || isLoading || availableFonts.isNotEmpty() || !errorMessage.isNullOrBlank()) {
@@ -1858,7 +1878,7 @@ private fun LyricsShareFontMenuButton(
                                 modifier = Modifier.size(18.dp),
                                 strokeWidth = 2.5.dp,
                             )
-                            Text("正在读取系统字体...")
+                            Text(uiString(Res.string.lyrics_share_loading_fonts))
                         }
                     }
 
@@ -1871,7 +1891,7 @@ private fun LyricsShareFontMenuButton(
                             color = shellColors.secondaryText,
                         )
                         DropdownMenuItem(
-                            text = { Text("重试") },
+                            text = { Text(uiString(Res.string.common_retry)) },
                             onClick = { retryLoadingFonts() },
                         )
                     }
@@ -1893,26 +1913,40 @@ private fun LyricsShareFontMenuButton(
     }
 }
 
+internal fun buildLyricsShareFontButtonLabelText(
+    selectedFontKey: String?,
+    selectedFontDisplayName: String? = null,
+    availableFonts: List<LyricsShareFontOption>,
+    isAndroid: Boolean = false,
+): UiText {
+    val displayName = availableFonts.firstOrNull { option ->
+        selectedFontKey?.let { option.fontKey.equals(it, ignoreCase = true) } == true
+    }?.let { it.displayNameText ?: UiText.Raw(it.displayName) }
+    val cachedDisplayName = selectedFontDisplayName
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }?.let(UiText::Raw)
+    val builtInName = if (isAndroid) androidLyricsShareBuiltInFontNameText(selectedFontKey) else null
+    val defaultName = if (isAndroid) {
+        checkNotNull(androidLyricsShareBuiltInFontNameText(DEFAULT_LYRICS_SHARE_FONT_KEY))
+    } else UiText.Raw(DEFAULT_LYRICS_SHARE_FONT_KEY)
+    val fallbackName = when {
+        displayName != null -> displayName
+        builtInName != null -> builtInName
+        cachedDisplayName != null -> cachedDisplayName
+        selectedFontKey?.let(::parseLyricsShareImportedFontHash) != null -> defaultName
+        selectedFontKey != null -> UiText.Raw(selectedFontKey)
+        else -> defaultName
+    }
+    return uiText(Res.string.lyrics_share_font_button, fallbackName)
+}
+
+@Composable
 internal fun buildLyricsShareFontButtonLabel(
     selectedFontKey: String?,
     selectedFontDisplayName: String? = null,
     availableFonts: List<LyricsShareFontOption>,
-): String {
-    val displayName = availableFonts.firstOrNull { option ->
-        selectedFontKey?.let { option.fontKey.equals(it, ignoreCase = true) } == true
-    }?.displayName
-    val cachedDisplayName = selectedFontDisplayName
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
-    val fallbackName = when {
-        displayName != null -> displayName
-        cachedDisplayName != null -> cachedDisplayName
-        selectedFontKey?.let(::parseLyricsShareImportedFontHash) != null -> DEFAULT_LYRICS_SHARE_FONT_KEY
-        selectedFontKey != null -> selectedFontKey
-        else -> DEFAULT_LYRICS_SHARE_FONT_KEY
-    }
-    return "字体 · $fallbackName"
-}
+    isAndroid: Boolean = false,
+): String = buildLyricsShareFontButtonLabelText(selectedFontKey, selectedFontDisplayName, availableFonts, isAndroid).displayText()
 
 @Composable
 private fun LyricsShareFontMenuList(
@@ -1925,9 +1959,7 @@ private fun LyricsShareFontMenuList(
     val itemHeightPx = remember(density) {
         with(density) { LyricsShareFontMenuItemHeight.roundToPx() }
     }
-    val indexEntries = remember(availableFonts) {
-        buildLyricsShareFontMenuIndexEntries(availableFonts)
-    }
+    val indexEntries = buildLyricsShareFontMenuIndexEntries(availableFonts, availableFonts.map { it.uiDisplayName() })
     val shouldShowIndexBar by remember(scrollState.maxValue, indexEntries) {
         derivedStateOf { scrollState.maxValue > 0 && indexEntries.isNotEmpty() }
     }
@@ -1945,7 +1977,7 @@ private fun LyricsShareFontMenuList(
             availableFonts.forEach { option ->
                 val previewFontFamily = lyricsSharePreviewFontFamily(
                     fontKey = option.fontKey,
-                    displayName = option.displayName,
+                    displayName = option.uiDisplayName(),
                     fontFilePath = option.fontFilePath,
                 )
                 val isSelected = option.fontKey == selectedFontKey
@@ -1958,7 +1990,7 @@ private fun LyricsShareFontMenuList(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = option.displayName,
+                                text = option.uiDisplayName(),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -2167,6 +2199,7 @@ internal fun isLyricsShareFontFavoritesIndexEntry(
 
 internal fun buildLyricsShareFontMenuIndexEntries(
     availableFonts: List<LyricsShareFontOption>,
+    displayNames: List<String> = availableFonts.map { it.displayName },
 ): List<LyricsShareFontMenuIndexEntry> {
     val entries = mutableListOf<LyricsShareFontMenuIndexEntry>()
     availableFonts.indexOfFirst { it.isPrioritized }
@@ -2180,7 +2213,7 @@ internal fun buildLyricsShareFontMenuIndexEntries(
     val firstIndexByLabel = linkedMapOf<String, Int>()
     availableFonts.forEachIndexed { index, option ->
         if (option.isPrioritized) return@forEachIndexed
-        val label = option.displayName
+        val label = displayNames[index]
             .trim()
             .firstOrNull()
             ?.uppercaseChar()
@@ -2251,7 +2284,7 @@ private fun LyricsShareSelectionPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = if (isCompactLayout) "" else "选句",
+            title = if (isCompactLayout) "" else uiString(Res.string.lyrics_share_select_lines),
             subtitle = "",
         )
         Card(
@@ -2308,8 +2341,8 @@ private fun LyricsShareTemplateToggle(
             ) {
                 Text(
                     text = when (template) {
-                        LyricsShareTemplate.NOTE -> "便签"
-                        LyricsShareTemplate.ARTWORK_TINT -> "封面取色"
+                        LyricsShareTemplate.NOTE -> uiString(Res.string.lyrics_share_note_format)
+                        LyricsShareTemplate.ARTWORK_TINT -> uiString(Res.string.lyrics_share_artwork_colors)
                     },
                     maxLines = 1,
                 )
@@ -2355,13 +2388,13 @@ private fun LyricsShareSelectableLine(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (enabled) normalized else "空白行",
+                if (enabled) normalized else uiString(Res.string.lyrics_share_blank_line),
                 modifier = Modifier.weight(1f),
                 color = contentColor,
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                if (selected) "已选" else "点选",
+                if (selected) uiString(Res.string.lyrics_share_selected_badge) else uiString(Res.string.lyrics_share_select_action),
                 color = contentColor.copy(alpha = if (enabled) 0.72f else 0.45f),
                 style = MaterialTheme.typography.labelLarge,
             )
@@ -2388,7 +2421,7 @@ private fun LyricsSharePreviewPane(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionTitle(
-            title = if (isCompactLayout) "" else "预览",
+            title = if (isCompactLayout) "" else uiString(Res.string.lyrics_share_preview_title),
             subtitle = "" //if (fullscreenEnabled) "点击预览图全屏查看" else "",
         )
         Card(
@@ -2451,15 +2484,15 @@ private fun LyricsSharePreviewContent(
         when {
             shareCardModel == null -> {
                 EmptyStateCard(
-                    title = "请选择歌词",
-                    body = "点选左侧歌词行后，这里会生成一张便签样式的分享图片。",
+                    title = uiString(Res.string.lyrics_share_select_lyrics),
+                    body = uiString(Res.string.lyrics_share_note_preview_hint),
                 )
             }
 
             previewBytes != null -> {
                 LynArtworkImage(
                     artworkBytes = previewBytes,
-                    contentDescription = "歌词分享预览",
+                    contentDescription = uiString(Res.string.lyrics_share_preview_description),
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(22.dp)),
@@ -2563,7 +2596,7 @@ private fun LyricsShareFullscreenPreviewOverlay(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
-                    contentDescription = "关闭全屏预览",
+                    contentDescription = uiString(Res.string.lyrics_share_close_fullscreen),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -2582,7 +2615,7 @@ private fun LyricsShareRenderingBadge(
         colors = CardDefaults.cardColors(containerColor = shellColors.navContainer),
     ) {
         Text(
-            text = "更新预览中",
+            text = uiString(Res.string.lyrics_share_updating_preview),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.labelLarge,
@@ -2642,7 +2675,7 @@ private fun LyricsShareNoteCard(
                     }
                 }
                 Text(
-                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName).displayText(),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = footerTextColor,
@@ -2783,7 +2816,7 @@ private fun LyricsShareArtworkTintCard(
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName),
+                    text = buildLyricsShareTitleArtistLine(model.title, model.artistName).displayText(),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = footerTextColor,

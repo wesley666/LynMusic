@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.core.model.resolveUiText
+
 import androidx.room.Room
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
@@ -31,7 +35,7 @@ import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 
 class JvmDataLocationManagerTest {
     @Test
-    fun `startup data location operation is disabled outside windows`() {
+    fun `startup data location operation is disabled outside windows`() = runTest {
         withTemporaryHome { home ->
             updateLocationProperty(home, "pending_source_root", File(home, ".lynmusic").absolutePath)
 
@@ -41,7 +45,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `windows starts synchronously without pending migration or cleanup`() {
+    fun `windows starts synchronously without pending migration or cleanup`() = runTest {
         withTemporaryHome { home ->
             val active = File(home, "custom/LynMusic").apply { mkdirs() }
             File(active, ".lynmusic-data-root").writeText("owned")
@@ -54,7 +58,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `windows uses startup data location operation for pending migration or cleanup`() {
+    fun `windows uses startup data location operation for pending migration or cleanup`() = runTest {
         withTemporaryHome { home ->
             updateLocationProperty(home, "pending_source_root", File(home, ".lynmusic").absolutePath)
             assertTrue(
@@ -70,7 +74,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `missing or invalid config uses default root`() {
+    fun `missing or invalid config uses default root`() = runTest {
         withTemporaryHome { home ->
             val manager = JvmDataLocationManager(home, "Windows 11")
             assertEquals(File(home, ".lynmusic").canonicalFile, manager.currentRootDirectory().canonicalFile)
@@ -81,7 +85,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `corrupt location config fails closed without opening default root`() {
+    fun `corrupt location config fails closed without opening default root`() = runTest {
         withTemporaryHome { home ->
             File(home, ".lynmusic-location.properties").writeText(
                 "active_data_root=" + '\\' + "u12G4\n",
@@ -98,7 +102,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `location config path must be a regular file`() {
+    fun `location config path must be a regular file`() = runTest {
         withTemporaryHome { home ->
             File(home, ".lynmusic-location.properties").mkdirs()
             val manager = JvmDataLocationManager(home, "Windows 11")
@@ -134,7 +138,7 @@ class JvmDataLocationManagerTest {
             val result = manager.applyPendingChange()
 
             assertTrue(result.isFailure)
-            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("所有权标记"))
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("data_location_current_unowned"))
             assertEquals("external", File(active, "keep.txt").readText())
             assertFalse(File(home, ".lynmusic").exists())
         }
@@ -179,7 +183,7 @@ class JvmDataLocationManagerTest {
             val result = manager.applyPendingChange()
 
             assertTrue(result.isFailure)
-            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("必须命名为 LynMusic"))
+            assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("data_location_current_name_required"))
         }
     }
 
@@ -228,7 +232,7 @@ class JvmDataLocationManagerTest {
 
             val applyResult = async(Dispatchers.IO) {
                 manager.applyPendingChange { progress ->
-                    if (progress.message == "正在移动应用数据…") {
+                    if (progress.fraction == 0.35f) {
                         applyReachedMove.countDown()
                         check(allowApplyToContinue.await(5, TimeUnit.SECONDS))
                     }
@@ -297,7 +301,7 @@ class JvmDataLocationManagerTest {
             val persistedPending = loadLocationProperties(home)
 
             assertTrue(rejectedResult.isFailure)
-            assertTrue(rejectedResult.exceptionOrNull()?.message.orEmpty().contains("已有待处理"))
+            assertTrue(rejectedResult.exceptionOrNull()?.message.orEmpty().contains("data_location_change_pending"))
             assertEquals(firstTarget.absolutePath, persistedPending.getProperty("pending_target_root"))
             assertEquals(originalPending.getProperty("pending_id"), persistedPending.getProperty("pending_id"))
             assertEquals(originalPending.getProperty("pending_phase"), persistedPending.getProperty("pending_phase"))
@@ -306,7 +310,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `single instance lock excludes a second owner and releases cleanly`() {
+    fun `single instance lock excludes a second owner and releases cleanly`() = runTest {
         withTemporaryHome { home ->
             val first = JvmAppInstanceLock.tryAcquire(home)
             assertTrue(first != null)
@@ -899,7 +903,7 @@ class JvmDataLocationManagerTest {
             assertTrue(manager.cleanupWarning != null)
             assertTrue(runCatching {
                 manager.scheduleChange(next, AppDataLocationChangeMode.Migrate)
-            }.exceptionOrNull()?.message.orEmpty().contains("尚未清理"))
+            }.exceptionOrNull()?.message.orEmpty().contains("data_location_cleanup_pending"))
 
             writeRootMarker(cleanup, cleanupRootId)
             writeOperationMarker(cleanup, cleanupOperationId, cleanupRootId, "cleanup")
@@ -923,7 +927,7 @@ class JvmDataLocationManagerTest {
             val manager = JvmDataLocationManager(home, "Windows 11")
 
             assertEquals(null, manager.pendingCleanupRootPath())
-            assertTrue(manager.cleanupWarning.orEmpty().contains("未删除任何目录"))
+            assertTrue(manager.cleanupWarning?.let { top.iwesley.lyn.music.core.model.resolveUiText(it, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese) }.orEmpty().contains("未删除任何目录"))
             assertEquals(null, loadLocationProperties(home).getProperty("cleanup_root"))
             assertEquals("keep", unrelated.readText())
             manager.scheduleChange(target, AppDataLocationChangeMode.Migrate)
@@ -931,7 +935,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `owned tree deletion keeps marker when another file deletion fails`() {
+    fun `owned tree deletion keeps marker when another file deletion fails`() = runTest {
         withTemporaryHome { home ->
             val root = File(home, "owned-delete").apply { mkdirs() }
             val marker = File(root, ".lynmusic-data-root").apply { writeText("owned") }
@@ -1104,7 +1108,7 @@ class JvmDataLocationManagerTest {
                 manager.scheduleChange(target, AppDataLocationChangeMode.Migrate)
             }.exceptionOrNull()
 
-            assertTrue(error?.message.orEmpty().contains("必须为空"))
+            assertTrue(error?.message.orEmpty().contains("data_location_target_must_be_empty"))
             assertTrue(File(target, "unrelated.txt").isFile)
         }
     }
@@ -1238,7 +1242,10 @@ class JvmDataLocationManagerTest {
             assertFalse(properties.containsKey("pending_strategy"))
             assertFalse(properties.containsKey("pending_phase"))
             manager.applyPendingChange().getOrThrow()
-            assertTrue(manager.cleanupWarning.orEmpty().contains("未移动或删除任何目录"))
+            assertTrue(manager.cleanupWarning?.let { top.iwesley.lyn.music.core.model.resolveUiText(it, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese) }.orEmpty().contains("未移动或删除任何目录"))
+            val warning = requireNotNull(manager.cleanupWarning)
+            assertTrue(top.iwesley.lyn.music.core.model.resolveUiText(warning, top.iwesley.lyn.music.core.model.AppLanguage.English).startsWith("The damaged data-location change record was safely cancelled. No folders were moved or deleted:"))
+            assertTrue(top.iwesley.lyn.music.core.model.resolveUiText(warning, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese).startsWith("已安全取消損壞的資料位置切換記錄，未移動或刪除任何目錄："))
         }
     }
 
@@ -1329,7 +1336,7 @@ class JvmDataLocationManagerTest {
     }
 
     @Test
-    fun `windows detection does not enable mac or linux`() {
+    fun `windows detection does not enable mac or linux`() = runTest {
         assertTrue(isJvmWindowsOs("Windows 11"))
         assertFalse(isJvmWindowsOs("Mac OS X"))
         assertFalse(isJvmWindowsOs("Darwin"))

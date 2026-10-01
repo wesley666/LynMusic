@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music
 
+import androidx.compose.runtime.Composable
+
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.uiText
+
+
 import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
@@ -262,7 +268,7 @@ internal fun resolveLibraryNavigationCommand(
 
             is LibraryNavigationTarget.OnlineAlbum,
             is LibraryNavigationTarget.OnlineArtist,
-            -> error("在线导航目标应在本地导航解析前处理。")
+            -> throw top.iwesley.lyn.music.core.model.UiTextException(uiText(Res.string.navigation_online_resolution_required))
         },
     )
 }

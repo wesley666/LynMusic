@@ -1,7 +1,11 @@
 package top.iwesley.lyn.music.feature.offline
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
+import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -15,6 +19,12 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
@@ -23,6 +33,41 @@ import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OfflineDownloadStoreTest {
+    @Test
+    fun describedDownloadFailureReachesUiAndRetainsStateAcrossLanguages() = runTest {
+        val track = sampleWebDavTrack(id = "described-failure")
+        val fixture = TestOfflineDownloadRepository(initialDownloads = mapOf(track.id to testOfflineDownload(track.id, track.sourceId)))
+        var downloadCalls = 0
+        val repository = object : OfflineDownloadRepository by fixture {
+            override suspend fun download(track: Track, quality: NavidromeAudioQuality): Result<Unit> {
+                downloadCalls++
+                return Result.failure(UiTextException(uiText(Res.string.offline_write_failed)))
+            }
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val originalLanguage = AppLanguageRuntime.appLanguage.value
+        try {
+            val store = OfflineDownloadStore(repository, scope)
+            advanceUntilIdle()
+            store.dispatch(OfflineDownloadIntent.Download(track))
+            advanceUntilIdle()
+            val state = store.state.value
+            val message = assertNotNull(state.message)
+            val languages = listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese)
+            val expected = listOf("Failed to save the offline file.", "离线文件写入失败。", "離線檔案寫入失敗。")
+            languages.forEachIndexed { index, language ->
+                AppLanguageRuntime.update(language)
+                runCurrent()
+                assertEquals(expected[index], resolveUiText(message, AppLanguageRuntime.effectiveLanguage.value))
+                assertSame(state, store.state.value)
+            }
+            assertEquals(setOf(track.id), state.downloadsByTrackId.keys)
+            assertEquals(1, downloadCalls)
+        } finally {
+            AppLanguageRuntime.update(originalLanguage)
+            scope.cancel()
+        }
+    }
 
     @Test
     fun `refresh available space writes bytes into state`() = runTest {
@@ -34,9 +79,9 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.RefreshAvailableSpace)
         advanceUntilIdle()
 
-        assertEquals(5_368_709_120L, store.state.value.availableSpaceBytes)
+        assertLocalizedEquals(5_368_709_120L, store.state.value.availableSpaceBytes)
         assertFalse(store.state.value.availableSpaceLoading)
-        assertEquals(1, repository.availableSpaceCalls)
+        assertLocalizedEquals(1, repository.availableSpaceCalls)
         scope.cancel()
     }
 
@@ -52,7 +97,7 @@ class OfflineDownloadStoreTest {
 
         assertNull(store.state.value.availableSpaceBytes)
         assertFalse(store.state.value.availableSpaceLoading)
-        assertEquals(1, repository.availableSpaceCalls)
+        assertLocalizedEquals(1, repository.availableSpaceCalls)
         scope.cancel()
     }
 
@@ -70,13 +115,13 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(track)))
         advanceUntilIdle()
 
-        assertEquals(emptyList(), repository.downloadRequests)
-        assertEquals(
+        assertLocalizedEquals(emptyList(), repository.downloadRequests)
+        assertLocalizedEquals(
             "存储空间不足：预计下载 512.0 MB，需预留 1.0 GB，可用 1.0 GB。",
             store.state.value.message,
         )
         assertNull(store.state.value.activeBatchDownload)
-        assertEquals(1, repository.availableSpaceCalls)
+        assertLocalizedEquals(1, repository.availableSpaceCalls)
         scope.cancel()
     }
 
@@ -98,26 +143,26 @@ class OfflineDownloadStoreTest {
         runCurrent()
 
         val started = assertNotNull(store.state.value.activeBatchDownload)
-        assertEquals(listOf(first.id, second.id), started.trackIds)
-        assertEquals(0, started.processedCount)
-        assertEquals(0, started.successCount)
-        assertEquals(0, started.failureCount)
-        assertEquals(3L * 1024L * 1024L, started.estimatedTotalBytes)
-        assertEquals(0, started.unknownCount)
+        assertLocalizedEquals(listOf(first.id, second.id), started.trackIds)
+        assertLocalizedEquals(0, started.processedCount)
+        assertLocalizedEquals(0, started.successCount)
+        assertLocalizedEquals(0, started.failureCount)
+        assertLocalizedEquals(3L * 1024L * 1024L, started.estimatedTotalBytes)
+        assertLocalizedEquals(0, started.unknownCount)
 
         firstGate.complete(Unit)
         runCurrent()
 
         val afterFirst = assertNotNull(store.state.value.activeBatchDownload)
-        assertEquals(1, afterFirst.processedCount)
-        assertEquals(1, afterFirst.successCount)
-        assertEquals(0, afterFirst.failureCount)
+        assertLocalizedEquals(1, afterFirst.processedCount)
+        assertLocalizedEquals(1, afterFirst.successCount)
+        assertLocalizedEquals(0, afterFirst.failureCount)
 
         secondGate.complete(Unit)
         advanceUntilIdle()
 
         assertNull(store.state.value.activeBatchDownload)
-        assertEquals("批量下载完成：成功 2 首。", store.state.value.message)
+        assertLocalizedEquals("批量下载完成：成功 2 首。", store.state.value.message)
         scope.cancel()
     }
 
@@ -136,7 +181,7 @@ class OfflineDownloadStoreTest {
         assertNull(store.state.value.activeBatchDownload)
         store.dispatch(OfflineDownloadIntent.CancelActiveBatchDownload)
         runCurrent()
-        assertEquals(emptyList(), repository.cancelRequests)
+        assertLocalizedEquals(emptyList(), repository.cancelRequests)
         gate.complete(Unit)
         advanceUntilIdle()
         assertNull(store.state.value.activeBatchDownload)
@@ -160,15 +205,15 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(first, second)))
         runCurrent()
         assertNotNull(store.state.value.activeBatchDownload)
-        assertEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+        assertLocalizedEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
 
         store.dispatch(OfflineDownloadIntent.CancelActiveBatchDownload)
         runCurrent()
 
         assertNull(store.state.value.activeBatchDownload)
-        assertEquals("已取消批量下载。", store.state.value.message)
-        assertEquals(listOf(first.id), repository.cancelRequests)
-        assertEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+        assertLocalizedEquals("已取消批量下载。", store.state.value.message)
+        assertLocalizedEquals(listOf(first.id), repository.cancelRequests)
+        assertLocalizedEquals(listOf(first.id to NavidromeAudioQuality.Original), repository.downloadRequests)
         secondGate.complete(Unit)
         advanceUntilIdle()
         scope.cancel()
@@ -186,7 +231,7 @@ class OfflineDownloadStoreTest {
 
         assertNull(store.state.value.activeBatchDownload)
         assertNull(store.state.value.message)
-        assertEquals(emptyList(), repository.cancelRequests)
+        assertLocalizedEquals(emptyList(), repository.cancelRequests)
         scope.cancel()
     }
 
@@ -209,9 +254,9 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(completed, local)))
         advanceUntilIdle()
 
-        assertEquals(emptyList(), repository.downloadRequests)
+        assertLocalizedEquals(emptyList(), repository.downloadRequests)
         assertNull(store.state.value.activeBatchDownload)
-        assertEquals("批量下载完成：跳过 2 首。", store.state.value.message)
+        assertLocalizedEquals("批量下载完成：跳过 2 首。", store.state.value.message)
         scope.cancel()
     }
 
@@ -229,9 +274,9 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(track)))
         advanceUntilIdle()
 
-        assertEquals(listOf(track.id to NavidromeAudioQuality.Original), repository.downloadRequests)
-        assertEquals("批量下载完成：成功 1 首。", store.state.value.message)
-        assertEquals(1, repository.availableSpaceCalls)
+        assertLocalizedEquals(listOf(track.id to NavidromeAudioQuality.Original), repository.downloadRequests)
+        assertLocalizedEquals("批量下载完成：成功 1 首。", store.state.value.message)
+        assertLocalizedEquals(1, repository.availableSpaceCalls)
         scope.cancel()
     }
 
@@ -260,8 +305,8 @@ class OfflineDownloadStoreTest {
         )
         advanceUntilIdle()
 
-        assertEquals(listOf(pendingNavidrome.id to NavidromeAudioQuality.Kbps192), repository.downloadRequests)
-        assertEquals("批量下载完成：成功 1 首，跳过 2 首。", store.state.value.message)
+        assertLocalizedEquals(listOf(pendingNavidrome.id to NavidromeAudioQuality.Kbps192), repository.downloadRequests)
+        assertLocalizedEquals("批量下载完成：成功 1 首，跳过 2 首。", store.state.value.message)
         scope.cancel()
     }
 
@@ -280,7 +325,7 @@ class OfflineDownloadStoreTest {
         store.dispatch(OfflineDownloadIntent.DownloadMany(listOf(first, second, third)))
         advanceUntilIdle()
 
-        assertEquals(
+        assertLocalizedEquals(
             listOf(
                 first.id to NavidromeAudioQuality.Original,
                 second.id to NavidromeAudioQuality.Original,
@@ -288,7 +333,7 @@ class OfflineDownloadStoreTest {
             ),
             repository.downloadRequests,
         )
-        assertEquals("批量下载完成：成功 2 首，失败 1 首。", store.state.value.message)
+        assertLocalizedEquals("批量下载完成：成功 2 首，失败 1 首。", store.state.value.message)
         scope.cancel()
     }
 }

@@ -31,6 +31,7 @@ private class IosDeviceInfoGateway : DeviceInfoGateway {
                 resolutionWidthPx = resolutionWidthPx,
                 resolutionHeightPx = resolutionHeightPx,
                 cpuDescription = iosCpuDescription(processInfo),
+                logicalCoreCount = processInfo.activeProcessorCount.toInt().takeIf { it > 0 },
                 totalMemoryBytes = processInfo.physicalMemory.toLong().takeIf { it > 0L },
                 deviceModel = iosDeviceModel(device, processInfo),
             )
@@ -63,8 +64,7 @@ private fun iosCpuDescription(processInfo: NSProcessInfo): String? {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?: "arm64"
-    val cores = processInfo.activeProcessorCount.toInt().takeIf { it > 0 }?.let { "$it 核" }
-    return listOfNotNull(architecture, cores).joinToString(" · ").takeIf { it.isNotBlank() }
+    return architecture
 }
 
 private fun iosDeviceModel(

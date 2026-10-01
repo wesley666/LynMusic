@@ -1,9 +1,17 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.buildSambaLocator
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.platform.buildAndroidSambaSourceReference
@@ -13,7 +21,7 @@ import top.iwesley.lyn.music.platform.shouldUseAndroidSambaDirectPlayback
 class AndroidSambaPlaybackSupportTest {
 
     @Test
-    fun `android samba direct playback is enabled only when cache is disabled`() {
+    fun `android samba direct playback is enabled only when cache is disabled`() = runTest {
         val locator = buildSambaLocator("source-1", "Music/Test.mp3")
 
         assertTrue(shouldUseAndroidSambaDirectPlayback(locator, useSambaCache = false))
@@ -22,7 +30,7 @@ class AndroidSambaPlaybackSupportTest {
     }
 
     @Test
-    fun `resolve samba source spec normalizes port share path and credential`() {
+    fun `resolve samba source spec normalizes port share path and credential`() = runTest {
         val source = ImportSourceEntity(
             id = "smb-1",
             type = "SAMBA",
@@ -53,10 +61,16 @@ class AndroidSambaPlaybackSupportTest {
         assertEquals("Artist/Song.mp3", spec.relativePath)
         assertEquals("guest", spec.username)
         assertEquals("cred-1", spec.credentialKey)
+
+        val failure = assertFailsWith<UiTextException> {
+            resolveSambaSourceSpec(source.copy(directoryPath = "", shareName = "1445"), "Artist/Song.mp3")
+        }
+        assertEquals("The SMB path must include a share name, such as Media or Media/Music.", resolveUiText(failure.text, AppLanguage.English))
+        assertEquals("SMB 路徑至少需要包含共用名稱，例如 Media 或 Media/Music。", resolveUiText(failure.text, AppLanguage.TraditionalChinese))
     }
 
     @Test
-    fun `android samba source reference keeps endpoint share and remote path`() {
+    fun `android samba source reference keeps endpoint share and remote path`() = runTest {
         assertEquals(
             "endpoint=nas.local:445/Media/Music share=Media remotePath=Music/Test.mp3",
             buildAndroidSambaSourceReference(

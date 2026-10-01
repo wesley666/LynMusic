@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 enum class AppStorageCategory {
     Artwork,
     PlaybackCache,
@@ -46,7 +48,7 @@ interface AppDataLocationPlatformService {
 object UnsupportedAppDataLocationPlatformService : AppDataLocationPlatformService {
     override val currentDataRootPath: String = ""
     override val pendingCleanupRootPath: String? = null
-    private val error = IllegalStateException("当前平台暂不支持修改数据位置。")
+    private val error = UiTextException(uiText(Res.string.data_location_platform_unsupported))
 
     override suspend fun pickTargetDataRoot(): Result<String?> = Result.failure(error)
 
@@ -59,7 +61,7 @@ object UnsupportedAppDataLocationPlatformService : AppDataLocationPlatformServic
 }
 
 object UnsupportedAppStorageGateway : AppStorageGateway {
-    private val error = IllegalStateException("当前平台暂不支持空间管理。")
+    private val error = UiTextException(uiText(Res.string.storage_management_platform_unsupported))
 
     override suspend fun loadStorageSnapshot(): Result<AppStorageSnapshot> = Result.failure(error)
 

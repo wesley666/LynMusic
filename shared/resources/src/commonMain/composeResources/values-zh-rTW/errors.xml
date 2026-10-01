@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="data_location_platform_unsupported">當前平台暫不支持修改數據位置。</string>
+    <string name="storage_management_platform_unsupported">當前平台暫不支持空間管理。</string>
+    <string name="device_info_platform_unsupported">當前平台暫不支持關於本機。</string>
+    <string name="audio_tags_platform_unsupported">當前平台暫未實現音訊標籤編輯。</string>
+    <string name="artwork_picker_platform_unsupported">當前平台暫不支持選擇封面。</string>
+    <string name="vlc_picker_platform_unsupported">當前平台暫不支持選擇 VLC 路徑。</string>
+    <string name="offline_download_platform_unsupported">當前平台暫不支持離線下載。</string>
+    <string name="folder_picker_open_failed">無法顯示資料夾選擇器。</string>
+    <string name="folder_selection_unrecognized">無法識別所選資料夾。</string>
+    <string name="folder_access_expired">資料夾授權信息無效，請重新授權。</string>
+    <string name="local_track_location_invalid">本機歌曲定位信息無效。</string>
+    <string name="local_track_source_missing">本機歌曲來源已不存在。</string>
+    <string name="local_track_file_missing">本機歌曲檔案已不存在。</string>
+    <string name="folder_scan_unreadable_index_preserved">發現了音訊檔案，但均無法讀取；已保留原索引。</string>
+    <string name="folder_contents_read_failed">無法讀取資料夾內容。</string>
+    <string name="file_provider_no_readable_files">檔案提供方未返回可讀檔案。</string>
+    <string name="local_track_path_unresolved">無法解析本機歌曲路徑。</string>
+    <string name="ios_files_tag_writing_unsupported">iOS 檔案 App 來源暫不支持寫入標籤。</string>
+    <string name="local_track_file_url_invalid">本機歌曲檔案 URL 無效。</string>
+    <string name="lyrics_image_creation_failed">無法創建圖片。</string>
+    <string name="photo_library_write_permission_missing">沒有相冊寫入權限。</string>
+    <string name="lyrics_image_save_failed">無法將圖片儲存到照片圖庫。</string>
+    <string name="lyrics_temporary_image_creation_failed">無法創建臨時圖片檔案。</string>
+    <string name="offline_subsonic_source_unavailable">Subsonic-compatible 來源不可用。</string>
+    <string name="offline_emby_source_unavailable">Emby 來源不可用。</string>
+    <string name="offline_local_track_unnecessary">本機音樂不需要離線下載。</string>
+    <string name="offline_download_address_unavailable">遠程來源缺少可用下載地址。</string>
+    <string name="offline_webdav_source_unavailable">WebDAV 來源不可用。</string>
+    <string name="offline_samba_source_unavailable">Samba 來源不可用。</string>
+    <string name="offline_download_http_failed">下載失敗，HTTP %1$s。</string>
+    <string name="lyrics_image_save_cancelled">已取消儲存。</string>
+    <string name="lyrics_image_data_unreadable">無法讀取圖片數據。</string>
+    <string name="lyrics_image_png_export_failed">無法匯出 PNG 資料。</string>
+    <string name="font_import_format_unsupported">僅支持匯入 .ttf 或 .otf 字體。</string>
+    <string name="font_file_delete_failed">刪除字體檔案失敗。</string>
+    <string name="system_clipboard_unavailable">系統剪貼板不可用。</string>
+    <string name="lyrics_image_file_creation_failed">無法創建圖片檔案。</string>
+    <string name="lyrics_image_file_write_failed">無法寫入圖片檔案。</string>
+    <string name="font_selection_unreadable">無法讀取所選字體。</string>
+    <string name="cast_lan_address_unavailable">無法獲取手機局域網地址。</string>
+    <string name="cast_proxy_port_unavailable">無法獲取投屏代理端口。</string>
+</resources>

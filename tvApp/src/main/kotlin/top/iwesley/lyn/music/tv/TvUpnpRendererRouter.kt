@@ -1,5 +1,12 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.AppLanguage
 import android.content.Context
 import android.content.Intent
 import android.os.Handler
@@ -46,6 +53,7 @@ internal data class TvRendererSessionState(
     val volumePercent: Int = 100,
     val muted: Boolean = false,
     val errorMessage: String? = null,
+    val errorText: UiText? = null,
 ) {
     val hasMedia: Boolean
         get() = uri != null
@@ -91,7 +99,8 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
             updateState {
                 it.copy(
                     rendererRunning = error == null,
-                    errorMessage = error,
+                    errorMessage = error?.let { (it).diagnosticMessage() },
+                    errorText = error,
                     status = when {
                         error != null -> TvRendererPlaybackStatus.Failed
                         it.hasMedia -> it.status
@@ -122,7 +131,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
             awaitingRouteLaunch = false
             val media = currentMedia?.takeIf { currentRoute == session.route } ?: return@runOnMain
             if (!session.setMedia(media)) {
-                markFailed("投屏播放失败")
+                markFailed(uiText(Res.string.cast_playback_failed_notice))
                 return@runOnMain
             }
             session.setVolume(state.value.volumePercent)
@@ -142,6 +151,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                     status = if (it.hasMedia) TvRendererPlaybackStatus.Stopped else TvRendererPlaybackStatus.Idle,
                     positionMs = 0L,
                     errorMessage = null,
+                    errorText = null,
                 )
             }
             syncRendererTransportState()
@@ -173,6 +183,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
         positionMs: Long,
         durationMs: Long,
         errorMessage: String? = null,
+        errorText: UiText? = null,
     ) {
         runOnMain {
             if (activeSession !== session) return@runOnMain
@@ -182,6 +193,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                     positionMs = positionMs.coerceAtLeast(0L),
                     durationMs = durationMs.coerceAtLeast(0L),
                     errorMessage = errorMessage,
+                    errorText = errorText,
                 )
             }
             syncRendererTransportState()
@@ -218,6 +230,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                     positionMs = 0L,
                     durationMs = media.durationMs,
                     errorMessage = null,
+                    errorText = null,
                 )
             }
             renderer?.updateTransportState(UpnpRendererTransportState.Stopped, 0L, media.durationMs)
@@ -225,7 +238,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
             if (session != null && session.route == route) {
                 awaitingRouteLaunch = false
                 if (!session.setMedia(media)) {
-                    markFailed("投屏播放失败")
+                    markFailed(uiText(Res.string.cast_playback_failed_notice))
                 }
             } else {
                 activeSession?.stop()
@@ -262,7 +275,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
     override fun onSetVolume(volumePercent: Int): Boolean {
         val clamped = volumePercent.coerceIn(0, 100)
         runOnMain {
-            updateState { it.copy(volumePercent = clamped, errorMessage = null) }
+            updateState { it.copy(volumePercent = clamped, errorMessage = null, errorText = null) }
             renderer?.updateVolume(clamped, state.value.muted)
             dispatchCommand(TvRendererCommand.SetVolume(clamped))
         }
@@ -271,7 +284,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
 
     override fun onSetMute(muted: Boolean): Boolean {
         runOnMain {
-            updateState { it.copy(muted = muted, errorMessage = null) }
+            updateState { it.copy(muted = muted, errorMessage = null, errorText = null) }
             renderer?.updateVolume(state.value.volumePercent, muted)
             dispatchCommand(TvRendererCommand.SetMute(muted))
         }
@@ -287,6 +300,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                     status = if (it.hasMedia) TvRendererPlaybackStatus.Stopped else TvRendererPlaybackStatus.Idle,
                     positionMs = 0L,
                     errorMessage = null,
+                    errorText = null,
                 )
             }
             syncRendererTransportState()
@@ -296,7 +310,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
         val session = activeSession
         if (session != null && session.route == currentRoute) {
             if (!command.applyTo(session)) {
-                markFailed("投屏控制失败")
+                markFailed(uiText(Res.string.cast_control_failed_notice))
             }
             return
         }
@@ -312,6 +326,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
                 it.copy(
                     status = if (it.hasMedia) TvRendererPlaybackStatus.Paused else TvRendererPlaybackStatus.Idle,
                     errorMessage = null,
+                    errorText = null,
                 )
             }
             syncRendererTransportState()
@@ -322,7 +337,7 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
         while (pendingCommands.isNotEmpty()) {
             val command = pendingCommands.removeFirst()
             if (!command.applyTo(session)) {
-                markFailed("投屏控制失败")
+                markFailed(uiText(Res.string.cast_control_failed_notice))
                 pendingCommands.clear()
                 return
             }
@@ -343,11 +358,12 @@ internal object TvUpnpRendererRouter : UpnpMediaRendererCallback {
         renderer?.updateTransportState(transportState, current.positionMs, current.durationMs)
     }
 
-    private fun markFailed(message: String) {
+    private fun markFailed(message: UiText) {
         updateState {
             it.copy(
                 status = TvRendererPlaybackStatus.Failed,
-                errorMessage = message,
+                errorMessage = (message).diagnosticMessage(),
+                errorText = message,
             )
         }
         syncRendererTransportState()

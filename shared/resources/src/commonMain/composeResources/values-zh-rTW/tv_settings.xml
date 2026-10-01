@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_source_add_hint">新增本機資料夾、Samba、WebDAV、Navidrome、Subsonic 或 Emby 後，曲庫會開始掃描音樂。</string>
+    <string name="tv_source_add_and_scan">新增並掃描</string>
+    <string name="tv_source_add_named_type">新增%1$s來源</string>
+    <string name="tv_source_add_action">新增來源</string>
+    <string name="tv_source_allow_insecure_tls">允許不安全 TLS</string>
+    <string name="tv_source_api_key_authentication">API Key 鑒權</string>
+    <string name="tv_about_app_name">應用名稱</string>
+    <string name="tv_storage_caches_title">快取和本機檔案</string>
+    <string name="tv_source_delete_confirmation">確認刪除“%1$s”嗎？</string>
+    <string name="tv_device_information_title">設備信息</string>
+    <string name="tv_storage_artwork_cache_description">下載封面、掃描封面和標籤編輯生成的本機封面檔案。</string>
+    <string name="tv_source_edit_named_type">編輯%1$s來源</string>
+    <string name="tv_source_import_title">匯入和掃描音樂</string>
+    <string name="tv_source_last_scan_error">上次掃描失敗：%1$s</string>
+    <string name="tv_source_saved_api_key_hint">留空則沿用已儲存 API Key</string>
+    <string name="tv_source_saved_password_hint">留空則沿用已儲存密碼</string>
+    <string name="tv_source_management_description">管理本機、Samba、WebDAV、Navidrome、Subsonic 和 Emby 音樂來源。</string>
+    <string name="tv_sources_empty_title">還沒有來源</string>
+    <string name="tv_storage_offline_music_description">手動下載到本機的非本機音樂檔案。</string>
+    <string name="tv_source_not_scanned_status">未掃描</string>
+    <string name="tv_source_not_scanned_hint">尚未掃描</string>
+    <string name="tv_settings_notice_title">提示</string>
+    <string name="tv_settings_optional_field">可選</string>
+    <string name="tv_settings_reading_label">讀取中</string>
+    <string name="tv_settings_reading_progress">讀取中...</string>
+    <string name="tv_source_root_address">根地址</string>
+    <string name="tv_source_save_and_scan">儲存並掃描</string>
+    <string name="tv_source_server_label">伺服器</string>
+    <string name="tv_settings_unavailable_title">設定頁不可用</string>
+    <string name="tv_source_samba_path_example">共享檔案/Music</string>
+    <string name="tv_device_information_description">系統和硬件信息</string>
+    <string name="tv_storage_tags_temporary_description">編輯標籤封面時寫入的臨時中轉檔案。</string>
+    <string name="tv_storage_lyrics_share_temporary_description">生成歌詞分享圖時寫入的臨時圖片。</string>
+    <string name="tv_storage_samba_cache_description">SMB 播放時落到本機的臨時音訊快取。</string>
+    <string name="tv_source_test_connection">測試</string>
+    <string name="tv_source_track_summary">曲目 %1$s 首 · %2$s</string>
+    <string name="tv_about_app_version_description">版本和項目地址</string>
+    <string name="tv_storage_management_hint">查看 TV 端可管理快取，並按分類清理。</string>
+    <string name="tv_device_information_hint">查看當前 TV 或車機的系統、屏幕和硬件信息。</string>
+    <string name="tv_about_app_information_hint">查看版本、開發者、項目地址和公眾號信息。</string>
+</resources>

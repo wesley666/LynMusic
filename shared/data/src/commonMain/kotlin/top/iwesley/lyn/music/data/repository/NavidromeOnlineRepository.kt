@@ -1,5 +1,11 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -426,7 +432,7 @@ class NavidromeOnlineRepository(
         val source = requireOnlineNavidromeSource(sourceId)
         val parsed = parseSubsonicCompatibleSongLocator(track.mediaLocator)
             ?.takeIf { it.sourceId == sourceId }
-            ?: error("在线歌曲缺少远端 song id。")
+            ?: throw UiTextException(uiText(Res.string.online_track_remote_id_missing))
         requestNavidromeJson(
             httpClient = httpClient,
             source = source,
@@ -470,7 +476,7 @@ class NavidromeOnlineRepository(
     override suspend fun createPlaylist(sourceId: String, name: String): PlaylistSummary {
         val source = requireOnlineNavidromeSource(sourceId)
         val displayName = name.trim()
-        require(displayName.isNotBlank()) { "歌单名称不能为空。" }
+        requireUi(displayName.isNotBlank()) { uiText(Res.string.playlist_name_required) }
         requestNavidromeJson(
             httpClient = httpClient,
             source = source,
@@ -487,7 +493,7 @@ class NavidromeOnlineRepository(
     override suspend fun renamePlaylist(sourceId: String, playlistId: String, name: String) {
         val source = requireOnlineNavidromeSource(sourceId)
         val displayName = name.trim()
-        require(displayName.isNotBlank()) { "歌单名称不能为空。" }
+        requireUi(displayName.isNotBlank()) { uiText(Res.string.playlist_name_required) }
         requestNavidromeJson(
             httpClient = httpClient,
             source = source,
@@ -513,8 +519,8 @@ class NavidromeOnlineRepository(
     override suspend fun addTrackToPlaylist(sourceId: String, playlistId: String, track: Track) {
         val source = requireOnlineNavidromeSource(sourceId)
         val songId = track.onlineSongIdOrNull(sourceId)
-            ?: error("在线歌曲缺少远端 song id。")
-        check(songId !in playlistSongIds(sourceId, playlistId)) { "歌曲已在歌单中。" }
+            ?: throw UiTextException(uiText(Res.string.online_track_remote_id_missing))
+        checkUi(songId !in playlistSongIds(sourceId, playlistId)) { uiText(Res.string.playlist_track_already_present) }
         addSongIdToPlaylist(source, playlistId, songId)
     }
 
@@ -524,7 +530,7 @@ class NavidromeOnlineRepository(
         text: String,
     ): PlaylistImportReport {
         val source = requireOnlineNavidromeSource(sourceId)
-        val playlist = playlistDetail(sourceId, playlistId) ?: error("歌单不存在。")
+        val playlist = playlistDetail(sourceId, playlistId) ?: throw UiTextException(uiText(Res.string.playlist_not_found))
         val currentMemberSongIds = playlist.tracks
             .mapNotNull { it.track.onlineSongIdOrNull(sourceId) }
             .toMutableSet()
@@ -630,10 +636,10 @@ class NavidromeOnlineRepository(
                                 addedCount += 1
                             }
                             .onFailure { throwable ->
-                                failedLines += PlaylistImportFailedLineIssue(
+                                failedLines += playlistImportFailure(
                                     lineNumber = pending.lineNumber,
                                     rawText = pending.rawText,
-                                    message = throwable.message.orEmpty().ifBlank { "加入失败。" },
+                                    throwable = throwable,
                                 )
                             }
                     }
@@ -765,14 +771,14 @@ class NavidromeOnlineRepository(
 
     private suspend fun requireOnlineNavidromeSource(sourceId: String): NavidromeResolvedSource {
         val entity = database.importSourceDao().getById(sourceId)
-            ?: error("来源不存在。")
-        require(entity.enabled) { "来源已禁用，请先启用。" }
-        require(entity.type == ImportSourceType.NAVIDROME.name) { "在线模式 v1 只支持 Navidrome。" }
-        require(entity.indexMode.toImportSourceIndexMode() == ImportSourceIndexMode.ONLINE) {
-            "该来源不是在线模式。"
+            ?: throw UiTextException(uiText(Res.string.source_not_found))
+        requireUi(entity.enabled) { uiText(Res.string.source_disabled) }
+        requireUi(entity.type == ImportSourceType.NAVIDROME.name) { uiText(Res.string.source_online_navidrome_only) }
+        requireUi(entity.indexMode.toImportSourceIndexMode() == ImportSourceIndexMode.ONLINE) {
+            uiText(Res.string.source_not_online)
         }
         return entity.toSubsonicCompatibleResolvedSource()
-            ?: error("Navidrome 来源缺少有效凭据。")
+            ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Navidrome"))
     }
 
     private suspend fun ImportSourceEntity.toSubsonicCompatibleResolvedSource(): NavidromeResolvedSource? {

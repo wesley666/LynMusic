@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_picker_artwork_title">選擇圖片檔案</string>
+    <string name="desktop_picker_image_files">圖片檔案</string>
+    <string name="desktop_picker_font_title">匯入歌詞分享字型</string>
+    <string name="desktop_picker_font_files">字型檔案</string>
+    <string name="desktop_picker_music_folder_title">選擇本機音樂資料夾</string>
+    <string name="desktop_picker_data_location_title">選擇 LynMusic 資料位置</string>
+</resources>

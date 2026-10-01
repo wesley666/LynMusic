@@ -42,7 +42,7 @@ class JvmDesktopStartupTest {
 
     @Test
     fun `preparing state retains progress for startup screen`() {
-        val progress = JvmDataLocationProgress("正在迁移数据", fraction = 0.5f)
+        val progress = JvmDataLocationProgress(top.iwesley.lyn.music.core.model.UiText.Raw("正在迁移数据"), fraction = 0.5f)
         val state = JvmDesktopStartupState.Preparing(progress)
 
         assertSame(progress, state.progress)

@@ -1,5 +1,15 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+
+import top.iwesley.lyn.music.core.model.sourceNameUiText
+import top.iwesley.lyn.music.displayText
+import top.iwesley.lyn.music.uiDisplayText
+import top.iwesley.lyn.music.uiString
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -243,13 +253,13 @@ private fun TvLyricsSearchForm(
         verticalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         Text(
-            text = "搜索条件",
+            text = uiString(Res.string.lyrics_search_fields_title),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "可修改当前歌曲信息，再向已启用歌词源搜索。",
+            text = uiString(Res.string.lyrics_search_edit_metadata_hint),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -257,7 +267,7 @@ private fun TvLyricsSearchForm(
             value = state.manualLyricsTitle,
             onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsTitleChanged(it)) },
             modifier = Modifier.fillMaxWidth(),
-            label = "标题",
+            label = uiString(Res.string.common_title),
             imeAction = ImeAction.Next,
             onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
         )
@@ -265,7 +275,7 @@ private fun TvLyricsSearchForm(
             value = state.manualLyricsArtistName,
             onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsArtistChanged(it)) },
             modifier = Modifier.fillMaxWidth(),
-            label = "歌手",
+            label = uiString(Res.string.common_artist),
             imeAction = ImeAction.Next,
             onImeAction = { focusManager.moveFocus(FocusDirection.Down) },
         )
@@ -273,7 +283,7 @@ private fun TvLyricsSearchForm(
             value = state.manualLyricsAlbumTitle,
             onValueChange = { onPlayerIntent(PlayerIntent.ManualLyricsAlbumChanged(it)) },
             modifier = Modifier.fillMaxWidth(),
-            label = "专辑",
+            label = uiString(Res.string.library_albums_title),
             imeAction = ImeAction.Search,
             onImeAction = {
                 if (!state.isManualLyricsSearchLoading && state.manualLyricsTitle.isNotBlank()) {
@@ -294,21 +304,21 @@ private fun TvLyricsSearchForm(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text("搜索")
+                Text(uiString(Res.string.common_search))
             }
         }
         state.manualLyricsError?.let { message ->
             Text(
-                text = message,
+                text = message.uiDisplayText(),
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
         state.message
-            ?.takeIf { it.isNotBlank() && it != state.manualLyricsError }
+            ?.takeIf { it != state.manualLyricsError }
             ?.let { message ->
                 Text(
-                    text = message,
+                    text = message.uiDisplayText(),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -490,7 +500,7 @@ private fun TvLyricsSearchResults(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            text = "搜索结果",
+            text = uiString(Res.string.search_results_title),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
@@ -502,7 +512,7 @@ private fun TvLyricsSearchResults(
         )
         when {
             state.isManualLyricsSearchLoading -> TvLyricsSearchStatus(
-                message = "正在请求已启用的歌词源...",
+                message = uiString(Res.string.lyrics_querying_sources_progress),
                 loading = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -516,12 +526,12 @@ private fun TvLyricsSearchResults(
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
                     if (state.manualLyricsResults.isNotEmpty()) {
-                        item { TvLyricsSearchResultGroupTitle("直接歌词结果") }
+                        item { TvLyricsSearchResultGroupTitle(uiString(Res.string.lyrics_search_direct_results)) }
                         itemsIndexed(state.manualLyricsResults) { index, candidate ->
                             TvLyricsSearchResultRow(
-                                sourceName = candidate.sourceName,
-                                title = candidate.title?.takeIf { it.isNotBlank() } ?: "歌词结果",
-                                metadata = tvDirectLyricsMetadata(candidate),
+                                sourceName = candidate.sourceNameUiText().displayText(),
+                                title = candidate.title?.takeIf { it.isNotBlank() } ?: uiString(Res.string.lyrics_search_result_label),
+                                metadata = tvDirectLyricsMetadata(candidate).displayText(),
                                 preview = tvDirectLyricsPreview(candidate),
                                 artworkLocator = candidate.artworkLocator,
                                 artworkCacheStore = artworkCacheStore,
@@ -531,14 +541,14 @@ private fun TvLyricsSearchResults(
                         }
                     }
                     if (state.manualWorkflowSongResults.isNotEmpty()) {
-                        item { TvLyricsSearchResultGroupTitle("Workflow 歌曲候选") }
+                        item { TvLyricsSearchResultGroupTitle(uiString(Res.string.lyrics_workflow_candidates_title)) }
                         itemsIndexed(state.manualWorkflowSongResults) { index, candidate ->
                             val resultIndex = state.manualLyricsResults.size + index
                             TvLyricsSearchResultRow(
                                 sourceName = candidate.sourceName,
                                 title = candidate.title,
-                                metadata = tvWorkflowLyricsMetadata(candidate),
-                                preview = "选择后将继续请求该候选的歌词内容。",
+                                metadata = tvWorkflowLyricsMetadata(candidate).displayText(),
+                                preview = uiString(Res.string.lyrics_candidate_fetch_hint),
                                 artworkLocator = candidate.imageUrl,
                                 artworkCacheStore = artworkCacheStore,
                                 focusRequester = resultFocusRequesters.getOrNull(resultIndex),
@@ -549,13 +559,13 @@ private fun TvLyricsSearchResults(
                 }
             }
             state.hasManualLyricsSearchResult -> TvLyricsSearchStatus(
-                message = state.manualLyricsError ?: "没有找到可用歌词，可以调整搜索条件后重试。",
+                message = state.manualLyricsError?.displayText() ?: uiString(Res.string.lyrics_search_usable_results_missing),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
             )
             else -> TvLyricsSearchStatus(
-                message = "修改搜索条件后点击搜索，结果会显示在这里。",
+                message = uiString(Res.string.lyrics_search_ready_hint),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -673,7 +683,7 @@ private fun TvLyricsSearchStatus(
         ) {
             if (loading) CircularProgressIndicator(modifier = Modifier.size(34.dp))
             Text(
-                text = message,
+                text = message.uiDisplayText(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -794,7 +804,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     Text(
-                        text = "确认应用方式",
+                        text = uiString(Res.string.lyrics_apply_mode_title),
                         color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.ExtraBold,
@@ -813,12 +823,12 @@ private fun TvLyricsSearchConfirmationOverlay(
                             verticalArrangement = Arrangement.spacedBy(5.dp),
                         ) {
                             Text(
-                                text = confirmation.sourceName,
+                                text = confirmation.sourceName.displayText(),
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Text(
-                                text = confirmation.title,
+                                text = confirmation.title.displayText(),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
@@ -827,7 +837,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                             )
                             confirmation.metadata?.let {
                                 Text(
-                                    text = it,
+                                    text = it.displayText(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -852,7 +862,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                                     down = if (hasArtwork) artworkFocusRequester else cancelFocusRequester
                                 },
                         ) {
-                            Text("应用")
+                            Text(uiString(Res.string.common_apply))
                         }
                         OutlinedButton(
                             onClick = { onApply(LyricsSearchApplyMode.LYRICS_ONLY) },
@@ -866,7 +876,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                                     down = cancelFocusRequester
                                 },
                         ) {
-                            Text("仅应用歌词")
+                            Text(uiString(Res.string.lyrics_apply_lyrics_only))
                         }
                     }
                     if (hasArtwork) {
@@ -887,7 +897,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                                         down = artworkFocusRequester
                                     },
                             ) {
-                                Text("仅应用封面")
+                                Text(uiString(Res.string.lyrics_apply_artwork_only))
                             }
                             OutlinedButton(
                                 onClick = onDismiss,
@@ -901,7 +911,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                                         down = cancelFocusRequester
                                     },
                             ) {
-                                Text("取消")
+                                Text(uiString(Res.string.common_cancel))
                             }
                         }
                     } else {
@@ -917,7 +927,7 @@ private fun TvLyricsSearchConfirmationOverlay(
                                     down = cancelFocusRequester
                                 },
                         ) {
-                            Text("取消")
+                            Text(uiString(Res.string.common_cancel))
                         }
                     }
                 }
@@ -926,35 +936,37 @@ private fun TvLyricsSearchConfirmationOverlay(
     }
 }
 
+@Composable
 private fun tvLyricsSearchResultsSubtitle(state: PlayerState): String {
     return when {
-        state.isManualLyricsSearchLoading -> "正在搜索已启用的歌词源。"
+        state.isManualLyricsSearchLoading -> uiString(Res.string.lyrics_searching_sources_label)
         state.manualLyricsResults.isNotEmpty() || state.manualWorkflowSongResults.isNotEmpty() ->
-            "选择任一结果后设置应用方式。"
-        state.hasManualLyricsSearchResult -> "当前没有可解析结果，可以继续调整搜索条件。"
-        else -> "直接歌词结果和 Workflow 歌曲候选会显示在这里。"
+            uiString(Res.string.tv_lyrics_apply_result_hint)
+        state.hasManualLyricsSearchResult -> uiString(Res.string.lyrics_search_results_empty_hint)
+        else -> uiString(Res.string.lyrics_search_results_placeholder)
     }
 }
 
-private fun tvDirectLyricsMetadata(candidate: LyricsSearchCandidate): String {
-    return buildList {
+private fun tvDirectLyricsMetadata(candidate: LyricsSearchCandidate): UiText {
+    return UiText.Joined(buildList {
         add(
             when {
                 parseEnhancedLyricsPresentation(
                     rawPayload = candidate.document.rawPayload,
                     fallbackDocument = candidate.document,
-                ) != null -> "逐字歌词"
-                candidate.document.isSynced -> "逐行歌词"
-                else -> "纯文本歌词"
+                ) != null -> uiText(Res.string.lyrics_word_synced_label)
+                candidate.document.isSynced -> uiText(Res.string.lyrics_line_synced_label)
+                else -> uiText(Res.string.lyrics_plain_text_label)
             },
         )
-        add("${candidate.document.lines.size} 行")
-        candidate.artistName?.takeIf { it.isNotBlank() }?.let(::add)
-        candidate.albumTitle?.takeIf { it.isNotBlank() }?.let(::add)
-        candidate.durationSeconds?.takeIf { it > 0 }?.let { add(tvLyricsSearchDuration(it)) }
-    }.joinToString(" · ")
+        add(uiPlural(Res.plurals.common_line_count, (candidate.document.lines.size).toInt(), candidate.document.lines.size))
+        candidate.artistName?.takeIf { it.isNotBlank() }?.let { add(UiText.Raw(it)) }
+        candidate.albumTitle?.takeIf { it.isNotBlank() }?.let { add(UiText.Raw(it)) }
+        candidate.durationSeconds?.takeIf { it > 0 }?.let { add(UiText.Raw(tvLyricsSearchDuration(it))) }
+    })
 }
 
+@Composable
 private fun tvDirectLyricsPreview(candidate: LyricsSearchCandidate): String {
     return candidate.document.lines
         .asSequence()
@@ -962,15 +974,15 @@ private fun tvDirectLyricsPreview(candidate: LyricsSearchCandidate): String {
         .filter { it.isNotEmpty() }
         .take(2)
         .joinToString(" / ")
-        .ifBlank { "歌词内容为空" }
+        .ifBlank { uiString(Res.string.lyrics_empty_message) }
 }
 
-private fun tvWorkflowLyricsMetadata(candidate: WorkflowSongCandidate): String {
-    return buildList {
-        add(candidate.artists.joinToString(" / ").ifBlank { "未知歌手" })
-        candidate.album?.takeIf { it.isNotBlank() }?.let(::add)
-        candidate.durationSeconds?.takeIf { it > 0 }?.let { add(tvLyricsSearchDuration(it)) }
-    }.joinToString(" · ")
+private fun tvWorkflowLyricsMetadata(candidate: WorkflowSongCandidate): UiText {
+    return UiText.Joined(buildList {
+        add(candidate.artists.joinToString(" / ").takeIf { it.isNotBlank() }?.let(UiText::Raw) ?: uiText(Res.string.common_unknown_singer))
+        candidate.album?.takeIf { it.isNotBlank() }?.let { add(UiText.Raw(it)) }
+        candidate.durationSeconds?.takeIf { it > 0 }?.let { add(UiText.Raw(tvLyricsSearchDuration(it))) }
+    })
 }
 
 private fun tvLyricsSearchDuration(durationSeconds: Int): String {
@@ -979,22 +991,22 @@ private fun tvLyricsSearchDuration(durationSeconds: Int): String {
 }
 
 private sealed interface TvLyricsSearchConfirmation {
-    val sourceName: String
-    val title: String
-    val metadata: String?
+    val sourceName: UiText
+    val title: UiText
+    val metadata: UiText?
     val artworkLocator: String?
 
     data class Direct(val candidate: LyricsSearchCandidate) : TvLyricsSearchConfirmation {
-        override val sourceName: String = candidate.sourceName
-        override val title: String = candidate.title?.takeIf { it.isNotBlank() } ?: "歌词结果"
-        override val metadata: String = tvDirectLyricsMetadata(candidate)
+        override val sourceName: UiText get() = candidate.sourceNameUiText()
+        override val title: UiText get() = candidate.title?.takeIf { it.isNotBlank() }?.let(UiText::Raw) ?: uiText(Res.string.lyrics_search_result_label)
+        override val metadata: UiText get() = tvDirectLyricsMetadata(candidate)
         override val artworkLocator: String? = candidate.artworkLocator
     }
 
     data class Workflow(val candidate: WorkflowSongCandidate) : TvLyricsSearchConfirmation {
-        override val sourceName: String = candidate.sourceName
-        override val title: String = candidate.title
-        override val metadata: String = tvWorkflowLyricsMetadata(candidate)
+        override val sourceName: UiText = UiText.Raw(candidate.sourceName)
+        override val title: UiText = UiText.Raw(candidate.title)
+        override val metadata: UiText get() = tvWorkflowLyricsMetadata(candidate)
         override val artworkLocator: String? = candidate.imageUrl
     }
 }

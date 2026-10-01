@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.diagnosticMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -124,12 +132,13 @@ fun normalizeRemoteSourceBaseUrls(
 }
 
 fun isRemoteSourceAddressFallbackAllowed(throwable: Throwable): Boolean {
-    val chain = throwable.messageChain()
-    val statusCodes = HTTP_STATUS_REGEX.findAll(chain)
-        .mapNotNull { it.groupValues.getOrNull(1)?.toIntOrNull() }
-        .toList()
+    val failures = throwable.failureChain()
+    val chain = failures.messageChain()
+    val statusCodes = failures.mapNotNull { (it as? RemoteSourceHttpFailure)?.httpStatusCode } +
+        HTTP_STATUS_REGEX.findAll(chain).mapNotNull { it.groupValues.getOrNull(1)?.toIntOrNull() }.toList()
     if (statusCodes.any { it == 401 || it == 403 }) return false
     if (statusCodes.isNotEmpty()) return statusCodes.any { it == 408 || it in 500..599 }
+    if (failures.any { it is UiTextArgumentException }) return false
     val lowered = chain.lowercase()
     if (
         lowered.contains("地址无效") ||
@@ -144,6 +153,7 @@ fun isRemoteSourceAddressFallbackAllowed(throwable: Throwable): Boolean {
     ) {
         return false
     }
+    if (failures.any { it is RemoteSourceRequestException }) return true
     return lowered.contains("请求失败") ||
         lowered.contains("timeout") ||
         lowered.contains("timed out") ||
@@ -204,7 +214,7 @@ private fun normalizeAddresses(
     val wan = wanBaseUrl.orEmpty().trim()
         .takeIf { it.isNotBlank() }
         ?.let(normalizeBaseUrl)
-    require(lan != null || wan != null) { "请至少填写一个${sourceType.displayName()}服务器地址。" }
+    requireUi(lan != null || wan != null) { uiText(Res.string.source_server_address_required, sourceType.displayName()) }
     return buildList {
         lan?.let { add(RemoteSourceBaseUrl(RemoteSourceAddressKind.LAN, it)) }
         wan?.let { add(RemoteSourceBaseUrl(RemoteSourceAddressKind.WAN, it)) }
@@ -220,13 +230,27 @@ private fun List<RemoteSourceBaseUrl>.orderedForNetwork(networkType: NetworkConn
     return if (preferred == null) this else listOf(preferred) + filterNot { it.kind == preferredKind }
 }
 
-private fun Throwable.messageChain(): String {
-    return generateSequence(this) { it.cause }
-        .map { throwable ->
-            val name = throwable::class.simpleName ?: throwable::class.qualifiedName ?: "Throwable"
-            val message = throwable.message?.takeIf { it.isNotBlank() }
-            if (message == null) name else "$name: $message"
+private fun Throwable.failureChain(): List<Throwable> {
+    val failures = mutableListOf<Throwable>()
+    var current: Throwable? = this
+    while (current != null && failures.none { it === current }) {
+        failures += current
+        current = current.cause
+    }
+    return failures
+}
+
+private fun List<Throwable>.messageChain(): String {
+    return map { throwable ->
+        val name = throwable::class.simpleName ?: throwable::class.qualifiedName ?: "Throwable"
+        // Resource keys and their parameters are diagnostics, never classification input.
+        // Explicit platform diagnostics and third-party exceptions retain legacy handling.
+        val message = throwable.message?.takeIf {
+            it.isNotBlank() &&
+                (throwable !is UiTextFailure || throwable.text is UiText.Raw || it != throwable.text.diagnosticMessage())
         }
+        if (message == null) name else "$name: $message"
+    }
         .distinct()
         .joinToString(" -> ")
 }

@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music.feature.offline
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiErrorText
+import top.iwesley.lyn.music.core.model.plus
+
 import kotlin.math.roundToInt
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
@@ -55,21 +63,21 @@ fun estimateBatchDownloadSize(
     )
 }
 
-fun batchDownloadSizeEstimateLabel(estimate: BatchDownloadSizeEstimate): String {
+fun batchDownloadSizeEstimateLabel(estimate: BatchDownloadSizeEstimate): UiText {
     val sizeLabel = estimate.totalBytes
         .takeIf { it > 0L }
         ?.let(::formatOfflineDownloadSizeLabel)
     return when {
-        sizeLabel == null && estimate.unknownCount <= 0 -> "无需下载"
-        sizeLabel == null && estimate.unknownCount == 1 -> "未知"
-        sizeLabel == null -> "${estimate.unknownCount} 首未知"
+        sizeLabel == null && estimate.unknownCount <= 0 -> uiText(Res.string.offline_nothing_to_download)
+        sizeLabel == null && estimate.unknownCount == 1 -> uiText(Res.string.common_unknown)
+        sizeLabel == null -> uiPlural(Res.plurals.offline_unknown_size_track_count, (estimate.unknownCount).toInt(), estimate.unknownCount)
         estimate.unknownCount > 0 -> {
-            val prefix = if (estimate.approximate) "约 " else ""
-            "$prefix$sizeLabel + ${estimate.unknownCount} 首未知"
+            val prefix = if (estimate.approximate) uiText(Res.string.common_about) else ""
+            uiPlural(Res.plurals.offline_size_estimate_with_unknown_tracks, estimate.unknownCount, prefix, sizeLabel, estimate.unknownCount)
         }
 
-        estimate.approximate -> "约 $sizeLabel"
-        else -> sizeLabel
+        estimate.approximate -> uiText(Res.string.about_named_app, sizeLabel)
+        else -> UiText.Raw(sizeLabel)
     }
 }
 
@@ -77,14 +85,14 @@ fun batchDownloadInsufficientSpaceMessage(
     estimate: BatchDownloadSizeEstimate,
     availableSpaceBytes: Long?,
     reserveBytes: Long = OFFLINE_DOWNLOAD_SPACE_RESERVE_BYTES,
-): String? {
+): UiText? {
     if (availableSpaceBytes == null) return null
     if (estimate.totalBytes <= 0L && estimate.unknownCount <= 0) return null
     val requiredBytes = safeAdd(estimate.totalBytes, reserveBytes.coerceAtLeast(0L))
     if (availableSpaceBytes >= requiredBytes) return null
-    return "存储空间不足：预计下载 ${batchDownloadSizeEstimateLabel(estimate)}，" +
-        "需预留 ${formatOfflineDownloadSizeLabel(reserveBytes)}，" +
-        "可用 ${formatOfflineDownloadSizeLabel(availableSpaceBytes)}。"
+    return uiText(Res.string.offline_storage_insufficient_size, batchDownloadSizeEstimateLabel(estimate)) +
+        uiText(Res.string.offline_storage_reserve_detail, formatOfflineDownloadSizeLabel(reserveBytes)) +
+        uiText(Res.string.offline_available_space_detail, formatOfflineDownloadSizeLabel(availableSpaceBytes))
 }
 
 fun estimatedNavidromeTranscodedSizeBytes(

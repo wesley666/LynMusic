@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="recent_album_count">
+        <item quantity="one">%1$s 張</item>
+        <item quantity="other">%1$s 張</item>
+    </plurals>
+    <string name="recent_albums_empty_hint">播放專輯內歌曲後會顯示在這裡。</string>
+    <string name="recommendations_generating_description">正在生成每日推薦</string>
+    <string name="recent_plays_loading">正在加載最近播放</string>
+    <string name="recommendations_empty_title">暫無每日推薦</string>
+    <string name="recent_tracks_empty_title">暫無最近播放歌曲</string>
+    <plurals name="recent_track_play_summary">
+        <item quantity="one">播放 %1$s 次 · %2$s</item>
+        <item quantity="other">播放 %1$s 次 · %2$s</item>
+    </plurals>
+    <string name="recent_albums_title">最近播放專輯</string>
+    <string name="recent_tracks_title">最近播放歌曲</string>
+    <string name="recent_tracks_empty_hint">播放達到統計閾值後會顯示在這裡。</string>
+    <string name="recommendations_today_playlist">今日歌單</string>
+    <string name="recommendations_empty_hint">曲庫有歌曲後會生成今日推薦。</string>
+    <string name="recent_view_all_action">查看全部 &gt;</string>
+</resources>

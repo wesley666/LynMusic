@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -17,6 +19,11 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.SubsonicAuthMode
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiFailureTextOrNull
+import top.iwesley.lyn.music.core.model.uiErrorDetail
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
@@ -120,7 +127,7 @@ class RoomFavoritesRepository(
 
     override suspend fun refreshNavidromeFavorites(): Result<Unit> {
         return runCatching {
-            val failures = mutableListOf<String>()
+            val failures = mutableListOf<UiText>()
             database.importSourceDao().getAll()
                 .filter {
                     (it.subsonicCompatibleSourceType() != null || it.isEmbySource()) &&
@@ -135,15 +142,17 @@ class RoomFavoritesRepository(
                         }
                     }
                         .onFailure { throwable ->
-                            val message = "${source.label}: ${throwable.message.orEmpty()}"
-                            failures += message
+                            failures += uiText(Res.string.favorites_source_error_detail,
+                                source.label,
+                                throwable.uiFailureTextOrNull() ?: throwable.uiErrorDetail(),
+                            )
                             logger.error(FAVORITES_LOG_TAG, throwable) {
                                 "refresh-failed source=${source.id} label=${source.label}"
                             }
                         }
                 }
             if (failures.isNotEmpty()) {
-                error(failures.joinToString("\n"))
+                throw UiTextException(UiText.Joined(failures, separator = "\n"))
             }
         }
     }
@@ -154,7 +163,7 @@ class RoomFavoritesRepository(
         favorite: Boolean,
     ): Boolean {
         val resolvedSource = resolveEmbySource(database, secureCredentialStore, track.sourceId, addressSelector)
-            ?: error("Emby 来源不可用，无法更新喜欢状态。")
+            ?: throw UiTextException(uiText(Res.string.favorites_source_unavailable_update, "Emby"))
         setEmbyFavorite(
             httpClient = httpClient,
             source = resolvedSource,
@@ -209,7 +218,7 @@ class RoomFavoritesRepository(
         favorite: Boolean,
     ): Boolean {
         val resolvedSource = resolveSubsonicCompatibleSource(track.sourceId)
-            ?: error("Subsonic-compatible 来源不可用，无法更新喜欢状态。")
+            ?: throw UiTextException(uiText(Res.string.favorites_source_unavailable_update, "Subsonic-compatible"))
         val endpoint = if (favorite) "star" else "unstar"
         requestNavidromeJson(
             httpClient = httpClient,
@@ -237,7 +246,7 @@ class RoomFavoritesRepository(
 
     private suspend fun syncEmbyFavorites(source: ImportSourceEntity) {
         val resolved = resolveEmbySource(database, secureCredentialStore, source.id, addressSelector)
-            ?: error("Emby 来源缺少有效凭据，无法同步喜欢。")
+            ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
         val existingRows = database.favoriteTrackDao().getBySourceId(source.id)
         val existingByRemoteSongId = existingRows
             .mapNotNull { entity -> entity.remoteSongId?.let { it to entity } }
@@ -278,7 +287,7 @@ class RoomFavoritesRepository(
         val sourceType = source.subsonicCompatibleSourceType()
             ?: error("Subsonic-compatible 来源类型无效，无法同步喜欢。")
         val resolved = source.toSubsonicCompatibleResolvedSource()
-            ?: error("${resolvedSourceLabel(sourceType)} 来源缺少有效凭据，无法同步喜欢。")
+            ?: throw UiTextException(uiText(Res.string.source_credentials_missing, resolvedSourceLabel(sourceType)))
         val payload = requestNavidromeJson(
             httpClient = httpClient,
             source = resolved,

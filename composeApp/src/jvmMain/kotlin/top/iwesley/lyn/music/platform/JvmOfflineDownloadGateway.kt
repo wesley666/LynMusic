@@ -1,5 +1,20 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextFailure
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.resolveUiTextForStorage
+import top.iwesley.lyn.music.core.model.offlineDownloadResponseFailureText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextUnsupportedException
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
@@ -44,6 +59,7 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.domain.RemoteSourceResolvedUrl
 import top.iwesley.lyn.music.domain.isRemoteSourceAddressFallbackAllowed
+import top.iwesley.lyn.music.domain.checkOfflineDownloadHttpStatus
 import top.iwesley.lyn.music.domain.resolveEmbyDownloadUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeDownloadUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrlCandidates
@@ -81,7 +97,7 @@ private class JvmOfflineDownloadGateway(
                         resolveNavidromeDownloadUrlCandidates(database, secureCredentialStore, track.mediaLocator, addressSelector)
                     } else {
                         resolveNavidromeStreamUrlCandidates(database, secureCredentialStore, track.mediaLocator, quality, addressSelector)
-                    } ?: error("Subsonic-compatible 来源不可用。")
+                    } ?: throw UiTextException(uiText(Res.string.offline_subsonic_source_unavailable))
                     downloadHttpFileWithAddressFallback(
                         requestUrls = requestUrls,
                         authorizationHeader = null,
@@ -94,7 +110,7 @@ private class JvmOfflineDownloadGateway(
 
                 parseEmbySongLocator(track.mediaLocator) != null -> {
                     val requestUrls = resolveEmbyDownloadUrlCandidates(database, secureCredentialStore, track.mediaLocator, addressSelector)
-                        ?: error("Emby 来源不可用。")
+                        ?: throw UiTextException(uiText(Res.string.offline_emby_source_unavailable))
                     downloadHttpFileWithAddressFallback(
                         requestUrls = requestUrls,
                         authorizationHeader = null,
@@ -112,13 +128,13 @@ private class JvmOfflineDownloadGateway(
                     downloadSamba(track, partFile, onProgress)
                 }
 
-                else -> error("本地音乐不需要离线下载。")
+                else -> throw UiTextException(uiText(Res.string.offline_local_track_unnecessary))
             }
-            require(partFile.length() > 0L) { "下载文件为空。" }
+            requireUi(partFile.length() > 0L) { uiText(Res.string.offline_file_empty) }
             if (finalFile.exists()) {
                 finalFile.delete()
             }
-            check(partFile.renameTo(finalFile)) { "离线文件写入失败。" }
+            checkUi(partFile.renameTo(finalFile)) { uiText(Res.string.offline_write_failed) }
             logger.info(OFFLINE_LOG_TAG) {
                 "download-complete track=${track.id} path=${finalFile.absolutePath} size=${finalFile.length()}"
             }
@@ -203,7 +219,7 @@ private class JvmOfflineDownloadGateway(
                 }
             }
         }
-        throw lastFailure ?: IllegalStateException("远程来源缺少可用下载地址。")
+        throw lastFailure ?: UiTextException(uiText(Res.string.offline_download_address_unavailable))
     }
 
     private suspend fun downloadWebDav(
@@ -213,7 +229,7 @@ private class JvmOfflineDownloadGateway(
     ): Long? {
         val webDav = parseWebDavLocator(track.mediaLocator) ?: return null
         val source = database.importSourceDao().getById(webDav.first)?.takeIf { it.enabled }
-            ?: error("WebDAV 来源不可用。")
+            ?: throw UiTextException(uiText(Res.string.offline_webdav_source_unavailable))
         val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         return downloadHttpFile(
             requestUrl = buildWebDavTrackUrl(source.rootReference, webDav.second),
@@ -231,7 +247,7 @@ private class JvmOfflineDownloadGateway(
     ): Long? {
         val samba = parseSambaLocator(track.mediaLocator) ?: return null
         val source = database.importSourceDao().getById(samba.first)?.takeIf { it.enabled }
-            ?: error("Samba 来源不可用。")
+            ?: throw UiTextException(uiText(Res.string.offline_samba_source_unavailable))
         val spec = resolveSambaSourceSpec(source, samba.second)
         val password = spec.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         var downloadedBytes = 0L
@@ -298,9 +314,7 @@ private class JvmOfflineDownloadGateway(
         return try {
             connection.connect()
             val statusCode = connection.responseCode
-            if (statusCode !in 200..299) {
-                error("下载失败，HTTP $statusCode。")
-            }
+            checkOfflineDownloadHttpStatus(statusCode)
             val totalBytes = connection.contentLengthLong.takeIf { it > 0L }
             connection.inputStream.use { input ->
                 writeStream(
@@ -339,10 +353,10 @@ private class JvmOfflineDownloadGateway(
                         length = sniffPrefix.length,
                     )
                 }
-                sniffPrefix.subsonicResponseFailureMessage(
+                sniffPrefix.subsonicResponseFailureText(
                     source = source,
                     contentType = responseContentType,
-                )?.let { message -> throw OfflineDownloadAddressFallbackException(message) }
+                )?.let { text -> throw OfflineDownloadAddressFallbackException(text) }
             }
             if (sniffPrefix.length > 0) {
                 output.write(sniffPrefix.bytes, 0, sniffPrefix.length)
@@ -378,12 +392,13 @@ internal suspend fun resolveJvmOfflinePlaybackPath(
     val row = database.offlineDownloadDao().getByTrackId(track.id) ?: return null
     val path = row.localMediaLocator?.takeIf { it.isNotBlank() } ?: return null
     if (File(path).isFile) return path
+    val errorMessage = resolveUiTextForStorage(uiText(Res.string.offline_file_missing), "The offline file does not exist.")
     database.offlineDownloadDao().upsert(
         row.copy(
             localMediaLocator = null,
             status = OfflineDownloadStatus.Failed.name,
             updatedAt = Clock.System.now().toEpochMilliseconds(),
-            errorMessage = "离线文件不存在。",
+            errorMessage = errorMessage,
         ),
     )
     return null
@@ -446,24 +461,24 @@ private fun buildOfflineDownloadRequestHeadersLog(source: String, headers: Strin
 }
 
 private class OfflineDownloadAddressFallbackException(
-    message: String,
-) : IllegalStateException(message)
+    override val text: UiText,
+) : IllegalStateException((text).diagnosticMessage()), UiTextFailure
 
-private data class OfflineDownloadSniffPrefix(
+internal data class OfflineDownloadSniffPrefix(
     val bytes: ByteArray,
     val length: Int,
 ) {
-    fun subsonicResponseFailureMessage(
+    fun subsonicResponseFailureText(
         source: String,
         contentType: String?,
-    ): String? {
+    ): UiText? {
         val preview = bytes.offlineDownloadTextPreview(length)
         val response = preview.sniffSubsonicResponse()
         if (response.looksLikeResponse) {
-            return response.failureMessage(source)
+            return response.failureText(source)
         }
         if (contentType.isOfflineDownloadXmlContentType()) {
-            return "$source 下载失败：服务器返回 XML 响应。"
+            return offlineDownloadResponseFailureText(source, isSubsonicResponse = false)
         }
         return null
     }
@@ -553,21 +568,7 @@ private data class OfflineDownloadSubsonicResponseSniff(
     val errorCode: String? = null,
     val errorMessage: String? = null,
 ) {
-    fun failureMessage(source: String): String {
-        val detail = errorMessage
-            ?: status?.let { "status=$it" }
-            ?: "服务器返回 Subsonic XML 响应。"
-        return buildString {
-            append(source)
-            append(" 下载失败：")
-            append(detail)
-            errorCode?.let {
-                append(" (code=")
-                append(it)
-                append(')')
-            }
-        }
-    }
+    fun failureText(source: String): UiText = offlineDownloadResponseFailureText(source, errorMessage, status, errorCode)
 }
 
 private fun String.sniffSubsonicResponse(): OfflineDownloadSubsonicResponseSniff {

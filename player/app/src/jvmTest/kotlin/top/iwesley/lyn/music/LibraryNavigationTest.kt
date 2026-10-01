@@ -15,6 +15,11 @@ import top.iwesley.lyn.music.feature.library.libraryAlbumId
 import top.iwesley.lyn.music.feature.library.libraryArtistId
 
 class LibraryNavigationTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `derive playback targets returns album and artist targets when metadata exists`() {
         val track = testTrack(albumTitle = "Parachutes", artistName = "Coldplay")

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.resources.*
+
 import androidx.room.Room
 import io.ktor.http.parseUrl
 import java.nio.file.Files
@@ -8,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Instant
@@ -23,6 +28,14 @@ import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.buildSubsonicCompatibleSongLocator
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiFailureTextOrNull
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.buildEmbySongLocator
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
@@ -442,6 +455,134 @@ class FavoritesRepositoryTest {
 
         repository.deleteSource("local-2").getOrThrow()
         assertEquals(emptyList(), database.favoriteTrackDao().getBySourceId("local-2"))
+    }
+}
+
+class FavoritesRepositoryUiTextTest {
+    @Test fun multipleHttpFailuresKeepSourceOrderAndSuccessfulFavorites() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            seedEmbySource(database)
+            val nav = requireNotNull(database.importSourceDao().getById("nav-source"))
+            val emby = requireNotNull(database.importSourceDao().getById("emby-source"))
+            database.importSourceDao().upsert(nav.copy(label = "用户甲", createdAt = 4L))
+            database.importSourceDao().upsert(nav.copy(id = "sub-source", type = "SUBSONIC", label = "用户乙", createdAt = 3L))
+            database.importSourceDao().upsert(emby.copy(label = "用户丙", createdAt = 2L))
+            database.importSourceDao().upsert(nav.copy(id = "healthy", username = "healthy", createdAt = 1L))
+            val requests = mutableListOf<LyricsRequest>()
+            val healthyClient = RecordingFavoritesHttpClient(starredSongIds = listOf("song-good"))
+            val client = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+                    requests += request
+                    return if (parseUrl(request.url)?.parameters?.get("u") == "healthy") {
+                        healthyClient.request(request)
+                    } else Result.success(LyricsHttpResponse(503, ""))
+                }
+            }
+            val repository = RoomFavoritesRepository(database, MapSecureCredentialStore(mutableMapOf(
+                "nav-cred" to "pass",
+                "emby-cred" to serializeEmbyCredential(EmbyCredential("user-1", "token")),
+            )), client)
+            val error = assertNotNull(repository.refreshNavidromeFavorites().exceptionOrNull())
+            val text = assertNotNull(error.uiFailureTextOrNull())
+            val rows = database.favoriteTrackDao().getBySourceId("healthy")
+            assertEquals(listOf("song-good"), rows.map { it.remoteSongId })
+            val requestCount = requests.size
+            listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese, AppLanguage.English).forEach { language ->
+                val lines = resolveUiText(text, language).lines()
+                assertEquals(listOf("用户甲", "用户乙", "用户丙"), lines.map { it.substringBefore(if (language == AppLanguage.English) ": " else "：") })
+                assertTrue(lines.all { "HTTP 503" in it })
+                if (language == AppLanguage.English) assertTrue(lines.all { "failed" in it })
+                if (language == AppLanguage.TraditionalChinese) assertTrue(lines.all { "失敗" in it })
+            }
+            assertEquals(requestCount, requests.size)
+            assertEquals(rows, database.favoriteTrackDao().getBySourceId("healthy"))
+        } finally { database.close() }
+    }
+
+    @Test fun aggregationKeepsWrappedDescriptionsAndRawExternalDetails() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            seedEmbySource(database)
+            val nav = requireNotNull(database.importSourceDao().getById("nav-source"))
+            database.importSourceDao().upsert(nav.copy(label = "用户来源", createdAt = 2L))
+            val rawDetail = "服务端原文 %1\$s /用户路径"
+            val described = uiText(Res.string.server_http_failed, "Navidrome", "getStarred2", 503)
+            val credentials = object : SecureCredentialStore by MapSecureCredentialStore() {
+                override suspend fun get(key: String): String? = when (key) {
+                    "nav-cred" -> throw IllegalStateException("wrapper", UiTextException(described))
+                    else -> throw IllegalStateException(rawDetail)
+                }
+            }
+            val client = RecordingFavoritesHttpClient()
+            val repository = RoomFavoritesRepository(database, credentials, client)
+            val text = assertNotNull(repository.refreshNavidromeFavorites().exceptionOrNull()?.uiFailureTextOrNull())
+            val expected = listOf(
+                AppLanguage.English to "用户来源: Navidrome getStarred2 failed, HTTP 503\nEmby: $rawDetail",
+                AppLanguage.SimplifiedChinese to "用户来源：Navidrome getStarred2 失败，HTTP 503\nEmby：$rawDetail",
+                AppLanguage.TraditionalChinese to "用户来源：Navidrome getStarred2 失敗，HTTP 503\nEmby：$rawDetail",
+                AppLanguage.English to "用户来源: Navidrome getStarred2 failed, HTTP 503\nEmby: $rawDetail",
+            )
+            expected.forEach { (language, value) -> assertEquals(value, resolveUiText(text, language)) }
+            assertTrue(client.requestedEndpoints.isEmpty())
+        } finally { database.close() }
+    }
+
+    @Test fun missingCredentialsRemainDescribedForAllRemoteTypes() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            seedEmbySource(database)
+            val nav = requireNotNull(database.importSourceDao().getById("nav-source"))
+            database.importSourceDao().upsert(nav.copy(id = "sub-source", type = "SUBSONIC"))
+            val client = RecordingFavoritesHttpClient()
+            val repository = RoomFavoritesRepository(database, MapSecureCredentialStore(), client)
+            val text = assertNotNull(repository.refreshNavidromeFavorites().exceptionOrNull()?.uiFailureTextOrNull()) as UiText.Joined
+            assertEquals(3, text.items.size)
+            text.items.forEach { item ->
+                val detail = (item as UiText.StringRef).arguments[1] as UiText.StringRef
+                assertEquals("source_credentials_missing", detail.resource.key)
+            }
+            assertTrue(resolveUiText(text, AppLanguage.English).lines().all { "no valid credentials" in it })
+            assertTrue(resolveUiText(text, AppLanguage.TraditionalChinese).lines().all { "有效憑證" in it })
+            assertTrue(client.requestedEndpoints.isEmpty())
+        } finally { database.close() }
+    }
+
+    @Test fun disabledSourcesRejectBothFavoriteChangesWithoutRequestsOrWrites() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            seedEmbySource(database)
+            val nav = requireNotNull(database.importSourceDao().getById("nav-source"))
+            val emby = requireNotNull(database.importSourceDao().getById("emby-source"))
+            database.importSourceDao().upsert(nav.copy(enabled = false))
+            database.importSourceDao().upsert(emby.copy(enabled = false))
+            database.importSourceDao().upsert(nav.copy(id = "sub-source", type = "SUBSONIC", enabled = false))
+            val subTrack = navidromeTrack("song-8").copy(
+                id = "sub-track", sourceId = "sub-source",
+                mediaLocator = buildSubsonicCompatibleSongLocator(ImportSourceType.SUBSONIC, "sub-source", "song-8"),
+            )
+            val client = RecordingFavoritesHttpClient()
+            val repository = RoomFavoritesRepository(database, MapSecureCredentialStore(), client)
+            listOf(navidromeTrack("song-8") to "Subsonic-compatible", subTrack to "Subsonic-compatible", embyTrack("song-8") to "Emby").forEach { (track, service) ->
+                val addError = assertNotNull(repository.toggleFavorite(track).exceptionOrNull())
+                assertNull(database.favoriteTrackDao().getByTrackId(track.id))
+                val row = FavoriteTrackEntity(track.id, track.sourceId, "song-8", 123L)
+                database.favoriteTrackDao().upsert(row)
+                val removeError = assertNotNull(repository.toggleFavorite(track).exceptionOrNull())
+                assertEquals(row, database.favoriteTrackDao().getByTrackId(track.id))
+                listOf(addError, removeError).forEach { error ->
+                    val text = assertNotNull(error.uiFailureTextOrNull())
+                    assertEquals("The $service source is unavailable. Cannot update favorites.", resolveUiText(text, AppLanguage.English))
+                    assertEquals("$service 來源不可用，無法更新喜歡狀態。", resolveUiText(text, AppLanguage.TraditionalChinese))
+                    assertEquals("$service 来源不可用，无法更新喜欢状态。", resolveUiText(text, AppLanguage.SimplifiedChinese))
+                }
+            }
+            assertTrue(client.requestedEndpoints.isEmpty())
+        } finally { database.close() }
     }
 }
 

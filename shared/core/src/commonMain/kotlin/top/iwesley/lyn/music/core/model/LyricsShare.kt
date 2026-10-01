@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
 enum class LyricsShareTemplate {
     NOTE,
     ARTWORK_TINT,
@@ -17,6 +19,7 @@ data class LyricsShareFontOption(
     val isPrioritized: Boolean = false,
     val kind: LyricsShareFontKind = LyricsShareFontKind.SYSTEM,
     val fontFilePath: String? = null,
+    val displayNameText: UiText? = null,
 )
 
 data class LyricsShareCardModel(
@@ -32,7 +35,7 @@ data class LyricsShareCardModel(
 )
 
 data class LyricsShareSaveResult(
-    val message: String,
+    val message: UiText,
 )
 
 interface LyricsSharePlatformService {
@@ -51,8 +54,8 @@ interface LyricsShareFontLibraryPlatformService {
 }
 
 object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
-    private val error = IllegalStateException("当前平台暂不支持歌词分享图片。")
-    private val fontError = IllegalStateException("当前平台暂不支持读取系统字体。")
+    private val error = UiTextException(uiText(Res.string.lyrics_image_unsupported))
+    private val fontError = UiTextException(uiText(Res.string.font_system_unavailable))
 
     override suspend fun buildPreview(model: LyricsShareCardModel): Result<ByteArray> = Result.failure(error)
 
@@ -66,7 +69,7 @@ object UnsupportedLyricsSharePlatformService : LyricsSharePlatformService {
 }
 
 object UnsupportedLyricsShareFontLibraryPlatformService : LyricsShareFontLibraryPlatformService {
-    private val error = IllegalStateException("当前平台暂不支持歌词分享字体导入。")
+    private val error = UiTextException(uiText(Res.string.font_import_unsupported))
 
     override suspend fun listImportedFonts(): Result<List<LyricsShareFontOption>> = Result.success(emptyList())
 
@@ -80,6 +83,21 @@ object UnsupportedLyricsShareFontLibraryPlatformService : LyricsShareFontLibrary
 const val DEFAULT_LYRICS_SHARE_FONT_KEY: String = "Serif"
 const val DEFAULT_LYRICS_SHARE_FONT_PREVIEW_TEXT: String = "你好 Hello"
 const val LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX: String = "imported:"
+
+/** Android aliases are implementation keys; keep their labels unresolved until display. */
+fun androidLyricsShareBuiltInFontNameText(fontKey: String?): UiText? = when (fontKey?.lowercase()) {
+    "sans-serif" -> uiText(Res.string.font_sans_serif)
+    "sans-serif-medium" -> uiText(Res.string.font_sans_medium)
+    "sans-serif-black" -> uiText(Res.string.font_sans_black)
+    "serif" -> uiText(Res.string.font_serif)
+    "monospace" -> uiText(Res.string.font_monospace)
+    "serif-monospace" -> uiText(Res.string.font_serif_mono)
+    "sans-serif-condensed" -> uiText(Res.string.font_sans_condensed)
+    "sans-serif-condensed-medium" -> uiText(Res.string.font_sans_condensed_medium)
+    "cursive" -> uiText(Res.string.font_cursive)
+    "casual" -> uiText(Res.string.font_casual)
+    else -> null
+}
 
 fun buildLyricsShareImportedFontKey(contentHash: String): String {
     return "$LYRICS_SHARE_IMPORTED_FONT_KEY_PREFIX${contentHash.trim().lowercase()}"
@@ -230,13 +248,12 @@ fun buildLyricsShareSuggestedName(title: String): String {
     return "$normalized-lyrics-share.png"
 }
 
-fun buildLyricsShareTitleArtistLine(
-    title: String,
-    artistName: String?,
-): String {
-    val resolvedTitle = title.trim().ifBlank { "当前歌曲" }
-    val resolvedArtist = artistName?.trim().orEmpty().ifBlank { "未知艺人" }
-    return "$resolvedTitle · $resolvedArtist"
+fun buildLyricsShareTitleArtistLine(title: String, artistName: String?): UiText {
+    val resolvedTitle = title.trim().takeIf { it.isNotBlank() }?.let(UiText::Raw)
+        ?: uiText(Res.string.lyrics_share_current_track)
+    val resolvedArtist = artistName?.trim()?.takeIf { it.isNotBlank() }?.let(UiText::Raw)
+        ?: uiText(Res.string.common_unknown_artist)
+    return UiText.Joined(listOf(resolvedTitle, resolvedArtist))
 }
 
 private val ILLEGAL_FILE_NAME_CHARS = Regex("""[\\/:*?"<>|]+""")

@@ -54,16 +54,16 @@ private class DefaultJvmDeviceInfoProvider : JvmDeviceInfoProvider {
 
 internal fun jvmDeviceInfoSnapshot(raw: JvmDeviceInfoRaw): DeviceInfoSnapshot {
     return DeviceInfoSnapshot(
-        systemName = raw.systemName.ifBlank { "Desktop" },
-        systemVersion = raw.systemVersion.ifBlank { "不可用" },
+        systemName = raw.systemName,
+        systemVersion = raw.systemVersion,
         resolution = formatJvmResolution(raw.resolutionWidth, raw.resolutionHeight),
         resolutionWidthPx = raw.resolutionWidth?.takeIf { it > 0 },
         resolutionHeightPx = raw.resolutionHeight?.takeIf { it > 0 },
         cpuDescription = formatJvmCpuDescription(
             processorIdentifier = raw.processorIdentifier,
             osArch = raw.osArch,
-            logicalCoreCount = raw.logicalCoreCount,
         ),
+        logicalCoreCount = raw.logicalCoreCount?.takeIf { it > 0 },
         totalMemoryBytes = raw.totalMemoryBytes?.takeIf { it > 0L },
     )
 }
@@ -71,17 +71,15 @@ internal fun jvmDeviceInfoSnapshot(raw: JvmDeviceInfoRaw): DeviceInfoSnapshot {
 internal fun formatJvmCpuDescription(
     processorIdentifier: String?,
     osArch: String?,
-    logicalCoreCount: Int?,
 ): String? {
     val model = processorIdentifier?.trim()?.takeIf { it.isNotBlank() }
     val arch = osArch?.trim()?.takeIf { it.isNotBlank() }
-    val cores = logicalCoreCount?.takeIf { it > 0 }?.let { "$it 核" }
     return when {
         model != null && arch != null && !model.contains(arch, ignoreCase = true) ->
-            listOf(model, arch, cores).filterNotNull().joinToString(" · ")
+            listOf(model, arch).joinToString(" · ")
 
-        else -> listOfNotNull(model ?: arch, cores).joinToString(" · ")
-    }.takeIf { it.isNotBlank() }
+        else -> model ?: arch
+    }?.takeIf { it.isNotBlank() }
 }
 
 internal fun formatJvmResolution(

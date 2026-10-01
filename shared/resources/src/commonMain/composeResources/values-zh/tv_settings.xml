@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_source_add_hint">添加本地文件夹、Samba、WebDAV、Navidrome、Subsonic 或 Emby 后，曲库会开始扫描音乐。</string>
+    <string name="tv_source_add_and_scan">添加并扫描</string>
+    <string name="tv_source_add_named_type">新增%1$s来源</string>
+    <string name="tv_source_add_action">新增来源</string>
+    <string name="tv_source_allow_insecure_tls">允许不安全 TLS</string>
+    <string name="tv_source_api_key_authentication">API Key 鉴权</string>
+    <string name="tv_about_app_name">应用名称</string>
+    <string name="tv_storage_caches_title">缓存和本机文件</string>
+    <string name="tv_source_delete_confirmation">确认删除“%1$s”吗？</string>
+    <string name="tv_device_information_title">设备信息</string>
+    <string name="tv_storage_artwork_cache_description">下载封面、扫描封面和标签编辑生成的本地封面文件。</string>
+    <string name="tv_source_edit_named_type">编辑%1$s来源</string>
+    <string name="tv_source_import_title">导入和扫描音乐</string>
+    <string name="tv_source_last_scan_error">上次扫描失败：%1$s</string>
+    <string name="tv_source_saved_api_key_hint">留空则沿用已保存 API Key</string>
+    <string name="tv_source_saved_password_hint">留空则沿用已保存密码</string>
+    <string name="tv_source_management_description">管理本机、Samba、WebDAV、Navidrome、Subsonic 和 Emby 音乐来源。</string>
+    <string name="tv_sources_empty_title">还没有来源</string>
+    <string name="tv_storage_offline_music_description">手动下载到本机的非本地音乐文件。</string>
+    <string name="tv_source_not_scanned_status">未扫描</string>
+    <string name="tv_source_not_scanned_hint">尚未扫描</string>
+    <string name="tv_settings_notice_title">提示</string>
+    <string name="tv_settings_optional_field">可选</string>
+    <string name="tv_settings_reading_label">读取中</string>
+    <string name="tv_settings_reading_progress">读取中...</string>
+    <string name="tv_source_root_address">根地址</string>
+    <string name="tv_source_save_and_scan">保存并扫描</string>
+    <string name="tv_source_server_label">服务器</string>
+    <string name="tv_settings_unavailable_title">设置页不可用</string>
+    <string name="tv_source_samba_path_example">共享文件/Music</string>
+    <string name="tv_device_information_description">系统和硬件信息</string>
+    <string name="tv_storage_tags_temporary_description">编辑标签封面时写入的临时中转文件。</string>
+    <string name="tv_storage_lyrics_share_temporary_description">生成歌词分享图时写入的临时图片。</string>
+    <string name="tv_storage_samba_cache_description">SMB 播放时落到本地的临时音频缓存。</string>
+    <string name="tv_source_test_connection">测试</string>
+    <string name="tv_source_track_summary">曲目 %1$s 首 · %2$s</string>
+    <string name="tv_about_app_version_description">版本和项目地址</string>
+    <string name="tv_storage_management_hint">查看 TV 端可管理缓存，并按分类清理。</string>
+    <string name="tv_device_information_hint">查看当前 TV 或车机的系统、屏幕和硬件信息。</string>
+    <string name="tv_about_app_information_hint">查看版本、开发者、项目地址和公众号信息。</string>
+</resources>

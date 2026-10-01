@@ -1,5 +1,13 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.platform.AndroidCrashReportText
+import top.iwesley.lyn.music.core.model.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -20,18 +28,18 @@ import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 
 class CrashReportActivity : Activity() {
-    private val crashReport: String
+    private val textScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val crashReport: String?
         get() = intent
             ?.getStringExtra(EXTRA_ANDROID_CRASH_REPORT)
             ?.takeIf { it.isNotBlank() }
-            ?: "未收到崩溃堆栈。"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildContentView(crashReport))
     }
 
-    private fun buildContentView(report: String): View {
+    private fun buildContentView(report: String?): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
@@ -40,7 +48,7 @@ class CrashReportActivity : Activity() {
 
         root.addView(
             TextView(this).apply {
-                text = "LynMusic 遇到未捕获异常"
+                bindText(this, AndroidCrashReportText.Title)
                 setTextColor(Color.rgb(23, 23, 23))
                 textSize = 20f
                 typeface = Typeface.DEFAULT_BOLD
@@ -53,7 +61,7 @@ class CrashReportActivity : Activity() {
 
         root.addView(
             TextView(this).apply {
-                text = "应用主进程已停止。你可以复制下面的崩溃堆栈给开发者用于排查。"
+                bindText(this, AndroidCrashReportText.Instructions)
                 setTextColor(Color.rgb(68, 68, 68))
                 textSize = 14f
                 setPadding(0, dp(8), 0, dp(16))
@@ -65,7 +73,11 @@ class CrashReportActivity : Activity() {
         )
 
         val reportText = TextView(this).apply {
-            text = report
+            if (report != null) {
+                text = report
+            } else {
+                bindText(this, AndroidCrashReportText.MissingStackTrace)
+            }
             setTextColor(Color.rgb(32, 32, 32))
             textSize = 12f
             typeface = Typeface.MONOSPACE
@@ -97,13 +109,14 @@ class CrashReportActivity : Activity() {
                 setPadding(0, dp(16), 0, 0)
                 addView(
                     Button(this@CrashReportActivity).apply {
-                        text = "复制堆栈"
-                        setOnClickListener { copyCrashReport(report) }
+                        bindText(this, AndroidCrashReportText.CopyStackTrace)
+                        isEnabled = report != null
+                        setOnClickListener { if (report != null) copyCrashReport(report) }
                     },
                 )
                 addView(
                     Button(this@CrashReportActivity).apply {
-                        text = "关闭"
+                        bindText(this, AndroidCrashReportText.Close)
                         setOnClickListener { closeCrashReportProcess() }
                     },
                 )
@@ -120,7 +133,24 @@ class CrashReportActivity : Activity() {
     private fun copyCrashReport(report: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("LynMusic crash report", report))
-        Toast.makeText(this, "已复制崩溃堆栈", Toast.LENGTH_SHORT).show()
+        textScope.launch {
+            Toast.makeText(this@CrashReportActivity, AndroidCrashReportText.StackTraceCopied.resolve(), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun bindText(view: TextView, label: AndroidCrashReportText) {
+        view.text = label.fallbackText()
+        textScope.launch {
+            observeResolvedUiText(
+                descriptions = flowOf(uiText(label.resource)),
+                resolve = { _, language -> label.resolve(language) },
+            ) { value, _ -> view.text = value.orEmpty() }
+        }
+    }
+
+    override fun onDestroy() {
+        textScope.cancel()
+        super.onDestroy()
     }
 
     private fun closeCrashReportProcess() {

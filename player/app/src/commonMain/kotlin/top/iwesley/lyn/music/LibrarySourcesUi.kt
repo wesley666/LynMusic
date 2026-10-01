@@ -1,5 +1,14 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.UiText
+
+import top.iwesley.lyn.music.core.model.plus
+
+import top.iwesley.lyn.music.core.model.reasonUiText
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.uiText
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -156,11 +165,11 @@ internal enum class LibraryTabMessageDismissTarget {
     Favorites,
 }
 
-internal fun libraryTabBrowserMessage(
+internal fun <T> libraryTabBrowserMessage(
     isOnlineMode: Boolean,
-    onlineErrorMessage: String?,
-    favoritesMessage: String?,
-): String? {
+    onlineErrorMessage: T?,
+    favoritesMessage: T?,
+): T? {
     return if (isOnlineMode) onlineErrorMessage else favoritesMessage
 }
 
@@ -276,18 +285,18 @@ internal fun LibraryTab(
         actions = browserActions,
         onlineSourceOptions = onlineSourceOptions,
         strings = LibraryBrowserStrings(
-            searchLabel = "搜索歌曲 / 艺人 / 专辑 / 文件夹",
+            searchLabel = uiString(Res.string.library_search_with_folders_placeholder),
             sectionTitle = "",
             sectionSubtitle = "",
             songsIcon = Icons.Rounded.LibraryMusic,
-            emptyCollectionTitle = "曲库还是空的",
-            emptyCollectionBody = "先到“来源”页导入本地文件夹、Samba、WebDAV、Navidrome、Subsonic 或 Emby，扫描完成后会出现在这里。",
-            emptyFilterBody = "试试切回“全部来源”、更换过滤项，或调整搜索词。",
-            emptySearchBody = "试试调整搜索词，或切换来源过滤。",
-            trackLabel = "歌曲",
-            albumLabel = "专辑",
-            artistLabel = "艺人",
-            folderLabel = "文件夹",
+            emptyCollectionTitle = uiString(Res.string.library_empty_title),
+            emptyCollectionBody = uiString(Res.string.library_empty_import_hint),
+            emptyFilterBody = uiString(Res.string.library_source_filter_empty_hint),
+            emptySearchBody = uiString(Res.string.library_search_filter_empty_hint),
+            trackLabel = uiString(Res.string.library_tracks_title),
+            albumLabel = uiString(Res.string.library_albums_title),
+            artistLabel = uiString(Res.string.library_artists_title),
+            folderLabel = uiString(Res.string.library_folders_title),
         ),
         showFavoriteButton = showFavoriteButton && !isOnlineMode,
         showDuration = showDuration,
@@ -375,18 +384,18 @@ internal fun FavoritesTab(
         actions = browserActions,
         onlineSourceOptions = onlineSourceOptions,
         strings = LibraryBrowserStrings(
-            searchLabel = "搜索歌曲 / 艺人 / 专辑",
+            searchLabel = uiString(Res.string.library_search_placeholder),
             sectionTitle = "",
             sectionSubtitle = "",
             songsIcon = Icons.Rounded.Favorite,
-            emptyCollectionTitle = "还没有喜欢的歌曲",
-            emptyCollectionBody = "在曲库或播放器里点亮心形后，喜欢的歌曲会出现在这里。",
-            emptyFilterBody = "试试切回“全部来源”、更换过滤项，或去其他来源里添加喜欢。",
-            emptySearchBody = "试试调整搜索词，或切换来源过滤。",
-            trackLabel = "喜欢的歌曲",
-            albumLabel = "喜欢的专辑",
-            artistLabel = "喜欢的艺人",
-            folderLabel = "喜欢的文件夹",
+            emptyCollectionTitle = uiString(Res.string.favorites_empty_title),
+            emptyCollectionBody = uiString(Res.string.favorites_empty_hint),
+            emptyFilterBody = uiString(Res.string.favorites_source_filter_empty_hint),
+            emptySearchBody = uiString(Res.string.library_search_filter_empty_hint),
+            trackLabel = uiString(Res.string.favorites_tracks_title),
+            albumLabel = uiString(Res.string.favorites_albums_title),
+            artistLabel = uiString(Res.string.favorites_artists_title),
+            folderLabel = uiString(Res.string.favorites_folders_title),
         ),
         actionButton = if (showRefreshActionButton && (state.canRefreshRemote || isOnlineMode)) {
             {
@@ -402,7 +411,7 @@ internal fun FavoritesTab(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Sync,
-                        contentDescription = if (state.isRefreshing || onlineState.isLoading) "刷新中" else "刷新",
+                        contentDescription = if (state.isRefreshing || onlineState.isLoading) uiString(Res.string.common_refreshing) else uiString(Res.string.common_refresh),
                     )
                 }
             }
@@ -422,7 +431,7 @@ internal fun FavoritesTab(
 
 internal data class OnlineSourceOption(
     val sourceId: String,
-    val label: String,
+    val label: UiText,
 )
 
 internal fun ImportState.onlineNavidromeSourceOptions(): List<OnlineSourceOption> {
@@ -437,7 +446,7 @@ internal fun ImportState.onlineNavidromeSourceOptions(): List<OnlineSourceOption
         .map { source ->
             OnlineSourceOption(
                 sourceId = source.id,
-                label = source.label.trim().ifBlank { source.id } + " · 在线",
+                label = UiText.Raw(source.label.trim().ifBlank { source.id }) + uiText(Res.string.source_online_badge),
             )
         }
         .toList()
@@ -472,7 +481,7 @@ internal enum class LibraryRootSelectorStyle {
 
 internal data class LibraryRootSelectorItem(
     val rootView: LibraryBrowserRootView,
-    val title: String,
+    val title: UiText,
     val value: String,
 )
 
@@ -495,22 +504,22 @@ internal fun buildLibraryRootSelectorModel(
 ): LibraryRootSelectorModel {
     val trackItem = LibraryRootSelectorItem(
         rootView = LibraryBrowserRootView.Tracks,
-        title = "歌曲",
+        title = uiText(Res.string.library_tracks_title),
         value = trackCount.displayValue(),
     )
     val albumItem = LibraryRootSelectorItem(
         rootView = LibraryBrowserRootView.Albums,
-        title = "专辑",
+        title = uiText(Res.string.library_albums_title),
         value = albumCount.displayValue(),
     )
     val artistItem = LibraryRootSelectorItem(
         rootView = LibraryBrowserRootView.Artists,
-        title = "艺人",
+        title = uiText(Res.string.library_artists_title),
         value = artistCount.displayValue(),
     )
     val folderItem = LibraryRootSelectorItem(
         rootView = LibraryBrowserRootView.Folders,
-        title = "文件夹",
+        title = uiText(Res.string.library_folders_title),
         value = folderCount.coerceAtLeast(0).toString(),
     )
     val defaultItems = buildList {
@@ -531,7 +540,7 @@ internal fun buildLibraryRootSelectorModel(
         LibraryRootSelectorStyle.CompactHero -> LibraryRootSelectorModel(
             style = style,
             defaultItems = emptyList(),
-            heroItem = trackItem.copy(title = "全部歌曲"),
+            heroItem = trackItem.copy(title = uiText(Res.string.library_all_tracks_label)),
             secondaryItems = buildList {
                 add(albumItem)
                 add(artistItem)
@@ -640,21 +649,30 @@ internal fun normalizedLibraryFolderPathSegments(relativePath: String): List<Str
         .filter { it.isNotEmpty() }
 }
 
-internal fun libraryFolderSummaryLabel(folder: LibraryFolderNode): String {
+internal fun libraryFolderSummaryLabelText(folder: LibraryFolderNode): UiText {
     return if (folder.childFolderCount > 0) {
-        "${folder.trackCount} 首歌曲 · ${folder.childFolderCount} 个子文件夹"
+        uiText(Res.string.library_folder_track_and_subfolder_counts,
+            uiPlural(Res.plurals.common_track_count, folder.trackCount, folder.trackCount),
+            uiPlural(Res.plurals.ui_subfolders_count, folder.childFolderCount, folder.childFolderCount),
+        )
     } else {
-        "${folder.trackCount} 首歌曲"
+        uiPlural(Res.plurals.common_track_count, (folder.trackCount).toInt(), folder.trackCount)
     }
 }
 
-internal fun libraryFolderDetailSubtitle(folder: LibraryFolderNode): String {
+@Composable
+internal fun libraryFolderSummaryLabel(folder: LibraryFolderNode): String = libraryFolderSummaryLabelText(folder).displayText()
+
+internal fun libraryFolderDetailSubtitleText(folder: LibraryFolderNode): UiText {
     return if (folder.path.isBlank()) {
-        "来源根目录"
+        uiText(Res.string.library_source_root_folder)
     } else {
-        folder.path
+        UiText.Raw(folder.path)
     }
 }
+
+@Composable
+internal fun libraryFolderDetailSubtitle(folder: LibraryFolderNode): String = libraryFolderDetailSubtitleText(folder).displayText()
 
 private data class LibraryFolderDetailScrollPosition(
     val firstVisibleItemIndex: Int,
@@ -924,7 +942,7 @@ private fun LibraryBrowserTab(
             else -> tracksByAlbumId[albumId].orEmpty()
         }.sortedWith(ALBUM_DETAIL_TRACK_COMPARATOR)
     }
-    val folderTree = remember(visibleTracks, state.sourceLabelsById) {
+    val folderTree = remember(visibleTracks, state.sourceLabelsById, currentUiLanguage) {
         deriveLibraryFolderTree(
             tracks = visibleTracks,
             sourceLabelsById = state.sourceLabelsById,
@@ -944,6 +962,7 @@ private fun LibraryBrowserTab(
         2 + childItems + trackItems
     }
     val rootSelectorModel = remember(
+        currentUiLanguage,
         rootSelectorStyle,
         state.trackCount,
         state.albumCount,
@@ -1295,7 +1314,7 @@ private fun LibraryBrowserTab(
             IconButton(onClick = { selectionMode = true }) {
                 Icon(
                     imageVector = Icons.Rounded.Checklist,
-                    contentDescription = "批量操作",
+                    contentDescription = uiString(Res.string.library_batch_actions),
                 )
             }
         }
@@ -1439,7 +1458,7 @@ private fun LibraryBrowserTab(
                     item {
                         TrackSelectionActionBar(
                             selectedCount = selectedBatchTracks.size,
-                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate),
+                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate).displayText(),
                             allVisibleSelected = allVisibleBatchTracksSelected,
                             hasVisibleTracks = batchVisibleTracks.isNotEmpty(),
                             onToggleSelectAll = {
@@ -1476,8 +1495,8 @@ private fun LibraryBrowserTab(
                     phoneRootState != null && rootView == LibraryBrowserRootView.Folders && !showFolderBrowser -> {
                         item {
                             EmptyStateCard(
-                                title = "当前来源不支持文件夹浏览",
-                                body = "切换到本地索引来源后，可以在这里浏览文件夹。",
+                                title = uiString(Res.string.library_source_folder_browsing_unsupported),
+                                body = uiString(Res.string.library_folder_local_source_required),
                             )
                         }
                     }
@@ -1487,12 +1506,12 @@ private fun LibraryBrowserTab(
                         }
                         item {
                             DetailSummaryCard(
-                                title = selectedAlbum.title,
-                                subtitle = selectedAlbum.artistName ?: "未知艺人",
+                                title = selectedAlbum.title.ifBlank { uiString(Res.string.common_unknown_album) },
+                                subtitle = selectedAlbum.artistName ?: uiString(Res.string.common_unknown_artist),
                                 supportingText = if (isLoadingOnlineAlbumTracks) {
-                                    "正在加载歌曲"
+                                    uiString(Res.string.library_tracks_loading)
                                 } else {
-                                    "${albumTracks.size} 首歌曲"
+                                    uiString(Res.plurals.common_track_count, (albumTracks.size).toInt(), albumTracks.size)
                                 },
                                 artworkLocator = albumTracks.firstOrNull()?.artworkLocator
                                     ?: selectedAlbumItem?.artworkLocator,
@@ -1500,20 +1519,20 @@ private fun LibraryBrowserTab(
                             )
                         }
                         item {
-                            SectionTitle(title = "歌曲", subtitle = "当前专辑下的可见歌曲。")
+                            SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_album_visible_tracks_description))
                         }
                         if (isLoadingOnlineAlbumTracks && albumTracks.isEmpty()) {
                             item {
                                 EmptyStateCard(
-                                    title = "正在加载专辑歌曲",
-                                    body = "正在从在线来源读取这个专辑的歌曲。",
+                                    title = uiString(Res.string.library_album_tracks_loading),
+                                    body = uiString(Res.string.library_online_album_loading_hint),
                                 )
                             }
                         } else if (albumTracks.isEmpty()) {
                             item {
                                 EmptyStateCard(
-                                    title = "这个专辑暂时没有歌曲",
-                                    body = "当前筛选结果里已经没有这个专辑的可见歌曲。",
+                                    title = uiString(Res.string.library_album_tracks_empty_title),
+                                    body = uiString(Res.string.library_album_tracks_filter_empty_hint),
                                 )
                             }
                         } else {
@@ -1547,15 +1566,15 @@ private fun LibraryBrowserTab(
                         }
                         item {
                             DetailSummaryCard(
-                                title = selectedArtist.name,
+                                title = selectedArtist.name.ifBlank { uiString(Res.string.common_unknown_artist) },
                                 subtitle = artistSummaryLabel(
                                     trackCount = selectedArtistTrackCount,
                                     albumCount = selectedArtistAlbumCount,
                                 ),
                                 supportingText = if (state.isOnline) {
-                                    "在线艺人详情"
+                                    uiString(Res.string.library_online_artist_detail_title)
                                 } else {
-                                    "当前筛选结果中的艺人详情"
+                                    uiString(Res.string.library_artist_filtered_detail_description)
                                 },
                                 artworkLocator = if (state.isOnline) null else artistTracks.firstOrNull()?.artworkLocator,
                                 artworkCacheKey = if (state.isOnline) {
@@ -1567,25 +1586,25 @@ private fun LibraryBrowserTab(
                         }
                         item {
                             SectionTitle(
-                                title = "专辑",
-                                subtitle = if (state.isOnline) "Navidrome 返回的艺人专辑。" else "当前艺人下的可见专辑。",
+                                title = uiString(Res.string.library_albums_title),
+                                subtitle = if (state.isOnline) uiString(Res.string.library_navidrome_artist_albums_description) else uiString(Res.string.library_artist_visible_albums_description),
                             )
                         }
                         if (isLoadingOnlineArtistAlbums && artistAlbumItems.isEmpty()) {
                             item {
                                 EmptyStateCard(
-                                    title = "正在加载艺人专辑",
-                                    body = "正在从 Navidrome 获取这个艺人的专辑。",
+                                    title = uiString(Res.string.library_artist_albums_loading),
+                                    body = uiString(Res.string.library_navidrome_artist_albums_loading_hint),
                                 )
                             }
                         } else if (artistAlbumItems.isEmpty()) {
                             item {
                                 EmptyStateCard(
-                                    title = if (state.isOnline) "这个艺人暂无可显示专辑" else "这个艺人下暂无专辑信息",
+                                    title = if (state.isOnline) uiString(Res.string.library_artist_albums_empty_title) else uiString(Res.string.library_artist_album_metadata_missing),
                                     body = if (state.isOnline) {
-                                        "Navidrome 没有返回这个艺人的专辑。"
+                                        uiString(Res.string.library_navidrome_artist_albums_empty_hint)
                                     } else {
-                                        "当前艺人的可见歌曲还没有可用的专辑标签。"
+                                        uiString(Res.string.library_artist_album_tags_missing_hint)
                                     },
                                 )
                             }
@@ -1614,13 +1633,13 @@ private fun LibraryBrowserTab(
                         }
                         if (!state.isOnline) {
                             item {
-                                SectionTitle(title = "歌曲", subtitle = "当前艺人下的可见歌曲。")
+                                SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_artist_visible_tracks_description))
                             }
                             if (artistTracks.isEmpty()) {
                                 item {
                                     EmptyStateCard(
-                                        title = "这个艺人暂时没有歌曲",
-                                        body = "当前筛选结果里已经没有这个艺人的可见歌曲。",
+                                        title = uiString(Res.string.library_artist_tracks_empty_title),
+                                        body = uiString(Res.string.library_artist_tracks_filter_empty_hint),
                                     )
                                 }
                             } else {
@@ -1661,7 +1680,7 @@ private fun LibraryBrowserTab(
                         }
                         if (selectedFolderChildren.isNotEmpty()) {
                             item {
-                                SectionTitle(title = "文件夹", subtitle = "当前目录下的子文件夹。")
+                                SectionTitle(title = uiString(Res.string.library_folders_title), subtitle = uiString(Res.string.library_subfolders_description))
                             }
                             items(selectedFolderChildren, key = { it.key.stableId }) { folder ->
                                 FolderRow(
@@ -1671,16 +1690,16 @@ private fun LibraryBrowserTab(
                             }
                         }
                         item {
-                            SectionTitle(title = "歌曲", subtitle = "当前目录下的歌曲。")
+                            SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_folder_tracks_description))
                         }
                         if (selectedFolderTracks.isEmpty()) {
                             item {
                                 EmptyStateCard(
-                                    title = "这个目录下没有直接歌曲",
+                                    title = uiString(Res.string.library_folder_direct_tracks_empty),
                                     body = if (selectedFolderChildren.isEmpty()) {
-                                        "当前筛选结果里已经没有这个目录的可见歌曲。"
+                                        uiString(Res.string.library_folder_tracks_filter_empty_hint)
                                     } else {
-                                        "可继续进入子文件夹查看歌曲。"
+                                        uiString(Res.string.library_subfolders_browse_hint)
                                     },
                                 )
                             }
@@ -1744,8 +1763,8 @@ private fun LibraryBrowserTab(
                             item {
                                 when {
                                     state.isLoading -> EmptyStateCard(
-                                        title = "正在加载$currentLabel",
-                                        body = "歌曲数据会在首屏显示后继续异步整理，请稍候。",
+                                        title = uiString(Res.string.library_loading_named_category, currentLabel),
+                                        body = uiString(Res.string.library_background_indexing_hint),
                                     )
 
                                     state.allTrackCount == 0 -> EmptyStateCard(
@@ -1754,12 +1773,12 @@ private fun LibraryBrowserTab(
                                     )
 
                                     state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
-                                        title = "当前来源下没有$currentLabel",
+                                        title = uiString(Res.string.library_source_category_empty_title, currentLabel),
                                         body = strings.emptyFilterBody,
                                     )
 
                                     else -> EmptyStateCard(
-                                        title = "没有匹配的$currentLabel",
+                                        title = uiString(Res.string.library_category_filter_empty_title, currentLabel),
                                         body = strings.emptySearchBody,
                                     )
                                 }
@@ -1932,11 +1951,12 @@ private fun PhoneLibraryTrackActions(
     val enabled = loadedCount > 0
     val playColor = if (enabled) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    val partiallyLoaded = isOnline && (count.hasMore || (count.total ?: loadedCount) > loadedCount)
+    val totalCount = count.total
+    val partiallyLoaded = isOnline && (count.hasMore || (totalCount ?: loadedCount) > loadedCount)
     val countLabel = when {
-        partiallyLoaded && count.total != null -> "已加载 $loadedCount / 共 ${count.total} 首"
-        partiallyLoaded -> "已加载 $loadedCount 首"
-        else -> "$loadedCount 首"
+        partiallyLoaded && totalCount != null -> uiPlural(Res.plurals.library_loaded_track_progress, totalCount, loadedCount, totalCount).displayText()
+        partiallyLoaded -> uiString(Res.plurals.library_loaded_track_count, (loadedCount).toInt(), loadedCount)
+        else -> uiString(Res.plurals.common_track_count_short, (loadedCount).toInt(), loadedCount)
     }
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -1964,7 +1984,7 @@ private fun PhoneLibraryTrackActions(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                if (partiallyLoaded) "播放已加载" else "播放全部",
+                if (partiallyLoaded) uiString(Res.string.library_play_loaded_tracks) else uiString(Res.string.player_play_all),
                 color = playColor,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
@@ -2006,22 +2026,25 @@ private fun LibraryLoadMoreRow(
             onClick = onLoadMore,
             enabled = !isLoading,
         ) {
-            Text(if (isLoading) "加载中" else "加载更多")
+            Text(if (isLoading) uiString(Res.string.library_loading_status) else uiString(Res.string.library_load_more_action))
         }
     }
 }
 
-internal fun libraryLoadMoreStatusLabel(count: LibraryBrowserCount): String {
+internal fun libraryLoadMoreStatusLabelText(count: LibraryBrowserCount): UiText {
     val loaded = count.loaded.coerceAtLeast(0)
     val total = count.total?.coerceAtLeast(0)
     return if (total != null) {
-        "已显示 $loaded / 共 $total"
+        uiText(Res.string.library_visible_count_progress, loaded, total)
     } else if (count.hasMore) {
-        "已显示 $loaded+"
+        uiText(Res.string.library_visible_count_partial, loaded)
     } else {
-        "已显示 $loaded"
+        uiText(Res.string.library_visible_count, loaded)
     }
 }
+
+@Composable
+internal fun libraryLoadMoreStatusLabel(count: LibraryBrowserCount): String = libraryLoadMoreStatusLabelText(count).displayText()
 
 @Composable
 private fun LibraryRootSelector(
@@ -2071,7 +2094,7 @@ private fun DefaultLibraryRootSelector(
                 Modifier
             }
             StatCard(
-                title = item.title,
+                title = item.title.displayText(),
                 value = item.value,
                 icon = defaultLibraryRootIcon(item.rootView, songsIcon),
                 selected = selectedRootView == item.rootView,
@@ -2171,7 +2194,7 @@ private fun CompactLibraryHeroCard(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = item.title,
+                text = item.title.displayText(),
                 style = MaterialTheme.typography.titleMedium,
                 color = contentColor,
                 fontWeight = FontWeight.ExtraBold,
@@ -2197,7 +2220,7 @@ private fun CompactLibraryHeroCard(
         ) {
             Icon(
                 imageVector = Icons.Rounded.PlayArrow,
-                contentDescription = "播放全部歌曲",
+                contentDescription = uiString(Res.string.library_play_all_tracks),
                 tint = contentColor.copy(alpha = if (playAllEnabled) 1f else 0.48f),
                 modifier = Modifier.size(24.dp),
             )
@@ -2256,7 +2279,7 @@ private fun CompactLibrarySmallCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = item.title,
+                text = item.title.displayText(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = shellColors.secondaryText,
                 fontWeight = FontWeight.Bold,
@@ -2515,7 +2538,7 @@ private fun DesktopLibrarySearchField(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Close,
-                            contentDescription = "清空搜索",
+                            contentDescription = uiString(Res.string.search_clear_query),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2555,7 +2578,7 @@ private fun LibraryBrowserToolbarActions(
             IconButton(onClick = { onSourceFilterMenuExpandedChange(true) }) {
                 Icon(
                     imageVector = Icons.Rounded.MoreVert,
-                    contentDescription = "选择来源",
+                    contentDescription = uiString(Res.string.library_select_source),
                 )
             }
             LibrarySourceFilterDropdownMenu(
@@ -2580,7 +2603,7 @@ private fun LibraryBrowserToolbarActions(
                 IconButton(onClick = { onTrackSortMenuExpandedChange(true) }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.Sort,
-                        contentDescription = "歌曲排序",
+                        contentDescription = uiString(Res.string.library_sort_tracks),
                     )
                 }
                 TrackSortDropdownMenu(
@@ -2598,22 +2621,24 @@ private fun LibraryBrowserToolbarActions(
     }
 }
 
+@Composable
 private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部来源"
-        LibrarySourceFilter.LOCAL_FOLDER -> "本地文件夹"
+        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
+        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
         LibrarySourceFilter.SAMBA -> "Samba"
         LibrarySourceFilter.WEBDAV -> "WebDAV"
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
         LibrarySourceFilter.SUBSONIC -> "Subsonic"
         LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.DOWNLOADED -> "已下载"
+        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
     }
 }
 
+@Composable
 private fun librarySourceFilterMenuLabel(filter: LibrarySourceFilter): String {
     return when (filter) {
-        LibrarySourceFilter.ALL -> "全部"
+        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
         else -> librarySourceFilterButtonLabel(filter)
     }
 }
@@ -2654,7 +2679,7 @@ private fun LibrarySourceFilterDropdownMenu(
         onlineSourceOptions.forEach { option ->
             val isSelected = option.sourceId == selectedOnlineSourceId
             DropdownMenuItem(
-                text = { Text(option.label) },
+                text = { Text(option.label.displayText()) },
                 trailingIcon = if (isSelected) {
                     {
                         Icon(
@@ -2703,13 +2728,14 @@ private fun TrackSortDropdownMenu(
     }
 }
 
+@Composable
 internal fun trackSortModeLabel(mode: TrackSortMode): String {
     return when (mode) {
-        TrackSortMode.TITLE -> "标题"
-        TrackSortMode.ARTIST -> "艺人"
-        TrackSortMode.ALBUM -> "专辑"
-        TrackSortMode.PLAY_COUNT -> "播放次数"
-        TrackSortMode.ADDED_AT -> "添加时间"
+        TrackSortMode.TITLE -> uiString(Res.string.common_title)
+        TrackSortMode.ARTIST -> uiString(Res.string.library_artists_title)
+        TrackSortMode.ALBUM -> uiString(Res.string.library_albums_title)
+        TrackSortMode.PLAY_COUNT -> uiString(Res.string.library_play_count_sort)
+        TrackSortMode.ADDED_AT -> uiString(Res.string.library_date_added_sort)
     }
 }
 
@@ -2858,7 +2884,7 @@ internal fun SourcesTab(
             remoteTrackCount = editingSourceStatus?.indexState?.remoteTrackCount,
             scanProgress = editingScanProgress,
             constrainWidth = !isMobileSourcesPlatform(platform),
-            testMessage = state.testMessage,
+            testMessage = state.testMessage?.displayText(),
             fieldColors = importFieldColors,
             onDismiss = { onImportIntent(ImportIntent.DismissRemoteSourceEditor) },
             onIntent = onImportIntent,
@@ -2881,8 +2907,8 @@ internal fun SourcesTab(
             containerColor = shellColors.cardContainer,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("删除来源") },
-            text = { Text("确认删除“${source.source.label}”吗？已索引歌曲和相关缓存会一起移除。") },
+            title = { Text(uiString(Res.string.source_delete_action)) },
+            text = { Text(uiString(Res.string.source_delete_confirmation, source.source.label)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -2892,7 +2918,7 @@ internal fun SourcesTab(
                     enabled = !state.isWorking,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
-                    Text("删除")
+                    Text(uiString(Res.string.common_delete))
                 }
             },
             dismissButton = {
@@ -2900,7 +2926,7 @@ internal fun SourcesTab(
                     onClick = { pendingDeleteSourceId = null },
                     enabled = !state.isWorking,
                 ) {
-                    Text("取消")
+                    Text(uiString(Res.string.common_cancel))
                 }
             },
         )
@@ -2912,10 +2938,10 @@ internal fun SourcesTab(
             containerColor = shellColors.cardContainer,
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text("扫描失败文件") },
+            title = { Text(uiString(Res.string.import_scan_failures_title)) },
             text = {
                 if (summary.failures.isEmpty()) {
-                    Text("当前扫描没有可展示的失败路径。")
+                    Text(uiString(Res.string.import_scan_failures_empty_hint))
                 } else {
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 360.dp),
@@ -2925,7 +2951,7 @@ internal fun SourcesTab(
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(failure.relativePath, color = MaterialTheme.colorScheme.onSurface)
                                 Text(
-                                    failure.reason,
+                                    failure.reasonUiText().displayText(),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.bodySmall,
                                 )
@@ -2936,7 +2962,7 @@ internal fun SourcesTab(
             },
             confirmButton = {
                 TextButton(onClick = { failureDetailSummary = null }) {
-                    Text("知道了")
+                    Text(uiString(Res.string.common_got_it))
                 }
             },
         )
@@ -2970,8 +2996,8 @@ internal fun SourcesTab(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             SectionTitle(
-                title = "导入来源",
-                subtitle = "本地文件夹原地索引，Samba、WebDAV、Navidrome、Subsonic/OpenSubsonic 与 Emby 作为远程音乐库。"
+                title = uiString(Res.string.source_import_title),
+                subtitle = uiString(Res.string.source_supported_types_description)
             )
             state.message?.let { message ->
                 BannerCard(message = message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
@@ -2987,16 +3013,16 @@ internal fun SourcesTab(
                     modifier = Modifier.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("本地文件夹", fontWeight = FontWeight.Bold)
+                    Text(uiString(Res.string.source_local_folder_label), fontWeight = FontWeight.Bold)
                     Text(
                         if (platform.supportsLocalFolderPickerModeChoice()) {
                             if (state.capabilities.supportsSystemLocalFolderPicker) {
-                                "可选择系统文件管理器或内置管理器导入本地音乐。"
+                                uiString(Res.string.source_folder_manager_selection_hint)
                             } else {
-                                "当前设备没有可用的系统文件管理器，将使用内置管理器导入本地音乐。"
+                                uiString(Res.string.source_system_folder_manager_unavailable_hint)
                             }
                         } else {
-                            "通过系统文件夹选择器授予目录权限并建立索引。"
+                            uiString(Res.string.source_system_folder_permission_hint)
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3026,7 +3052,7 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.FolderOpen, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isLocalFolderScanning) "扫描中" else "选择文件夹")
+                        Text(if (isLocalFolderScanning) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_select_folder))
                     }
                 }
             }
@@ -3037,12 +3063,12 @@ internal fun SourcesTab(
                 ) {
                 Text("Emby", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsEmbyImport) {
-                    Text("当前平台暂未开放应用内 Emby 导入。")
+                    Text(uiString(Res.string.source_emby_import_unsupported))
                 }
                 ImeAwareOutlinedTextField(
                     value = state.embyLabel,
                     onValueChange = { onImportIntent(ImportIntent.EmbyLabelChanged(it)) },
-                    label = { Text("名称") },
+                    label = { Text(uiString(Res.string.common_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3050,7 +3076,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.embyBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.EmbyBaseUrlChanged(it)) },
-                    label = { Text("局域网/首选地址") },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
                     placeholder = { Text("https://emby.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3059,7 +3085,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.embyWanBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.EmbyWanBaseUrlChanged(it)) },
-                    label = { Text("广域网地址") },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
                     placeholder = { Text("https://music.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3069,7 +3095,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.embyUsername,
                         onValueChange = { onImportIntent(ImportIntent.EmbyUsernameChanged(it)) },
-                        label = { Text("用户名") },
+                        label = { Text(uiString(Res.string.common_username)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3077,7 +3103,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.embyPassword,
                         onValueChange = { onImportIntent(ImportIntent.EmbyPasswordChanged(it)) },
-                        label = { Text("密码") },
+                        label = { Text(uiString(Res.string.common_password)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3088,7 +3114,7 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.TestEmbySource) },
                         enabled = state.capabilities.supportsEmbyImport && !state.isWorking,
                     ) {
-                        Text("测试连接")
+                        Text(uiString(Res.string.source_test_connection))
                     }
                     Button(
                         onClick = { onImportIntent(ImportIntent.AddEmbySource) },
@@ -3100,7 +3126,7 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.CloudSync, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isEmbyCreating) "同步中" else "连接并同步")
+                        Text(if (isEmbyCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
                     }
                 }
             }
@@ -3112,12 +3138,12 @@ internal fun SourcesTab(
                 ) {
                 Text("Subsonic / OpenSubsonic", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsSubsonicImport) {
-                    Text("当前平台暂未开放应用内 Subsonic 导入。")
+                    Text(uiString(Res.string.source_subsonic_import_unsupported))
                 }
                 ImeAwareOutlinedTextField(
                     value = state.subsonicLabel,
                     onValueChange = { onImportIntent(ImportIntent.SubsonicLabelChanged(it)) },
-                    label = { Text("名称") },
+                    label = { Text(uiString(Res.string.common_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3125,7 +3151,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.subsonicBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.SubsonicBaseUrlChanged(it)) },
-                    label = { Text("局域网/首选地址") },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
                     placeholder = { Text("https://music.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3134,7 +3160,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.subsonicWanBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.SubsonicWanBaseUrlChanged(it)) },
-                    label = { Text("广域网地址") },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
                     placeholder = { Text("https://music.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3150,7 +3176,7 @@ internal fun SourcesTab(
                         ImeAwareOutlinedTextField(
                             value = state.subsonicUsername,
                             onValueChange = { onImportIntent(ImportIntent.SubsonicUsernameChanged(it)) },
-                            label = { Text("用户名") },
+                            label = { Text(uiString(Res.string.common_username)) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(18.dp),
                             colors = importFieldColors,
@@ -3158,7 +3184,7 @@ internal fun SourcesTab(
                         ImeAwareOutlinedTextField(
                             value = state.subsonicCredential,
                             onValueChange = { onImportIntent(ImportIntent.SubsonicCredentialChanged(it)) },
-                            label = { Text("密码") },
+                            label = { Text(uiString(Res.string.common_password)) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(18.dp),
                             colors = importFieldColors,
@@ -3168,7 +3194,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.subsonicCredential,
                         onValueChange = { onImportIntent(ImportIntent.SubsonicCredentialChanged(it)) },
-                        label = { Text("API Key") },
+                        label = { Text(uiString(Res.string.settings_api_key)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3179,7 +3205,7 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.TestSubsonicSource) },
                         enabled = state.capabilities.supportsSubsonicImport && !state.isWorking,
                     ) {
-                        Text("测试连接")
+                        Text(uiString(Res.string.source_test_connection))
                     }
                     Button(
                         onClick = { onImportIntent(ImportIntent.AddSubsonicSource) },
@@ -3191,7 +3217,7 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.CloudSync, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isSubsonicCreating) "同步中" else "连接并同步")
+                        Text(if (isSubsonicCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
                     }
                 }
             }
@@ -3203,12 +3229,12 @@ internal fun SourcesTab(
                 ) {
                 Text("Navidrome", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsNavidromeImport) {
-                    Text("当前平台暂未开放应用内 Navidrome 导入。")
+                    Text(uiString(Res.string.source_navidrome_import_unsupported))
                 }
                 ImeAwareOutlinedTextField(
                     value = state.navidromeLabel,
                     onValueChange = { onImportIntent(ImportIntent.NavidromeLabelChanged(it)) },
-                    label = { Text("名称") },
+                    label = { Text(uiString(Res.string.common_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3216,7 +3242,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.navidromeBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
-                    label = { Text("局域网/首选地址") },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
                     placeholder = { Text("http://192.168.31.115:32768") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3225,7 +3251,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.navidromeWanBaseUrl,
                     onValueChange = { onImportIntent(ImportIntent.NavidromeWanBaseUrlChanged(it)) },
-                    label = { Text("广域网地址") },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
                     placeholder = { Text("https://music.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3235,7 +3261,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.navidromeUsername,
                         onValueChange = { onImportIntent(ImportIntent.NavidromeUsernameChanged(it)) },
-                        label = { Text("用户名") },
+                        label = { Text(uiString(Res.string.common_username)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3243,7 +3269,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.navidromePassword,
                         onValueChange = { onImportIntent(ImportIntent.NavidromePasswordChanged(it)) },
-                        label = { Text("密码") },
+                        label = { Text(uiString(Res.string.common_password)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3254,7 +3280,7 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.TestNavidromeSource) },
                         enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
                     ) {
-                        Text("测试连接")
+                        Text(uiString(Res.string.source_test_connection))
                     }
                     Button(
                         onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
@@ -3266,7 +3292,7 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.CloudSync, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isNavidromeCreating) "同步中" else "连接并同步")
+                        Text(if (isNavidromeCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
                     }
                 }
             }
@@ -3278,12 +3304,12 @@ internal fun SourcesTab(
                 ) {
                 Text("Samba / SMB", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsSambaImport) {
-                    Text("当前平台建议通过系统 Files 挂载 SMB 后，再用本地文件夹方式接入。")
+                    Text(uiString(Res.string.source_samba_system_mount_hint))
                 }
                 ImeAwareOutlinedTextField(
                     value = state.sambaLabel,
                     onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) },
-                    label = { Text("名称") },
+                    label = { Text(uiString(Res.string.common_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors
@@ -3292,7 +3318,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.sambaServer,
                         onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) },
-                        label = { Text("服务器地址") },
+                        label = { Text(uiString(Res.string.common_server_address)) },
                         placeholder = { Text("192.168.31.115") },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -3301,7 +3327,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.sambaPort,
                         onValueChange = { onImportIntent(ImportIntent.SambaPortChanged(it)) },
-                        label = { Text("端口") },
+                        label = { Text(uiString(Res.string.common_port)) },
                         placeholder = { Text("445") },
                         modifier = Modifier.width(140.dp),
                         shape = RoundedCornerShape(18.dp),
@@ -3312,7 +3338,7 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.sambaPath,
                     onValueChange = { onImportIntent(ImportIntent.SambaPathChanged(it)) },
-                    label = { Text("路径（Share/子目录）") },
+                    label = { Text(uiString(Res.string.source_samba_path_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3321,7 +3347,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.sambaUsername,
                         onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) },
-                        label = { Text("用户名") },
+                        label = { Text(uiString(Res.string.common_username)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors
@@ -3329,7 +3355,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.sambaPassword,
                         onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) },
-                        label = { Text("密码（选填）") },
+                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors
@@ -3340,7 +3366,7 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.TestSambaSource) },
                         enabled = !state.isWorking,
                     ) {
-                        Text("测试连接")
+                        Text(uiString(Res.string.source_test_connection))
                     }
                     Button(
                         onClick = { onImportIntent(ImportIntent.AddSambaSource) },
@@ -3352,7 +3378,7 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.CloudSync, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isSambaCreating) "扫描中" else "连接并扫描")
+                        Text(if (isSambaCreating) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_connect_and_scan))
                     }
                 }
             }
@@ -3364,12 +3390,12 @@ internal fun SourcesTab(
                 ) {
                 Text("WebDAV", fontWeight = FontWeight.Bold)
                 if (!state.capabilities.supportsWebDavImport) {
-                    Text("当前平台暂未开放应用内 WebDAV 导入。")
+                    Text(uiString(Res.string.source_webdav_import_unsupported))
                 }
                 ImeAwareOutlinedTextField(
                     value = state.webDavLabel,
                     onValueChange = { onImportIntent(ImportIntent.WebDavLabelChanged(it)) },
-                    label = { Text("名称") },
+                    label = { Text(uiString(Res.string.common_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3377,8 +3403,8 @@ internal fun SourcesTab(
                 ImeAwareOutlinedTextField(
                     value = state.webDavRootUrl,
                     onValueChange = { onImportIntent(ImportIntent.WebDavRootUrlChanged(it)) },
-                    label = { Text("根 URL") },
-                    placeholder = { Text("http://192.168.31.115:5005/共享文件/music/") },
+                    label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
+                    placeholder = { Text(uiString(Res.string.source_webdav_url_example)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = importFieldColors,
@@ -3387,7 +3413,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.webDavUsername,
                         onValueChange = { onImportIntent(ImportIntent.WebDavUsernameChanged(it)) },
-                        label = { Text("用户名（选填）") },
+                        label = { Text(uiString(Res.string.source_optional_username_placeholder)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3395,7 +3421,7 @@ internal fun SourcesTab(
                     ImeAwareOutlinedTextField(
                         value = state.webDavPassword,
                         onValueChange = { onImportIntent(ImportIntent.WebDavPasswordChanged(it)) },
-                        label = { Text("密码（选填）") },
+                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
                         colors = importFieldColors,
@@ -3405,7 +3431,7 @@ internal fun SourcesTab(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("允许自签名证书", fontWeight = FontWeight.Medium)
+                    Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
                     Switch(
                         checked = state.webDavAllowInsecureTls,
                         onCheckedChange = {
@@ -3426,7 +3452,7 @@ internal fun SourcesTab(
                         onClick = { onImportIntent(ImportIntent.TestWebDavSource) },
                         enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
                     ) {
-                        Text("测试连接")
+                        Text(uiString(Res.string.source_test_connection))
                     }
                     Button(
                         onClick = { onImportIntent(ImportIntent.AddWebDavSource) },
@@ -3438,16 +3464,16 @@ internal fun SourcesTab(
                             Icon(Icons.Rounded.CloudSync, null)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(if (isWebDavCreating) "扫描中" else "连接并扫描")
+                        Text(if (isWebDavCreating) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_connect_and_scan))
                     }
                 }
             }
         }
-            SectionTitle(title = "已连接来源", subtitle = "可编辑连接参数、测试连通性，并按需启用或禁用来源。")
+            SectionTitle(title = uiString(Res.string.source_connected_list_title), subtitle = uiString(Res.string.source_management_hint))
             if (state.sources.isEmpty()) {
                 EmptyStateCard(
-                    title = "还没有任何来源",
-                    body = "添加来源后，歌曲会在曲库里汇总显示，播放页会根据当前歌曲去匹配歌词。",
+                    title = uiString(Res.string.sources_empty_title),
+                    body = uiString(Res.string.library_source_import_hint),
                 )
             } else {
                 state.sources.forEach { source ->
@@ -3464,7 +3490,7 @@ internal fun SourcesTab(
                         } else {
                             { onImportIntent(ImportIntent.OpenRemoteSourceEditor(source.source.id)) }
                         },
-                        editLabel = if (source.source.type == ImportSourceType.LOCAL_FOLDER) "重新授权" else "编辑",
+                        editLabel = if (source.source.type == ImportSourceType.LOCAL_FOLDER) uiString(Res.string.source_reauthorize_folder) else uiString(Res.string.common_edit),
                         onToggleEnabled = {
                             onImportIntent(
                                 ImportIntent.ToggleSourceEnabled(
@@ -3513,7 +3539,7 @@ private fun SubsonicAuthModeSelector(
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SubsonicAuthMode.entries.forEach { mode ->
             val label = when (mode) {
-                SubsonicAuthMode.PASSWORD -> "用户名 / 密码"
+                SubsonicAuthMode.PASSWORD -> uiString(Res.string.source_username_password_authentication)
                 SubsonicAuthMode.API_KEY -> "API Key"
             }
             if (mode == selected) {
@@ -3555,13 +3581,13 @@ private fun LargeNavidromeLibraryDialog(
         containerColor = mainShellColors.cardContainer,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("Navidrome 曲库较大") },
+        title = { Text(uiString(Res.string.source_navidrome_large_library_title)) },
         text = {
             Text(
                 if (isRescan) {
-                    "检测到“${sourceLabel.orEmpty().ifBlank { "Navidrome 来源" }}”远端共有 $trackCount 首歌曲。建议切换为在线模式，旧本地索引会隐藏并保留；也可以继续全量重扫，把远端歌曲重新写入本地索引。"
+                    uiPlural(Res.plurals.source_online_rescan_confirmation, trackCount, sourceLabel.orEmpty().ifBlank { uiString(Res.string.source_navidrome_label) }, trackCount).displayText()
                 } else {
-                    "检测到远端共有 $trackCount 首歌曲。建议使用在线模式，LynMusic 只保存来源和凭据，不会把全部歌曲写入本地索引；也可以选择全部导入，继续执行完整扫描。"
+                    uiString(Res.plurals.source_online_import_all_hint, (trackCount).toInt(), trackCount)
                 },
             )
         },
@@ -3570,7 +3596,7 @@ private fun LargeNavidromeLibraryDialog(
                 onClick = onUseOnline,
                 enabled = !isWorking,
             ) {
-                Text(if (isWorking) "处理中" else "在线模式")
+                Text(if (isWorking) uiString(Res.string.common_processing) else uiString(Res.string.source_online_mode_label))
             }
         },
         dismissButton = {
@@ -3579,13 +3605,13 @@ private fun LargeNavidromeLibraryDialog(
                     onClick = onDismiss,
                     enabled = !isWorking,
                 ) {
-                    Text("取消")
+                    Text(uiString(Res.string.common_cancel))
                 }
                 TextButton(
                     onClick = onImportAll,
                     enabled = !isWorking,
                 ) {
-                    Text(if (isRescan) "继续重扫" else "全部导入")
+                    Text(if (isRescan) uiString(Res.string.source_continue_rescan) else uiString(Res.string.source_import_all_action))
                 }
             }
         },
@@ -3628,13 +3654,13 @@ private fun LocalFolderPickerModeDialog(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Text(
-                            text = "选择文件夹管理器",
+                            text = uiString(Res.string.source_folder_manager_title),
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "系统文件管理器将按系统权限流程选择文件夹；无法使用系统选择器时会回退内置管理器。",
+                            text = uiString(Res.string.source_system_folder_manager_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -3650,7 +3676,7 @@ private fun LocalFolderPickerModeDialog(
                             ) {
                                 Icon(Icons.Rounded.FolderOpen, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("系统文件管理器")
+                                Text(uiString(Res.string.source_system_folder_manager))
                             }
                             OutlinedButton(
                                 onClick = { onSelectMode(LocalFolderPickerMode.BuiltIn) },
@@ -3660,7 +3686,7 @@ private fun LocalFolderPickerModeDialog(
                             ) {
                                 Icon(Icons.Rounded.FolderOpen, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("内置管理器")
+                                Text(uiString(Res.string.source_builtin_folder_manager))
                             }
                         }
                         TextButton(
@@ -3671,7 +3697,7 @@ private fun LocalFolderPickerModeDialog(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             ),
                         ) {
-                            Text("取消")
+                            Text(uiString(Res.string.common_cancel))
                         }
                     }
                 }
@@ -3694,9 +3720,9 @@ private fun ImportScanProgressCard(
         ) {
             Text(
                 text = if (progress.phase == ImportScanPhase.Persisting) {
-                    sourceLabel?.let { "正在更新 $it" } ?: "正在更新曲库"
+                    sourceLabel?.let { uiString(Res.string.source_updating_named_type, it) } ?: uiString(Res.string.library_updating_status)
                 } else {
-                    sourceLabel?.let { "正在扫描 $it" } ?: "正在扫描来源"
+                    sourceLabel?.let { uiString(Res.string.source_scanning_named_type, it) } ?: uiString(Res.string.source_scanning_title)
                 },
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -3799,12 +3825,12 @@ private fun RemoteSourceEditorDialog(
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
                                 when (state.type) {
-                                    ImportSourceType.SAMBA -> "编辑 Samba 来源"
-                                    ImportSourceType.WEBDAV -> "编辑 WebDAV 来源"
-                                    ImportSourceType.NAVIDROME -> "编辑 Navidrome 来源"
-                                    ImportSourceType.SUBSONIC -> "编辑 Subsonic 来源"
-                                    ImportSourceType.EMBY -> "编辑 Emby 来源"
-                                    ImportSourceType.LOCAL_FOLDER -> "编辑来源"
+                                    ImportSourceType.SAMBA -> uiString(Res.string.source_edit_samba_title)
+                                    ImportSourceType.WEBDAV -> uiString(Res.string.source_edit_webdav_title)
+                                    ImportSourceType.NAVIDROME -> uiString(Res.string.source_edit_navidrome_title)
+                                    ImportSourceType.SUBSONIC -> uiString(Res.string.source_edit_subsonic_title)
+                                    ImportSourceType.EMBY -> uiString(Res.string.source_edit_emby_title)
+                                    ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_edit_title)
                                 },
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
@@ -3829,14 +3855,14 @@ private fun RemoteSourceEditorDialog(
                         ) {
                             if (state.hasStoredCredential) {
                                 Text(
-                                    "已保存凭据，密码留空会继续使用当前凭据。",
+                                    uiString(Res.string.source_saved_credentials_hint),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             ImeAwareOutlinedTextField(
                                 value = state.label,
                                 onValueChange = { onIntent(ImportIntent.RemoteSourceLabelChanged(it)) },
-                                label = { Text("名称") },
+                                label = { Text(uiString(Res.string.common_name)) },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(18.dp),
                                 colors = fieldColors,
@@ -3847,7 +3873,7 @@ private fun RemoteSourceEditorDialog(
                                         ImeAwareOutlinedTextField(
                                             value = state.server,
                                             onValueChange = { onIntent(ImportIntent.RemoteSourceServerChanged(it)) },
-                                            label = { Text("服务器地址") },
+                                            label = { Text(uiString(Res.string.common_server_address)) },
                                             modifier = Modifier.weight(1f),
                                             shape = RoundedCornerShape(18.dp),
                                             colors = fieldColors,
@@ -3855,7 +3881,7 @@ private fun RemoteSourceEditorDialog(
                                         ImeAwareOutlinedTextField(
                                             value = state.port,
                                             onValueChange = { onIntent(ImportIntent.RemoteSourcePortChanged(it)) },
-                                            label = { Text("端口") },
+                                            label = { Text(uiString(Res.string.common_port)) },
                                             modifier = Modifier.width(140.dp),
                                             shape = RoundedCornerShape(18.dp),
                                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -3865,7 +3891,7 @@ private fun RemoteSourceEditorDialog(
                                     ImeAwareOutlinedTextField(
                                         value = state.path,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
-                                        label = { Text("路径（Share/子目录）") },
+                                        label = { Text(uiString(Res.string.source_samba_path_label)) },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(18.dp),
                                         colors = fieldColors,
@@ -3876,7 +3902,7 @@ private fun RemoteSourceEditorDialog(
                                     ImeAwareOutlinedTextField(
                                         value = state.rootUrl,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
-                                        label = { Text("根 URL") },
+                                        label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(18.dp),
                                         colors = fieldColors,
@@ -3890,7 +3916,7 @@ private fun RemoteSourceEditorDialog(
                                     ImeAwareOutlinedTextField(
                                         value = state.rootUrl,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
-                                        label = { Text("局域网/首选地址") },
+                                        label = { Text(uiString(Res.string.source_lan_address_label)) },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(18.dp),
                                         colors = fieldColors,
@@ -3898,7 +3924,7 @@ private fun RemoteSourceEditorDialog(
                                     ImeAwareOutlinedTextField(
                                         value = state.wanRootUrl,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourceWanRootUrlChanged(it)) },
-                                        label = { Text("广域网地址") },
+                                        label = { Text(uiString(Res.string.source_wan_address_label)) },
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(18.dp),
                                         colors = fieldColors,
@@ -3919,7 +3945,7 @@ private fun RemoteSourceEditorDialog(
                                     value = state.password,
                                     onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
                                     label = {
-                                        Text(if (state.hasStoredCredential) "API Key（留空沿用）" else "API Key")
+                                        Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_api_key_placeholder) else "API Key")
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(18.dp),
@@ -3931,7 +3957,7 @@ private fun RemoteSourceEditorDialog(
                                         value = state.username,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourceUsernameChanged(it)) },
                                         label = {
-                                            Text(if (state.type == ImportSourceType.WEBDAV) "用户名（选填）" else "用户名")
+                                            Text(if (state.type == ImportSourceType.WEBDAV) uiString(Res.string.source_optional_username_placeholder) else uiString(Res.string.common_username))
                                         },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(18.dp),
@@ -3941,7 +3967,7 @@ private fun RemoteSourceEditorDialog(
                                         value = state.password,
                                         onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
                                         label = {
-                                            Text(if (state.hasStoredCredential) "密码（留空沿用）" else "密码")
+                                            Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_password_placeholder) else uiString(Res.string.common_password))
                                         },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(18.dp),
@@ -3954,7 +3980,7 @@ private fun RemoteSourceEditorDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
-                                    Text("允许自签名证书", fontWeight = FontWeight.Medium)
+                                    Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
                                     Switch(
                                         checked = state.allowInsecureTls,
                                         onCheckedChange = { onIntent(ImportIntent.RemoteSourceAllowInsecureTlsChanged(it)) },
@@ -3975,7 +4001,7 @@ private fun RemoteSourceEditorDialog(
                                 onClick = onDismiss,
                                 enabled = !isWorking,
                             ) {
-                                Text("取消")
+                                Text(uiString(Res.string.common_cancel))
                             }
                             Spacer(Modifier.width(12.dp))
                             OutlinedButton(
@@ -3983,7 +4009,7 @@ private fun RemoteSourceEditorDialog(
                                 enabled = !isWorking,
                             ) {
                                 Text(
-                                    text = "测试连接",
+                                    text = uiString(Res.string.source_test_connection),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -3998,7 +4024,7 @@ private fun RemoteSourceEditorDialog(
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 Text(
-                                    text = if (isSavingScan) "重扫中" else "保存并重扫",
+                                    text = if (isSavingScan) uiString(Res.string.source_rescanning_status) else uiString(Res.string.source_save_and_rescan),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -4045,17 +4071,24 @@ private fun RemoteSourceEditorScanProgress(progress: ImportScanProgress) {
     }
 }
 
+internal fun remoteSourceEditorTrackCountLabelText(
+    indexMode: ImportSourceIndexMode,
+    currentTrackCount: Int?,
+    remoteTrackCount: Int?,
+): UiText {
+    return if (indexMode == ImportSourceIndexMode.ONLINE) {
+        remoteTrackCount?.let { uiPlural(Res.plurals.source_remote_library_track_count, (it.coerceAtLeast(0)).toInt(), it.coerceAtLeast(0)) } ?: uiText(Res.string.library_remote_track_count_unknown)
+    } else {
+        currentTrackCount?.let { uiPlural(Res.plurals.source_imported_track_count, (it.coerceAtLeast(0)).toInt(), it.coerceAtLeast(0)) } ?: uiText(Res.string.library_imported_tracks_empty_title)
+    }
+}
+
+@Composable
 internal fun remoteSourceEditorTrackCountLabel(
     indexMode: ImportSourceIndexMode,
     currentTrackCount: Int?,
     remoteTrackCount: Int?,
-): String {
-    return if (indexMode == ImportSourceIndexMode.ONLINE) {
-        remoteTrackCount?.let { "当前远端共有 ${it.coerceAtLeast(0)} 首歌曲" } ?: "当前远端歌曲数未知"
-    } else {
-        currentTrackCount?.let { "当前已导入 ${it.coerceAtLeast(0)} 首歌曲" } ?: "当前还没有导入歌曲"
-    }
-}
+): String = remoteSourceEditorTrackCountLabelText(indexMode, currentTrackCount, remoteTrackCount).displayText()
 
 private fun isMobileSourcesPlatform(platform: PlatformDescriptor): Boolean {
     return platform.name == "Android" || platform.name == "iPhone / iPad"

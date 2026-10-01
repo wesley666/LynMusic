@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_description">立即切換介面語言。</string>
+    <string name="language_follow_system">跟隨系統</string>
+    <string name="language_title">語言</string>
+</resources>

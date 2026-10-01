@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="language_description">Changes the interface language immediately.</string>
+    <string name="language_follow_system">Follow system</string>
+    <string name="language_title">Language</string>
+</resources>

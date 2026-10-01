@@ -1,5 +1,16 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiFailureTextOrNull
+import top.iwesley.lyn.music.core.model.checkUi
+import top.iwesley.lyn.music.core.model.requireUi
+import top.iwesley.lyn.music.core.model.uiText
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
 import androidx.room.PooledConnection
 import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
@@ -436,6 +447,22 @@ data class PlaylistImportFailedLineIssue(
     val lineNumber: Int,
     val rawText: String,
     val message: String,
+    val messageText: UiText? = null,
+)
+
+fun PlaylistImportFailedLineIssue.messageUiText(): UiText = messageText ?: UiText.Raw(message)
+
+internal fun playlistImportFailure(
+    lineNumber: Int,
+    rawText: String,
+    throwable: Throwable,
+): PlaylistImportFailedLineIssue = PlaylistImportFailedLineIssue(
+    lineNumber = lineNumber,
+    rawText = rawText,
+    message = throwable.message.orEmpty().ifBlank { "加入失败。" },
+    messageText = throwable.uiFailureTextOrNull()
+        ?: throwable.message?.takeIf { it.isNotBlank() }?.let(UiText::Raw)
+        ?: uiText(Res.string.playlist_add_track_failed),
 )
 
 interface LyricsRepository {
@@ -467,6 +494,9 @@ data class AppliedLyricsResult(
 )
 
 interface SettingsRepository {
+    val appLanguage: StateFlow<AppLanguage> get() = AppLanguageRuntime.appLanguage
+    suspend fun setAppLanguage(language: AppLanguage) { AppLanguageRuntime.select(language) }
+
     val lyricsSources: Flow<List<LyricsSourceDefinition>>
     val useSambaCache: StateFlow<Boolean>
     val showCompactPlayerLyrics: StateFlow<Boolean>
@@ -622,7 +652,7 @@ class RoomImportSourceRepository(
                         existing = existing,
                     )
                 ) {
-                    error("该本地文件夹已导入。")
+                    throw UiTextException(uiText(Res.string.source_local_folder_already_imported))
                 }
                 ImportSource(
                     id = sourceId,
@@ -649,16 +679,16 @@ class RoomImportSourceRepository(
         return runCatching {
             val existing = database.importSourceDao().getById(sourceId)?.toDomain()
                 ?.takeIf { it.type == ImportSourceType.LOCAL_FOLDER }
-                ?: error("本地文件夹来源不存在。")
+                ?: throw UiTextException(uiText(Res.string.source_local_folder_not_found))
             val selection = gateway.pickLocalFolder(LocalFolderPickerMode.System) ?: return@runCatching null
             validateLocalFolderImportSourceCreation(
                 rootReference = selection.persistentReference,
                 excludingId = sourceId,
             )
-            check(
+            checkUi(
                 localFolderPersistentIdentity(selection.persistentReference) ==
                     localFolderPersistentIdentity(existing.rootReference),
-            ) { "所选文件夹与原来源不一致；如需更换目录，请新建来源。" }
+            ) { uiText(Res.string.source_local_folder_mismatch) }
             val updated = existing.copy(
                 rootReference = selection.persistentReference,
             )
@@ -900,7 +930,7 @@ class RoomImportSourceRepository(
                 keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
             )
             if (password.isBlank()) {
-                error("Navidrome 来源缺少有效密码。")
+                throw UiTextException(uiText(Res.string.source_navidrome_password_missing))
             }
             addressSelector.withAddressFallback(
                 sourceId = sourceId,
@@ -976,7 +1006,7 @@ class RoomImportSourceRepository(
     override suspend fun probeExistingNavidromeSource(sourceId: String): Result<NavidromeLibraryProbe> {
         return runCatching {
             val source = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
-            require(source.enabled) { "来源已禁用，请先启用。" }
+            requireUi(source.enabled) { uiText(Res.string.source_disabled) }
             probeExistingNavidromeSource(source)
         }
     }
@@ -988,7 +1018,7 @@ class RoomImportSourceRepository(
         return runCatching {
             val confirmedRemoteTrackCount = requireOnlineNavidromeRemoteTrackCount(remoteTrackCount)
             val source = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
-            require(source.enabled) { "来源已禁用，请先启用。" }
+            requireUi(source.enabled) { uiText(Res.string.source_disabled) }
             persistOnlineNavidromeSource(
                 source = source.copy(indexMode = ImportSourceIndexMode.ONLINE),
                 remoteTrackCount = confirmedRemoteTrackCount,
@@ -1033,7 +1063,7 @@ class RoomImportSourceRepository(
                 keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
             )
             if (password.isBlank()) {
-                error("Navidrome 来源缺少有效密码。")
+                throw UiTextException(uiText(Res.string.source_navidrome_password_missing))
             }
             val submittedPassword = preparedDraft.password.isNotBlank()
             val credentialKey = if (existing.indexMode == ImportSourceIndexMode.ONLINE && submittedPassword && existing.credentialKey != null) {
@@ -1118,7 +1148,7 @@ class RoomImportSourceRepository(
                 keepExistingCredentialWhenBlankCredential = keepExistingCredentialWhenBlankCredential,
             )
             if (credential.isBlank()) {
-                error("Subsonic 来源缺少有效凭据。")
+                throw UiTextException(uiText(Res.string.source_credentials_missing, "Subsonic"))
             }
             addressSelector.withAddressFallback(
                 sourceId = sourceId,
@@ -1197,7 +1227,7 @@ class RoomImportSourceRepository(
                 keepExistingCredentialWhenBlankCredential = keepExistingCredentialWhenBlankCredential,
             )
             if (credential.isBlank()) {
-                error("Subsonic 来源缺少有效凭据。")
+                throw UiTextException(uiText(Res.string.source_credentials_missing, "Subsonic"))
             }
             val report = addressSelector.withAddressFallback(
                 sourceId = sourceId,
@@ -1265,7 +1295,7 @@ class RoomImportSourceRepository(
                 }
             } else if (keepExistingCredentialWhenBlankPassword) {
                 val storedCredential = existing.credentialKey?.let { secureCredentialStore.get(it) }
-                val credential = parseEmbyCredential(storedCredential) ?: error("Emby 来源缺少有效凭据。")
+                val credential = parseEmbyCredential(storedCredential) ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
                 addressSelector.withAddressFallback(
                     sourceId = sourceId,
                     sourceType = ImportSourceType.EMBY,
@@ -1276,7 +1306,7 @@ class RoomImportSourceRepository(
                     gateway.testEmbyCredential(preparedDraft.copy(baseUrl = candidate.value), credential, deviceId)
                 }
             } else {
-                error("Emby 来源缺少有效凭据。")
+                throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
             }
         }.map { }
     }
@@ -1369,7 +1399,7 @@ class RoomImportSourceRepository(
                 }
             } else if (keepExistingCredentialWhenBlankPassword) {
                 val existingCredential = parseEmbyCredential(existing.credentialKey?.let { secureCredentialStore.get(it) })
-                    ?: error("Emby 来源缺少有效凭据。")
+                    ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
                 addressSelector.withAddressFallback(
                     sourceId = sourceId,
                     sourceType = ImportSourceType.EMBY,
@@ -1381,7 +1411,7 @@ class RoomImportSourceRepository(
                 }
                 existingCredential
             } else {
-                error("Emby 来源缺少有效凭据。")
+                throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
             }
             val report = addressSelector.withAddressFallback(
                 sourceId = sourceId,
@@ -1421,13 +1451,13 @@ class RoomImportSourceRepository(
                 ?: error("Source $sourceId does not exist.")
             val source = entity.toDomain()
             if (!source.enabled) {
-                error("来源已禁用，请先启用。")
+                throw UiTextException(uiText(Res.string.source_disabled))
             }
             if (source.type == ImportSourceType.NAVIDROME) {
                 if (source.indexMode == ImportSourceIndexMode.ONLINE) {
                     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
                     if (password.isBlank()) {
-                        error("Navidrome 来源缺少有效密码。")
+                        throw UiTextException(uiText(Res.string.source_navidrome_password_missing))
                     }
                     val draft = NavidromeSourceDraft(
                         label = source.label,
@@ -1523,7 +1553,7 @@ class RoomImportSourceRepository(
 
                     ImportSourceType.EMBY -> {
                         val credential = parseEmbyCredential(source.credentialKey?.let { secureCredentialStore.get(it) })
-                            ?: error("Emby 来源缺少有效凭据。")
+                            ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
                         val draft = EmbySourceDraft(
                             label = source.label,
                             baseUrl = source.rootReference,
@@ -1801,7 +1831,7 @@ class RoomImportSourceRepository(
         val existing = database.importSourceDao().getAll()
             .filterNot { it.id == excludingSourceId }
         if (hasImportSourceNameConflict(name = label, existing = existing)) {
-            error("音乐源名称已存在。")
+            throw UiTextException(uiText(Res.string.source_name_already_exists))
         }
     }
 
@@ -1837,8 +1867,11 @@ class RoomImportSourceRepository(
     ): String {
         if (draft.credential.isNotBlank()) return draft.credential
         if (existing.subsonicAuthMode != draft.authMode) {
-            val spacing = if (draft.authMode == SubsonicAuthMode.API_KEY) " " else ""
-            error("Subsonic 来源切换鉴权方式后需要重新填写$spacing${draft.authMode.credentialLabel()}。")
+            throw UiTextException(uiText(if (draft.authMode == SubsonicAuthMode.API_KEY) {
+                Res.string.source_authentication_changed_api_key
+            } else {
+                Res.string.source_authentication_changed_password
+            }))
         }
         return resolveUpdatedPassword(
             existingCredentialKey = existing.credentialKey,
@@ -1919,19 +1952,19 @@ class RoomImportSourceRepository(
     }
 
     private fun requireOnlineNavidromeRemoteTrackCount(remoteTrackCount: Int?): Int {
-        return remoteTrackCount ?: error("Navidrome 在线模式需要先确认远端曲目数量。")
+        return remoteTrackCount ?: throw UiTextException(uiText(Res.string.source_online_count_required))
     }
 
     private fun requireOnlineNavidromePaging(probe: NavidromeLibraryProbe) {
         if (!probe.supportsOnlineLibraryPaging) {
-            error("Navidrome 在线模式需要服务器支持 native 歌曲分页接口。")
+            throw UiTextException(uiText(Res.string.source_online_paging_required))
         }
     }
 
     private suspend fun probeExistingNavidromeSource(source: ImportSource): NavidromeLibraryProbe {
         val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         if (password.isBlank()) {
-            error("Navidrome 来源缺少有效密码。")
+            throw UiTextException(uiText(Res.string.source_navidrome_password_missing))
         }
         val draft = NavidromeSourceDraft(
             label = source.label,
@@ -1952,22 +1985,16 @@ class RoomImportSourceRepository(
         }
     }
 
-    private fun SubsonicAuthMode.credentialLabel(): String {
-        return when (this) {
-            SubsonicAuthMode.PASSWORD -> "密码"
-            SubsonicAuthMode.API_KEY -> "API Key"
-        }
-    }
-
     private suspend fun persistScan(source: ImportSource, report: ImportScanReport): ImportScanSummary {
         val scannedAt = now()
+        val warningMessage = scanWarningsForStorage(report.warnings)
         val persistedSource = report.refreshedPersistentReference
             ?.takeIf { source.type == ImportSourceType.LOCAL_FOLDER && it.isNotBlank() }
             ?.also { refreshedReference ->
-                check(
+                checkUi(
                     localFolderPersistentIdentity(refreshedReference) ==
                         localFolderPersistentIdentity(source.rootReference),
-                ) { "刷新的本地文件夹授权与当前来源不匹配。" }
+                ) { uiText(Res.string.source_local_authorization_mismatch) }
             }
             ?.let { source.copy(rootReference = it) }
             ?: source
@@ -2014,7 +2041,7 @@ class RoomImportSourceRepository(
                     trackCount = trackEntities.size,
                     remoteTrackCount = report.totalTrackCount,
                     lastScannedAt = scannedAt,
-                    lastError = report.warnings.joinToString("\n").ifBlank { null },
+                    lastError = warningMessage,
                 ),
             )
             ImportScanSummary(
@@ -2141,6 +2168,7 @@ class RoomImportSourceRepository(
         scanId: String,
         progressSink: ImportScanProgressSink,
     ): ImportScanSummary {
+        val warningMessage = scanWarningsForStorage(report.warnings)
         progressSink.onProgress(
             ImportScanProgress(
                 sourceId = source.id,
@@ -2158,7 +2186,7 @@ class RoomImportSourceRepository(
                 trackCount = report.importedTrackCount,
                 remoteTrackCount = report.totalTrackCount,
                 lastScannedAt = source.lastScannedAt,
-                lastError = report.warnings.joinToString("\n").ifBlank { null },
+                lastError = warningMessage,
             ),
         )
         return ImportScanSummary(
@@ -2243,6 +2271,7 @@ class RoomImportSourceRepository(
     }
 
     private suspend fun persistScanFailure(sourceId: String, throwable: Throwable) {
+        val errorMessage = scanErrorMessageForStorage(throwable)
         val previous = database.importIndexStateDao().getBySourceId(sourceId)
         database.importIndexStateDao().upsert(
             ImportIndexStateEntity(
@@ -2250,7 +2279,7 @@ class RoomImportSourceRepository(
                 trackCount = previous?.trackCount ?: 0,
                 remoteTrackCount = previous?.remoteTrackCount,
                 lastScannedAt = previous?.lastScannedAt,
-                lastError = throwable.message ?: "扫描失败。",
+                lastError = errorMessage,
             ),
         )
     }
@@ -2260,7 +2289,7 @@ class RoomImportSourceRepository(
     ) {
         val existing = database.importSourceDao().getAll()
         if (hasImportSourceNameConflict(name = label, existing = existing)) {
-            error("音乐源名称已存在。")
+            throw UiTextException(uiText(Res.string.source_name_already_exists))
         }
     }
 
@@ -2275,7 +2304,7 @@ class RoomImportSourceRepository(
                 excludingId = excludingId,
             )
         ) {
-            error("该本地文件夹已导入。")
+            throw UiTextException(uiText(Res.string.source_local_folder_already_imported))
         }
     }
 
@@ -2485,7 +2514,7 @@ class DefaultSettingsRepository(
     override suspend fun saveWorkflowLyricsSource(rawJson: String, editingId: String?): WorkflowLyricsSourceConfig {
         val config = parseWorkflowLyricsSourceConfig(rawJson)
         if (editingId != null && config.id != editingId) {
-            error("Workflow 源 id 不支持修改。")
+            throw UiTextException(uiText(Res.string.lyrics_workflow_id_immutable))
         }
         assertSourceIdAvailable(
             sourceId = config.id,
@@ -2584,7 +2613,7 @@ class DefaultSettingsRepository(
     ) {
         val normalizedTarget = normalizeLyricsSourceName(name)
         if (normalizedTarget.isBlank()) {
-            error("歌词源名称不能为空。")
+            throw UiTextException(uiText(Res.string.lyrics_source_name_required))
         }
         val directConflict = database.lyricsSourceConfigDao().getAll().any { entity ->
             entity.id != currentDirectId && normalizeLyricsSourceName(entity.name) == normalizedTarget
@@ -2593,7 +2622,7 @@ class DefaultSettingsRepository(
             entity.id != currentWorkflowId && normalizeLyricsSourceName(entity.name) == normalizedTarget
         }
         if (directConflict || workflowConflict) {
-            error("歌词源名称已存在。")
+            throw UiTextException(uiText(Res.string.lyrics_source_name_already_exists))
         }
     }
 
@@ -2604,7 +2633,7 @@ class DefaultSettingsRepository(
         val hasDirectConflict = database.lyricsSourceConfigDao().getAll().any { it.id == sourceId }
         val hasWorkflowConflict = database.workflowLyricsSourceConfigDao().getAll().any { it.id == sourceId && it.id != currentWorkflowId }
         if (hasDirectConflict || hasWorkflowConflict) {
-            error("歌词源 id 已存在。")
+            throw UiTextException(uiText(Res.string.lyrics_source_id_already_exists))
         }
     }
 
@@ -3118,7 +3147,7 @@ class DefaultLyricsRepository(
 
             LyricsSearchApplyMode.ARTWORK_ONLY -> {
                 val artworkLocator = if (candidate.isTrackProvided) {
-                    val sourceTrackArtwork = sourceArtwork ?: error("歌词结果没有可用封面。")
+                    val sourceTrackArtwork = sourceArtwork ?: throw UiTextException(uiText(Res.string.lyrics_artwork_unavailable))
                     val artworkOverride = sourceTrackArtwork.takeUnless { it == trackArtwork }
                     cacheArtworkLocator(
                         trackId = trackId,
@@ -3138,9 +3167,9 @@ class DefaultLyricsRepository(
                         trackId = trackId,
                         sourceKey = candidate.sourceId,
                         candidateKey = artworkCandidateKey,
-                        sourceLocator = candidate.artworkLocator ?: error("歌词结果没有可用封面。"),
+                        sourceLocator = candidate.artworkLocator ?: throw UiTextException(uiText(Res.string.lyrics_artwork_unavailable)),
                         replaceExisting = true,
-                    ) ?: error("歌词结果没有可用封面。")
+                    ) ?: throw UiTextException(uiText(Res.string.lyrics_artwork_unavailable))
                     persistManualOverride(
                         trackId = trackId,
                         rawPayload = existingManualPayload,
@@ -3282,6 +3311,7 @@ class DefaultLyricsRepository(
         return LyricsSearchCandidate(
             sourceId = SAME_NAME_LRC_SOURCE_ID,
             sourceName = "同名歌词文件",
+            sourceNameText = uiText(Res.string.lyrics_source_same_name_file),
             document = document,
             title = track.title.takeIf { it.isNotBlank() },
             artistName = track.artistName?.takeIf { it.isNotBlank() },
@@ -3335,6 +3365,7 @@ class DefaultLyricsRepository(
             return LyricsSearchCandidate(
                 sourceId = EMBEDDED_LYRICS_SOURCE_ID,
                 sourceName = "歌曲标签",
+                sourceNameText = uiText(Res.string.lyrics_source_song_tags),
                 document = liveLyrics.document,
                 title = currentSnapshot.title.takeIf { it.isNotBlank() },
                 artistName = currentSnapshot.artistName?.takeIf { it.isNotBlank() },
@@ -3359,6 +3390,7 @@ class DefaultLyricsRepository(
         return LyricsSearchCandidate(
             sourceId = EMBEDDED_LYRICS_SOURCE_ID,
             sourceName = "歌曲标签",
+            sourceNameText = uiText(Res.string.lyrics_source_song_tags),
             document = cached,
             title = track.title.takeIf { it.isNotBlank() },
             artistName = track.artistName?.takeIf { it.isNotBlank() },
@@ -3382,7 +3414,7 @@ class DefaultLyricsRepository(
         candidate: WorkflowSongCandidate,
     ): LyricsDocument {
         val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
-            ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
+            ?: throw UiTextException(uiText(Res.string.workflow_source_missing, candidate.sourceId))
         val document = fetchWorkflowLyricsForCandidate(
             track = database.trackDao().getByIds(listOf(trackId)).firstOrNull()?.toDomain()
                 ?: Track(
@@ -3398,7 +3430,7 @@ class DefaultLyricsRepository(
             config = config,
             candidate = candidate,
             requestType = "manual",
-        ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
+        ) ?: throw UiTextException(uiText(Res.string.workflow_lyrics_unavailable, candidate.sourceName))
         return document.copy(rawPayload = preferredStoredLyricsPayload(document))
     }
 
@@ -3496,9 +3528,9 @@ class DefaultLyricsRepository(
                     trackId = trackId,
                     sourceKey = candidate.sourceId,
                     candidateKey = candidate.id,
-                    sourceLocator = candidate.imageUrl ?: error("Workflow lyrics source ${candidate.sourceName} 没有可用封面。"),
+                    sourceLocator = candidate.imageUrl ?: throw UiTextException(uiText(Res.string.workflow_artwork_unavailable, candidate.sourceName)),
                     replaceExisting = true,
-                ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有可用封面。")
+                ) ?: throw UiTextException(uiText(Res.string.workflow_artwork_unavailable, candidate.sourceName))
                 persistManualOverride(
                     trackId = trackId,
                     rawPayload = existingManualPayload,
@@ -3519,13 +3551,13 @@ class DefaultLyricsRepository(
 
     override suspend fun resolveWorkflowSongCandidate(track: Track, candidate: WorkflowSongCandidate): ResolvedLyricsResult {
         val config = database.workflowLyricsSourceConfigDao().getById(candidate.sourceId)?.toDomainOrNull()
-            ?: error("Workflow lyrics source ${candidate.sourceId} does not exist.")
+            ?: throw UiTextException(uiText(Res.string.workflow_source_missing, candidate.sourceId))
         val document = fetchWorkflowLyricsForCandidate(
             track = track,
             config = config,
             candidate = candidate,
             requestType = "tag-import",
-        ) ?: error("Workflow lyrics source ${candidate.sourceName} 没有返回可解析歌词。")
+        ) ?: throw UiTextException(uiText(Res.string.workflow_lyrics_unavailable, candidate.sourceName))
         return ResolvedLyricsResult(
             document = document.copy(rawPayload = preferredStoredLyricsPayload(document)),
             artworkLocator = normalizeArtworkLocator(candidate.imageUrl),

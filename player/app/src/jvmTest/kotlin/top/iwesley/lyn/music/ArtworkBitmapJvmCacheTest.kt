@@ -18,6 +18,11 @@ import top.iwesley.lyn.music.platform.loadBundledDefaultCoverBytes
 import top.iwesley.lyn.music.platform.loadJvmArtworkBytes
 
 class ArtworkBitmapJvmCacheTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
 
     @Test
     fun `direct remote artwork writes cache reuses it and rebuilds after deletion`() {

@@ -1,11 +1,14 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.platform.resetForTrackSwitch
 
 class PlaybackGatewayStateResetTest {
@@ -28,6 +31,7 @@ class PlaybackGatewayStateResetTest {
             ),
             completionCount = 7L,
             errorMessage = "boom",
+            errorText = uiText(Res.string.playback_media_failed),
         )
 
         val reset = initial.resetForTrackSwitch(volumeOverride = 0.8f)
@@ -43,6 +47,7 @@ class PlaybackGatewayStateResetTest {
         assertNull(reset.currentPlaybackAudioFormat)
         assertEquals(7L, reset.completionCount)
         assertNull(reset.errorMessage)
+        assertNull(reset.errorText)
     }
 
     @Test

@@ -1,11 +1,15 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import top.iwesley.lyn.music.core.model.AppleMediaLocatorResolver
 import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
@@ -71,6 +75,7 @@ internal class ApplePlaybackGateway(
                     canSeek = false,
                     completionCount = it.completionCount + 1,
                     errorMessage = null,
+                    errorText = null,
                 )
             }
         }
@@ -79,7 +84,11 @@ internal class ApplePlaybackGateway(
                 return@onFailed
             }
             releaseCurrentLocalMediaAccess()
-            publishState(errorOverride = errorMessage ?: "$platformLabel 播放失败。")
+            val text = applePlaybackFailureText(platformLabel, errorMessage)
+            publishState(
+                errorOverride = errorMessage ?: (text).diagnosticMessage(),
+                errorTextOverride = text,
+            )
         }
     }
 
@@ -125,12 +134,7 @@ internal class ApplePlaybackGateway(
         }
         val localAccess = runCatching { localMediaAccessResolver.resolve(effectiveLocator) }
             .getOrElse { throwable ->
-                mutableState.update {
-                    it.copy(
-                        canSeek = false,
-                        errorMessage = throwable.message ?: "$platformLabel 无法访问本地歌曲。",
-                    )
-                }
+                publishFailure(appleLocalAccessFailureText(platformLabel, throwable), throwable.message)
                 return
             }
         if (!loadToken.isCurrent()) {
@@ -142,12 +146,7 @@ internal class ApplePlaybackGateway(
                 if (!loadToken.isCurrent()) {
                     return
                 }
-                mutableState.update {
-                    it.copy(
-                        canSeek = false,
-                        errorMessage = resolved.message,
-                    )
-                }
+                publishFailure(resolved.messageText, resolved.message)
             }
 
             else -> {
@@ -166,12 +165,7 @@ internal class ApplePlaybackGateway(
                     player.load(resolved)
                 } catch (throwable: Throwable) {
                     releaseCurrentLocalMediaAccess()
-                    mutableState.update {
-                        it.copy(
-                            canSeek = false,
-                            errorMessage = throwable.message ?: "$platformLabel 播放失败。",
-                        )
-                    }
+                    publishFailure(applePlaybackLoadFailureText(platformLabel, throwable), throwable.message)
                     return
                 }
                 if (startPositionMs > 0L) {
@@ -190,6 +184,7 @@ internal class ApplePlaybackGateway(
                         canSeek = player.canSeek(),
                         currentNavidromeAudioQuality = navidromeAudioQuality,
                         errorMessage = null,
+                        errorText = null,
                     )
                 }
                 publishState()
@@ -218,6 +213,7 @@ internal class ApplePlaybackGateway(
                 positionMs = positionMs.coerceAtLeast(0L),
                 canSeek = player.canSeek(),
                 errorMessage = null,
+                errorText = null,
             )
         }
         publishState()
@@ -249,10 +245,21 @@ internal class ApplePlaybackGateway(
         currentLocalMediaAccess = null
     }
 
-    private fun publishState(errorOverride: String? = null) {
+    private fun publishFailure(text: UiText, diagnostic: String? = null) {
+        mutableState.update {
+            it.copy(
+                canSeek = false,
+                errorMessage = diagnostic ?: (text).diagnosticMessage(),
+                errorText = text,
+            )
+        }
+    }
+
+    private fun publishState(errorOverride: String? = null, errorTextOverride: UiText? = null) {
         if (player.isPlaying()) {
             markCurrentRemotePlaybackSuccess()
         }
+        val errorMessage = errorOverride ?: player.errorMessage()
         mutableState.update {
             it.copy(
                 isPlaying = player.isPlaying(),
@@ -260,7 +267,8 @@ internal class ApplePlaybackGateway(
                 durationMs = player.durationMs()?.takeIf { value -> value > 0L } ?: it.durationMs,
                 canSeek = player.canSeek(),
                 volume = player.volume().coerceIn(0f, 1f),
-                errorMessage = errorOverride ?: player.errorMessage(),
+                errorMessage = errorMessage,
+                errorText = errorTextOverride ?: errorMessage?.let { applePlaybackFailureText(platformLabel, it) },
             )
         }
     }
@@ -293,6 +301,7 @@ internal class ApplePlaybackGateway(
                 positionMs = retryPositionMs,
                 canSeek = player.canSeek(),
                 errorMessage = null,
+                errorText = null,
             )
         }
         return true

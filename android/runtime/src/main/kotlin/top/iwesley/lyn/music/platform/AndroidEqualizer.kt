@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.uiText
 import android.content.Context
 import android.content.Intent
 import android.media.audiofx.Equalizer
@@ -48,7 +52,7 @@ data class AndroidEqualizerState(
     val bands: List<AndroidEqualizerBand> = emptyList(),
     val presets: List<AndroidEqualizerPreset> = emptyList(),
     val selectedPresetName: String? = null,
-    val errorMessage: String? = "开始播放后可用",
+    val errorMessage: UiText? = uiText(Res.string.equalizer_playback_required),
 )
 
 interface AndroidEqualizerUiService {
@@ -264,7 +268,7 @@ internal class AndroidEqualizerController(
                 readState(
                     eq = eq,
                     preferences = currentPreferences,
-                    errorMessage = "均衡器应用失败",
+                    errorMessage = uiText(Res.string.equalizer_apply_failed),
                 ),
             )
         }
@@ -286,7 +290,7 @@ internal class AndroidEqualizerController(
     private fun readState(
         eq: Equalizer,
         preferences: AndroidEqualizerPreferencesSnapshot,
-        errorMessage: String?,
+        errorMessage: UiText?,
     ): AndroidEqualizerState {
         val range = eq.bandLevelRange
         val minLevel = range.getOrNull(0)?.toInt() ?: DEFAULT_EQUALIZER_MIN_LEVEL_MB
@@ -326,7 +330,7 @@ internal class AndroidEqualizerController(
                 active = false,
                 enabled = currentPreferences.enabled,
                 selectedPresetName = currentPreferences.presetName,
-                errorMessage = "开始播放后可用",
+                errorMessage = uiText(Res.string.equalizer_playback_required),
             ),
         )
     }
@@ -338,7 +342,7 @@ internal class AndroidEqualizerController(
                 active = false,
                 enabled = currentPreferences.enabled,
                 selectedPresetName = currentPreferences.presetName,
-                errorMessage = "当前设备不支持均衡器",
+                errorMessage = uiText(Res.string.equalizer_device_unsupported),
             ),
         )
     }

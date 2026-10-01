@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.resources.*
+
+import top.iwesley.lyn.music.core.model.uiString
 import kotlin.io.encoding.Base64
 
 private const val IOS_LOCAL_FOLDER_REFERENCE_PREFIX = "lynmusic-ios-folder://v1/"
@@ -42,11 +45,11 @@ fun localFolderPersistentIdentity(reference: String): String {
     return iosIdentity?.let { "ios:$it" } ?: reference
 }
 
-fun displayLocalFolderReference(reference: String): String {
+fun displayLocalFolderReference(reference: String): UiText {
     return if (reference.startsWith(IOS_LOCAL_FOLDER_REFERENCE_PREFIX)) {
-        "文件 App · 原地索引"
+        uiText(Res.string.source_ios_files_index_label)
     } else {
-        reference
+        UiText.Raw(reference)
     }
 }
 

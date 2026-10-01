@@ -1,13 +1,23 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.test.runTest
+
+import top.iwesley.lyn.music.testing.libraryFolderDetailSubtitle
+import top.iwesley.lyn.music.testing.libraryFolderSummaryLabel
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import top.iwesley.lyn.music.core.model.Track
 
 class LibraryFolderTreeTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
-    fun `folder tree keeps matching paths separate by source`() {
+    fun `folder tree keeps matching paths separate by source`() = runTest {
         val tree = deriveLibraryFolderTree(
             tracks = listOf(
                 sampleFolderTrack(
@@ -48,7 +58,7 @@ class LibraryFolderTreeTest {
     }
 
     @Test
-    fun `folder tree handles nested root blank and backslash paths`() {
+    fun `folder tree handles nested root blank and backslash paths`() = runTest {
         val tree = deriveLibraryFolderTree(
             tracks = listOf(
                 sampleFolderTrack(
@@ -83,7 +93,7 @@ class LibraryFolderTreeTest {
     }
 
     @Test
-    fun `folder labels and summaries use source fallback and path display`() {
+    fun `folder labels and summaries use source fallback and path display`() = runTest {
         val tree = deriveLibraryFolderTree(
             tracks = listOf(
                 sampleFolderTrack(

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tv_source_add_hint">Add a local folder, Samba, WebDAV, Navidrome, Subsonic, or Emby source to start scanning music.</string>
+    <string name="tv_source_add_and_scan">Add and scan</string>
+    <string name="tv_source_add_named_type">Add %1$s source</string>
+    <string name="tv_source_add_action">Add source</string>
+    <string name="tv_source_allow_insecure_tls">Allow insecure TLS</string>
+    <string name="tv_source_api_key_authentication">API key authentication</string>
+    <string name="tv_about_app_name">App name</string>
+    <string name="tv_storage_caches_title">Caches and local files</string>
+    <string name="tv_source_delete_confirmation">Delete “%1$s”?</string>
+    <string name="tv_device_information_title">Device information</string>
+    <string name="tv_storage_artwork_cache_description">Downloaded artwork and local artwork created by scans or tag edits.</string>
+    <string name="tv_source_edit_named_type">Edit %1$s source</string>
+    <string name="tv_source_import_title">Import and scan music</string>
+    <string name="tv_source_last_scan_error">Last scan failed: %1$s</string>
+    <string name="tv_source_saved_api_key_hint">Leave blank to keep the saved API key</string>
+    <string name="tv_source_saved_password_hint">Leave blank to keep the saved password</string>
+    <string name="tv_source_management_description">Manage local, Samba, WebDAV, Navidrome, Subsonic, and Emby music sources.</string>
+    <string name="tv_sources_empty_title">No sources yet</string>
+    <string name="tv_storage_offline_music_description">Non-local music downloaded manually to this device.</string>
+    <string name="tv_source_not_scanned_status">Not scanned</string>
+    <string name="tv_source_not_scanned_hint">Not scanned yet</string>
+    <string name="tv_settings_notice_title">Notice</string>
+    <string name="tv_settings_optional_field">Optional</string>
+    <string name="tv_settings_reading_label">Reading</string>
+    <string name="tv_settings_reading_progress">Reading...</string>
+    <string name="tv_source_root_address">Root address</string>
+    <string name="tv_source_save_and_scan">Save and scan</string>
+    <string name="tv_source_server_label">Server</string>
+    <string name="tv_settings_unavailable_title">Settings unavailable</string>
+    <string name="tv_source_samba_path_example">shared/Music</string>
+    <string name="tv_device_information_description">System and hardware information</string>
+    <string name="tv_storage_tags_temporary_description">Temporary files used while editing tag artwork.</string>
+    <string name="tv_storage_lyrics_share_temporary_description">Temporary images created when sharing lyrics.</string>
+    <string name="tv_storage_samba_cache_description">Temporary local audio files used for SMB playback.</string>
+    <string name="tv_source_test_connection">Test</string>
+    <string name="tv_source_track_summary">%1$s tracks · %2$s</string>
+    <string name="tv_about_app_version_description">Version and project website</string>
+    <string name="tv_storage_management_hint">View and clear manageable caches on this TV by category.</string>
+    <string name="tv_device_information_hint">View system, display, and hardware information for this TV or car device.</string>
+    <string name="tv_about_app_information_hint">View version, developer, project, and WeChat information.</string>
+</resources>

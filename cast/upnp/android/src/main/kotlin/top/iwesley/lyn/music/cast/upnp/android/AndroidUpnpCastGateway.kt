@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.cast.upnp.android
 
+import top.iwesley.lyn.music.core.model.diagnosticMessage
+import top.iwesley.lyn.music.resources.*
+
 import android.content.Context
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +29,10 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.NoopDiagnosticLogger
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.uiText
 
 class AndroidUpnpCastGateway(
     context: Context,
@@ -55,7 +62,8 @@ class AndroidUpnpCastGateway(
         if (nativeHandle == 0L || nativeLoadFailure != null) {
             mutableState.value = CastSessionState(
                 status = CastSessionStatus.Unsupported,
-                errorMessage = "当前设备暂不支持投屏。",
+                errorMessage = (uiText(Res.string.cast_device_unsupported)).diagnosticMessage(),
+                errorText = uiText(Res.string.cast_device_unsupported),
             )
             nativeLoadFailure?.let { error ->
                 logger.error(CAST_LOG_TAG, error) { "load-native-upnp-cast-failed" }
@@ -75,12 +83,14 @@ class AndroidUpnpCastGateway(
         }
         updateCastState {
             if (it.status == CastSessionStatus.Casting) {
-                it.copy(errorMessage = null)
+                it.copy(errorMessage = null, errorText = null)
             } else {
                 it.copy(
                     status = CastSessionStatus.Searching,
-                    message = "正在搜索附近设备",
+                    message = (uiText(Res.string.cast_searching)).diagnosticMessage(),
+                    messageText = uiText(Res.string.cast_searching),
                     errorMessage = null,
+                    errorText = null,
                 )
             }
         }
@@ -99,7 +109,7 @@ class AndroidUpnpCastGateway(
         releaseMulticastLock()
         updateCastState {
             if (it.status == CastSessionStatus.Searching) {
-                it.copy(status = CastSessionStatus.Idle, message = null)
+                it.copy(status = CastSessionStatus.Idle, message = null, messageText = null)
             } else {
                 it
             }
@@ -109,14 +119,16 @@ class AndroidUpnpCastGateway(
     override suspend fun cast(deviceId: String, request: CastMediaRequest) {
         if (!ensureAvailable()) return
         val device = state.value.devices.firstOrNull { it.id == deviceId }
-        val deviceName = device?.name
+        val deviceName = device?.name?.takeIf { it.isNotBlank() }
         updateCastState {
             it.copy(
                 status = CastSessionStatus.Connecting,
                 selectedDeviceId = deviceId,
                 selectedDeviceName = deviceName,
-                message = deviceName?.let { name -> "正在连接 $name" } ?: "正在连接设备",
+                message = (connectingText(deviceName)).diagnosticMessage(),
+                messageText = connectingText(deviceName),
                 errorMessage = null,
+                errorText = null,
                 playback = null,
             )
         }
@@ -138,8 +150,10 @@ class AndroidUpnpCastGateway(
                 status = CastSessionStatus.Casting,
                 selectedDeviceId = deviceId,
                 selectedDeviceName = deviceName,
-                message = deviceName?.let { name -> "已投屏到 $name" } ?: "正在投屏",
+                message = (castingText(deviceName)).diagnosticMessage(),
+                messageText = castingText(deviceName),
                 errorMessage = null,
+                errorText = null,
                 playback = CastPlaybackState(
                     durationMs = request.durationMs.coerceAtLeast(0L),
                     isPlaying = true,
@@ -155,14 +169,14 @@ class AndroidUpnpCastGateway(
     override suspend fun playCast() {
         controlSelectedDevice(
             nativeCall = { handle, deviceId -> nativePlayCast(handle, deviceId) },
-            failureMessage = "恢复投屏播放失败。",
+            failureText = uiText(Res.string.cast_resume_failed),
         )
     }
 
     override suspend fun pauseCast() {
         controlSelectedDevice(
             nativeCall = { handle, deviceId -> nativePauseCast(handle, deviceId) },
-            failureMessage = "暂停投屏失败。",
+            failureText = uiText(Res.string.cast_pause_failed),
         )
     }
 
@@ -170,7 +184,7 @@ class AndroidUpnpCastGateway(
         val normalizedPositionMs = positionMs.coerceAtLeast(0L)
         controlSelectedDevice(
             nativeCall = { handle, deviceId -> nativeSeekCast(handle, deviceId, normalizedPositionMs) },
-            failureMessage = "调整投屏进度失败。",
+            failureText = uiText(Res.string.cast_seek_failed),
         )
     }
 
@@ -188,7 +202,9 @@ class AndroidUpnpCastGateway(
                 selectedDeviceId = null,
                 selectedDeviceName = null,
                 message = null,
+                messageText = null,
                 errorMessage = null,
+                errorText = null,
                 playback = null,
             )
         }
@@ -216,11 +232,10 @@ class AndroidUpnpCastGateway(
         updateCastState {
             it.copy(
                 devices = devices,
-                message = when {
-                    it.status == CastSessionStatus.Searching && devices.isEmpty() -> "正在搜索附近设备"
-                    it.status == CastSessionStatus.Searching -> "找到 ${devices.size} 台设备"
-                    else -> it.message
-                },
+                messageText = if (it.status == CastSessionStatus.Searching) discoveryText(devices.size) else it.messageText,
+                message = if (it.status == CastSessionStatus.Searching) {
+                    (discoveryText(devices.size)).diagnosticMessage()
+                } else it.message,
             )
         }
     }
@@ -231,7 +246,8 @@ class AndroidUpnpCastGateway(
         updateCastState {
             it.copy(
                 status = CastSessionStatus.Unsupported,
-                errorMessage = "当前设备暂不支持投屏。",
+                errorMessage = (uiText(Res.string.cast_device_unsupported)).diagnosticMessage(),
+                errorText = uiText(Res.string.cast_device_unsupported),
             )
         }
         return false
@@ -241,14 +257,20 @@ class AndroidUpnpCastGateway(
         message: String,
         selectedDeviceId: String? = state.value.selectedDeviceId,
         selectedDeviceName: String? = state.value.selectedDeviceName,
+        fallback: UiText = uiText(Res.string.cast_failed),
     ) {
+        val text = nativeCastErrorText(message, fallback)
         updateCastState {
             it.copy(
                 status = CastSessionStatus.Failed,
                 selectedDeviceId = selectedDeviceId,
                 selectedDeviceName = selectedDeviceName,
                 message = null,
-                errorMessage = message,
+                messageText = null,
+                errorMessage = if (message.startsWith("lyn_ui:") || message.isBlank()) {
+                    (text).diagnosticMessage()
+                } else message,
+                errorText = text,
                 playback = null,
             )
         }
@@ -256,7 +278,7 @@ class AndroidUpnpCastGateway(
 
     private suspend fun controlSelectedDevice(
         nativeCall: suspend (handle: Long, deviceId: String) -> String?,
-        failureMessage: String,
+        failureText: UiText,
     ) {
         if (!ensureAvailable()) return
         val selectedDeviceId = state.value.selectedDeviceId ?: return
@@ -264,7 +286,7 @@ class AndroidUpnpCastGateway(
             nativeCall(nativeHandle, selectedDeviceId)
         }
         if (error != null) {
-            fail(error.ifBlank { failureMessage })
+            fail(error, fallback = failureText)
             return
         }
         queryAndUpdatePlayback(selectedDeviceId)
@@ -351,7 +373,7 @@ private fun parseNativeDevices(payload: String): List<CastDevice> {
             val id = fields.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             CastDevice(
                 id = id,
-                name = fields.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "未知设备",
+                name = fields.getOrNull(1).orEmpty(),
                 description = fields.getOrNull(2)?.takeIf { it.isNotBlank() },
                 modelName = fields.getOrNull(3)?.takeIf { it.isNotBlank() },
                 manufacturer = fields.getOrNull(4)?.takeIf { it.isNotBlank() },

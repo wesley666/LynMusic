@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="offline_repository_unavailable">Offline downloads are not configured.</string>
+    <string name="offline_file_empty">The downloaded file is empty.</string>
+    <string name="offline_write_failed">Failed to save the offline file.</string>
+    <string name="offline_xml_response">The server returned an XML response.</string>
+    <string name="offline_subsonic_xml_response">The server returned a Subsonic XML response.</string>
+    <string name="offline_source_download_failed">%1$s download failed: %2$s</string>
+    <string name="offline_failure_with_code">%1$s (code=%2$s)</string>
+    <string name="offline_download_interrupted">The previous download did not finish.</string>
+    <string name="offline_file_missing">The offline file does not exist.</string>
+</resources>

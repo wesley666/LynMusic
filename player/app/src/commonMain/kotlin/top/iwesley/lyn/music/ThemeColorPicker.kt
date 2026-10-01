@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.resources.*
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,11 +80,11 @@ internal fun ThemeColorPickerDialog(
         textContentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(28.dp),
-        title = { Text("选择$label") },
+        title = { Text(uiString(Res.string.common_select_named_item, label)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "拖动面板调整饱和度和明度，拖动滑杆调整色相。",
+                    text = uiString(Res.string.theme_color_picker_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -134,12 +136,12 @@ internal fun ThemeColorPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(previewArgb) }) {
-                Text("确定", color = MaterialTheme.colorScheme.onSurface)
+                Text(uiString(Res.string.common_confirm), color = MaterialTheme.colorScheme.onSurface)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurface)
+                Text(uiString(Res.string.common_cancel), color = MaterialTheme.colorScheme.onSurface)
             }
         },
     )

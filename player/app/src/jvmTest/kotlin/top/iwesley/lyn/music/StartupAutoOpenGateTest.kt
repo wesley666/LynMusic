@@ -10,6 +10,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class StartupAutoOpenGateTest {
+    @kotlin.test.BeforeTest
+    fun selectFixtureLanguage() {
+        top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
+    }
+
     @Test
     fun `gate allows only the first requested startup expansion`() = runBlocking {
         val gate = StartupAutoOpenGate()

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.AppLanguageRuntime
+
+import top.iwesley.lyn.music.resources.*
+
 import androidx.room.Room
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
@@ -41,6 +45,10 @@ import top.iwesley.lyn.music.core.model.PlaybackStatsReporter
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlCallbacks
 import top.iwesley.lyn.music.core.model.SystemPlaybackControlsPlatformService
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.AppLanguage
+import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.playbackErrorText
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.buildEmbySongLocator
 import top.iwesley.lyn.music.core.model.buildExternalOpenTrackId
 import top.iwesley.lyn.music.core.model.buildNavidromeSongLocator
@@ -56,14 +64,55 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 class PlaybackRepositoriesTest {
 
     @Test
-    fun `playback stats threshold uses half duration capped at four minutes`() {
+    fun gatewayUiDescriptionsPropagateAndStaleDescriptionsAreClearedOnTrackSwitch() = runTest {
+        val database = createTestDatabase()
+        val gateway = BlockingPlaybackGateway()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(database, gateway, FakePlaybackPreferencesStore(), scope)
+        try {
+            advanceUntilIdle()
+            repository.playTracks(sampleTracks(), startIndex = 0)
+            advanceUntilIdle()
+            val text = uiText(Res.string.playback_vlc_unavailable)
+            gateway.updateState { it.copy(errorMessage = "仅用于诊断", errorText = text, errorRevision = it.errorRevision + 1) }
+            advanceUntilIdle()
+            assertEquals(text, repository.snapshot.value.errorText)
+            assertEquals("仅用于诊断", repository.snapshot.value.errorMessage)
+            val loadGate = CompletableDeferred<Unit>()
+            gateway.nextLoadGate = loadGate
+            val switch = launch { repository.playTracks(sampleTracks(), startIndex = 1) }
+            advanceUntilIdle()
+            assertEquals("track-2", repository.snapshot.value.currentTrack?.id)
+            assertNull(repository.snapshot.value.errorMessage)
+            assertNull(repository.snapshot.value.errorText)
+            loadGate.complete(Unit)
+            switch.join()
+            advanceUntilIdle()
+            assertNull(repository.snapshot.value.errorText)
+            gateway.updateState { it.copy(errorMessage = null, errorText = text, errorRevision = it.errorRevision + 1) }
+            advanceUntilIdle()
+            assertEquals(text, repository.snapshot.value.errorText)
+            assertEquals("VLC was not detected. Install VLC or choose its path in Settings.",
+                resolveUiText(checkNotNull(repository.snapshot.value.playbackErrorText()), AppLanguage.English))
+            gateway.updateState { it.copy(errorMessage = null, errorText = null) }
+            advanceUntilIdle()
+            assertNull(repository.snapshot.value.playbackErrorText())
+        } finally {
+            repository.close()
+            scope.cancel()
+            database.close()
+        }
+    }
+
+    @Test
+    fun `playback stats threshold uses half duration capped at four minutes`() = runTest {
         assertEquals(90_000L, playbackStatsSubmissionThresholdMs(180_000L))
         assertEquals(240_000L, playbackStatsSubmissionThresholdMs(900_000L))
         assertEquals(240_000L, playbackStatsSubmissionThresholdMs(0L))
     }
 
     @Test
-    fun `playback queue json fallback source ids come from remote locators`() {
+    fun `playback queue json fallback source ids come from remote locators`() = runTest {
         val localTracks = sampleTracks(1_200)
         val navidromeTrack = sampleNavidromeTrack(
             id = "nav-track-1",
@@ -2681,6 +2730,8 @@ class PlaybackRepositoriesTest {
             assertEquals("track-1", repository.snapshot.value.currentTrack?.id)
             assertEquals(false, repository.snapshot.value.isPlaying)
             assertEquals("访问歌曲失败：No route to host", repository.snapshot.value.errorMessage)
+            assertEquals("Failed to access the song: No route to host",
+                resolveUiText(checkNotNull(repository.snapshot.value.playbackErrorText()), AppLanguage.English))
         } finally {
             repository.close()
             scope.cancel()
@@ -3431,6 +3482,7 @@ private class BlockingPlaybackGateway : PlaybackGateway {
             durationMs = track.durationMs,
             canSeek = true,
             errorMessage = null,
+            errorText = null,
         )
     }
 

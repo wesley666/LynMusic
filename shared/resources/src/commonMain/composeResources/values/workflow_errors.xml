@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workflow_kind_required">workflow.kind must be "%1$s".</string>
+    <string name="workflow_value_required">%1$s cannot be empty.</string>
+    <string name="workflow_mapping_missing_fields">%1$s is missing fields: %2$s.</string>
+    <string name="workflow_steps_required">%1$s requires at least one step.</string>
+    <string name="workflow_payload_path_required">The last step in %1$s must provide payloadPath or fallbackPayloadPath.</string>
+    <string name="workflow_json_response_required">%1$s currently supports JSON responses only.</string>
+    <string name="workflow_template_variables_unknown">%1$s uses undefined template variables: %2$s.</string>
+    <string name="workflow_object_required">%1$s must be an object.</string>
+    <string name="workflow_array_required">%1$s must be an array.</string>
+    <string name="workflow_value_invalid">Field %1$s has an invalid value: "%2$s".</string>
+    <string name="workflow_string_items_required">%1$s contains a non-string value.</string>
+    <string name="workflow_string_required">%1$s must be a string.</string>
+    <string name="workflow_fields_unknown">%1$s contains unknown fields: %2$s.</string>
+    <string name="workflow_source_missing">Workflow lyrics source %1$s does not exist.</string>
+    <string name="workflow_lyrics_unavailable">Workflow lyrics source %1$s returned no parseable lyrics.</string>
+    <string name="workflow_artwork_unavailable">Workflow lyrics source %1$s has no available artwork.</string>
+</resources>

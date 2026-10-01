@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="server_request_failed">%1$s %2$s 請求失敗：%3$s</string>
+    <string name="server_http_failed">%1$s %2$s 失敗，HTTP %3$d</string>
+    <string name="server_response_not_object">%1$s %2$s 回應不是 JSON 物件。</string>
+    <string name="server_response_failed">%1$s %2$s 回應失敗狀態。</string>
+    <string name="server_response_empty">%1$s %2$s 回應為空。</string>
+    <string name="server_field_empty">%1$s %2$s 為空。</string>
+    <string name="server_response_field_missing">%1$s 回應缺少 %2$s。</string>
+    <string name="server_response_field_empty">%1$s 回應 %2$s 為空。</string>
+    <string name="server_response_field_invalid">%1$s %2$s 缺少或格式錯誤。</string>
+    <string name="server_response_not_array">%1$s %2$s 回應不是陣列。</string>
+    <string name="server_response_item_invalid">%1$s %2$s 回應第 %3$d 筆記錄格式錯誤。</string>
+    <string name="emby_items_page_timeout">Emby Items 請求逾時：StartIndex=%1$d, Limit=%2$d，嘗試縮小分頁後仍失敗。</string>
+</resources>
