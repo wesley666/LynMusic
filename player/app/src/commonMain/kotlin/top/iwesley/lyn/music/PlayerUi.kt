@@ -1621,7 +1621,7 @@ private fun MobilePlayerPrimaryPane(
             compactLyricsText = compactLyricsText,
         )
     }
-    var lyricsVisible by rememberSaveable(track.id) { mutableStateOf(false) }
+    var lyricsVisible by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = modifier

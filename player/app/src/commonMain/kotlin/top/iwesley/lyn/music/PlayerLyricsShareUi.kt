@@ -138,7 +138,7 @@ internal fun PlayerLyricsPane(
     pure: Boolean = false,
     mobilePlayback: Boolean = false,
 ) {
-    val listState = rememberLazyListState()
+    val listState = key(track.id) { rememberLazyListState() }
     val lyricsPrimaryTextColor = Color.White
     val lyricsSecondaryTextColor = Color.White.copy(alpha = 0.6f)
     var showTrackInfoDialog by rememberSaveable(track.id, mobilePlayback) { mutableStateOf(false) }
