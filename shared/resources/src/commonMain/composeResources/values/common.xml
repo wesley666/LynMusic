@@ -12,7 +12,7 @@
     <string name="favorites_add_track">Add to favorites</string>
     <string name="playlist_add_track">Add to playlist</string>
     <string name="lyrics_search_ready_hint">Adjust the search fields and click Search. Results will appear here.</string>
-    <string name="library_albums_title">Albums</string>
+    <string name="library_albums_title">Album</string>
     <plurals name="common_album_count">
         <item quantity="one">%1$s album</item>
         <item quantity="other">%1$s albums</item>
@@ -27,7 +27,7 @@
     <string name="lyrics_apply_artwork_only">Apply artwork only</string>
     <string name="lyrics_apply_lyrics_only">Apply lyrics only</string>
     <string name="common_artist">Artist</string>
-    <string name="library_artists_title">Artists</string>
+    <string name="library_artists_title">Artist</string>
     <string name="storage_artwork_cache">Artwork cache</string>
     <string name="offline_available_badge">Available offline</string>
     <string name="common_back">Back</string>
@@ -112,7 +112,7 @@
     <string name="common_exit_app">Exit app</string>
     <string name="favorites_likes_title">Favorites</string>
     <string name="favorites_collection_title">Favorites</string>
-    <string name="library_folders_title">Folders</string>
+    <string name="library_folders_title">Folder</string>
     <string name="display_font_scale">Font scale</string>
     <string name="offline_destination_free_space">Free space at download location</string>
     <string name="cast_external_session_label">From an external cast session</string>
@@ -253,7 +253,7 @@ WAN: %2$s</string>
         <item quantity="one">%1$s song · %2$s</item>
         <item quantity="other">%1$s songs · %2$s</item>
     </plurals>
-    <string name="library_tracks_title">Songs</string>
+    <string name="library_tracks_title">Song</string>
     <plurals name="library_selected_track_count">
         <item quantity="one">%1$s song selected</item>
         <item quantity="other">%1$s songs selected</item>
