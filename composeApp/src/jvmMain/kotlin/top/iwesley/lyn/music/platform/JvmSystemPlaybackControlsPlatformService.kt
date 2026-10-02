@@ -159,7 +159,7 @@ internal class JvmSystemPlaybackControlsPlatformService(
             ?.target
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: normalized?.let { artworkCacheStore.cache(it, cacheKey ?: it) }
+            ?: normalized?.let { artworkCacheStore.cache(it, cacheKey ?: it)?.locator }
         return latestArtworkPath
     }
 }

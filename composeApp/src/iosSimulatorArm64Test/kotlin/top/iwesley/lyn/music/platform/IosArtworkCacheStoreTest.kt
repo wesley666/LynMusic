@@ -30,7 +30,7 @@ class IosArtworkCacheStoreTest {
             assertFalse(locator.contains("/var/mobile/Containers/Data/Application/"))
             assertTrue(NSFileManager.defaultManager.fileExistsAtPath(sourcePath))
 
-            val resolved = createIosArtworkCacheStore().cache(locator, albumCacheKey)
+            val resolved = createIosArtworkCacheStore().cache(locator, albumCacheKey)?.locator
 
             assertEquals(albumPath, resolved)
             assertTrue(NSFileManager.defaultManager.fileExistsAtPath(albumPath))
@@ -98,7 +98,7 @@ class IosArtworkCacheStoreTest {
         try {
             assertTrue(writeIosFileBytes(relocatedPath, JPEG_PAYLOAD))
 
-            val resolved = createIosArtworkCacheStore().cache(legacyPath, albumCacheKey)
+            val resolved = createIosArtworkCacheStore().cache(legacyPath, albumCacheKey)?.locator
 
             assertEquals(albumPath, resolved)
             assertTrue(NSFileManager.defaultManager.fileExistsAtPath(albumPath))
@@ -117,7 +117,7 @@ class IosArtworkCacheStoreTest {
         try {
             assertTrue(writeIosFileBytes(albumPath, JPEG_PAYLOAD))
 
-            assertEquals(albumPath, createIosArtworkCacheStore().cache(missingLegacyPath, albumCacheKey))
+            assertEquals(albumPath, createIosArtworkCacheStore().cache(missingLegacyPath, albumCacheKey)?.locator)
         } finally {
             removeFiles(albumPath)
         }
@@ -127,7 +127,7 @@ class IosArtworkCacheStoreTest {
     fun missingTrackAndAlbumCacheReturnNull() = runBlocking {
         val missingLocator = assertNotNull(buildIosArtworkCacheLocator("missing-${Random.nextLong().toULong()}.jpg"))
 
-        assertNull(createIosArtworkCacheStore().cache(missingLocator, uniqueKey("missing-album")))
+        assertNull(createIosArtworkCacheStore().cache(missingLocator, uniqueKey("missing-album"))?.locator)
     }
 
     @Test

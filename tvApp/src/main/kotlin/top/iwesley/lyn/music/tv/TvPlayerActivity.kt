@@ -1058,7 +1058,7 @@ private fun rememberTvPlayerArtworkModel(
         val target = withContext(Dispatchers.IO) {
             when {
                 normalized == null -> null
-                requestCacheKey != null -> artworkCacheStore.cache(normalized, requestCacheKey)
+                requestCacheKey != null -> artworkCacheStore.cache(normalized, requestCacheKey)?.locator
                     ?: resolveArtworkCacheTarget(normalized)
                 else -> resolveArtworkCacheTarget(normalized)
             }

@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -77,5 +80,5 @@ class ArtworkImageTargetStateTest {
 }
 
 private object TestArtworkCacheStore : ArtworkCacheStore {
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
 }

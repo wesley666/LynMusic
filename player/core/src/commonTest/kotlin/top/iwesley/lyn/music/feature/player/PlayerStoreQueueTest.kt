@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.AppLanguage
@@ -52,6 +55,143 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStoreQueueTest {
+
+    @Test
+    fun `hanging artwork does not delay lyrics or next track cached lyrics`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot())
+        val lyrics = DeferredQueueLyricsRepository()
+        val gate = CompletableDeferred<Unit>()
+        val started = CompletableDeferred<Unit>()
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+                kotlin.test.assertEquals(ArtworkWritePolicy.KeepExisting, policy)
+                started.complete(Unit)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { gate.await() }
+                return ArtworkCacheResult(locator, true)
+            }
+        }
+        val store = PlayerStore(playback, lyrics, scope, artworkCacheStore = cache)
+        runCurrent()
+        lyrics.complete("track-1", resolvedLyricsResult("source", "first", "https://cover/slow"))
+        runCurrent()
+        kotlin.test.assertTrue(started.isCompleted)
+        assertLocalizedEquals("first", store.state.value.lyrics?.rawPayload)
+        assertFalse(store.state.value.isLyricsLoading)
+        playback.playQueueIndex(1)
+        runCurrent()
+        kotlin.test.assertTrue("track-2" in lyrics.requestedTrackIds)
+        lyrics.complete("track-2", resolvedLyricsResult("source", "second"))
+        runCurrent()
+        assertLocalizedEquals("second", store.state.value.lyrics?.rawPayload)
+        gate.complete(Unit)
+        runCurrent()
+        kotlin.test.assertNull(playback.lastArtworkOverride)
+        scope.cancel()
+    }
+
+    @Test
+    fun `manual artwork invalidation prevents late automatic override`() = runTest {
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot())
+        val gate = CompletableDeferred<Unit>()
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { gate.await() }
+                return ArtworkCacheResult(locator, true)
+            }
+        }
+        val updater = PlaybackArtworkUpdater(backgroundScope, cache, playback, top.iwesley.lyn.music.core.model.NoopDiagnosticLogger)
+        updater.submit(sampleSnapshot().currentTrack!!, "automatic", 1L) { true }
+        runCurrent()
+        updater.cancel()
+        playback.overrideCurrentTrackArtwork("manual", "track-1")
+        gate.complete(Unit)
+        runCurrent()
+        assertLocalizedEquals("manual", playback.lastArtworkOverride)
+    }
+
+    @Test
+    fun `manual artwork invalidates artwork from lyrics still loading`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot())
+        val pending = DeferredQueueLyricsRepository()
+        val lyrics = object : LyricsRepository by pending {
+            override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate, mode: LyricsSearchApplyMode) =
+                AppliedLyricsResult(document = null, artworkLocator = "manual")
+        }
+        var downloads = 0
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+                downloads++
+                return ArtworkCacheResult(locator, true)
+            }
+        }
+        val store = PlayerStore(playback, lyrics, scope, artworkCacheStore = cache)
+        runCurrent()
+        store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(
+            LyricsSearchCandidate(sourceId = "manual", sourceName = "Manual", document = resolvedLyricsResult("manual", "line").document, artworkLocator = "manual"),
+            mode = LyricsSearchApplyMode.ARTWORK_ONLY,
+        ))
+        runCurrent()
+        pending.complete("track-1", resolvedLyricsResult("auto", "loaded", "automatic"))
+        runCurrent()
+        assertLocalizedEquals("loaded", store.state.value.lyrics?.rawPayload)
+        assertLocalizedEquals("manual", playback.lastArtworkOverride)
+        kotlin.test.assertEquals(0, downloads)
+        scope.cancel()
+    }
+
+    @Test
+    fun `artwork download failure leaves published lyrics available`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot())
+        val lyrics = DeferredQueueLyricsRepository()
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? =
+                error("Offline artwork")
+        }
+        val store = PlayerStore(playback, lyrics, scope, artworkCacheStore = cache)
+        runCurrent()
+        lyrics.complete("track-1", resolvedLyricsResult("source", "saved lyrics", "unreachable"))
+        runCurrent()
+        assertLocalizedEquals("saved lyrics", store.state.value.lyrics?.rawPayload)
+        assertFalse(store.state.value.isLyricsLoading)
+        kotlin.test.assertNull(playback.lastArtworkOverride)
+        scope.cancel()
+    }
+
+    @Test
+    fun `local track without album or cover uses candidate locator as cache key`() = runTest {
+        val track = sampleSnapshot().currentTrack!!.copy(albumId = null, albumTitle = null, artworkLocator = null)
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot().copy(queue = listOf(track), currentIndex = 0))
+        var receivedKey: String? = null
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult {
+                receivedKey = cacheKey
+                kotlin.test.assertEquals(ArtworkWritePolicy.KeepExisting, policy)
+                return ArtworkCacheResult("/cache/new.jpg", true)
+            }
+            override suspend fun hasCached(cacheKey: String): Boolean = error("No updater preflight")
+            override suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean = error("No updater preflight")
+        }
+        val updater = PlaybackArtworkUpdater(backgroundScope, cache, playback, top.iwesley.lyn.music.core.model.NoopDiagnosticLogger)
+        updater.submit(track, "https://cover/candidate", 1) { true }
+        runCurrent()
+        kotlin.test.assertEquals("https://cover/candidate", receivedKey)
+        kotlin.test.assertEquals("https://cover/candidate", playback.lastArtworkOverride)
+    }
+
+    @Test
+    fun `local artwork is preserved even if it matches placeholder classifier`() = runTest {
+        val snapshot = sampleSnapshot().let { original -> original.copy(queue = original.queue.map { it.copy(artworkLocator = "local.webp") }) }
+        val playback = FakeQueuePlaybackRepository(snapshot)
+        val cache = FakePlayerArtworkCacheStore(setOf("album:local-1:artist a:album a"), setOf("album:local-1:artist a:album a"))
+        val updater = PlaybackArtworkUpdater(backgroundScope, cache, playback, top.iwesley.lyn.music.core.model.NoopDiagnosticLogger)
+        updater.submit(snapshot.currentTrack!!, "candidate", 1) { true }
+        runCurrent()
+        kotlin.test.assertTrue(cache.checkedPlaceholderKeys.isEmpty())
+        kotlin.test.assertNull(playback.lastArtworkOverride)
+    }
 
     @Test
     fun `UI language changes do not reset playback state`() = runTest {
@@ -705,15 +845,48 @@ class PlayerStoreQueueTest {
             result = resolvedLyricsResult(
                 sourceId = "source-track-1",
                 line = "lyrics for track-1",
-                artworkLocator = "/tmp/track-1-auto.jpg",
+                artworkLocator = "https://cover.example/navidrome.jpg",
             ),
         )
         advanceUntilIdle()
 
-        assertLocalizedEquals("/tmp/track-1-auto.jpg", playbackRepository.lastArtworkOverride)
+        assertLocalizedEquals("https://cover.example/navidrome.jpg", playbackRepository.lastArtworkOverride)
         assertLocalizedEquals(listOf("album:nav-source:artist a:album a"), artworkCacheStore.checkedPlaceholderKeys)
         assertLocalizedEquals("lyrics for track-1", store.state.value.lyrics?.rawPayload)
         scope.cancel()
+    }
+
+    @Test
+    fun `casting retains lyrics source URL after automatic artwork is cached locally`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val track = sampleSnapshot().currentTrack!!.copy(albumId = null, albumTitle = null, artworkLocator = null)
+        val playback = FakeQueuePlaybackRepository(sampleSnapshot().copy(queue = listOf(track), currentIndex = 0))
+        val lyrics = DeferredQueueLyricsRepository()
+        val castGateway = FakePlayerCastGateway()
+        val cache = FakePlayerArtworkCacheStore(emptySet())
+        val sourceArtwork = "https://cover.example/lyrics.jpg"
+        val store = PlayerStore(
+            playbackRepository = playback,
+            lyricsRepository = lyrics,
+            storeScope = scope,
+            artworkCacheStore = cache,
+            castGateway = castGateway,
+            castMediaUrlResolver = FakeCastMediaUrlResolver(),
+        )
+        try {
+            runCurrent()
+            lyrics.complete(track.id, resolvedLyricsResult("source", "line", sourceArtwork))
+            advanceUntilIdle()
+            assertLocalizedEquals(sourceArtwork, playback.lastArtworkOverride)
+            assertLocalizedEquals(sourceArtwork, store.state.value.snapshot.currentDisplayArtworkLocator)
+            assertLocalizedEquals(listOf(sourceArtwork), cache.checkedKeys)
+
+            store.dispatch(PlayerIntent.CastToDevice("device-1"))
+            advanceUntilIdle()
+            assertLocalizedEquals(sourceArtwork, castGateway.lastRequest?.artworkUri)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test
@@ -1249,7 +1422,12 @@ private class FakePlayerArtworkCacheStore(
     val checkedKeys = mutableListOf<String>()
     val checkedPlaceholderKeys = mutableListOf<String>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+        checkedKeys += cacheKey
+        if (policy == ArtworkWritePolicy.MissingOrPlaceholder) checkedPlaceholderKeys += cacheKey
+        val changed = cacheKey !in cachedKeys || (policy == ArtworkWritePolicy.MissingOrPlaceholder && cacheKey in replaceablePlaceholderKeys)
+        return ArtworkCacheResult("/cache/resolved-cover.jpg", changed)
+    }
 
     override suspend fun hasCached(cacheKey: String): Boolean {
         checkedKeys += cacheKey
@@ -1540,7 +1718,8 @@ private class FakeQueuePlaybackRepository(
 
     override suspend fun cycleMode() = Unit
 
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String?) {
+        if (expectedTrackId != null && mutableSnapshot.value.currentTrack?.id != expectedTrackId) return
         lastArtworkOverride = artworkLocator
         val currentIndex = mutableSnapshot.value.currentIndex
         val currentTrack = mutableSnapshot.value.currentTrack ?: return

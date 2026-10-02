@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
@@ -19,7 +20,8 @@ internal actual suspend fun resolveLynArtworkTarget(
 ): LynResolvedArtworkTarget? = withContext(Dispatchers.IO) {
     val normalized = normalizedArtworkCacheLocator(locator) ?: return@withContext null
     val cachedTarget = if (cacheRemote) {
-        runCatching { artworkCacheStore.cache(normalized, cacheKey ?: normalized) }
+        runCatching { artworkCacheStore.cache(normalized, cacheKey ?: normalized)?.locator }
+            .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }

@@ -19,6 +19,7 @@ import io.ktor.http.encodedPath
 import io.ktor.http.parseUrl
 import kotlin.math.roundToLong
 import kotlin.random.Random
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -1004,6 +1005,7 @@ private suspend fun requestNavidromeStructuredLyrics(
             },
         )
     }.getOrElse { throwable ->
+        if (throwable is CancellationException) throw throwable
         logger.log(
             level = DiagnosticLogLevel.WARN,
             tag = source.logTag,
@@ -1501,6 +1503,7 @@ private suspend fun requestNavidromeJsonWithoutAddressFallback(
         )
     }
     val response = httpClient.request(request).getOrElse { throwable ->
+        if (throwable is CancellationException) throw throwable
         throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, source.displayName, endpoint, throwable.uiErrorDetail()), throwable)
     }
     if (logger !== NoopDiagnosticLogger) {

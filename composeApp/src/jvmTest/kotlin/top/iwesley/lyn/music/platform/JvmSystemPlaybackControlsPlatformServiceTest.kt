@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -288,9 +291,9 @@ class JvmSystemPlaybackControlsPlatformServiceTest {
     ) : ArtworkCacheStore {
         val requests = mutableListOf<Pair<String, String>>()
 
-        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+        override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
             requests += locator to cacheKey
-            return cachedPath
+            return cachedPath?.let { ArtworkCacheResult(it, true) }
         }
 
         override suspend fun hasCached(cacheKey: String): Boolean = false

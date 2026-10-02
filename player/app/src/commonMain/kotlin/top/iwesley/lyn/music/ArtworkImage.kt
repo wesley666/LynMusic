@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -79,7 +82,7 @@ internal data class LynResolvedArtworkTarget(
 )
 
 private object PassthroughArtworkCacheStore : ArtworkCacheStore {
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
 }
 
 internal val LocalArtworkCacheStore = staticCompositionLocalOf<ArtworkCacheStore> {

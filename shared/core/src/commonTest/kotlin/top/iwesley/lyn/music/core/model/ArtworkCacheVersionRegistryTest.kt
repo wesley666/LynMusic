@@ -10,7 +10,7 @@ class ArtworkCacheVersionRegistryTest {
     @Test
     fun `default artwork cache store version is zero`() = runBlocking {
         val store = object : ArtworkCacheStore {
-            override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
         }
 
         assertEquals(0L, store.observeVersion("album:source:album-1").first())

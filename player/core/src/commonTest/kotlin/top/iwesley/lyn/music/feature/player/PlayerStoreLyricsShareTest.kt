@@ -1299,7 +1299,7 @@ private class FakeLyricsSharePlaybackRepository(
 
     override suspend fun cycleMode() = Unit
 
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) = Unit
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String?) = Unit
 
     override suspend fun close() = Unit
 }

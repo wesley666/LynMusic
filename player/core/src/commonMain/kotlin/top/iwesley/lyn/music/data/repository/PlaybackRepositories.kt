@@ -89,7 +89,7 @@ interface PlaybackRepository {
     suspend fun seekTo(positionMs: Long)
     suspend fun setVolume(volume: Float)
     suspend fun cycleMode()
-    suspend fun overrideCurrentTrackArtwork(artworkLocator: String?)
+    suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String? = null)
     suspend fun close()
 }
 
@@ -520,10 +520,11 @@ class DefaultPlaybackRepository(
         }
     }
 
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String?) {
         playbackCommandMutex.withLock {
             val snapshot = mutableSnapshot.value
-            snapshot.currentTrack ?: return
+            val track = snapshot.currentTrack ?: return
+            if (expectedTrackId != null && track.id != expectedTrackId) return
             val resolvedArtworkLocator = artworkLocator?.takeIf { it.isNotBlank() } ?: return
             mutableSnapshot.update {
                 it.copy(

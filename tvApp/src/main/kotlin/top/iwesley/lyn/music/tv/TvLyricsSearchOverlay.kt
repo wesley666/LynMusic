@@ -712,7 +712,7 @@ private fun TvLyricsSearchArtwork(
                     artworkCacheStore.cache(
                         locator = locator,
                         cacheKey = "$TvLyricsSearchArtworkPreviewCachePrefix$locator",
-                    )
+                    )?.locator
                 }.getOrNull()
                     ?.trim()
                     ?.takeIf { it.isNotEmpty() }

@@ -598,7 +598,8 @@ private class FakePlaybackRepository(
     override suspend fun seekTo(positionMs: Long) = Unit
     override suspend fun setVolume(volume: Float) = Unit
     override suspend fun cycleMode() = Unit
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String?) {
+        if (expectedTrackId != null && mutableSnapshot.value.currentTrack?.id != expectedTrackId) return
         val snapshot = mutableSnapshot.value
         val currentTrack = snapshot.currentTrack ?: return
         val currentIndex = snapshot.currentIndex

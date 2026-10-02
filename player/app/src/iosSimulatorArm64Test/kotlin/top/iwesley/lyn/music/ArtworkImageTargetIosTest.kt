@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,8 +37,8 @@ private class RecordingArtworkCacheStore(
 ) : ArtworkCacheStore {
     val requests = mutableListOf<Pair<String, String>>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
         requests += locator to cacheKey
-        return target
+        return target?.let { ArtworkCacheResult(it, true) }
     }
 }

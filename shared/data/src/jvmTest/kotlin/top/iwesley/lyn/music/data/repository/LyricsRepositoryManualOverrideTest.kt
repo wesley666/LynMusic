@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 import top.iwesley.lyn.music.core.model.AppLanguage
@@ -65,6 +68,44 @@ import top.iwesley.lyn.music.domain.parseEnhancedLyricsPresentation
 import top.iwesley.lyn.music.domain.serializeEmbyCredential
 
 class LyricsRepositoryManualOverrideTest {
+    @Test
+    fun `manual artwork cancellation propagates without saving override`() = runTest {
+        val database = createTestDatabase()
+        val track = localTrack()
+        database.trackDao().upsertAll(listOf(track.toEntity()))
+        val cache = object : ArtworkCacheStore {
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? =
+                throw CancellationException("cancelled artwork download")
+        }
+        try {
+            val repository = DefaultLyricsRepository(database, RecordingLyricsHttpClient(), MapCredentialStore(), artworkCacheStore = cache, logger = NoopDiagnosticLogger)
+            val candidate = top.iwesley.lyn.music.core.model.LyricsSearchCandidate(
+                sourceId = "manual", sourceName = "Manual",
+                document = LyricsDocument(lines = listOf(LyricsLine(null, "line")), sourceId = "manual", rawPayload = "line"),
+                artworkLocator = "https://cover/manual",
+            )
+            assertFailsWith<CancellationException> { repository.applyLyricsCandidate(track.id, candidate, LyricsSearchApplyMode.FULL) }
+            assertNull(database.lyricsCacheDao().getByTrackIdAndSourceId(track.id, MANUAL_LYRICS_OVERRIDE_SOURCE_ID))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `artwork cache cancellation propagates from automatic lyrics lookup`() = runTest {
+        val database = createTestDatabase()
+        val cache = object : ArtworkCacheStore {
+            override suspend fun hasCached(cacheKey: String): Boolean = throw CancellationException("cancelled cache read")
+            override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = null
+        }
+        try {
+            val repository = DefaultLyricsRepository(database, RecordingLyricsHttpClient(), MapCredentialStore(), artworkCacheStore = cache, logger = NoopDiagnosticLogger)
+            assertFailsWith<CancellationException> { repository.getLyrics(localTrack()) }
+        } finally {
+            database.close()
+        }
+    }
+
     @Test fun missingWorkflowConfigurationDescribesManualApplyAndTagImportFailures() = runTest {
         val database = createTestDatabase()
         val repository = DefaultLyricsRepository(database, RecordingLyricsHttpClient(), MapCredentialStore(), logger = NoopDiagnosticLogger)
@@ -1268,7 +1309,7 @@ class LyricsRepositoryManualOverrideTest {
     }
 
     @Test
-    fun `cached automatic artwork replaces navidrome placeholder album cache`() = runTest {
+    fun `cached lyrics return artwork without downloading replacement for navidrome placeholder`() = runTest {
         val database = createTestDatabase()
         val track = navidromeTrack()
             .copy(albumId = albumIdForLibraryMetadata("Artist A", "Album A"))
@@ -1303,8 +1344,8 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals("managed-lrcapi", resolved.document.sourceId)
         assertEquals("cached line", resolved.document.lines.single().text)
         assertEquals(artworkUrl, resolved.artworkLocator)
-        assertEquals(listOf(artworkUrl to cacheKey), artworkCacheStore.requests)
-        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
     }
 
     @Test
@@ -1347,7 +1388,7 @@ class LyricsRepositoryManualOverrideTest {
     }
 
     @Test
-    fun `auto direct artwork rechecks album cache and replaces placeholder written during request`() = runTest {
+    fun `auto direct lyrics persist before artwork download`() = runTest {
         val database = createTestDatabase()
         val track = navidromeTrack()
             .copy(albumId = albumIdForLibraryMetadata("Artist A", "Album A"))
@@ -1396,8 +1437,8 @@ class LyricsRepositoryManualOverrideTest {
         assertEquals(artworkUrl, resolved.artworkLocator)
         assertNotNull(cachedRow)
         assertEquals(artworkUrl, cachedRow.artworkLocator)
-        assertEquals(listOf(artworkUrl to cacheKey), artworkCacheStore.requests)
-        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
     }
 
     @Test
@@ -2302,10 +2343,10 @@ private class FakeArtworkCacheStore(
     private val pendingHasCachedResponses = hasCachedResponses.toMutableList()
     private val pendingReplaceablePlaceholderResponses = replaceablePlaceholderResponses.toMutableList()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
         requests += locator to cacheKey
-        replaceExistingRequests += replaceExisting
-        return cached[locator] ?: locator
+        replaceExistingRequests += policy == ArtworkWritePolicy.Replace
+        return ArtworkCacheResult(cached[locator] ?: locator, true)
     }
 
     override suspend fun hasCached(cacheKey: String): Boolean {

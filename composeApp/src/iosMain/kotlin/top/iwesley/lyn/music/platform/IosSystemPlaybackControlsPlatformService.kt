@@ -166,7 +166,7 @@ private class IosSystemPlaybackControlsPlatformService : SystemPlaybackControlsP
         if (normalized == lastArtworkKey) return lastArtwork
         lastArtworkKey = normalized
         val image = withContext(Dispatchers.Default) {
-            val path = normalized?.let { artworkCacheStore.cache(it, it) } ?: return@withContext null
+            val path = normalized?.let { artworkCacheStore.cache(it, it)?.locator } ?: return@withContext null
             UIImage.imageWithContentsOfFile(path)
         }
         if (image == null) {

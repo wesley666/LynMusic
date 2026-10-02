@@ -669,8 +669,24 @@ interface ArtworkLoader {
     suspend fun resolve(track: Track): String?
 }
 
+enum class ArtworkWritePolicy {
+    /** Return any existing valid image; write only when missing. */
+    KeepExisting,
+    /** Explicit user replacement, regardless of existing image. */
+    Replace,
+    /** For Subsonic-compatible tracks: fill missing artwork or replace a recognized placeholder. */
+    MissingOrPlaceholder,
+}
+
+/** [changed] indicates that this call committed a new image, rather than returning an existing one. */
+data class ArtworkCacheResult(val locator: String, val changed: Boolean)
+
 interface ArtworkCacheStore {
-    suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean = false): String?
+    suspend fun cache(
+        locator: String,
+        cacheKey: String,
+        policy: ArtworkWritePolicy = ArtworkWritePolicy.KeepExisting,
+    ): ArtworkCacheResult?
     suspend fun hasCached(cacheKey: String): Boolean = false
     suspend fun hasReplaceableNavidromePlaceholderCached(cacheKey: String): Boolean = false
     fun observeVersion(cacheKey: String): Flow<Long> = flowOf(0L)

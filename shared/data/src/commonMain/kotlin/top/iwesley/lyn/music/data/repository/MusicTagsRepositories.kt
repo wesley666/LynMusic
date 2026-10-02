@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.UiTextException
@@ -39,7 +42,7 @@ class RoomMusicTagsRepository(
     private val database: LynMusicDatabase,
     private val audioTagGateway: AudioTagGateway,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
-        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+        override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
     },
 ) : MusicTagsRepository {
     override val localTracks: Flow<List<Track>> = combine(
@@ -82,8 +85,8 @@ class RoomMusicTagsRepository(
                     artworkCacheStore.cache(
                         locator = updatedArtworkLocator,
                         cacheKey = trackArtworkCacheKey(updatedTrack) ?: updatedArtworkLocator,
-                        replaceExisting = true,
-                    )
+                        policy = ArtworkWritePolicy.Replace,
+                    )?.locator
                 }
             }
             MusicTagSaveResult(track = updatedTrack, snapshot = snapshot)

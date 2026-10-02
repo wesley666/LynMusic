@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+
 import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.net.InetSocketAddress
@@ -16,6 +18,40 @@ import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 import top.iwesley.lyn.music.platform.createJvmArtworkCacheStore
 
 class JvmArtworkCacheStoreTest {
+
+    @Test
+    fun `local file URI spaces are accepted without allowing remote authorities`() {
+        synchronized(USER_HOME_LOCK) {
+            val originalUserHome = System.getProperty("user.home")
+            val directory = kotlin.io.path.createTempDirectory("lynmusic-file-uri").toFile()
+            try {
+                System.setProperty("user.home", directory.absolutePath)
+                runBlocking {
+                    val source = File(directory, "cover art file.png").apply { writeBytes(completePngPayload(0x01)) }
+                    val store = createJvmArtworkCacheStore()
+                    val encoded = source.toURI().toString()
+                    val locators = listOf("file://${source.absolutePath}", encoded, encoded.replaceFirst("%20", " "))
+                    for ((index, locator) in locators.withIndex()) {
+                        val result = assertNotNull(store.cache(locator, "album-$index"))
+                        assertTrue(result.changed)
+                        assertTrue(File(result.locator).readBytes().contentEquals(source.readBytes()))
+                    }
+                    kotlin.test.assertNull(store.cache("file://server${source.absolutePath}", "remote-authority"))
+                    val padded = File(directory, "padded cover.jpg").apply {
+                        writeBytes(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte(), 0, 0))
+                    }
+                    val fallback = assertNotNull(store.cache("file://${padded.absolutePath}", "padded"))
+                    assertEquals(padded.absolutePath, fallback.locator)
+                    kotlin.test.assertFalse(fallback.changed)
+                    kotlin.test.assertFalse(store.hasCached("padded"))
+                    assertEquals(0L, store.observeVersion("padded").first())
+                }
+            } finally {
+                System.setProperty("user.home", originalUserHome)
+                directory.deleteRecursively()
+            }
+        }
+    }
 
     @Test
     fun `cache reuses existing file for same locator and redownloads after deletion`() {
@@ -37,8 +73,10 @@ class JvmArtworkCacheStoreTest {
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
 
-                val first = runBlocking { store.cache(locator, locator) }
-                val second = runBlocking { store.cache(locator, locator) }
+                val first = runBlocking { store.cache(locator, locator)?.locator }
+                val secondStore = createJvmArtworkCacheStore()
+                kotlin.test.assertSame(store, secondStore)
+                val second = runBlocking { secondStore.cache(locator, locator)?.locator }
 
                 val firstPath = assertNotNull(first)
                 assertEquals(firstPath, second)
@@ -52,11 +90,11 @@ class JvmArtworkCacheStoreTest {
 
                 File(firstPath).delete()
 
-                val third = runBlocking { store.cache(locator, locator) }
+                val third = runBlocking { store.cache(locator, locator)?.locator }
 
                 assertEquals(firstPath, third)
                 assertEquals(2, requestCount.get())
-                assertEquals(2L, runBlocking { store.observeVersion(locator).first() })
+                assertEquals(2L, runBlocking { secondStore.observeVersion(locator).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
                 server.stop(0)
@@ -82,7 +120,7 @@ class JvmArtworkCacheStoreTest {
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
 
-                val result = runBlocking { store.cache(locator, locator) }
+                val result = runBlocking { store.cache(locator, locator)?.locator }
                 val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache")
 
                 assertNull(result)
@@ -117,9 +155,9 @@ class JvmArtworkCacheStoreTest {
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
                 val albumKey = "album:source-1:album-1"
 
-                val legacy = assertNotNull(runBlocking { store.cache(locator, locator) })
+                val legacy = assertNotNull(runBlocking { store.cache(locator, locator)?.locator })
                 assertEquals(0L, runBlocking { store.observeVersion(albumKey).first() })
-                val promoted = assertNotNull(runBlocking { store.cache(locator, albumKey) })
+                val promoted = assertNotNull(runBlocking { store.cache(locator, albumKey)?.locator })
 
                 assertEquals(1, requestCount.get())
                 assertTrue(File(legacy).isFile)
@@ -163,15 +201,15 @@ class JvmArtworkCacheStoreTest {
                 val secondLocator = "http://127.0.0.1:${server.address.port}/second"
                 val albumKey = "album:source-1:album-1"
 
-                val first = assertNotNull(runBlocking { store.cache(firstLocator, albumKey) })
+                val first = assertNotNull(runBlocking { store.cache(firstLocator, albumKey)?.locator })
                 assertEquals(1L, runBlocking { store.observeVersion(albumKey).first() })
                 val second = assertNotNull(
                     runBlocking {
                         store.cache(
                             locator = secondLocator,
                             cacheKey = albumKey,
-                            replaceExisting = true,
-                        )
+                            policy = ArtworkWritePolicy.Replace,
+                        )?.locator
                     },
                 )
 
@@ -189,8 +227,8 @@ class JvmArtworkCacheStoreTest {
                         store.cache(
                             locator = second,
                             cacheKey = albumKey,
-                            replaceExisting = true,
-                        )
+                            policy = ArtworkWritePolicy.Replace,
+                        )?.locator
                     },
                 )
                 assertEquals(second, samePath)
@@ -247,7 +285,7 @@ class JvmArtworkCacheStoreTest {
                 File(cacheDirectory, "$cachePrefix.png.tmp-old").writeBytes(completePngPayload(0x03))
                 File(cacheDirectory, "$cachePrefix.png").writeBytes(truncatedPngPayload())
 
-                val result = assertNotNull(runBlocking { store.cache(locator, locator) })
+                val result = assertNotNull(runBlocking { store.cache(locator, locator)?.locator })
                 val finalFiles = cacheDirectory.listFiles()
                     .orEmpty()
                     .filter { file -> !file.name.contains(".tmp-") }

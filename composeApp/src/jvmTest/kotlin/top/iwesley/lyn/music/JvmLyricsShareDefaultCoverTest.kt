@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import java.nio.file.Files
 import kotlin.io.path.writeBytes
 import kotlin.test.Test
@@ -117,8 +120,8 @@ private class RecordingArtworkCacheStore(
 ) : ArtworkCacheStore {
     val requests = mutableListOf<ArtworkCacheRequest>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
-        requests += ArtworkCacheRequest(locator, cacheKey, replaceExisting)
-        return targets[locator]
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+        requests += ArtworkCacheRequest(locator, cacheKey, policy == ArtworkWritePolicy.Replace)
+        return targets[locator]?.let { ArtworkCacheResult(it, true) }
     }
 }

@@ -124,8 +124,8 @@ internal class AndroidServiceBackedPlaybackRepository(
         repository().cycleMode()
     }
 
-    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?) {
-        repository().overrideCurrentTrackArtwork(artworkLocator)
+    override suspend fun overrideCurrentTrackArtwork(artworkLocator: String?, expectedTrackId: String?) {
+        repository().overrideCurrentTrackArtwork(artworkLocator, expectedTrackId)
     }
 
     override suspend fun close() {

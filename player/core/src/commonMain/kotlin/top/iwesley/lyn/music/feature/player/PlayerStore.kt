@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.uiErrorDetail
@@ -9,6 +12,7 @@ import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.uiErrorText
 import top.iwesley.lyn.music.core.model.plus
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -254,7 +258,7 @@ class PlayerStore(
         UnsupportedLyricsShareFontLibraryPlatformService,
     private val lyricsShareFontPreferencesStore: LyricsShareFontPreferencesStore = UnsupportedLyricsShareFontPreferencesStore,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
-        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+        override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
     },
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
 ) : BaseStore<PlayerState, PlayerIntent, PlayerEffect>(
@@ -268,6 +272,7 @@ class PlayerStore(
     private var currentLyricsRequestKey: String? = null
     private var currentLyricsLoadRequestId: Long = 0L
     private var lyricsLoadJob: Job? = null
+    private val artworkUpdater = PlaybackArtworkUpdater(storeScope, artworkCacheStore, playbackRepository, logger)
     private var currentSharePreviewRequestId: Long = 0L
     private var lyricsShareFontsLoadGeneration: Long = 0L
     private var lastPlaybackErrorKey: PlaybackErrorKey? = null
@@ -1215,11 +1220,13 @@ class PlayerStore(
         candidate: LyricsSearchCandidate,
         mode: LyricsSearchApplyMode,
     ) {
+        if (mode != LyricsSearchApplyMode.LYRICS_ONLY) artworkUpdater.cancel()
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
         val result = runCatching {
             lyricsRepository.applyLyricsCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
             updateState { it.copy(message = throwable.uiErrorText(applyFailureMessage(mode))) }
             return
         }
@@ -1229,7 +1236,7 @@ class PlayerStore(
             logger.debug(PLAYER_LOG_TAG) {
                 "playback-artwork-override source=manual-lyrics track=${track.id} locator=$artworkLocator"
             }
-            playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
+            playbackRepository.overrideCurrentTrackArtwork(artworkLocator, expectedTrackId = track.id)
         }
         updateState {
             it.copy(
@@ -1250,11 +1257,13 @@ class PlayerStore(
         candidate: WorkflowSongCandidate,
         mode: LyricsSearchApplyMode,
     ) {
+        if (mode != LyricsSearchApplyMode.LYRICS_ONLY) artworkUpdater.cancel()
         val track = state.value.snapshot.currentTrack ?: return
         val snapshot = state.value.snapshot
         val result = runCatching {
             lyricsRepository.applyWorkflowSongCandidate(track.id, candidate, mode)
         }.getOrElse { throwable ->
+            if (throwable is CancellationException) throw throwable
             updateState { it.copy(message = throwable.uiErrorText(applyFailureMessage(mode))) }
             return
         }
@@ -1264,7 +1273,7 @@ class PlayerStore(
             logger.debug(PLAYER_LOG_TAG) {
                 "playback-artwork-override source=manual-workflow track=${track.id} locator=$artworkLocator"
             }
-            playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
+            playbackRepository.overrideCurrentTrackArtwork(artworkLocator, expectedTrackId = track.id)
         }
         updateState {
             it.copy(
@@ -1567,6 +1576,7 @@ class PlayerStore(
             trackId = track.id,
             requestKey = requestKey,
         )
+        val artworkGeneration = artworkUpdater.generation
         val previousJob = lyricsLoadJob
         updateState {
             it.copy(
@@ -1579,41 +1589,16 @@ class PlayerStore(
         lyricsLoadJob = storeScope.launch {
             previousJob?.cancelAndJoin()
             if (!isLatestLyricsRequest(requestId, track.id, requestKey)) return@launch
-            val result = runCatching { lyricsRepository.getLyrics(lookupTrack) }.getOrNull()
+            val result = runCatching { lyricsRepository.getLyrics(lookupTrack) }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    logger.warn(PLAYER_LOG_TAG) {
+                        "lyrics-load-failed track=${track.id} reason=${error.message.orEmpty()}"
+                    }
+                }
+                .getOrNull()
             if (!isActive || !isLatestLyricsRequest(requestId, track.id, requestKey)) return@launch
             val lyrics = result?.document
-            val artworkLocator = result?.artworkLocator
-            val canOverrideCurrentArtwork = state.value.snapshot.currentTrack?.id == track.id
-            if (
-                !artworkLocator.isNullOrBlank() &&
-                canOverrideCurrentArtwork &&
-                isLatestLyricsRequest(requestId, track.id, requestKey)
-            ) {
-                val cacheKey = trackArtworkCacheKey(track)
-                val hasAlbumArtworkCache = cacheKey?.let { key ->
-                    runCatching { artworkCacheStore.hasCached(key) }.getOrDefault(false)
-                } == true
-                val hasReplaceablePlaceholderCache =
-                    if (hasAlbumArtworkCache && parseSubsonicCompatibleSongLocator(track.mediaLocator) != null) {
-                        runCatching {
-                            artworkCacheStore.hasReplaceableNavidromePlaceholderCached(cacheKey.orEmpty())
-                        }.getOrDefault(false)
-                    } else {
-                        false
-                    }
-                val hasUsableCurrentArtwork =
-                    !state.value.snapshot.currentDisplayArtworkLocator.isNullOrBlank()
-                if (hasUsableCurrentArtwork && hasAlbumArtworkCache && !hasReplaceablePlaceholderCache) {
-                    logger.debug(PLAYER_LOG_TAG) {
-                        "playback-artwork-override-skip source=auto-lyrics track=${track.id} key=$cacheKey locator=$artworkLocator"
-                    }
-                } else {
-                    logger.debug(PLAYER_LOG_TAG) {
-                        "playback-artwork-override source=auto-lyrics track=${track.id} key=${cacheKey.orEmpty()} locator=$artworkLocator"
-                    }
-                    playbackRepository.overrideCurrentTrackArtwork(artworkLocator)
-                }
-            }
             updateState { latest ->
                 if (!isLatestLyricsRequest(requestId, track.id, requestKey)) {
                     latest
@@ -1625,6 +1610,11 @@ class PlayerStore(
                         highlightedLineIndex = findHighlightedLine(lyrics, latest.effectiveSnapshot.positionMs),
                     )
                 }
+            }
+            artworkUpdater.submit(track, result?.artworkLocator, requestId) {
+                artworkUpdater.generation == artworkGeneration &&
+                isLatestLyricsRequest(requestId, track.id, requestKey) &&
+                    state.value.snapshot.currentTrack?.id == track.id
             }
         }
     }
@@ -1656,6 +1646,7 @@ class PlayerStore(
     }
 
     private fun cancelAutomaticLyricsLoad(resetTracking: Boolean) {
+        artworkUpdater.cancel()
         lyricsLoadJob?.cancel()
         lyricsLoadJob = null
         currentLyricsLoadRequestId += 1
@@ -1669,6 +1660,7 @@ class PlayerStore(
         trackId: String,
         requestKey: String?,
     ): Long {
+        artworkUpdater.cancel()
         lyricsLoadJob?.cancel()
         currentLyricsTrackId = trackId
         currentLyricsRequestKey = requestKey
@@ -1858,4 +1850,4 @@ private fun PlayerState.matchesCurrentLyricsLookupTrack(): Boolean {
         manualLyricsAlbumTitle.trim() == lookupTrack.albumTitle.orEmpty().trim()
 }
 
-private const val PLAYER_LOG_TAG = "Player"
+internal const val PLAYER_LOG_TAG = "Player"

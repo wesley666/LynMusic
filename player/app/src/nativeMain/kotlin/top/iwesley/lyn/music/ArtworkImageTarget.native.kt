@@ -4,6 +4,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSURL
@@ -23,7 +24,8 @@ internal actual suspend fun resolveLynArtworkTarget(
     val normalized = normalizedArtworkCacheLocator(locator) ?: return@withContext null
     val isIosCacheBackedLocator = isIosArtworkCacheBackedLocator(normalized)
     val cachedTarget = if (cacheRemote || isIosCacheBackedLocator) {
-        runCatching { artworkCacheStore.cache(normalized, cacheKey ?: normalized) }
+        runCatching { artworkCacheStore.cache(normalized, cacheKey ?: normalized)?.locator }
+            .onFailure { if (it is CancellationException) throw it }
             .getOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }

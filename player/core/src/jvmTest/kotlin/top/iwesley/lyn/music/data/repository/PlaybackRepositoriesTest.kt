@@ -2682,7 +2682,10 @@ class PlaybackRepositoriesTest {
             )
             advanceUntilIdle()
 
-            repository.overrideCurrentTrackArtwork("https://img.example.com/override.jpg")
+            val artworkBeforeStaleRequest = repository.snapshot.value.currentDisplayArtworkLocator
+            repository.overrideCurrentTrackArtwork("https://img.example.com/stale.jpg", expectedTrackId = "another-track")
+            assertEquals(artworkBeforeStaleRequest, repository.snapshot.value.currentDisplayArtworkLocator)
+            repository.overrideCurrentTrackArtwork("https://img.example.com/override.jpg", expectedTrackId = "track-1")
             advanceUntilIdle()
             assertEquals("https://img.example.com/override.jpg", repository.snapshot.value.currentDisplayArtworkLocator)
 

@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import androidx.room.Room
 import java.nio.file.Files
 import java.nio.file.Path
@@ -141,7 +144,6 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals(
             listOf(
                 "https://img.test/rain.jpg" to "album:local-1:jay:album 1",
-                "https://img.test/rain.jpg" to "album:local-1:jay:album 1",
             ),
             artworkCacheStore.requests,
         )
@@ -266,7 +268,7 @@ class DefaultLyricsRepositoryWorkflowTest {
     }
 
     @Test
-    fun `auto workflow artwork replaces navidrome placeholder album cache`() = runTest {
+    fun `auto workflow retains artwork candidate without downloading placeholder replacement`() = runTest {
         val database = createTestDatabase()
         database.workflowLyricsSourceConfigDao().upsert(
             WorkflowLyricsSourceConfigEntity(
@@ -338,16 +340,16 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals("workflow-oiapi", resolved.document.sourceId)
         assertEquals("https://img.test/rain.jpg", resolved.artworkLocator)
         assertEquals("https://img.test/rain.jpg", cachedRow.artworkLocator)
-        assertEquals(listOf("https://img.test/rain.jpg" to "album:nav-source:jay:album 1"), artworkCacheStore.requests)
-        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
         assertEquals(
-            listOf("album:nav-source:jay:album 1", "album:nav-source:jay:album 1"),
+            listOf("album:nav-source:jay:album 1"),
             artworkCacheStore.replaceablePlaceholderRequests,
         )
     }
 
     @Test
-    fun `auto direct artwork replaces navidrome placeholder album cache`() = runTest {
+    fun `auto direct retains artwork candidate without downloading placeholder replacement`() = runTest {
         val database = createTestDatabase()
         database.lyricsSourceConfigDao().upsert(
             LyricsSourceConfigEntity(
@@ -436,10 +438,10 @@ class DefaultLyricsRepositoryWorkflowTest {
         assertEquals("direct-lrcapi", resolved.document.sourceId)
         assertEquals("https://img.test/direct-rain.jpg", resolved.artworkLocator)
         assertEquals("https://img.test/direct-rain.jpg", cachedRow.artworkLocator)
-        assertEquals(listOf("https://img.test/direct-rain.jpg" to "album:nav-source:jay:album 1"), artworkCacheStore.requests)
-        assertEquals(listOf(true), artworkCacheStore.replaceExistingRequests)
+        assertEquals(emptyList(), artworkCacheStore.requests)
+        assertEquals(emptyList(), artworkCacheStore.replaceExistingRequests)
         assertEquals(
-            listOf("album:nav-source:jay:album 1", "album:nav-source:jay:album 1"),
+            listOf("album:nav-source:jay:album 1"),
             artworkCacheStore.replaceablePlaceholderRequests,
         )
     }
@@ -926,10 +928,10 @@ private class FakeArtworkCacheStore(
     val hasCachedRequests = mutableListOf<String>()
     val replaceablePlaceholderRequests = mutableListOf<String>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
         requests += locator to cacheKey
-        replaceExistingRequests += replaceExisting
-        return cached[locator] ?: locator
+        replaceExistingRequests += policy == ArtworkWritePolicy.Replace
+        return ArtworkCacheResult(cached[locator] ?: locator, true)
     }
 
     override suspend fun hasCached(cacheKey: String): Boolean {

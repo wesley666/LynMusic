@@ -1534,7 +1534,7 @@ private fun TvArtworkImage(
         val normalized = normalizedArtworkCacheLocator(artworkLocator)
         value = when {
             normalized == null -> null
-            artworkCacheKey != null -> artworkCacheStore.cache(normalized, artworkCacheKey)
+            artworkCacheKey != null -> artworkCacheStore.cache(normalized, artworkCacheKey)?.locator
                 ?: resolveArtworkCacheTarget(normalized)
             else -> resolveArtworkCacheTarget(normalized)
         }

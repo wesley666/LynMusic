@@ -432,7 +432,7 @@ private fun TvMediaDetailArtworkImage(
         val cacheKey = trackArtworkCacheKey(track)
         value = when {
             normalized == null -> null
-            cacheKey != null -> artworkCacheStore.cache(normalized, cacheKey)
+            cacheKey != null -> artworkCacheStore.cache(normalized, cacheKey)?.locator
                 ?: resolveArtworkCacheTarget(normalized)
             else -> resolveArtworkCacheTarget(normalized)
         }

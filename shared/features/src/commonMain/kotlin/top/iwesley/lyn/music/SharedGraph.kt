@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -144,7 +147,7 @@ data class SharedRuntimeServices(
     val dailyRecommendationDateChangeNotifier: DailyRecommendationDateChangeNotifier =
         DefaultDailyRecommendationDateChangeNotifier(dailyRecommendationDateKeyProvider),
     val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
-        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+        override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
     },
     val appStorageGateway: AppStorageGateway = UnsupportedAppStorageGateway,
     val appDataLocationPlatformService: AppDataLocationPlatformService =

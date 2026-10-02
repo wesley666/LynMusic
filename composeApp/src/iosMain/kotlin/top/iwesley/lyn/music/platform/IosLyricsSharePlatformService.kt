@@ -127,7 +127,7 @@ internal suspend fun resolveIosLyricsShareArtworkTarget(
 ): String? {
     if (shouldResolveLyricsShareArtworkThroughCache(normalizedLocator)) {
         val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalizedLocator
-        return artworkCacheStore.cache(normalizedLocator, cacheKey)
+        return artworkCacheStore.cache(normalizedLocator, cacheKey)?.locator
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
     }

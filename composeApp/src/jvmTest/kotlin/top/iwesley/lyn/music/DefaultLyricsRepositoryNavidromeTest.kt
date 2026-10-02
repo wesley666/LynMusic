@@ -28,6 +28,81 @@ import top.iwesley.lyn.music.domain.NAVIDROME_LYRICS_SOURCE_ID
 class DefaultLyricsRepositoryNavidromeTest {
 
     @Test
+    fun `other source cache survives database reopen and is read before any network request`() = runTest {
+        val path = Files.createTempFile("lynmusic-offline-lyrics", ".db")
+        var database = buildLynMusicDatabase(Room.databaseBuilder<LynMusicDatabase>(name = path.absolutePathString()))
+        try {
+            seedNavidromeSource(database)
+            database.lyricsCacheDao().upsert(top.iwesley.lyn.music.data.db.LyricsCacheEntity(
+                trackId = "nav-track", sourceId = "other-source", rawPayload = "[00:01.00]offline lyrics", updatedAt = 1L,
+            ))
+            database.close()
+            database = buildLynMusicDatabase(Room.databaseBuilder<LynMusicDatabase>(name = path.absolutePathString()))
+            var requests = 0
+            val offlineClient = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+                    requests++
+                    return Result.failure(IllegalStateException("offline"))
+                }
+            }
+            val repository = DefaultLyricsRepository(database, offlineClient, MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")))
+            val result = assertNotNull(repository.getLyrics(sampleNavidromeTrack()))
+            assertEquals("offline lyrics", result.document.lines.single().text)
+            assertEquals("other-source", result.document.sourceId)
+            assertEquals(0, requests)
+        } finally {
+            database.close()
+            Files.deleteIfExists(path)
+        }
+    }
+
+    @Test
+    fun `server transport failure falls back to configured lyrics source`() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            database.lyricsSourceConfigDao().upsert(LyricsSourceConfigEntity(
+                id = "fallback", name = "Fallback", method = "GET", urlTemplate = "https://lyrics.example/fallback",
+                headersTemplate = "", queryTemplate = "", bodyTemplate = "",
+                responseFormat = LyricsResponseFormat.JSON.name,
+                extractor = "json-map:lyrics=lyrics,title=title,artist=artist,album=album,durationSeconds=duration,id=id",
+                priority = 100, enabled = true,
+            ))
+            val urls = mutableListOf<String>()
+            val client = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+                    urls += request.url
+                    return if (request.url == "https://lyrics.example/fallback") {
+                        Result.success(LyricsHttpResponse(200, """{"title":"Blue","artist":"Artist A","album":"Album A","duration":215,"lyrics":"[00:01.00]fallback line"}"""))
+                    } else Result.failure(IllegalStateException("server offline"))
+                }
+            }
+            val repository = DefaultLyricsRepository(database, client, MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")))
+            val result = assertNotNull(repository.getLyrics(sampleNavidromeTrack()))
+            assertEquals("fallback line", result.document.lines.single().text)
+            assertTrue(urls.last().contains("lyrics.example/fallback"))
+        } finally { database.close() }
+    }
+
+    @Test
+    fun `cancelled server request does not invoke another endpoint`() = runTest {
+        val database = createTestDatabase()
+        try {
+            seedNavidromeSource(database)
+            var requests = 0
+            val client = object : LyricsHttpClient {
+                override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> {
+                    requests++
+                    return Result.failure(kotlinx.coroutines.CancellationException("cancelled"))
+                }
+            }
+            val repository = DefaultLyricsRepository(database, client, MapSecureCredentialStore(mutableMapOf("nav-cred" to "plain-pass")))
+            kotlin.test.assertFailsWith<kotlinx.coroutines.CancellationException> { repository.getLyrics(sampleNavidromeTrack()) }
+            assertEquals(1, requests)
+        } finally { database.close() }
+    }
+
+    @Test
     fun `navidrome manual search prepends current track candidate from navidrome lyrics api`() = runTest {
         val database = createTestDatabase()
         seedNavidromeSource(database)

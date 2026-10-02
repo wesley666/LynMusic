@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import androidx.room.Room
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
@@ -339,9 +342,9 @@ private data class ArtworkCacheRequest(
 private class FakeMusicTagsArtworkCacheStore : ArtworkCacheStore {
     val requests = mutableListOf<ArtworkCacheRequest>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
-        requests += ArtworkCacheRequest(locator, cacheKey, replaceExisting)
-        return locator
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
+        requests += ArtworkCacheRequest(locator, cacheKey, policy == ArtworkWritePolicy.Replace)
+        return ArtworkCacheResult(locator, true)
     }
 }
 

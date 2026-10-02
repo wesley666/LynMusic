@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -297,10 +300,10 @@ private class FakeArtworkCacheStore(
     val requests = mutableListOf<Pair<String, String>>()
     val peekRequests = mutableListOf<String>()
 
-    override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? {
+    override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? {
         requests += locator to cacheKey
         error?.let { throw it }
-        return target ?: locator
+        return ArtworkCacheResult(target ?: locator, true)
     }
 
     override fun peekCachedTarget(cacheKey: String): ArtworkCachedTarget? {

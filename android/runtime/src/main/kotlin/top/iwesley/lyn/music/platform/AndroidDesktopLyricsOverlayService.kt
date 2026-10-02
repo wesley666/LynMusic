@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.platform
 import top.iwesley.lyn.music.resources.*
 import top.iwesley.lyn.music.core.model.UiText
 import top.iwesley.lyn.music.core.model.observeResolvedUiText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 
 import android.app.Service
@@ -208,7 +209,9 @@ class AndroidDesktopLyricsOverlayService : Service() {
             lyricsLoadJob?.cancel()
             lyricsLoadJob = serviceScope.launch {
                 val result = withContext(Dispatchers.IO) {
-                    runCatching { lyricsRepository.getLyrics(lookupTrack) }.getOrNull()
+                    runCatching { lyricsRepository.getLyrics(lookupTrack) }
+                        .onFailure { if (it is CancellationException) throw it }
+                        .getOrNull()
                 }
                 if (currentLyricsRequestKey != requestKey) return@launch
                 currentLyrics = result?.document

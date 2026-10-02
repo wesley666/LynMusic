@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.ArtworkCacheResult
+
 import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.UiTextException
@@ -2691,7 +2694,7 @@ class DefaultLyricsRepository(
     private val audioTagGateway: AudioTagGateway = UnsupportedAudioTagGateway,
     private val sameNameLyricsFileGateway: SameNameLyricsFileGateway = UnsupportedSameNameLyricsFileGateway,
     private val artworkCacheStore: ArtworkCacheStore = object : ArtworkCacheStore {
-        override suspend fun cache(locator: String, cacheKey: String, replaceExisting: Boolean): String? = locator
+        override suspend fun cache(locator: String, cacheKey: String, policy: ArtworkWritePolicy): ArtworkCacheResult? = ArtworkCacheResult(locator, true)
     },
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
     private val addressSelector: RemoteSourceAddressSelector = RemoteSourceAddressSelector(),
@@ -2699,6 +2702,9 @@ class DefaultLyricsRepository(
     override suspend fun getLyrics(track: Track): ResolvedLyricsResult? {
         val trackLabel = track.logIdentity()
         val cachedRows = database.lyricsCacheDao().getByTrack(track.id)
+        logger.debug(LYRICS_LOG_TAG) {
+            "cache-lookup track=$trackLabel rows=${cachedRows.size} sources=${cachedRows.joinToString { it.sourceId }}"
+        }
         val manualOverride = cachedRows.firstOrNull { it.sourceId == MANUAL_LYRICS_OVERRIDE_SOURCE_ID }
         val manualArtworkOverride = normalizeArtworkLocator(manualOverride?.artworkLocator)
         val albumArtworkCacheState = trackArtworkCacheState(track)
@@ -2724,14 +2730,7 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
-            requestEmbyLyricsDocumentForPlayback(track)?.let { embyLyrics ->
-                storeLyricsDocument(track.id, embyLyrics)
-                logger.info(LYRICS_LOG_TAG) {
-                    "resolved track=$trackLabel source=${embyLyrics.sourceId} synced=${embyLyrics.isSynced} lines=${embyLyrics.lines.size}"
-                }
-                return ResolvedLyricsResult(document = embyLyrics)
-                    .withArtworkOverride(manualArtworkOverride)
-            }
+
             cachedRows
                 .firstNotNullOfOrNull { cache ->
                     cache.takeUnless { it.sourceId == EMBY_LYRICS_SOURCE_ID }
@@ -2747,6 +2746,15 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
+            logger.debug(LYRICS_LOG_TAG) { "cache-miss track=$trackLabel fallback=emby-server" }
+            requestEmbyLyricsDocumentForPlayback(track)?.let { embyLyrics ->
+                storeLyricsDocument(track.id, embyLyrics)
+                logger.info(LYRICS_LOG_TAG) {
+                    "resolved track=$trackLabel source=${embyLyrics.sourceId} synced=${embyLyrics.isSynced} lines=${embyLyrics.lines.size}"
+                }
+                return ResolvedLyricsResult(document = embyLyrics)
+                    .withArtworkOverride(manualArtworkOverride)
+            }
         }
         val subsonicLocator = parseSubsonicCompatibleSongLocator(track.mediaLocator)
         val subsonicLyricsSourceId = subsonicLocator?.sourceType?.let(::lyricsSourceIdFor)
@@ -2764,14 +2772,7 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
-            requestNavidromeLyricsDocument(track)?.let { subsonicLyrics ->
-                storeLyricsDocument(track.id, subsonicLyrics)
-                logger.info(LYRICS_LOG_TAG) {
-                    "resolved track=$trackLabel source=${subsonicLyrics.sourceId} synced=${subsonicLyrics.isSynced} lines=${subsonicLyrics.lines.size}"
-                }
-                return ResolvedLyricsResult(document = subsonicLyrics)
-                    .withArtworkOverride(manualArtworkOverride)
-            }
+
             cachedRows
                 .firstNotNullOfOrNull { cache ->
                     cache.takeUnless { it.sourceId == subsonicLyricsSourceId }
@@ -2787,6 +2788,15 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
+            logger.debug(LYRICS_LOG_TAG) { "cache-miss track=$trackLabel fallback=subsonic-server" }
+            requestNavidromeLyricsDocumentForPlayback(track)?.let { subsonicLyrics ->
+                storeLyricsDocument(track.id, subsonicLyrics)
+                logger.info(LYRICS_LOG_TAG) {
+                    "resolved track=$trackLabel source=${subsonicLyrics.sourceId} synced=${subsonicLyrics.isSynced} lines=${subsonicLyrics.lines.size}"
+                }
+                return ResolvedLyricsResult(document = subsonicLyrics)
+                    .withArtworkOverride(manualArtworkOverride)
+            }
         } else {
             resolveSameNameLyricsForPlayback(track, cachedRows)?.let { resolved ->
                 return resolved.withArtworkOverride(manualArtworkOverride)
@@ -2826,7 +2836,6 @@ class DefaultLyricsRepository(
             requestType = "auto",
             manualArtworkOverride = manualArtworkOverride,
             suppressArtwork = hasRealLocalAlbumArtworkCache,
-            cacheArtwork = true,
             storeResult = true,
         )
     }
@@ -2838,7 +2847,6 @@ class DefaultLyricsRepository(
             requestType = "cast-auto",
             manualArtworkOverride = null,
             suppressArtwork = false,
-            cacheArtwork = false,
             storeResult = false,
         )
     }
@@ -2848,7 +2856,6 @@ class DefaultLyricsRepository(
         requestType: String,
         manualArtworkOverride: String?,
         suppressArtwork: Boolean,
-        cacheArtwork: Boolean,
         storeResult: Boolean,
     ): ResolvedLyricsResult? {
         val trackLabel = track.logIdentity()
@@ -2882,16 +2889,7 @@ class DefaultLyricsRepository(
                             "itemId=${matchedCandidate?.itemId.orEmpty()}"
                     }
                     matchedCandidate?.let { parsed ->
-                        val artworkLocator = if (cacheArtwork) {
-                            cacheAutomaticArtworkLocator(
-                                track = track,
-                                sourceKey = source.id,
-                                candidateKey = parsed.itemId ?: parsed.title ?: requestType.directArtworkCandidateFallbackKey(),
-                                sourceLocator = parsed.artworkLocator,
-                            )
-                        } else {
-                            normalizeArtworkLocator(parsed.artworkLocator)
-                        }
+                        val artworkLocator = normalizeArtworkLocator(parsed.artworkLocator)
                         ResolvedLyricsResult(
                             document = parsed.document,
                             artworkLocator = artworkLocator,
@@ -2903,7 +2901,6 @@ class DefaultLyricsRepository(
                     track = track,
                     config = source,
                     requestType = requestType,
-                    cacheArtwork = cacheArtwork,
                 )
             } ?: continue
             val automaticArtworkLocator = sourceResult.artworkLocator.takeUnless { suppressArtwork }
@@ -2927,6 +2924,17 @@ class DefaultLyricsRepository(
             "${logPrefix}miss track=$trackLabel attempted=${sources.joinToString(",") { it.id }}"
         }
         return null
+    }
+
+    private suspend fun requestNavidromeLyricsDocumentForPlayback(track: Track): LyricsDocument? {
+        return runCatching { requestNavidromeLyricsDocument(track) }
+            .onFailure { throwable ->
+                throwable.throwIfCancellation()
+                logger.warn(LYRICS_LOG_TAG) {
+                    "playback-subsonic-lyrics-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+                }
+            }
+            .getOrNull()
     }
 
     private suspend fun requestNavidromeLyricsDocument(track: Track): LyricsDocument? {
@@ -3597,9 +3605,10 @@ class DefaultLyricsRepository(
             artworkCacheStore.cache(
                 locator = normalizedLocator,
                 cacheKey = cacheKey,
-                replaceExisting = replaceExisting,
-            )
+                policy = if (replaceExisting) ArtworkWritePolicy.Replace else ArtworkWritePolicy.KeepExisting,
+            )?.locator
         }.onFailure { throwable ->
+            throwable.throwIfCancellation()
             logger.error(LYRICS_LOG_TAG, throwable) {
                 "artwork-cache-failed track=$trackId source=$sourceKey candidate=$candidateKey replace=$replaceExisting " +
                     "key=$cacheKey fallbackToLocator=$fallbackToLocatorKey url=$normalizedLocator"
@@ -3635,23 +3644,10 @@ class DefaultLyricsRepository(
         val currentCacheState = artworkLocator
             .takeIf { it.isNotBlank() }
             ?.let { trackArtworkCacheState(track) }
-        val resolved = resolveCachedLyrics(
+        return resolveCachedLyrics(
             row = row,
             suppressArtwork = suppressArtwork || currentCacheState?.hasRealCachedArtwork == true,
-        ) ?: return null
-        if (artworkLocator.isNotBlank() && currentCacheState?.hasReplaceableNavidromePlaceholder == true) {
-            logger.debug(LYRICS_LOG_TAG) {
-                "artwork-cache-refresh-from-lyrics-cache track=${track.id} source=${row.sourceId} url=$artworkLocator"
-            }
-            cacheArtworkLocator(
-                trackId = track.id,
-                sourceKey = row.sourceId,
-                candidateKey = "cached-${row.sourceId}",
-                sourceLocator = artworkLocator,
-                replaceExisting = true,
-            )
-        }
-        return resolved
+        )
     }
 
     private data class TrackArtworkCacheState(
@@ -3674,11 +3670,18 @@ class DefaultLyricsRepository(
             }
             return TrackArtworkCacheState()
         }
-        val hasCached = runCatching { artworkCacheStore.hasCached(cacheKey) }.getOrDefault(false)
+        val hasCached = runCatching { artworkCacheStore.hasCached(cacheKey) }
+            .onFailure { error ->
+                error.throwIfCancellation()
+                logger.warn(LYRICS_LOG_TAG) { "artwork-cache-check-failed track=${track.id} reason=${error.message.orEmpty()}" }
+            }.getOrDefault(false)
         val hasReplaceablePlaceholder = hasCached &&
             isSubsonicCompatible &&
             runCatching {
                 artworkCacheStore.hasReplaceableNavidromePlaceholderCached(cacheKey)
+            }.onFailure { error ->
+                error.throwIfCancellation()
+                logger.warn(LYRICS_LOG_TAG) { "artwork-placeholder-check-failed track=${track.id} reason=${error.message.orEmpty()}" }
             }.getOrDefault(false)
         val state = TrackArtworkCacheState(
             hasCached = hasCached,
@@ -3698,52 +3701,6 @@ class DefaultLyricsRepository(
         logger.debug(LYRICS_LOG_TAG) {
             "cache-hit track=$trackLabel source=${document.sourceId} synced=${document.isSynced} lines=${document.lines.size}"
         }
-    }
-
-    private suspend fun cacheWorkflowArtwork(trackId: String, candidate: WorkflowSongCandidate): String? {
-        val sourceLocator = normalizeArtworkLocator(candidate.imageUrl)?.trim().orEmpty()
-        if (sourceLocator.isBlank()) return null
-        val track = database.trackDao().getByIds(listOf(trackId)).firstOrNull()?.toDomain()
-        val cacheState = track?.let { trackArtworkCacheState(it) } ?: TrackArtworkCacheState()
-        if (cacheState.hasRealCachedArtwork) {
-            logger.debug(LYRICS_LOG_TAG) {
-                "artwork-cache-skip track=$trackId source=${candidate.sourceId} candidate=${candidate.id} reason=album-cache-exists"
-            }
-            return null
-        }
-        return cacheArtworkLocator(
-            trackId = trackId,
-            sourceKey = candidate.sourceId,
-            candidateKey = candidate.id,
-            sourceLocator = sourceLocator,
-            replaceExisting = true,
-        )
-    }
-
-    private suspend fun cacheAutomaticArtworkLocator(
-        track: Track,
-        sourceKey: String,
-        candidateKey: String,
-        sourceLocator: String?,
-    ): String? {
-        val normalizedLocator = normalizeArtworkLocator(sourceLocator)?.trim().orEmpty()
-        if (normalizedLocator.isBlank()) {
-            return null
-        }
-        val cacheState = trackArtworkCacheState(track)
-        if (cacheState.hasRealCachedArtwork) {
-            logger.debug(LYRICS_LOG_TAG) {
-                "artwork-cache-skip track=${track.id} source=$sourceKey candidate=$candidateKey reason=album-cache-exists"
-            }
-            return null
-        }
-        return cacheArtworkLocator(
-            trackId = track.id,
-            sourceKey = sourceKey,
-            candidateKey = candidateKey,
-            sourceLocator = normalizedLocator,
-            replaceExisting = true,
-        )
     }
 
     private suspend fun enabledLyricsSources(): List<LyricsSourceDefinition> {
@@ -3801,7 +3758,6 @@ class DefaultLyricsRepository(
         track: Track,
         config: WorkflowLyricsSourceConfig,
         requestType: String,
-        cacheArtwork: Boolean = true,
     ): ResolvedLyricsResult? {
         val candidates = searchWorkflowCandidates(track, config, requestType)
         val rankedCandidates = rankWorkflowSongCandidates(
@@ -3826,11 +3782,7 @@ class DefaultLyricsRepository(
                 }
                 continue
             }
-            val artworkLocator = if (cacheArtwork) {
-                cacheWorkflowArtwork(track.id, candidate)
-            } else {
-                normalizeArtworkLocator(candidate.imageUrl)
-            }
+            val artworkLocator = normalizeArtworkLocator(candidate.imageUrl)
             return ResolvedLyricsResult(
                 document = document,
                 artworkLocator = artworkLocator,

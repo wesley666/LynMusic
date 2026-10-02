@@ -51,7 +51,7 @@ internal suspend fun resolveAndroidNotificationArtworkBitmap(
 ): Bitmap? = withContext(Dispatchers.IO) {
     val normalized = locator?.trim().orEmpty().ifBlank { null } ?: return@withContext null
     val cacheKey = artworkCacheKey?.trim()?.takeIf { it.isNotEmpty() } ?: normalized
-    val target = artworkCacheStore.cache(normalized, cacheKey) ?: return@withContext null
+    val target = artworkCacheStore.cache(normalized, cacheKey)?.locator ?: return@withContext null
     decodeAndroidNotificationArtworkBitmap(target)
 }
 
