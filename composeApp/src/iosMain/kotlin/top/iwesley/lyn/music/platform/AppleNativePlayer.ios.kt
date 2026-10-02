@@ -19,21 +19,21 @@ import top.iwesley.lyn.music.core.model.uiText
 @OptIn(ExperimentalForeignApi::class)
 internal actual class AppleNativePlayer actual constructor(
     private val platformLabel: String,
-) {
+) : ApplePlaybackEngine {
     private val player = AVPlayer()
     private var periodicTimeObserver: Any? = null
     private var completionObserver: Any? = null
     private var failureObserver: Any? = null
 
-    actual var onProgress: (() -> Unit)? = null
-    actual var onCompleted: (() -> Unit)? = null
-    actual var onFailed: ((String?) -> Unit)? = null
+    actual override var onProgress: (() -> Unit)? = null
+    actual override var onCompleted: (() -> Unit)? = null
+    actual override var onFailed: ((String?) -> Unit)? = null
 
     init {
         installPeriodicTimeObserver()
     }
 
-    actual fun load(locator: AppleResolvedMediaLocator) {
+    actual override fun load(locator: AppleResolvedMediaLocator) {
         val url = locator.toUrl()
         val item = AVPlayerItem.playerItemWithURL(url)
         clearCurrentItem()
@@ -42,43 +42,43 @@ internal actual class AppleNativePlayer actual constructor(
         onProgress?.invoke()
     }
 
-    actual fun stopAndClear() {
+    actual override fun stopAndClear() {
         player.pause()
         clearCurrentItem()
     }
 
-    actual fun play() {
+    actual override fun play() {
         player.play()
     }
 
-    actual fun pause() {
+    actual override fun pause() {
         player.pause()
     }
 
-    actual fun seekTo(positionMs: Long) {
+    actual override fun seekTo(positionMs: Long) {
         player.seekToTime(playbackTime(positionMs))
     }
 
-    actual fun canSeek(): Boolean {
+    actual override fun canSeek(): Boolean {
         val item = player.currentItem ?: return false
         return item.duration.toMillis() > 0L || item.seekableTimeRanges.isNotEmpty()
     }
 
-    actual fun setVolume(volume: Float) {
+    actual override fun setVolume(volume: Float) {
         player.volume = volume.coerceIn(0f, 1f)
     }
 
-    actual fun isPlaying(): Boolean = player.timeControlStatus != AVPlayerTimeControlStatusPaused
+    actual override fun isPlaying(): Boolean = player.timeControlStatus != AVPlayerTimeControlStatusPaused
 
-    actual fun positionMs(): Long = player.currentTime().toMillis()
+    actual override fun positionMs(): Long = player.currentTime().toMillis()
 
-    actual fun durationMs(): Long? = player.currentItem?.duration?.toMillis()
+    actual override fun durationMs(): Long? = player.currentItem?.duration?.toMillis()
 
-    actual fun volume(): Float = player.volume
+    actual override fun volume(): Float = player.volume
 
-    actual fun errorMessage(): String? = player.currentItem?.error?.localizedDescription
+    actual override fun errorMessage(): String? = player.currentItem?.error?.localizedDescription
 
-    actual fun release() {
+    actual override fun release() {
         player.pause()
         clearCurrentItem()
         periodicTimeObserver?.let(player::removeTimeObserver)
@@ -110,7 +110,8 @@ internal actual class AppleNativePlayer actual constructor(
             `object` = item,
             queue = NSOperationQueue.mainQueue,
             usingBlock = {
-                onCompleted?.invoke()
+                // A notification queued before the item was replaced must not reach the new item's handlers.
+                if (player.currentItem === item) onCompleted?.invoke()
             },
         )
         failureObserver = NSNotificationCenter.defaultCenter.addObserverForName(
@@ -118,7 +119,7 @@ internal actual class AppleNativePlayer actual constructor(
             `object` = item,
             queue = NSOperationQueue.mainQueue,
             usingBlock = {
-                onFailed?.invoke(item.error?.localizedDescription)
+                if (player.currentItem === item) onFailed?.invoke(item.error?.localizedDescription)
             },
         )
     }

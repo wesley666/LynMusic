@@ -19,7 +19,11 @@ import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.NetworkConnectionState
 import top.iwesley.lyn.music.core.model.NetworkConnectionType
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
+import top.iwesley.lyn.music.core.model.REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS
 import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
+import top.iwesley.lyn.music.core.model.currentRemoteSourceConnectTimeoutMillis
+import top.iwesley.lyn.music.core.model.markCurrentRemoteSourceReachable
+import top.iwesley.lyn.music.core.model.UiTextArgumentException
 import top.iwesley.lyn.music.core.model.UiTextException
 import top.iwesley.lyn.music.core.model.UiText
 import top.iwesley.lyn.music.core.model.uiText
@@ -277,6 +281,299 @@ class RemoteSourceAddressSelectorTest {
 
         assertEquals(null, result)
         assertEquals(listOf(LAN_URL), attempts)
+    }
+
+    @Test
+    fun `fallback address expires after ttl even while it keeps succeeding`() {
+        var now = 0L
+        val networkProvider = TestNetworkConnectionTypeProvider(NetworkConnectionType.WIFI)
+        val selector = RemoteSourceAddressSelector(networkProvider, ttlMillis = 1_000L, nowMillis = { now })
+
+        selector.markSuccess(TEST_SOURCE_ID, RemoteSourceAddressKind.WAN)
+        now = 600L
+        selector.markSuccess(TEST_SOURCE_ID, RemoteSourceAddressKind.WAN)
+        assertEquals(RemoteSourceAddressKind.WAN, selector.testOrder().first().kind)
+
+        now = 1_200L
+        selector.markSuccess(TEST_SOURCE_ID, RemoteSourceAddressKind.WAN)
+        assertEquals(RemoteSourceAddressKind.WAN, selector.testOrder().first().kind)
+
+        now = 1_300L
+        assertEquals(RemoteSourceAddressKind.WAN, selector.testOrder().first().kind)
+        now = 2_300L
+        assertEquals(RemoteSourceAddressKind.LAN, selector.testOrder().first().kind)
+    }
+
+    @Test
+    fun `fallback attempts cap connect timeout only while an alternate address remains`() = runTest {
+        val networkProvider = TestNetworkConnectionTypeProvider(NetworkConnectionType.WIFI)
+        val selector = RemoteSourceAddressSelector(networkProvider)
+        val connectTimeouts = mutableListOf<Long?>()
+
+        selector.withAddressFallback(
+            sourceId = TEST_SOURCE_ID,
+            sourceType = ImportSourceType.NAVIDROME,
+            lanBaseUrl = LAN_URL,
+            wanBaseUrl = WAN_URL,
+            normalizeBaseUrl = ::identity,
+        ) { candidate ->
+            connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+            if (candidate.kind == RemoteSourceAddressKind.LAN) error("请求失败: timeout")
+        }
+
+        assertEquals(listOf(REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS, null), connectTimeouts)
+    }
+
+    @Test
+    fun `testing each address reports the failing address even when the other works`() = runTest {
+        val attempts = mutableListOf<RemoteSourceAddressKind>()
+
+        val failure = assertFailsWith<RemoteSourceAddressTestException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { candidate ->
+                synchronized(attempts) { attempts += candidate.kind }
+                if (candidate.kind == RemoteSourceAddressKind.WAN) error("请求失败: timeout")
+            }
+        }
+
+        assertEquals(setOf(RemoteSourceAddressKind.LAN, RemoteSourceAddressKind.WAN), attempts.toSet())
+        assertTrue(failure.anySucceeded)
+        assertEquals(
+            "LAN address: connected\nWAN address: 请求失败: timeout",
+            resolveUiText(failure.text, AppLanguage.English),
+        )
+    }
+
+    @Test
+    fun `http error on one address keeps the per address report`() = runTest {
+        val failure = assertFailsWith<RemoteSourceAddressTestException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { candidate ->
+                if (candidate.kind == RemoteSourceAddressKind.WAN) {
+                    throw RemoteSourceHttpArgumentException(502, UiText.Raw("HTTP 502"))
+                }
+            }
+        }
+
+        assertTrue(failure.anySucceeded)
+        assertEquals(
+            "LAN address: connected\nWAN address: HTTP 502",
+            resolveUiText(failure.text, AppLanguage.English),
+        )
+    }
+
+    @Test
+    fun `input validation failure is reported once instead of per address`() = runTest {
+        val validation = UiTextArgumentException(UiText.Raw("username required"))
+
+        val failure = assertFailsWith<UiTextArgumentException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { throw validation }
+        }
+
+        assertTrue(failure === validation)
+    }
+
+    @Test
+    fun `unreachable lan address reads as expected when wan works`() = runTest {
+        val failure = assertFailsWith<RemoteSourceAddressTestException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { candidate ->
+                if (candidate.kind == RemoteSourceAddressKind.LAN) error("请求失败: timeout")
+            }
+        }
+
+        assertTrue(failure.anySucceeded)
+        assertEquals(
+            "LAN address: unreachable (normal when you are away from that network): 请求失败: timeout\n" +
+                "WAN address: connected",
+            resolveUiText(failure.text, AppLanguage.English),
+        )
+    }
+
+    @Test
+    fun `testing each address caps only the lan connect timeout and reports total failure`() = runTest {
+        val connectTimeouts = mutableMapOf<RemoteSourceAddressKind, Long?>()
+
+        val failure = assertFailsWith<RemoteSourceAddressTestException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = LAN_URL,
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { candidate ->
+                val connectTimeout = currentRemoteSourceConnectTimeoutMillis()
+                synchronized(connectTimeouts) { connectTimeouts[candidate.kind] = connectTimeout }
+                error("请求失败: timeout")
+            }
+        }
+
+        assertFalse(failure.anySucceeded)
+        assertEquals(
+            mapOf(
+                RemoteSourceAddressKind.LAN to REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS,
+                RemoteSourceAddressKind.WAN to null,
+            ),
+            connectTimeouts.toMap(),
+        )
+    }
+
+    @Test
+    fun `wan first on mobile keeps the normal connect timeout`() = runTest {
+        val networkProvider = TestNetworkConnectionTypeProvider(NetworkConnectionType.MOBILE)
+        val selector = RemoteSourceAddressSelector(networkProvider)
+        val connectTimeouts = mutableListOf<Pair<RemoteSourceAddressKind, Long?>>()
+
+        selector.withAddressFallback(
+            sourceId = TEST_SOURCE_ID,
+            sourceType = ImportSourceType.NAVIDROME,
+            lanBaseUrl = LAN_URL,
+            wanBaseUrl = WAN_URL,
+            normalizeBaseUrl = ::identity,
+        ) { candidate ->
+            connectTimeouts += candidate.kind to currentRemoteSourceConnectTimeoutMillis()
+            if (candidate.kind == RemoteSourceAddressKind.WAN) error("请求失败: timeout")
+        }
+
+        assertEquals(
+            listOf<Pair<RemoteSourceAddressKind, Long?>>(
+                RemoteSourceAddressKind.WAN to null,
+                RemoteSourceAddressKind.LAN to null,
+            ),
+            connectTimeouts,
+        )
+    }
+
+    @Test
+    fun `remote url candidate reader does not cap candidates of unknown kind`() = runTest {
+        val connectTimeouts = mutableListOf<Long?>()
+
+        readRemotePlaybackUrlCandidateWithFallback(
+            candidates = listOf(
+                RemotePlaybackUrlCandidate(value = LAN_URL),
+                RemotePlaybackUrlCandidate(value = WAN_URL),
+            ),
+            read = { candidate ->
+                connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+                if (candidate.value == LAN_URL) error("请求失败: timeout")
+                "image"
+            },
+        )
+
+        assertEquals(listOf<Long?>(null, null), connectTimeouts)
+    }
+
+    @Test
+    fun `remote url candidate reader caps lan but not wan`() = runTest {
+        val connectTimeouts = mutableListOf<Long?>()
+
+        readRemotePlaybackUrlCandidateWithFallback(
+            candidates = TEST_REMOTE_CANDIDATES,
+            read = { candidate ->
+                connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+                if (candidate.addressKind == RemoteSourceAddressKind.LAN.name) error("请求失败: timeout")
+                "image"
+            },
+        )
+        readRemotePlaybackUrlCandidateWithFallback(
+            candidates = TEST_REMOTE_CANDIDATES.reversed(),
+            read = { candidate ->
+                connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+                if (candidate.addressKind == RemoteSourceAddressKind.WAN.name) error("请求失败: timeout")
+                "image"
+            },
+        )
+
+        assertEquals(listOf(REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS, null, null, null), connectTimeouts)
+    }
+
+    @Test
+    fun `partial success message puts the address results on a new line`() = runTest {
+        assertEquals(
+            "Navidrome is reachable through some addresses:\nWAN address: connected",
+            resolveUiText(
+                uiText(
+                    Res.string.source_connection_partially_succeeded,
+                    "Navidrome",
+                    uiText(Res.string.source_address_test_wan_succeeded),
+                ),
+                AppLanguage.English,
+            ),
+        )
+    }
+
+    @Test
+    fun `fallback connect cap is lifted once the address answers`() = runTest {
+        val networkProvider = TestNetworkConnectionTypeProvider(NetworkConnectionType.WIFI)
+        val selector = RemoteSourceAddressSelector(networkProvider)
+        val connectTimeouts = mutableListOf<Long?>()
+
+        selector.withAddressFallback<Unit>(
+            sourceId = TEST_SOURCE_ID,
+            sourceType = ImportSourceType.NAVIDROME,
+            lanBaseUrl = LAN_URL,
+            wanBaseUrl = WAN_URL,
+            normalizeBaseUrl = ::identity,
+        ) {
+            connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+            markCurrentRemoteSourceReachable()
+            connectTimeouts += currentRemoteSourceConnectTimeoutMillis()
+        }
+
+        assertEquals(listOf(REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS, null), connectTimeouts)
+    }
+
+    @Test
+    fun `network change moves a lan stream to wan only on connected mobile`() {
+        val kinds = listOf(RemoteSourceAddressKind.LAN, RemoteSourceAddressKind.WAN)
+        val connectedMobile = NetworkConnectionState(NetworkConnectionType.MOBILE, version = 1L)
+
+        fun indexFor(
+            candidateKinds: List<RemoteSourceAddressKind?> = kinds,
+            currentIndex: Int = 0,
+            networkState: NetworkConnectionState = connectedMobile,
+            isPlaybackActive: Boolean = true,
+        ) = remoteCandidateIndexForNetworkChange(candidateKinds, currentIndex, networkState, isPlaybackActive)
+
+        assertEquals(1, indexFor())
+        assertEquals(null, indexFor(networkState = connectedMobile.copy(isConnected = false)))
+        assertEquals(null, indexFor(networkState = connectedMobile.copy(type = NetworkConnectionType.WIFI)))
+        assertEquals(null, indexFor(currentIndex = 1))
+        assertEquals(null, indexFor(candidateKinds = listOf(RemoteSourceAddressKind.LAN)))
+        assertEquals(null, indexFor(candidateKinds = listOf(null, RemoteSourceAddressKind.WAN)))
+        assertEquals(null, indexFor(isPlaybackActive = false))
+    }
+
+    @Test
+    fun `testing a single address rethrows its original failure`() = runTest {
+        val original = IllegalStateException("HTTP 401")
+
+        val failure = assertFailsWith<IllegalStateException> {
+            testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.NAVIDROME,
+                lanBaseUrl = "",
+                wanBaseUrl = WAN_URL,
+                normalizeBaseUrl = ::identity,
+            ) { throw original }
+        }
+
+        assertTrue(failure === original)
     }
 
     private fun RemoteSourceAddressSelector.testOrder(): List<RemoteSourceBaseUrl> {

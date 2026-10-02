@@ -1,6 +1,9 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.redactRemoteSourceUrlForLog
 import top.iwesley.lyn.music.resources.*
+import top.iwesley.lyn.music.core.model.markCurrentRemoteSourceReachable
+import top.iwesley.lyn.music.core.model.effectiveConnectTimeoutMillis
 import top.iwesley.lyn.music.core.model.audioImportFailure
 import androidx.lifecycle.lifecycleScope
 
@@ -70,6 +73,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -185,6 +190,7 @@ import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.resolveEmbyStreamUrl
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.domain.isRemoteSourceAddressFallbackAllowed
+import top.iwesley.lyn.music.domain.remoteCandidateIndexForNetworkChange
 import top.iwesley.lyn.music.domain.resolveEmbyStreamUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrlCandidates
 import top.iwesley.lyn.music.domain.scanEmbyLibrary
@@ -352,7 +358,7 @@ private fun createAndroidRuntimeGraph(
     ).withSecureInMemoryCache()
     val appPreferencesStore = AndroidAppPreferencesStore(context)
     val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider.get(context)
-    val remoteSourceAddressSelector = RemoteSourceAddressSelector(networkConnectionTypeProvider)
+    val remoteSourceAddressSelector = AndroidRemoteSourceAddressSelector.get(context)
     val lyricsShareFontLibraryPlatformService = AndroidLyricsShareFontLibraryPlatformService(context, activityActions)
     val navidromeHttpClient = AndroidLyricsHttpClient()
     val artworkCacheStore = createAndroidArtworkCacheStore(context)
@@ -572,14 +578,19 @@ internal class AndroidLyricsHttpClient : LyricsHttpClient {
                 }
                 request.headers.forEach { (key, value) -> headers.append(key, value) }
                 request.body?.let { setBody(it) }
-                request.timeoutMillis?.takeIf { it > 0L }?.let { timeoutMillis ->
+                val requestTimeout = request.timeoutMillis?.takeIf { it > 0L }
+                val connectTimeout = request.effectiveConnectTimeoutMillis()
+                if (requestTimeout != null || connectTimeout != null) {
                     timeout {
-                        requestTimeoutMillis = timeoutMillis
-                        connectTimeoutMillis = timeoutMillis
-                        socketTimeoutMillis = timeoutMillis
+                        requestTimeout?.let {
+                            requestTimeoutMillis = it
+                            socketTimeoutMillis = it
+                        }
+                        connectTimeout?.let { connectTimeoutMillis = it }
                     }
                 }
             }
+            markCurrentRemoteSourceReachable()
             Result.success(
                 LyricsHttpResponse(
                     statusCode = response.status.value,
@@ -1114,6 +1125,19 @@ internal class AndroidAppPreferencesStore(
     }
 }
 
+/** Process-wide selector so the UI, playback service and overlays share one remote address cache. */
+internal object AndroidRemoteSourceAddressSelector {
+    @Volatile
+    private var instance: RemoteSourceAddressSelector? = null
+
+    fun get(context: Context): RemoteSourceAddressSelector {
+        return instance ?: synchronized(this) {
+            instance ?: RemoteSourceAddressSelector(AndroidNetworkConnectionTypeProvider.get(context))
+                .also { instance = it }
+        }
+    }
+}
+
 internal class AndroidNetworkConnectionTypeProvider private constructor(
     context: Context,
 ) : NetworkConnectionTypeProvider {
@@ -1125,6 +1149,7 @@ internal class AndroidNetworkConnectionTypeProvider private constructor(
         NetworkConnectionState(
             type = currentNetworkSnapshot.type,
             version = 0L,
+            isConnected = currentNetworkSnapshot.isConnected,
         ),
     )
 
@@ -1179,29 +1204,31 @@ internal class AndroidNetworkConnectionTypeProvider private constructor(
             mutableNetworkConnectionState.value = NetworkConnectionState(
                 type = nextSnapshot.type,
                 version = current.version + 1L,
+                isConnected = nextSnapshot.isConnected,
             )
         }
     }
 
     private fun readCurrentNetworkSnapshot(): AndroidNetworkSnapshot {
         val manager = connectivityManager
-            ?: return AndroidNetworkSnapshot(activeNetwork = null, type = NetworkConnectionType.MOBILE)
+            ?: return AndroidNetworkSnapshot(activeNetwork = null, type = NetworkConnectionType.MOBILE, isConnected = false)
         val network = manager.activeNetwork
-            ?: return AndroidNetworkSnapshot(activeNetwork = null, type = NetworkConnectionType.MOBILE)
+            ?: return AndroidNetworkSnapshot(activeNetwork = null, type = NetworkConnectionType.MOBILE, isConnected = false)
         val capabilities = manager.getNetworkCapabilities(network)
-            ?: return AndroidNetworkSnapshot(activeNetwork = network, type = NetworkConnectionType.MOBILE)
+            ?: return AndroidNetworkSnapshot(activeNetwork = network, type = NetworkConnectionType.MOBILE, isConnected = false)
         val type = if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
             NetworkConnectionType.WIFI
         } else {
             NetworkConnectionType.MOBILE
         }
-        return AndroidNetworkSnapshot(activeNetwork = network, type = type)
+        return AndroidNetworkSnapshot(activeNetwork = network, type = type, isConnected = true)
     }
 }
 
 private data class AndroidNetworkSnapshot(
     val activeNetwork: Network?,
     val type: NetworkConnectionType,
+    val isConnected: Boolean,
 )
 
 internal class AndroidAudioTagGateway(
@@ -2652,14 +2679,34 @@ internal class AndroidPlaybackGateway(
     private fun tryApplyRemoteAddressFallback(error: Throwable): Boolean {
         val fallback = currentRemotePlaybackFallback ?: return false
         if (!isRemoteSourceAddressFallbackAllowed(error)) return false
-        val nextIndex = fallback.selectedIndex + 1
-        val nextCandidate = fallback.candidates.getOrNull(nextIndex) ?: return false
+        return switchRemoteCandidate(fallback, fallback.selectedIndex + 1, reason = "retry")
+    }
+
+    /** Leaves a LAN stream as soon as the device drops onto mobile data instead of waiting for it to stall. */
+    private fun switchRemoteCandidateForNetwork(networkState: NetworkConnectionState) {
+        if (released) return
+        val fallback = currentRemotePlaybackFallback ?: return
+        val targetIndex = remoteCandidateIndexForNetworkChange(
+            candidateKinds = fallback.candidates.map { it.kind },
+            currentIndex = fallback.selectedIndex,
+            networkState = networkState,
+            isPlaybackActive = player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE,
+        ) ?: return
+        switchRemoteCandidate(fallback, targetIndex, reason = "network-change")
+    }
+
+    private fun switchRemoteCandidate(
+        fallback: AndroidRemotePlaybackFallback,
+        targetIndex: Int,
+        reason: String,
+    ): Boolean {
+        val nextCandidate = fallback.candidates.getOrNull(targetIndex) ?: return false
         val retryPositionMs = player.currentPosition.takeIf { it >= 0L } ?: 0L
         val retryPlayWhenReady = player.playWhenReady || pendingLoadPlayWhenReady
-        currentRemotePlaybackFallback = fallback.copy(selectedIndex = nextIndex)
-        currentRemoteLabel = nextCandidate.value
+        currentRemotePlaybackFallback = fallback.copy(selectedIndex = targetIndex)
+        currentRemoteLabel = redactRemoteSourceUrlForLog(nextCandidate.value)
         logger.warn(PLAYBACK_LOG_TAG) {
-            "remote-address-fallback retry index=$nextIndex url=${nextCandidate.value}"
+            "remote-address-fallback $reason index=$targetIndex url=${redactRemoteSourceUrlForLog(nextCandidate.value)}"
         }
         player.setMediaItem(MediaItem.fromUri(Uri.parse(nextCandidate.value)))
         player.prepare()
@@ -2669,8 +2716,18 @@ internal class AndroidPlaybackGateway(
         return true
     }
 
+    private val networkChangeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     init {
         player.addListener(playerListener)
+        networkChangeScope.launch {
+            networkConnectionTypeProvider.networkConnectionState
+                .distinctUntilChangedBy { it.version }
+                .drop(1)
+                .collect { state ->
+                    playerHandler.post { switchRemoteCandidateForNetwork(state) }
+                }
+        }
 
         player.addAnalyticsListener(analyticsListener)
         equalizerController.attachPlayer(player)
@@ -2927,6 +2984,7 @@ internal class AndroidPlaybackGateway(
 
     override suspend fun release() {
         released = true
+        networkChangeScope.cancel()
         onPlayerRecreated = null
         equalizerController.release()
         playerHandler.removeCallbacks(progressTicker)

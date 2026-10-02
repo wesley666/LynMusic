@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.redactRemoteSourceUrlForLog
+import top.iwesley.lyn.music.core.model.markCurrentRemoteSourceReachable
+import top.iwesley.lyn.music.core.model.effectiveConnectTimeoutMillis
 import top.iwesley.lyn.music.core.model.diagnosticMessage
 import top.iwesley.lyn.music.resources.*
 import top.iwesley.lyn.music.core.model.audioImportFailure
@@ -442,14 +445,19 @@ internal class JvmLyricsHttpClient : LyricsHttpClient {
                 }
                 request.headers.forEach { (key, value) -> headers.append(key, value) }
                 request.body?.let { setBody(it) }
-                request.timeoutMillis?.takeIf { it > 0L }?.let { timeoutMillis ->
+                val requestTimeout = request.timeoutMillis?.takeIf { it > 0L }
+                val connectTimeout = request.effectiveConnectTimeoutMillis()
+                if (requestTimeout != null || connectTimeout != null) {
                     timeout {
-                        requestTimeoutMillis = timeoutMillis
-                        connectTimeoutMillis = timeoutMillis
-                        socketTimeoutMillis = timeoutMillis
+                        requestTimeout?.let {
+                            requestTimeoutMillis = it
+                            socketTimeoutMillis = it
+                        }
+                        connectTimeout?.let { connectTimeoutMillis = it }
                     }
                 }
             }
+            markCurrentRemoteSourceReachable()
             LyricsHttpResponse(
                 statusCode = response.status.value,
                 body = response.bodyAsText(),
@@ -2016,7 +2024,7 @@ internal class JvmPlaybackGateway(
             override fun error(mediaPlayer: MediaPlayer?) {
                 val recentLogs = recentVlcLogSummary()
                 logger.error(VLC_LOG_TAG) {
-                    "playback-error target=${currentPlaybackTarget.orEmpty()} source=${currentSourceReference.orEmpty()} recentLogs=$recentLogs"
+                    "playback-error target=${redactRemoteSourceUrlForLog(currentPlaybackTarget.orEmpty())} source=${currentSourceReference.orEmpty()} recentLogs=$recentLogs"
                 }
                 if (tryScheduleRemoteAddressFallback(recentLogs)) {
                     return
@@ -2050,7 +2058,7 @@ internal class JvmPlaybackGateway(
         )
         currentRemotePlaybackFallback = nextFallback
         logger.warn(VLC_LOG_TAG) {
-            "remote-address-fallback retry index=$nextIndex url=${nextCandidate.value} recentLogs=$errorDetail"
+            "remote-address-fallback retry index=$nextIndex url=${redactRemoteSourceUrlForLog(nextCandidate.value)} recentLogs=$errorDetail"
         }
         mutableState.update { it.copy(errorMessage = null, errorText = null) }
         scope.launch {
@@ -2122,7 +2130,7 @@ internal class JvmPlaybackGateway(
             if (!started) {
                 pendingSeek?.let(::clearPendingInitialSeek)
                 logger.error(VLC_LOG_TAG) {
-                    "remote-address-fallback-start-failed target=${candidate.value} source=${fallback.sourceReference} recentLogs=${recentVlcLogSummary()}"
+                    "remote-address-fallback-start-failed target=${redactRemoteSourceUrlForLog(candidate.value)} source=${fallback.sourceReference} recentLogs=${recentVlcLogSummary()}"
                 }
                 mutableState.update {
                     it.copy(
@@ -2138,7 +2146,7 @@ internal class JvmPlaybackGateway(
             if (throwable is CancellationException) throw throwable
             pendingSeek?.let(::clearPendingInitialSeek)
             logger.error(VLC_LOG_TAG, throwable) {
-                "remote-address-fallback-failed target=${candidate.value} source=${fallback.sourceReference}"
+                "remote-address-fallback-failed target=${redactRemoteSourceUrlForLog(candidate.value)} source=${fallback.sourceReference}"
             }
             mutableState.update {
                 it.copy(
@@ -2452,7 +2460,7 @@ internal class JvmPlaybackGateway(
                 initialSeekForLoad?.let(::clearPendingInitialSeek)
                 val recentLogs = recentVlcLogSummary()
                 logger.error(VLC_LOG_TAG) {
-                    "start-failed target=$playbackTarget source=$sourceReference playWhenReady=$playWhenReady recentLogs=$recentLogs"
+                    "start-failed target=${redactRemoteSourceUrlForLog(playbackTarget)} source=$sourceReference playWhenReady=$playWhenReady recentLogs=$recentLogs"
                 }
                 if (tryScheduleRemoteAddressFallback(recentLogs)) {
                     return
@@ -2888,7 +2896,7 @@ internal class JvmPlaybackGateway(
             if (recentVlcLogs.isEmpty()) {
                 "none"
             } else {
-                recentVlcLogs.joinToString(separator = " || ")
+                redactRemoteSourceUrlForLog(recentVlcLogs.joinToString(separator = " || "))
             }
         }
     }

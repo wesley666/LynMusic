@@ -14,23 +14,19 @@ class AndroidDiagnosticLogger(
     ) {
         if (!enabled) return
         val androidTag = DEFAULT_ANDROID_LOG_TAG //tag.take(MAX_ANDROID_LOG_TAG_LENGTH).ifBlank { DEFAULT_ANDROID_LOG_TAG }
-        val formattedMessage = "[$label][$tag][${level.name}] $message"
+        // Log lines and exception messages can quote remote stream URLs; never write their credentials.
+        // The stack trace is rendered here so its messages are redacted too.
+        val formattedMessage = redactRemoteSourceUrlForLog(
+            buildString {
+                append("[$label][$tag][${level.name}] $message")
+                throwable?.let { append('\n').append(Log.getStackTraceString(it)) }
+            },
+        )
         when (level) {
-            DiagnosticLogLevel.DEBUG -> {
-                if (throwable != null) Log.d(androidTag, formattedMessage, throwable) else Log.d(androidTag, formattedMessage)
-            }
-
-            DiagnosticLogLevel.INFO -> {
-                if (throwable != null) Log.i(androidTag, formattedMessage, throwable) else Log.i(androidTag, formattedMessage)
-            }
-
-            DiagnosticLogLevel.WARN -> {
-                if (throwable != null) Log.w(androidTag, formattedMessage, throwable) else Log.w(androidTag, formattedMessage)
-            }
-
-            DiagnosticLogLevel.ERROR -> {
-                if (throwable != null) Log.e(androidTag, formattedMessage, throwable) else Log.e(androidTag, formattedMessage)
-            }
+            DiagnosticLogLevel.DEBUG -> Log.d(androidTag, formattedMessage)
+            DiagnosticLogLevel.INFO -> Log.i(androidTag, formattedMessage)
+            DiagnosticLogLevel.WARN -> Log.w(androidTag, formattedMessage)
+            DiagnosticLogLevel.ERROR -> Log.e(androidTag, formattedMessage)
         }
     }
 }

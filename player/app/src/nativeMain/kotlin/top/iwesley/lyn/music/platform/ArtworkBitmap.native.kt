@@ -5,21 +5,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
-import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.pointed
-import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
-import kotlinx.cinterop.value
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Canvas
@@ -29,10 +24,13 @@ import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSHTTPURLResponse
+import platform.Foundation.NSMutableURLRequest
 import platform.Foundation.NSURL
+import platform.Foundation.NSURLSession
+import platform.Foundation.dataTaskWithRequest
 import platform.Foundation.NSUUID
 import platform.Foundation.NSUserDomainMask
-import platform.Foundation.create
 import platform.posix.SEEK_END
 import platform.posix.SEEK_SET
 import platform.posix.closedir
@@ -49,6 +47,8 @@ import platform.posix.remove
 import platform.posix.rename
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
 import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
+import top.iwesley.lyn.music.core.model.currentRemoteSourceConnectTimeoutMillis
+import top.iwesley.lyn.music.core.model.markCurrentRemoteSourceReachable
 import top.iwesley.lyn.music.core.model.inferArtworkFileExtension
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
@@ -56,6 +56,7 @@ import top.iwesley.lyn.music.core.model.resolveArtworkCacheTargets
 import top.iwesley.lyn.music.core.model.stableArtworkCacheHash
 import top.iwesley.lyn.music.domain.readRemotePlaybackUrlCandidateWithFallback
 import top.iwesley.lyn.music.rememberLynArtworkModel
+import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 @Composable
@@ -193,13 +194,39 @@ private fun findNativeArtworkCachePath(directory: String, cachePrefix: String): 
     }
 }
 
-@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+private const val NATIVE_REMOTE_ARTWORK_TIMEOUT_SECONDS = 30.0
+
+// NSURLSession only has an idle timeout, matching the iOS lyrics client's fallback cap.
+private const val NATIVE_REMOTE_ARTWORK_FALLBACK_TIMEOUT_SECONDS = 10.0
+
+private class NativeRemoteResponse(
+    val data: NSData?,
+    val statusCode: Int?,
+    val error: NSError?,
+)
+
 private suspend fun readRemoteBytes(target: String): ByteArray {
     val url = NSURL.URLWithString(target) ?: error("远端封面 URL 无效。")
-    return memScoped {
-        val error = alloc<ObjCObjectVar<NSError?>>()
-        NSData.create(contentsOfURL = url, options = 0u, error = error.ptr)?.toByteArray()
-            ?: throw IllegalStateException(nativeRemoteReadErrorMessage(error.value))
+    val timeoutSeconds = if (currentRemoteSourceConnectTimeoutMillis() != null) {
+        NATIVE_REMOTE_ARTWORK_FALLBACK_TIMEOUT_SECONDS
+    } else {
+        NATIVE_REMOTE_ARTWORK_TIMEOUT_SECONDS
+    }
+    val request = NSMutableURLRequest.requestWithURL(url).apply { setTimeoutInterval(timeoutSeconds) }
+    val response = suspendCancellableCoroutine { continuation ->
+        val task = NSURLSession.sharedSession.dataTaskWithRequest(request) { data, urlResponse, error ->
+            val statusCode = (urlResponse as? NSHTTPURLResponse)?.statusCode?.toInt()
+            continuation.resume(NativeRemoteResponse(data, statusCode, error))
+        }
+        continuation.invokeOnCancellation { task.cancel() }
+        task.resume()
+    }
+    if (response.statusCode != null) markCurrentRemoteSourceReachable()
+    val statusCode = response.statusCode
+    return when {
+        response.error != null -> throw IllegalStateException(nativeRemoteReadErrorMessage(response.error))
+        statusCode != null && statusCode !in 200..299 -> throw IllegalStateException("HTTP $statusCode")
+        else -> response.data?.toByteArray() ?: throw IllegalStateException(nativeRemoteReadErrorMessage(null))
     }
 }
 

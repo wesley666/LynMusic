@@ -87,12 +87,12 @@ import top.iwesley.lyn.music.data.repository.RoomLibraryRepository
 import top.iwesley.lyn.music.data.repository.RoomPlaylistRepository
 import top.iwesley.lyn.music.data.repository.RoomTrackPlaybackStatsRepository
 import top.iwesley.lyn.music.data.repository.UtcDailyRecommendationDateKeyProvider
+import top.iwesley.lyn.music.domain.addressKindOrNull
 import top.iwesley.lyn.music.domain.RemoteSourceResolvedUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeCoverArtUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrl
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrlCandidates
-import top.iwesley.lyn.music.domain.RemoteSourceAddressKind
 import top.iwesley.lyn.music.domain.resolveEmbyCoverArtUrl
 import top.iwesley.lyn.music.domain.resolveEmbyCoverArtUrlCandidates
 import top.iwesley.lyn.music.domain.resolveEmbyStreamUrl
@@ -303,8 +303,7 @@ fun buildSharedGraph(
             }
 
             override fun markResolvedUrlSuccess(candidate: RemotePlaybackUrlCandidate) {
-                val kind = runCatching { RemoteSourceAddressKind.valueOf(candidate.addressKind) }.getOrNull()
-                    ?: return
+                val kind = candidate.addressKindOrNull ?: return
                 candidate.sourceId.takeIf { it.isNotBlank() }?.let { sourceId ->
                     runtimeServices.remoteSourceAddressSelector.markSuccess(sourceId, kind)
                 }

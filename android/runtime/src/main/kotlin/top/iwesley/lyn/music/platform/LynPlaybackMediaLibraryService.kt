@@ -57,7 +57,6 @@ import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.effectiveArtworkOverridesByTrackId
 import top.iwesley.lyn.music.data.repository.toDomain
-import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 
 @OptIn(UnstableApi::class)
 class LynPlaybackMediaLibraryService : MediaLibraryService() {
@@ -241,7 +240,7 @@ private class LynPlaybackServiceRuntime private constructor(
             val secureStore = AndroidCredentialStore(appContext, logger).withSecureInMemoryCache()
             val preferencesStore = AndroidAppPreferencesStore(appContext)
             val networkConnectionTypeProvider = AndroidNetworkConnectionTypeProvider.get(appContext)
-            val remoteSourceAddressSelector = RemoteSourceAddressSelector(networkConnectionTypeProvider)
+            val remoteSourceAddressSelector = AndroidRemoteSourceAddressSelector.get(appContext)
             val navidromeHttpClient = AndroidLyricsHttpClient()
             val artworkCacheStore = createAndroidArtworkCacheStore(appContext)
             val gateway = AndroidPlaybackGateway(

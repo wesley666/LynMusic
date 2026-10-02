@@ -7,21 +7,34 @@ import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.UiTextFailure
 import top.iwesley.lyn.music.core.model.UiText
 import top.iwesley.lyn.music.core.model.UiTextArgumentException
+import top.iwesley.lyn.music.core.model.UiTextException
+import top.iwesley.lyn.music.core.model.uiErrorDetail
 import top.iwesley.lyn.music.core.model.diagnosticMessage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.NetworkConnectionState
 import top.iwesley.lyn.music.core.model.NetworkConnectionType
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
+import top.iwesley.lyn.music.core.model.REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS
 import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
+import top.iwesley.lyn.music.core.model.RemoteSourceConnectTimeout
 import top.iwesley.lyn.music.core.model.WifiNetworkConnectionTypeProvider
 
 enum class RemoteSourceAddressKind {
     LAN,
     WAN,
 }
+
+/** The candidate's address kind, or null when it was built without one. */
+val RemotePlaybackUrlCandidate.addressKindOrNull: RemoteSourceAddressKind?
+    get() = RemoteSourceAddressKind.entries.firstOrNull { it.name == addressKind }
 
 data class RemoteSourceBaseUrl(
     val kind: RemoteSourceAddressKind,
@@ -85,7 +98,11 @@ class RemoteSourceAddressSelector(
         var lastFailure: Throwable? = null
         candidates.forEachIndexed { index, candidate ->
             try {
-                val result = block(candidate)
+                val result = withRemoteSourceFallbackConnectTimeout(
+                    enabled = index < candidates.lastIndex && shouldCapRemoteSourceConnect(candidate.kind),
+                ) {
+                    block(candidate)
+                }
                 markSuccess(sourceId, candidate.kind)
                 return result
             } catch (throwable: Throwable) {
@@ -102,12 +119,26 @@ class RemoteSourceAddressSelector(
 
     fun markSuccess(sourceId: String, kind: RemoteSourceAddressKind) {
         val networkState = networkConnectionTypeProvider.networkConnectionState.value
-        val successfulAddress = SuccessfulAddress(
-            kind = kind,
-            networkVersion = networkState.version,
-            recordedAtMillis = nowMillis(),
-        )
-        successfulAddressCache.update { cache -> cache + (sourceId to successfulAddress) }
+        val now = nowMillis()
+        successfulAddressCache.update { cache ->
+            val existing = cache[sourceId]
+            // Keep the original timestamp while the same address keeps succeeding on the same network,
+            // so a fallback address expires after the TTL and the preferred address gets probed again.
+            val recordedAtMillis = existing
+                ?.takeIf {
+                    it.kind == kind &&
+                        it.networkVersion == networkState.version &&
+                        now - it.recordedAtMillis <= ttlMillis
+                }
+                ?.recordedAtMillis
+                ?: now
+            val successfulAddress = SuccessfulAddress(
+                kind = kind,
+                networkVersion = networkState.version,
+                recordedAtMillis = recordedAtMillis,
+            )
+            cache + (sourceId to successfulAddress)
+        }
     }
 
     fun invalidate(sourceId: String) {
@@ -118,6 +149,89 @@ class RemoteSourceAddressSelector(
         successfulAddressCache.update { emptyMap() }
     }
 }
+
+/**
+ * Decides whether a playing remote stream should move to another address after a network change.
+ * Only a LAN stream that has landed on a connected mobile network moves (to WAN); Wi-Fi changes and
+ * disconnected gaps keep the current address and leave recovery to the player's own retry/fallback.
+ */
+fun remoteCandidateIndexForNetworkChange(
+    candidateKinds: List<RemoteSourceAddressKind?>,
+    currentIndex: Int,
+    networkState: NetworkConnectionState,
+    isPlaybackActive: Boolean,
+): Int? {
+    // An ended or idle player has nothing to move; reloading it would replay or re-complete the track.
+    if (!isPlaybackActive) return null
+    if (!networkState.isConnected || networkState.type != NetworkConnectionType.MOBILE) return null
+    if (candidateKinds.getOrNull(currentIndex) != RemoteSourceAddressKind.LAN) return null
+    return candidateKinds.indexOf(RemoteSourceAddressKind.WAN).takeIf { it >= 0 }
+}
+
+/**
+ * Tests every configured address independently (unlike [RemoteSourceAddressSelector.withAddressFallback]),
+ * so a mistyped LAN or WAN address is reported even when the other one works.
+ */
+suspend fun testEachRemoteSourceAddress(
+    sourceType: ImportSourceType,
+    lanBaseUrl: String?,
+    wanBaseUrl: String?,
+    normalizeBaseUrl: (String) -> String,
+    block: suspend (RemoteSourceBaseUrl) -> Unit,
+) {
+    val addresses = normalizeAddresses(sourceType, lanBaseUrl, wanBaseUrl, normalizeBaseUrl)
+    if (addresses.size == 1) {
+        block(addresses.single())
+        return
+    }
+    val results = coroutineScope {
+        addresses.map { address ->
+            async {
+                address to try {
+                    // The LAN address is usually the unreachable one away from home; don't wait the full timeout.
+                    withRemoteSourceFallbackConnectTimeout(enabled = shouldCapRemoteSourceConnect(address.kind)) {
+                        block(address)
+                    }
+                    null
+                } catch (throwable: Throwable) {
+                    if (throwable is CancellationException) throw throwable
+                    throwable
+                }
+            }
+        }.awaitAll()
+    }
+    val failures = results.mapNotNull { (_, failure) -> failure }
+    if (failures.isEmpty()) return
+    // Input validation fails identically for every address; report it once. HTTP failures also use the
+    // argument exception type but are per-address answers, so they stay in the per-address report.
+    failures.firstOrNull { it is UiTextArgumentException && it !is RemoteSourceHttpFailure }?.let { throw it }
+    val anySucceeded = failures.size < results.size
+    val lines = results.map { (address, failure) ->
+        when {
+            failure == null && address.kind == RemoteSourceAddressKind.LAN ->
+                uiText(Res.string.source_address_test_lan_succeeded)
+            failure == null -> uiText(Res.string.source_address_test_wan_succeeded)
+            // An unreachable LAN address is expected away from home when WAN works.
+            address.kind == RemoteSourceAddressKind.LAN && anySucceeded ->
+                uiText(Res.string.source_address_test_lan_unreachable_hint, failure.uiErrorDetail())
+            address.kind == RemoteSourceAddressKind.LAN ->
+                uiText(Res.string.source_address_test_lan_failed, failure.uiErrorDetail())
+            else -> uiText(Res.string.source_address_test_wan_failed, failure.uiErrorDetail())
+        }
+    }
+    throw RemoteSourceAddressTestException(
+        text = UiText.Joined(lines, separator = "\n"),
+        anySucceeded = anySucceeded,
+        cause = failures.first(),
+    )
+}
+
+/** Per-address connection test result; [anySucceeded] means the source is usable through another address. */
+class RemoteSourceAddressTestException(
+    text: UiText,
+    val anySucceeded: Boolean,
+    cause: Throwable? = null,
+) : UiTextException(text, cause)
 
 fun normalizeRemoteSourceBaseUrls(
     sourceType: ImportSourceType,
@@ -188,7 +302,12 @@ suspend fun <T> readRemotePlaybackUrlCandidateWithFallback(
     var lastFailure: Throwable? = null
     remoteCandidates.forEachIndexed { index, candidate ->
         try {
-            val payload = read(candidate)
+            val payload = withRemoteSourceFallbackConnectTimeout(
+                enabled = index < remoteCandidates.lastIndex &&
+                    shouldCapRemoteSourceConnect(candidate.addressKindOrNull),
+            ) {
+                read(candidate)
+            }
             return if (isValidPayload(payload)) candidate to payload else null
         } catch (throwable: Throwable) {
             if (throwable is CancellationException) throw throwable
@@ -200,6 +319,28 @@ suspend fun <T> readRemotePlaybackUrlCandidateWithFallback(
         }
     }
     throw lastFailure ?: IllegalStateException("远程来源缺少可用地址。")
+}
+
+/**
+ * Only a LAN address is likely to be unreachable (away from home); WAN and unknown addresses keep the
+ * normal timeout.
+ */
+private fun shouldCapRemoteSourceConnect(kind: RemoteSourceAddressKind?): Boolean = kind == RemoteSourceAddressKind.LAN
+
+
+/**
+ * Caps connecting to a LAN address that may be unreachable. WAN addresses keep the normal timeout so a slow
+ * mobile handshake is not cut short and pushed onto an unreachable LAN address.
+ */
+private suspend fun <T> withRemoteSourceFallbackConnectTimeout(
+    enabled: Boolean,
+    block: suspend () -> T,
+): T {
+    return if (enabled) {
+        withContext(RemoteSourceConnectTimeout(REMOTE_SOURCE_FALLBACK_CONNECT_TIMEOUT_MILLIS)) { block() }
+    } else {
+        block()
+    }
 }
 
 private fun normalizeAddresses(

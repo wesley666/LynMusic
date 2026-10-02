@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -11,7 +12,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
 import java.net.URI
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
@@ -172,7 +172,7 @@ private suspend fun readAndroidRemoteArtworkPayload(
     return readRemotePlaybackUrlCandidateWithFallback(
         candidates = targets,
         isRemoteUrl = ::isRemoteArtworkTarget,
-        read = { target -> URL(target.value).openStream().use { it.readBytes() } },
+        read = { target -> readRemoteSourceUrlBytes(target.value) },
         isValidPayload = ::isCompleteArtworkPayload,
     )
 }

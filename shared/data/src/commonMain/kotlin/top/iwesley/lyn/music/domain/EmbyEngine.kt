@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.core.model.redactRemoteSourceUrlForLog
 import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.UiTextException
@@ -1192,12 +1193,8 @@ private fun logEmbyRequest(logger: DiagnosticLogger, operation: String, url: Str
     logger.log(
         level = DiagnosticLogLevel.INFO,
         tag = "Emby",
-        message = "request operation=$operation\nurl: ${redactEmbyUrlForLog(url)}",
+        message = "request operation=$operation\nurl: ${redactRemoteSourceUrlForLog(url)}",
     )
-}
-
-private fun redactEmbyUrlForLog(url: String): String {
-    return url.replace(Regex("([?&]api_key=)[^&]*"), "$1<redacted>")
 }
 
 private data class EmbyItemsPage(

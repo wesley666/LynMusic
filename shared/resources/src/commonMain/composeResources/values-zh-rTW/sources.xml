@@ -132,6 +132,12 @@
     <string name="library_artist_visible_tracks_description">當前藝人下的可見歌曲。</string>
     <string name="library_album_visible_tracks_description">當前專輯下的可見歌曲。</string>
     <string name="source_wan_address_label">廣域網地址</string>
+    <string name="source_address_test_lan_succeeded">局域網地址：連接成功</string>
+    <string name="source_address_test_wan_succeeded">廣域網地址：連接成功</string>
+    <string name="source_address_test_lan_failed">局域網地址：%1$s</string>
+    <string name="source_address_test_wan_failed">廣域網地址：%1$s</string>
+    <string name="source_address_test_lan_unreachable_hint">局域網地址：無法連接（不在該局域網內時屬正常）：%1$s</string>
+    <string name="source_connection_partially_succeeded">%1$s 部分地址可用：\n%2$s</string>
     <plurals name="ui_subfolders_count">
         <item quantity="one">%1$s 個子資料夾</item>
         <item quantity="other">%1$s 個子資料夾</item>

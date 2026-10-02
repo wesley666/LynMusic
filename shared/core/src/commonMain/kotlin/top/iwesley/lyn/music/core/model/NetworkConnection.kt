@@ -12,6 +12,8 @@ enum class NetworkConnectionType {
 data class NetworkConnectionState(
     val type: NetworkConnectionType,
     val version: Long = 0L,
+    /** False while the device has no usable network, e.g. during a Wi-Fi drop or a handover gap. */
+    val isConnected: Boolean = true,
 )
 
 interface NetworkConnectionTypeProvider {

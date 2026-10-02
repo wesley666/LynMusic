@@ -1,11 +1,11 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
 import top.iwesley.lyn.music.resources.*
 
 import android.content.Context
 import android.net.Uri
 import androidx.activity.ComponentActivity
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.AudioTagEditorPlatformService
@@ -83,7 +83,7 @@ internal class AndroidAudioTagEditorPlatformService(
     ): ByteArray? {
         val resolved = readRemotePlaybackUrlCandidateWithFallback(
             candidates = targets,
-            read = { target -> URL(target.value).openStream().use { input -> input.readBytes() } },
+            read = { target -> readRemoteSourceUrlBytes(target.value) },
             isValidPayload = ::isCompleteArtworkPayload,
         ) ?: return null
         NavidromeLocatorRuntime.markResolvedUrlSuccess(resolved.first)

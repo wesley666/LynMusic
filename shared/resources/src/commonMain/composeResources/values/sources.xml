@@ -132,6 +132,12 @@
     <string name="library_artist_visible_tracks_description">Visible songs by this artist.</string>
     <string name="library_album_visible_tracks_description">Visible songs in this album.</string>
     <string name="source_wan_address_label">WAN address</string>
+    <string name="source_address_test_lan_succeeded">LAN address: connected</string>
+    <string name="source_address_test_wan_succeeded">WAN address: connected</string>
+    <string name="source_address_test_lan_failed">LAN address: %1$s</string>
+    <string name="source_address_test_wan_failed">WAN address: %1$s</string>
+    <string name="source_address_test_lan_unreachable_hint">LAN address: unreachable (normal when you are away from that network): %1$s</string>
+    <string name="source_connection_partially_succeeded">%1$s is reachable through some addresses:\n%2$s</string>
     <plurals name="ui_subfolders_count">
         <item quantity="one">%1$s subfolder</item>
         <item quantity="other">%1$s subfolders</item>

@@ -147,6 +147,7 @@ import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
 import top.iwesley.lyn.music.domain.normalizeSubsonicBaseUrl
 import top.iwesley.lyn.music.domain.normalizeEmbyBaseUrl
 import top.iwesley.lyn.music.domain.normalizeRemoteSourceBaseUrls
+import top.iwesley.lyn.music.domain.testEachRemoteSourceAddress
 import top.iwesley.lyn.music.domain.requestNavidromeLyrics
 import top.iwesley.lyn.music.domain.requestEmbyLyricsDocument as requestEmbyServerLyricsDocument
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
@@ -889,9 +890,7 @@ class RoomImportSourceRepository(
     override suspend fun testNavidromeSource(draft: NavidromeSourceDraft): Result<Unit> {
         return runCatching {
             val preparedDraft = prepareNavidromeDraft(draft)
-            addressSelector.invalidate("draft-navidrome")
-            addressSelector.withAddressFallback(
-                sourceId = "draft-navidrome",
+            testEachRemoteSourceAddress(
                 sourceType = ImportSourceType.NAVIDROME,
                 lanBaseUrl = preparedDraft.baseUrl,
                 wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -925,7 +924,6 @@ class RoomImportSourceRepository(
     ): Result<Unit> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.NAVIDROME)
-            addressSelector.invalidate(sourceId)
             val preparedDraft = prepareNavidromeDraft(draft)
             val password = resolveUpdatedPassword(
                 existingCredentialKey = existing.credentialKey,
@@ -935,8 +933,7 @@ class RoomImportSourceRepository(
             if (password.isBlank()) {
                 throw UiTextException(uiText(Res.string.source_navidrome_password_missing))
             }
-            addressSelector.withAddressFallback(
-                sourceId = sourceId,
+            testEachRemoteSourceAddress(
                 sourceType = ImportSourceType.NAVIDROME,
                 lanBaseUrl = preparedDraft.baseUrl,
                 wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -1123,9 +1120,7 @@ class RoomImportSourceRepository(
     override suspend fun testSubsonicSource(draft: SubsonicSourceDraft): Result<Unit> {
         return runCatching {
             val preparedDraft = prepareSubsonicDraft(draft)
-            addressSelector.invalidate("draft-subsonic")
-            addressSelector.withAddressFallback(
-                sourceId = "draft-subsonic",
+            testEachRemoteSourceAddress(
                 sourceType = ImportSourceType.SUBSONIC,
                 lanBaseUrl = preparedDraft.baseUrl,
                 wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -1143,7 +1138,6 @@ class RoomImportSourceRepository(
     ): Result<Unit> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.SUBSONIC)
-            addressSelector.invalidate(sourceId)
             val preparedDraft = prepareSubsonicDraft(draft)
             val credential = resolveUpdatedSubsonicCredential(
                 existing = existing,
@@ -1153,8 +1147,7 @@ class RoomImportSourceRepository(
             if (credential.isBlank()) {
                 throw UiTextException(uiText(Res.string.source_credentials_missing, "Subsonic"))
             }
-            addressSelector.withAddressFallback(
-                sourceId = sourceId,
+            testEachRemoteSourceAddress(
                 sourceType = ImportSourceType.SUBSONIC,
                 lanBaseUrl = preparedDraft.baseUrl,
                 wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -1260,9 +1253,7 @@ class RoomImportSourceRepository(
         return runCatching {
             val preparedDraft = prepareEmbyDraft(draft)
             val deviceId = resolveEmbyDeviceId(secureCredentialStore)
-            addressSelector.invalidate("draft-emby")
-            addressSelector.withAddressFallback(
-                sourceId = "draft-emby",
+            testEachRemoteSourceAddress(
                 sourceType = ImportSourceType.EMBY,
                 lanBaseUrl = preparedDraft.baseUrl,
                 wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -1283,12 +1274,10 @@ class RoomImportSourceRepository(
     ): Result<Unit> {
         return runCatching {
             val existing = requireRemoteSource(sourceId, ImportSourceType.EMBY)
-            addressSelector.invalidate(sourceId)
             val preparedDraft = prepareEmbyDraft(draft)
             val deviceId = resolveEmbyDeviceId(secureCredentialStore)
             if (preparedDraft.password.isNotBlank()) {
-                addressSelector.withAddressFallback(
-                    sourceId = sourceId,
+                testEachRemoteSourceAddress(
                     sourceType = ImportSourceType.EMBY,
                     lanBaseUrl = preparedDraft.baseUrl,
                     wanBaseUrl = preparedDraft.wanBaseUrl,
@@ -1299,8 +1288,7 @@ class RoomImportSourceRepository(
             } else if (keepExistingCredentialWhenBlankPassword) {
                 val storedCredential = existing.credentialKey?.let { secureCredentialStore.get(it) }
                 val credential = parseEmbyCredential(storedCredential) ?: throw UiTextException(uiText(Res.string.source_credentials_missing, "Emby"))
-                addressSelector.withAddressFallback(
-                    sourceId = sourceId,
+                testEachRemoteSourceAddress(
                     sourceType = ImportSourceType.EMBY,
                     lanBaseUrl = preparedDraft.baseUrl,
                     wanBaseUrl = preparedDraft.wanBaseUrl,

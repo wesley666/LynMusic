@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.platform
 
+import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -89,7 +90,7 @@ suspend fun loadJvmArtworkBytes(
     cacheRemote: Boolean = true,
     userHomePath: String? = null,
     remoteBytesLoader: suspend (String) -> ByteArray? = { target ->
-        URI(target).toURL().openStream().use { it.readBytes() }
+        readRemoteSourceUrlBytes(target)
     },
 ): ByteArray? = withContext(Dispatchers.IO) {
     runCatching {

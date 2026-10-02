@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.domain
 
+import top.iwesley.lyn.music.core.model.redactRemoteSourceUrlForLog
 import top.iwesley.lyn.music.core.model.diagnosticMessage
 import top.iwesley.lyn.music.resources.*
 
@@ -1498,7 +1499,7 @@ private suspend fun requestNavidromeJsonWithoutAddressFallback(
                 }
                 append('\n')
                 append("url: ")
-                append(redactSubsonicUrlForLog(request.url))
+                append(redactRemoteSourceUrlForLog(request.url))
             },
         )
     }
@@ -1585,14 +1586,6 @@ private fun formatNavidromeLyricsContext(
             append('"')
         }
     }
-}
-
-private fun redactSubsonicUrlForLog(url: String): String {
-    return url
-        .replace(Regex("([?&]t=)[^&]*"), "$1<redacted>")
-        .replace(Regex("([?&]s=)[^&]*"), "$1<redacted>")
-        .replace(Regex("([?&]apiKey=)[^&]*"), "$1<redacted>")
-        .replace(Regex("([?&]p=)[^&]*"), "$1<redacted>")
 }
 
 private fun parseNavidromeStructuredLyricsDocument(payload: JsonObject): LyricsDocument? {

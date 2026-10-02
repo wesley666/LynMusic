@@ -8,13 +8,13 @@ import java.io.File
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
+import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
 import top.iwesley.lyn.music.core.model.ArtworkCacheEntry
 import top.iwesley.lyn.music.core.model.ArtworkCacheBackend
 import top.iwesley.lyn.music.core.model.ArtworkCacheCommit
 import top.iwesley.lyn.music.core.model.CoordinatedArtworkCacheStore
 import top.iwesley.lyn.music.core.model.PreparedArtwork
 import java.net.URI
-import java.net.URL
 import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
 import top.iwesley.lyn.music.core.model.ArtworkCachedTargetRegistry
 import top.iwesley.lyn.music.core.model.ArtworkCacheStore
@@ -95,17 +95,7 @@ private class AndroidArtworkCacheBackend(
         return readRemotePlaybackUrlCandidateWithFallback(
             candidates = targets,
             isRemoteUrl = ::isRemoteArtworkTarget,
-            read = { target ->
-                val connection = URL(target.value).openConnection().apply {
-                    connectTimeout = 30_000
-                    readTimeout = 30_000
-                }
-                try {
-                    connection.getInputStream().use { it.readBytes() }
-                } finally {
-                    (connection as? java.net.HttpURLConnection)?.disconnect()
-                }
-            },
+            read = { target -> readRemoteSourceUrlBytes(target.value) },
             isValidPayload = ::isCompleteArtworkPayload,
         )
     }

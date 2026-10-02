@@ -30,6 +30,7 @@ object NoopDiagnosticLogger : DiagnosticLogger {
 class ConsoleDiagnosticLogger(
     private val enabled: Boolean = true,
     private val label: String = DEFAULT_DIAGNOSTIC_LOGGER_LABEL,
+    private val output: (String) -> Unit = ::println,
 ) : DiagnosticLogger {
     override fun log(
         level: DiagnosticLogLevel,
@@ -39,9 +40,10 @@ class ConsoleDiagnosticLogger(
     ) {
         if (!enabled) return
         val prefix = "[$label][$tag][${level.name}]"
-        println("$prefix $message")
+        // Log lines can quote remote stream URLs; never print their credentials.
+        output("$prefix ${redactRemoteSourceUrlForLog(message)}")
         throwable?.message?.takeIf { it.isNotBlank() }?.let { detail ->
-            println("$prefix cause=$detail")
+            output("$prefix cause=${redactRemoteSourceUrlForLog(detail)}")
         }
     }
 }

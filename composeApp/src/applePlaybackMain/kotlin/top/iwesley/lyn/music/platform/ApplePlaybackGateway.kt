@@ -1,7 +1,15 @@
 package top.iwesley.lyn.music.platform
 
 import top.iwesley.lyn.music.core.model.diagnosticMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -10,8 +18,10 @@ import top.iwesley.lyn.music.core.model.AppleResolvedMediaLocator
 import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.UiText
 import top.iwesley.lyn.music.core.model.resolveUiText
+import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.NetworkConnectionState
 import top.iwesley.lyn.music.core.model.NetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.PlaybackGateway
 import top.iwesley.lyn.music.core.model.PlaybackGatewayState
@@ -23,9 +33,10 @@ import top.iwesley.lyn.music.core.model.WifiNetworkConnectionTypeProvider
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.resolveNavidromeAudioQualityForCurrentNetwork
-import top.iwesley.lyn.music.domain.RemoteSourceAddressKind
+import top.iwesley.lyn.music.domain.addressKindOrNull
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.domain.isRemoteSourceAddressFallbackAllowed
+import top.iwesley.lyn.music.domain.remoteCandidateIndexForNetworkChange
 
 private data class AppleRemotePlaybackFallback(
     val candidates: List<RemotePlaybackUrlCandidate>,
@@ -55,18 +66,35 @@ internal class ApplePlaybackGateway(
     private val networkConnectionTypeProvider: NetworkConnectionTypeProvider = WifiNetworkConnectionTypeProvider,
     private val addressSelector: RemoteSourceAddressSelector? = null,
     private val localMediaAccessResolver: AppleLocalMediaAccessResolver = AppleLocalMediaAccessResolver.None,
+    private val player: ApplePlaybackEngine = AppleNativePlayer(platformLabel),
 ) : PlaybackGateway {
-    private val player = AppleNativePlayer(platformLabel)
     private val mutableState = MutableStateFlow(PlaybackGatewayState(volume = 1f))
     private var currentRemotePlaybackFallback: AppleRemotePlaybackFallback? = null
     private var currentLocalMediaAccess: AppleLocalMediaAccess? = null
 
     override val state: StateFlow<PlaybackGatewayState> = mutableState.asStateFlow()
 
+    /**
+     * Gateway state and every AVPlayer call are confined to the main thread, where the player callbacks and
+     * network updates already arrive. The playback repository calls in from other threads, so its entry points
+     * hop here; the main queue then serializes everything without locks. The hops use `Main.immediate` because
+     * the repository also calls in via `runBlocking` on the main thread (startup volume/queue restore, dispose),
+     * where a plain `Main` dispatch could never run and would deadlock.
+     */
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     init {
         AppleAudioSessionCoordinator.configureForPlayback()
+        mainScope.launch {
+            networkConnectionTypeProvider.networkConnectionState
+                .distinctUntilChangedBy { it.version }
+                .drop(1)
+                .collect { state -> switchRemoteCandidateForNetwork(state) }
+        }
         player.onProgress = { publishState() }
         player.onCompleted = {
+            // A finished track must not be reloaded by a later network change or error retry.
+            currentRemotePlaybackFallback = null
             releaseCurrentLocalMediaAccess()
             mutableState.update {
                 it.copy(
@@ -101,7 +129,14 @@ internal class ApplePlaybackGateway(
         if (!loadToken.isCurrent()) {
             return
         }
-        stopAndResetForTrackSwitch()
+        // Re-check on the main thread: a newer load may have committed while this one waited for it, and
+        // resetting then would stop the newer track.
+        withContext(Dispatchers.Main.immediate) {
+            if (loadToken.isCurrent()) stopAndResetForTrackSwitch()
+        }
+        if (!loadToken.isCurrent()) {
+            return
+        }
         val subsonicCompatible = parseSubsonicCompatibleSongLocator(track.mediaLocator)
         val embySong = parseEmbySongLocator(track.mediaLocator)
         val navidromeAudioQuality = subsonicCompatible?.let {
@@ -150,62 +185,93 @@ internal class ApplePlaybackGateway(
             }
 
             else -> {
-                if (!loadToken.isCurrent()) {
-                    return
-                }
-                currentRemotePlaybackFallback = remotePlaybackCandidates?.let { candidates ->
-                    AppleRemotePlaybackFallback(
-                        candidates = candidates,
-                        selectedIndex = 0,
-                        playWhenReady = playWhenReady,
-                    )
-                }
-                currentLocalMediaAccess = localAccess
+                // Until commitLoad takes ownership, the local file access is ours to release, including when
+                // the load is cancelled while waiting for the main thread.
+                var localAccessHandedOver = false
                 try {
-                    player.load(resolved)
-                } catch (throwable: Throwable) {
-                    releaseCurrentLocalMediaAccess()
-                    publishFailure(applePlaybackLoadFailureText(platformLabel, throwable), throwable.message)
-                    return
+                    withContext(Dispatchers.Main.immediate) {
+                        if (loadToken.isCurrent()) {
+                            localAccessHandedOver = true
+                            commitLoad(
+                                resolved = resolved,
+                                remotePlaybackCandidates = remotePlaybackCandidates,
+                                localAccess = localAccess,
+                                playWhenReady = playWhenReady,
+                                startPositionMs = startPositionMs,
+                                navidromeAudioQuality = navidromeAudioQuality,
+                            )
+                        }
+                    }
+                } finally {
+                    if (!localAccessHandedOver) {
+                        localAccess?.let { access -> runCatching(access.release) }
+                    }
                 }
-                if (startPositionMs > 0L) {
-                    player.seekTo(startPositionMs)
-                }
-                if (playWhenReady) {
-                    player.play()
-                } else {
-                    player.pause()
-                }
-                mutableState.update {
-                    it.copy(
-                        isPlaying = playWhenReady,
-                        positionMs = 0L,
-                        durationMs = 0L,
-                        canSeek = player.canSeek(),
-                        currentNavidromeAudioQuality = navidromeAudioQuality,
-                        errorMessage = null,
-                        errorText = null,
-                    )
-                }
-                publishState()
             }
         }
     }
 
-    override suspend fun play() {
+    private fun commitLoad(
+        resolved: AppleResolvedMediaLocator,
+        remotePlaybackCandidates: List<RemotePlaybackUrlCandidate>?,
+        localAccess: AppleLocalMediaAccess?,
+        playWhenReady: Boolean,
+        startPositionMs: Long,
+        navidromeAudioQuality: NavidromeAudioQuality?,
+    ) {
+        currentRemotePlaybackFallback = remotePlaybackCandidates?.let { candidates ->
+            AppleRemotePlaybackFallback(
+                candidates = candidates,
+                selectedIndex = 0,
+                playWhenReady = playWhenReady,
+            )
+        }
+        currentLocalMediaAccess = localAccess
+        try {
+            player.load(resolved)
+        } catch (throwable: Throwable) {
+            releaseCurrentLocalMediaAccess()
+            publishFailure(applePlaybackLoadFailureText(platformLabel, throwable), throwable.message)
+            return
+        }
+        if (startPositionMs > 0L) {
+            player.seekTo(startPositionMs)
+        }
+        if (playWhenReady) {
+            player.play()
+        } else {
+            player.pause()
+        }
+        mutableState.update {
+            it.copy(
+                isPlaying = playWhenReady,
+                positionMs = 0L,
+                durationMs = 0L,
+                canSeek = player.canSeek(),
+                currentNavidromeAudioQuality = navidromeAudioQuality,
+                errorMessage = null,
+                errorText = null,
+            )
+        }
+        publishState()
+    }
+
+    override suspend fun play() = withContext(Dispatchers.Main.immediate) {
+        currentRemotePlaybackFallback = currentRemotePlaybackFallback?.copy(playWhenReady = true)
         player.play()
         publishState()
     }
 
-    override suspend fun pause() {
+    override suspend fun pause() = withContext(Dispatchers.Main.immediate) {
+        currentRemotePlaybackFallback = currentRemotePlaybackFallback?.copy(playWhenReady = false)
         player.pause()
         publishState()
     }
 
-    override suspend fun seekTo(positionMs: Long) {
+    override suspend fun seekTo(positionMs: Long) = withContext(Dispatchers.Main.immediate) {
         if (!player.canSeek()) {
             mutableState.update { it.copy(canSeek = false) }
-            return
+            return@withContext
         }
         player.seekTo(positionMs)
         mutableState.update {
@@ -219,15 +285,18 @@ internal class ApplePlaybackGateway(
         publishState()
     }
 
-    override suspend fun setVolume(volume: Float) {
+    override suspend fun setVolume(volume: Float) = withContext(Dispatchers.Main.immediate) {
         player.setVolume(volume)
         publishState()
     }
 
     override suspend fun release() {
-        currentRemotePlaybackFallback = null
-        releaseCurrentLocalMediaAccess()
-        player.release()
+        withContext(Dispatchers.Main.immediate) {
+            currentRemotePlaybackFallback = null
+            releaseCurrentLocalMediaAccess()
+            player.release()
+        }
+        mainScope.cancel()
         AppleAudioSessionCoordinator.deactivate()
     }
 
@@ -276,28 +345,52 @@ internal class ApplePlaybackGateway(
     private fun tryApplyRemoteAddressFallback(errorMessage: String?): Boolean {
         val fallback = currentRemotePlaybackFallback ?: return false
         if (!isAppleRemotePlaybackFallbackAllowed(errorMessage)) return false
-        val nextIndex = fallback.selectedIndex + 1
-        val nextCandidate = fallback.candidates.getOrNull(nextIndex) ?: return false
+        return switchRemoteCandidate(
+            fallback = fallback,
+            targetIndex = fallback.selectedIndex + 1,
+            playWhenReady = player.isPlaying() || fallback.playWhenReady,
+        )
+    }
+
+    /** Leaves a LAN stream as soon as the device drops onto mobile data instead of waiting for it to stall. */
+    private fun switchRemoteCandidateForNetwork(networkState: NetworkConnectionState) {
+        val fallback = currentRemotePlaybackFallback ?: return
+        val targetIndex = remoteCandidateIndexForNetworkChange(
+            candidateKinds = fallback.candidates.map { it.addressKindOrNull },
+            currentIndex = fallback.selectedIndex,
+            networkState = networkState,
+            // The fallback is cleared when a track completes, so an existing one belongs to an active track.
+            isPlaybackActive = true,
+        ) ?: return
+        // isPlaying() is true while buffering, so a paused track stays paused after the switch.
+        switchRemoteCandidate(fallback, targetIndex, playWhenReady = player.isPlaying())
+    }
+
+    private fun switchRemoteCandidate(
+        fallback: AppleRemotePlaybackFallback,
+        targetIndex: Int,
+        playWhenReady: Boolean,
+    ): Boolean {
+        val nextCandidate = fallback.candidates.getOrNull(targetIndex) ?: return false
         val resolved = AppleMediaLocatorResolver.resolve(nextCandidate.value)
         if (resolved is AppleResolvedMediaLocator.Unsupported) return false
         val retryPositionMs = player.positionMs().coerceAtLeast(0L)
-        val retryPlayWhenReady = player.isPlaying() || fallback.playWhenReady
         currentRemotePlaybackFallback = fallback.copy(
-            selectedIndex = nextIndex,
-            playWhenReady = retryPlayWhenReady,
+            selectedIndex = targetIndex,
+            playWhenReady = playWhenReady,
         )
         player.load(resolved)
         if (retryPositionMs > 0L) {
             player.seekTo(retryPositionMs)
         }
-        if (retryPlayWhenReady) {
+        if (playWhenReady) {
             player.play()
         } else {
             player.pause()
         }
         mutableState.update {
             it.copy(
-                isPlaying = retryPlayWhenReady,
+                isPlaying = playWhenReady,
                 positionMs = retryPositionMs,
                 canSeek = player.canSeek(),
                 errorMessage = null,
@@ -309,7 +402,7 @@ internal class ApplePlaybackGateway(
 
     private fun markCurrentRemotePlaybackSuccess() {
         val candidate = currentRemotePlaybackFallback?.currentCandidate() ?: return
-        val kind = runCatching { RemoteSourceAddressKind.valueOf(candidate.addressKind) }.getOrNull() ?: return
+        val kind = candidate.addressKindOrNull ?: return
         candidate.sourceId.takeIf { it.isNotBlank() }?.let { sourceId ->
             addressSelector?.markSuccess(sourceId, kind)
         }

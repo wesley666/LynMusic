@@ -2,6 +2,8 @@ package top.iwesley.lyn.music.platform
 
 import top.iwesley.lyn.music.resources.*
 
+import top.iwesley.lyn.music.core.model.markCurrentRemoteSourceReachable
+import top.iwesley.lyn.music.core.model.currentRemoteSourceConnectTimeoutMillis
 import top.iwesley.lyn.music.core.model.APP_LANGUAGE_PREFERENCE_KEY
 import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.AppLanguagePreferencesStore
@@ -125,6 +127,8 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSUserDefaults
 import platform.Foundation.NSUserDomainMask
 import platform.Network.nw_interface_type_wifi
+import platform.Network.nw_path_get_status
+import platform.Network.nw_path_status_satisfied
 import platform.Network.nw_path_monitor_create
 import platform.Network.nw_path_monitor_set_queue
 import platform.Network.nw_path_monitor_set_update_handler
@@ -270,6 +274,8 @@ private class IosDailyRecommendationDateChangeNotifier(
     }
 }
 
+private const val IOS_REMOTE_SOURCE_FALLBACK_SOCKET_TIMEOUT_MILLIS = 10_000L
+
 private class IosLyricsHttpClient : LyricsHttpClient {
     private val client = HttpClient(Darwin) {
         install(HttpTimeout) {
@@ -290,14 +296,22 @@ private class IosLyricsHttpClient : LyricsHttpClient {
                 }
                 request.headers.forEach { (key, value) -> headers.append(key, value) }
                 request.body?.let { setBody(it) }
-                request.timeoutMillis?.takeIf { it > 0L }?.let { timeoutMillis ->
+                val requestTimeout = request.timeoutMillis?.takeIf { it > 0L }
+                // Darwin only honours the socket (idle) timeout, so cap it while an alternate address remains.
+                val fallbackSocketTimeout = currentRemoteSourceConnectTimeoutMillis()
+                    ?.let { IOS_REMOTE_SOURCE_FALLBACK_SOCKET_TIMEOUT_MILLIS }
+                val socketTimeout = listOfNotNull(requestTimeout, fallbackSocketTimeout).minOrNull()
+                if (requestTimeout != null || socketTimeout != null) {
                     timeout {
-                        requestTimeoutMillis = timeoutMillis
-                        connectTimeoutMillis = timeoutMillis
-                        socketTimeoutMillis = timeoutMillis
+                        requestTimeout?.let {
+                            requestTimeoutMillis = it
+                            connectTimeoutMillis = it
+                        }
+                        socketTimeout?.let { socketTimeoutMillis = it }
                     }
                 }
             }
+            markCurrentRemoteSourceReachable()
             LyricsHttpResponse(
                 statusCode = response.status.value,
                 body = response.bodyAsText(),
@@ -673,6 +687,7 @@ private class IosNetworkConnectionTypeProvider : NetworkConnectionTypeProvider {
         NetworkConnectionState(type = NetworkConnectionType.MOBILE),
     )
     private val monitor = nw_path_monitor_create()
+    private var hasReceivedPath = false
 
     override val networkConnectionState: StateFlow<NetworkConnectionState> =
         mutableNetworkConnectionState.asStateFlow()
@@ -685,11 +700,20 @@ private class IosNetworkConnectionTypeProvider : NetworkConnectionTypeProvider {
             } else {
                 NetworkConnectionType.MOBILE
             }
-            if (type == current.type) return@nw_path_monitor_set_update_handler
-            mutableNetworkConnectionState.value = NetworkConnectionState(
-                type = type,
-                version = current.version + 1L,
-            )
+            // The monitor only reports path changes, so every update after the first one (Wi-Fi to Wi-Fi,
+            // VPN, interface changes) bumps the version and invalidates the cached remote source address.
+            val isConnected = nw_path_get_status(path) == nw_path_status_satisfied
+            val isInitialPath = !hasReceivedPath && type == current.type
+            hasReceivedPath = true
+            mutableNetworkConnectionState.value = if (isInitialPath) {
+                current.copy(isConnected = isConnected)
+            } else {
+                NetworkConnectionState(
+                    type = type,
+                    version = current.version + 1L,
+                    isConnected = isConnected,
+                )
+            }
         }
         nw_path_monitor_set_queue(monitor, dispatch_get_main_queue())
         nw_path_monitor_start(monitor)

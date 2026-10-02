@@ -101,6 +101,11 @@ kotlin {
     }
 
     sourceSets {
+        val jvmAndAndroidMain by creating {
+            dependsOn(commonMain.get())
+        }
+        androidMain.get().dependsOn(jvmAndAndroidMain)
+        jvmMain.get().dependsOn(jvmAndAndroidMain)
         commonMain.dependencies {
             api(project(":shared:resources"))
             api(libs.compose.runtime)

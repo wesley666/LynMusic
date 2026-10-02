@@ -4,6 +4,8 @@ import top.iwesley.lyn.music.resources.*
 
 import top.iwesley.lyn.music.core.model.uiErrorDetail
 import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.domain.RemoteSourceAddressTestException
+import org.jetbrains.compose.resources.StringResource
 import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.uiPlural
 import top.iwesley.lyn.music.core.model.uiErrorText
@@ -300,7 +302,7 @@ class ImportStore(
                 runImport {
                     repository.testNavidromeSource(draft)
                         .onSuccess { setTestMessage(uiText(Res.string.source_navidrome_connection_succeeded)) }
-                        .onFailure { setTestMessage(uiText(Res.string.source_navidrome_connection_failed, it.uiErrorDetail())) }
+                        .onFailure { setTestMessage(remoteConnectionTestFailureText(it, "Navidrome", Res.string.source_navidrome_connection_failed)) }
                 }
             }
 
@@ -375,7 +377,7 @@ class ImportStore(
                 runImport {
                     repository.testSubsonicSource(draft)
                         .onSuccess { setTestMessage(uiText(Res.string.source_subsonic_connection_succeeded)) }
-                        .onFailure { setTestMessage(uiText(Res.string.source_subsonic_connection_failed, it.uiErrorDetail())) }
+                        .onFailure { setTestMessage(remoteConnectionTestFailureText(it, "Subsonic", Res.string.source_subsonic_connection_failed)) }
                 }
             }
 
@@ -423,7 +425,7 @@ class ImportStore(
                 runImport {
                     repository.testEmbySource(draft)
                         .onSuccess { setTestMessage(uiText(Res.string.source_emby_connection_succeeded)) }
-                        .onFailure { setTestMessage(uiText(Res.string.source_emby_connection_failed, it.uiErrorDetail())) }
+                        .onFailure { setTestMessage(remoteConnectionTestFailureText(it, "Emby", Res.string.source_emby_connection_failed)) }
                 }
             }
 
@@ -556,7 +558,7 @@ class ImportStore(
                             ).onSuccess {
                                 setTestMessage(uiText(Res.string.source_navidrome_connection_succeeded))
                             }.onFailure {
-                                setTestMessage(uiText(Res.string.source_navidrome_connection_failed, it.uiErrorDetail()))
+                                setTestMessage(remoteConnectionTestFailureText(it, "Navidrome", Res.string.source_navidrome_connection_failed))
                             }
                         }
                     }
@@ -571,7 +573,7 @@ class ImportStore(
                             ).onSuccess {
                                 setTestMessage(uiText(Res.string.source_subsonic_connection_succeeded))
                             }.onFailure {
-                                setTestMessage(uiText(Res.string.source_subsonic_connection_failed, it.uiErrorDetail()))
+                                setTestMessage(remoteConnectionTestFailureText(it, "Subsonic", Res.string.source_subsonic_connection_failed))
                             }
                         }
                     }
@@ -586,7 +588,7 @@ class ImportStore(
                             ).onSuccess {
                                 setTestMessage(uiText(Res.string.source_emby_connection_succeeded))
                             }.onFailure {
-                                setTestMessage(uiText(Res.string.source_emby_connection_failed, it.uiErrorDetail()))
+                                setTestMessage(remoteConnectionTestFailureText(it, "Emby", Res.string.source_emby_connection_failed))
                             }
                         }
                     }
@@ -1247,6 +1249,20 @@ class ImportStore(
 
     private fun setMessage(message: UiText) {
         updateState { it.copy(message = message) }
+    }
+
+    /** A test that reached the source through only one of its addresses reads as partial success, not failure. */
+    private fun remoteConnectionTestFailureText(
+        throwable: Throwable,
+        sourceLabel: String,
+        failedMessage: StringResource,
+    ): UiText {
+        val detail = throwable.uiErrorDetail()
+        return if ((throwable as? RemoteSourceAddressTestException)?.anySucceeded == true) {
+            uiText(Res.string.source_connection_partially_succeeded, sourceLabel, detail)
+        } else {
+            uiText(failedMessage, detail)
+        }
     }
 
     private fun setTestMessage(message: UiText) {
