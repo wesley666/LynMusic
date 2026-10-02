@@ -11,6 +11,8 @@
     <string name="source_connect_and_scan">Connect and scan</string>
     <string name="source_connect_and_sync">Connect and sync</string>
     <string name="source_connected_list_title">Connected sources</string>
+    <string name="source_add_action">Add source</string>
+    <string name="source_add_named_type">Add %1$s source</string>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">“%1$s” contains %2$s remote song. Online mode hides and retains the old local index. You can also rescan the entire remote library into the local index.</item>
         <item quantity="other">“%1$s” contains %2$s remote songs. Online mode hides and retains the old local index. You can also rescan the entire remote library into the local index.</item>
@@ -33,15 +35,8 @@
     <string name="library_navidrome_artist_albums_loading_hint">Fetching artist albums from Navidrome.</string>
     <string name="import_scan_failures_title">Files that failed to scan</string>
     <string name="source_reauthorize_folder">Grant access again</string>
-    <string name="source_system_folder_permission_hint">Grant folder access with the system picker and build an index.</string>
     <string name="library_empty_import_hint">Import a local folder, Samba, WebDAV, Navidrome, Subsonic, or Emby source on the Sources page. Songs will appear here after scanning.</string>
     <string name="source_import_all_action">Import all</string>
-    <string name="source_import_title">Import sources</string>
-    <string name="source_emby_import_unsupported">In-app Emby import is not available on this platform yet.</string>
-    <string name="source_navidrome_import_unsupported">In-app Navidrome import is not available on this platform yet.</string>
-    <string name="source_subsonic_import_unsupported">In-app Subsonic import is not available on this platform yet.</string>
-    <string name="source_webdav_import_unsupported">In-app WebDAV import is not available on this platform yet.</string>
-    <string name="source_supported_types_description">Index local folders in place, or connect to Samba, WebDAV, Navidrome, Subsonic/OpenSubsonic, and Emby libraries.</string>
     <string name="source_lan_address_label">LAN / preferred address</string>
     <string name="source_navidrome_large_library_title">Large Navidrome library</string>
     <string name="library_load_more_action">Load more</string>
@@ -72,7 +67,6 @@
     <string name="library_album_tracks_filter_empty_hint">No songs in this album match the current filter.</string>
     <string name="library_folder_tracks_filter_empty_hint">No songs in this folder match the current filter.</string>
     <string name="sources_empty_title">No sources yet</string>
-    <string name="source_system_folder_manager_unavailable_hint">No system file manager is available. Local music will be imported with the built-in manager.</string>
     <string name="source_samba_system_mount_hint">On this platform, mount SMB in the system Files app, then import it as a local folder.</string>
     <string name="source_online_badge"> · Online</string>
     <string name="library_online_artist_detail_title">Online artist details</string>
@@ -125,7 +119,6 @@
     <string name="library_source_filter_empty_hint">Try All sources, change the filter, or adjust your search.</string>
     <string name="source_updating_named_type">Updating %1$s</string>
     <string name="library_updating_status">Updating library</string>
-    <string name="source_folder_manager_selection_hint">Use the system file manager or the built-in manager to import local music.</string>
     <string name="source_optional_username_placeholder">Username (optional)</string>
     <string name="source_username_password_authentication">Username / password</string>
     <string name="library_artist_visible_albums_description">Visible albums by this artist.</string>

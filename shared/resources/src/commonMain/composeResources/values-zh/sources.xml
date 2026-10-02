@@ -11,6 +11,8 @@
     <string name="source_connect_and_scan">连接并扫描</string>
     <string name="source_connect_and_sync">连接并同步</string>
     <string name="source_connected_list_title">已连接来源</string>
+    <string name="source_add_action">添加来源</string>
+    <string name="source_add_named_type">添加 %1$s 来源</string>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">检测到“%1$s”远端共有 %2$s 首歌曲。建议切换为在线模式，旧本地索引会隐藏并保留；也可以继续全量重扫，把远端歌曲重新写入本地索引。</item>
         <item quantity="other">检测到“%1$s”远端共有 %2$s 首歌曲。建议切换为在线模式，旧本地索引会隐藏并保留；也可以继续全量重扫，把远端歌曲重新写入本地索引。</item>
@@ -33,15 +35,8 @@
     <string name="library_navidrome_artist_albums_loading_hint">正在从 Navidrome 获取这个艺人的专辑。</string>
     <string name="import_scan_failures_title">扫描失败文件</string>
     <string name="source_reauthorize_folder">重新授权</string>
-    <string name="source_system_folder_permission_hint">通过系统文件夹选择器授予目录权限并建立索引。</string>
     <string name="library_empty_import_hint">先到“来源”页导入本地文件夹、Samba、WebDAV、Navidrome、Subsonic 或 Emby，扫描完成后会出现在这里。</string>
     <string name="source_import_all_action">全部导入</string>
-    <string name="source_import_title">导入来源</string>
-    <string name="source_emby_import_unsupported">当前平台暂未开放应用内 Emby 导入。</string>
-    <string name="source_navidrome_import_unsupported">当前平台暂未开放应用内 Navidrome 导入。</string>
-    <string name="source_subsonic_import_unsupported">当前平台暂未开放应用内 Subsonic 导入。</string>
-    <string name="source_webdav_import_unsupported">当前平台暂未开放应用内 WebDAV 导入。</string>
-    <string name="source_supported_types_description">本地文件夹原地索引，Samba、WebDAV、Navidrome、Subsonic/OpenSubsonic 与 Emby 作为远程音乐库。</string>
     <string name="source_lan_address_label">局域网/首选地址</string>
     <string name="source_navidrome_large_library_title">Navidrome 曲库较大</string>
     <string name="library_load_more_action">加载更多</string>
@@ -72,7 +67,6 @@
     <string name="library_album_tracks_filter_empty_hint">当前筛选结果里已经没有这个专辑的可见歌曲。</string>
     <string name="library_folder_tracks_filter_empty_hint">当前筛选结果里已经没有这个目录的可见歌曲。</string>
     <string name="sources_empty_title">还没有任何来源</string>
-    <string name="source_system_folder_manager_unavailable_hint">当前设备没有可用的系统文件管理器，将使用内置管理器导入本地音乐。</string>
     <string name="source_samba_system_mount_hint">当前平台建议通过系统 Files 挂载 SMB 后，再用本地文件夹方式接入。</string>
     <string name="source_online_badge"> · 在线</string>
     <string name="library_online_artist_detail_title">在线艺人详情</string>
@@ -125,7 +119,6 @@
     <string name="library_source_filter_empty_hint">试试切回“全部来源”、更换过滤项，或调整搜索词。</string>
     <string name="source_updating_named_type">正在更新 %1$s</string>
     <string name="library_updating_status">正在更新曲库</string>
-    <string name="source_folder_manager_selection_hint">可选择系统文件管理器或内置管理器导入本地音乐。</string>
     <string name="source_optional_username_placeholder">用户名（选填）</string>
     <string name="source_username_password_authentication">用户名 / 密码</string>
     <string name="library_artist_visible_albums_description">当前艺人下的可见专辑。</string>

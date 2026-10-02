@@ -11,6 +11,8 @@
     <string name="source_connect_and_scan">連接並掃描</string>
     <string name="source_connect_and_sync">連接並同步</string>
     <string name="source_connected_list_title">已連接來源</string>
+    <string name="source_add_action">新增來源</string>
+    <string name="source_add_named_type">新增 %1$s 來源</string>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">檢測到“%1$s”遠端共有 %2$s 首歌曲。建議切換為在線模式，舊本機索引會隱藏並保留；也可以繼續全量重掃，把遠端歌曲重新寫入本機索引。</item>
         <item quantity="other">檢測到“%1$s”遠端共有 %2$s 首歌曲。建議切換為在線模式，舊本機索引會隱藏並保留；也可以繼續全量重掃，把遠端歌曲重新寫入本機索引。</item>
@@ -33,15 +35,8 @@
     <string name="library_navidrome_artist_albums_loading_hint">正在從 Navidrome 獲取這個藝人的專輯。</string>
     <string name="import_scan_failures_title">掃描失敗檔案</string>
     <string name="source_reauthorize_folder">重新授權</string>
-    <string name="source_system_folder_permission_hint">通過系統資料夾選擇器授予目錄權限並建立索引。</string>
     <string name="library_empty_import_hint">先到“來源”頁匯入本機資料夾、Samba、WebDAV、Navidrome、Subsonic 或 Emby，掃描完成後會出現在這裡。</string>
     <string name="source_import_all_action">全部匯入</string>
-    <string name="source_import_title">匯入來源</string>
-    <string name="source_emby_import_unsupported">當前平台暫未開放應用內 Emby 匯入。</string>
-    <string name="source_navidrome_import_unsupported">當前平台暫未開放應用內 Navidrome 匯入。</string>
-    <string name="source_subsonic_import_unsupported">當前平台暫未開放應用內 Subsonic 匯入。</string>
-    <string name="source_webdav_import_unsupported">當前平台暫未開放應用內 WebDAV 匯入。</string>
-    <string name="source_supported_types_description">本機資料夾原地索引，Samba、WebDAV、Navidrome、Subsonic/OpenSubsonic 與 Emby 作為遠程音樂庫。</string>
     <string name="source_lan_address_label">局域網/首選地址</string>
     <string name="source_navidrome_large_library_title">Navidrome 曲庫較大</string>
     <string name="library_load_more_action">加載更多</string>
@@ -72,7 +67,6 @@
     <string name="library_album_tracks_filter_empty_hint">當前篩選結果里已經沒有這個專輯的可見歌曲。</string>
     <string name="library_folder_tracks_filter_empty_hint">當前篩選結果里已經沒有這個目錄的可見歌曲。</string>
     <string name="sources_empty_title">還沒有任何來源</string>
-    <string name="source_system_folder_manager_unavailable_hint">當前設備沒有可用的系統檔案管理器，將使用內建管理器匯入本機音樂。</string>
     <string name="source_samba_system_mount_hint">當前平台建議通過系統 Files 掛載 SMB 後，再用本機資料夾方式接入。</string>
     <string name="source_online_badge"> · 在線</string>
     <string name="library_online_artist_detail_title">在線藝人詳情</string>
@@ -125,7 +119,6 @@
     <string name="library_source_filter_empty_hint">試試切回“全部來源”、更換過濾項，或調整搜索詞。</string>
     <string name="source_updating_named_type">正在更新 %1$s</string>
     <string name="library_updating_status">正在更新曲庫</string>
-    <string name="source_folder_manager_selection_hint">可選擇系統檔案管理器或內建管理器匯入本機音樂。</string>
     <string name="source_optional_username_placeholder">使用者名（選填）</string>
     <string name="source_username_password_authentication">使用者名 / 密碼</string>
     <string name="library_artist_visible_albums_description">當前藝人下的可見專輯。</string>

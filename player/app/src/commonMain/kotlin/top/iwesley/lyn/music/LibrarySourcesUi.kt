@@ -21,6 +21,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +47,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
@@ -64,6 +66,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -123,6 +126,7 @@ import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LocalFolderPickerMode
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
+import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.core.model.SubsonicAuthMode
 import top.iwesley.lyn.music.core.model.Track
@@ -2835,6 +2839,7 @@ internal fun SourcesTab(
     var pendingDeleteSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var failureDetailSummary by remember { mutableStateOf<ImportScanSummary?>(null) }
     var showLocalFolderPickerModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showAddSourceMenu by remember { mutableStateOf(false) }
     val pendingDeleteSource = remember(state.sources, pendingDeleteSourceId) {
         state.sources.firstOrNull { it.source.id == pendingDeleteSourceId }
     }
@@ -2849,12 +2854,6 @@ internal fun SourcesTab(
         disabledBorderColor = shellColors.cardBorder,
     )
     val activeScanOperation = state.activeScanOperation
-    val isLocalFolderScanning = activeScanOperation == ImportScanOperation.CreateLocalFolder
-    val isNavidromeCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME)
-    val isSubsonicCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.SUBSONIC)
-    val isEmbyCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.EMBY)
-    val isSambaCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.SAMBA)
-    val isWebDavCreating = activeScanOperation == ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV)
     val activeScanProgress = state.scanProgress
     val activeScanSourceLabel = remember(state.sources, activeScanProgress?.sourceId) {
         activeScanProgress?.sourceId?.let { sourceId ->
@@ -2867,6 +2866,24 @@ internal fun SourcesTab(
     LaunchedEffect(state.isWorking) {
         if (state.isWorking) {
             showLocalFolderPickerModeDialog = false
+            showAddSourceMenu = false
+        }
+    }
+    val startLocalFolderImport = {
+        when (localFolderClickAction) {
+            LocalFolderImportClickAction.ShowPickerModeDialog -> {
+                showLocalFolderPickerModeDialog = true
+            }
+
+            LocalFolderImportClickAction.ImportBuiltIn -> {
+                onImportIntent(
+                    ImportIntent.ImportLocalFolderWithPickerMode(LocalFolderPickerMode.BuiltIn),
+                )
+            }
+
+            LocalFolderImportClickAction.ImportAutomatic -> {
+                onImportIntent(ImportIntent.ImportLocalFolder)
+            }
         }
     }
     state.editingSource?.let { editingSource ->
@@ -2887,6 +2904,18 @@ internal fun SourcesTab(
             testMessage = state.testMessage?.displayText(),
             fieldColors = importFieldColors,
             onDismiss = { onImportIntent(ImportIntent.DismissRemoteSourceEditor) },
+            onIntent = onImportIntent,
+        )
+    }
+    state.creatingSourceType?.let { creatingType ->
+        val isCreating = activeScanOperation == ImportScanOperation.CreateRemote(creatingType)
+        RemoteSourceCreatorDialog(
+            type = creatingType,
+            state = state,
+            isCreating = isCreating,
+            scanProgress = state.scanProgress?.takeIf { isCreating },
+            constrainWidth = !isMobileSourcesPlatform(platform),
+            fieldColors = importFieldColors,
             onIntent = onImportIntent,
         )
     }
@@ -2995,10 +3024,6 @@ internal fun SourcesTab(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SectionTitle(
-                title = uiString(Res.string.source_import_title),
-                subtitle = uiString(Res.string.source_supported_types_description)
-            )
             state.message?.let { message ->
                 BannerCard(message = message, onDismiss = { onImportIntent(ImportIntent.ClearMessage) })
             }
@@ -3008,468 +3033,37 @@ internal fun SourcesTab(
                     sourceLabel = activeScanSourceLabel,
                 )
             }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(uiString(Res.string.source_local_folder_label), fontWeight = FontWeight.Bold)
-                    Text(
-                        if (platform.supportsLocalFolderPickerModeChoice()) {
-                            if (state.capabilities.supportsSystemLocalFolderPicker) {
-                                uiString(Res.string.source_folder_manager_selection_hint)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    SectionTitle(title = uiString(Res.string.source_connected_list_title), subtitle = uiString(Res.string.source_management_hint))
+                }
+                Box {
+                    FilledTonalButton(
+                        onClick = { showAddSourceMenu = true },
+                        enabled = !state.isWorking,
+                    ) {
+                        Icon(Icons.Rounded.Add, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(uiString(Res.string.source_add_action))
+                    }
+                    AddSourceTypeMenu(
+                        expanded = showAddSourceMenu,
+                        capabilities = state.capabilities,
+                        onDismiss = { showAddSourceMenu = false },
+                        onSelect = { type ->
+                            showAddSourceMenu = false
+                            if (type == ImportSourceType.LOCAL_FOLDER) {
+                                startLocalFolderImport()
                             } else {
-                                uiString(Res.string.source_system_folder_manager_unavailable_hint)
-                            }
-                        } else {
-                            uiString(Res.string.source_system_folder_permission_hint)
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(
-                        onClick = {
-                            when (localFolderClickAction) {
-                                LocalFolderImportClickAction.ShowPickerModeDialog -> {
-                                    showLocalFolderPickerModeDialog = true
-                                }
-
-                                LocalFolderImportClickAction.ImportBuiltIn -> {
-                                    onImportIntent(
-                                        ImportIntent.ImportLocalFolderWithPickerMode(LocalFolderPickerMode.BuiltIn),
-                                    )
-                                }
-
-                                LocalFolderImportClickAction.ImportAutomatic -> {
-                                    onImportIntent(ImportIntent.ImportLocalFolder)
-                                }
+                                onImportIntent(ImportIntent.OpenRemoteSourceCreator(type))
                             }
                         },
-                        enabled = state.capabilities.supportsLocalFolderImport && !state.isWorking,
-                    ) {
-                        if (isLocalFolderScanning) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.FolderOpen, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isLocalFolderScanning) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_select_folder))
-                    }
+                    )
                 }
             }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                Text("Emby", fontWeight = FontWeight.Bold)
-                if (!state.capabilities.supportsEmbyImport) {
-                    Text(uiString(Res.string.source_emby_import_unsupported))
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.embyLabel,
-                    onValueChange = { onImportIntent(ImportIntent.EmbyLabelChanged(it)) },
-                    label = { Text(uiString(Res.string.common_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.embyBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.EmbyBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_lan_address_label)) },
-                    placeholder = { Text("https://emby.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.embyWanBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.EmbyWanBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_wan_address_label)) },
-                    placeholder = { Text("https://music.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(
-                        value = state.embyUsername,
-                        onValueChange = { onImportIntent(ImportIntent.EmbyUsernameChanged(it)) },
-                        label = { Text(uiString(Res.string.common_username)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.embyPassword,
-                        onValueChange = { onImportIntent(ImportIntent.EmbyPasswordChanged(it)) },
-                        label = { Text(uiString(Res.string.common_password)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onImportIntent(ImportIntent.TestEmbySource) },
-                        enabled = state.capabilities.supportsEmbyImport && !state.isWorking,
-                    ) {
-                        Text(uiString(Res.string.source_test_connection))
-                    }
-                    Button(
-                        onClick = { onImportIntent(ImportIntent.AddEmbySource) },
-                        enabled = state.capabilities.supportsEmbyImport && !state.isWorking,
-                    ) {
-                        if (isEmbyCreating) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.CloudSync, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isEmbyCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
-                    }
-                }
-            }
-        }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                Text("Subsonic / OpenSubsonic", fontWeight = FontWeight.Bold)
-                if (!state.capabilities.supportsSubsonicImport) {
-                    Text(uiString(Res.string.source_subsonic_import_unsupported))
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.subsonicLabel,
-                    onValueChange = { onImportIntent(ImportIntent.SubsonicLabelChanged(it)) },
-                    label = { Text(uiString(Res.string.common_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.subsonicBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.SubsonicBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_lan_address_label)) },
-                    placeholder = { Text("https://music.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.subsonicWanBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.SubsonicWanBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_wan_address_label)) },
-                    placeholder = { Text("https://music.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                SubsonicAuthModeSelector(
-                    selected = state.subsonicAuthMode,
-                    enabled = !state.isWorking,
-                    onSelect = { onImportIntent(ImportIntent.SubsonicAuthModeChanged(it)) },
-                )
-                if (state.subsonicAuthMode == SubsonicAuthMode.PASSWORD) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ImeAwareOutlinedTextField(
-                            value = state.subsonicUsername,
-                            onValueChange = { onImportIntent(ImportIntent.SubsonicUsernameChanged(it)) },
-                            label = { Text(uiString(Res.string.common_username)) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = importFieldColors,
-                        )
-                        ImeAwareOutlinedTextField(
-                            value = state.subsonicCredential,
-                            onValueChange = { onImportIntent(ImportIntent.SubsonicCredentialChanged(it)) },
-                            label = { Text(uiString(Res.string.common_password)) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = importFieldColors,
-                        )
-                    }
-                } else {
-                    ImeAwareOutlinedTextField(
-                        value = state.subsonicCredential,
-                        onValueChange = { onImportIntent(ImportIntent.SubsonicCredentialChanged(it)) },
-                        label = { Text(uiString(Res.string.settings_api_key)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onImportIntent(ImportIntent.TestSubsonicSource) },
-                        enabled = state.capabilities.supportsSubsonicImport && !state.isWorking,
-                    ) {
-                        Text(uiString(Res.string.source_test_connection))
-                    }
-                    Button(
-                        onClick = { onImportIntent(ImportIntent.AddSubsonicSource) },
-                        enabled = state.capabilities.supportsSubsonicImport && !state.isWorking,
-                    ) {
-                        if (isSubsonicCreating) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.CloudSync, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isSubsonicCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
-                    }
-                }
-            }
-        }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                Text("Navidrome", fontWeight = FontWeight.Bold)
-                if (!state.capabilities.supportsNavidromeImport) {
-                    Text(uiString(Res.string.source_navidrome_import_unsupported))
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.navidromeLabel,
-                    onValueChange = { onImportIntent(ImportIntent.NavidromeLabelChanged(it)) },
-                    label = { Text(uiString(Res.string.common_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.navidromeBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_lan_address_label)) },
-                    placeholder = { Text("http://192.168.31.115:32768") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.navidromeWanBaseUrl,
-                    onValueChange = { onImportIntent(ImportIntent.NavidromeWanBaseUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_wan_address_label)) },
-                    placeholder = { Text("https://music.example.com") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(
-                        value = state.navidromeUsername,
-                        onValueChange = { onImportIntent(ImportIntent.NavidromeUsernameChanged(it)) },
-                        label = { Text(uiString(Res.string.common_username)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.navidromePassword,
-                        onValueChange = { onImportIntent(ImportIntent.NavidromePasswordChanged(it)) },
-                        label = { Text(uiString(Res.string.common_password)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onImportIntent(ImportIntent.TestNavidromeSource) },
-                        enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
-                    ) {
-                        Text(uiString(Res.string.source_test_connection))
-                    }
-                    Button(
-                        onClick = { onImportIntent(ImportIntent.AddNavidromeSource) },
-                        enabled = state.capabilities.supportsNavidromeImport && !state.isWorking,
-                    ) {
-                        if (isNavidromeCreating) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.CloudSync, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isNavidromeCreating) uiString(Res.string.common_syncing) else uiString(Res.string.source_connect_and_sync))
-                    }
-                }
-            }
-        }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                Text("Samba / SMB", fontWeight = FontWeight.Bold)
-                if (!state.capabilities.supportsSambaImport) {
-                    Text(uiString(Res.string.source_samba_system_mount_hint))
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.sambaLabel,
-                    onValueChange = { onImportIntent(ImportIntent.SambaLabelChanged(it)) },
-                    label = { Text(uiString(Res.string.common_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(
-                        value = state.sambaServer,
-                        onValueChange = { onImportIntent(ImportIntent.SambaServerChanged(it)) },
-                        label = { Text(uiString(Res.string.common_server_address)) },
-                        placeholder = { Text("192.168.31.115") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.sambaPort,
-                        onValueChange = { onImportIntent(ImportIntent.SambaPortChanged(it)) },
-                        label = { Text(uiString(Res.string.common_port)) },
-                        placeholder = { Text("445") },
-                        modifier = Modifier.width(140.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = importFieldColors,
-                    )
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.sambaPath,
-                    onValueChange = { onImportIntent(ImportIntent.SambaPathChanged(it)) },
-                    label = { Text(uiString(Res.string.source_samba_path_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(
-                        value = state.sambaUsername,
-                        onValueChange = { onImportIntent(ImportIntent.SambaUsernameChanged(it)) },
-                        label = { Text(uiString(Res.string.common_username)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.sambaPassword,
-                        onValueChange = { onImportIntent(ImportIntent.SambaPasswordChanged(it)) },
-                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onImportIntent(ImportIntent.TestSambaSource) },
-                        enabled = !state.isWorking,
-                    ) {
-                        Text(uiString(Res.string.source_test_connection))
-                    }
-                    Button(
-                        onClick = { onImportIntent(ImportIntent.AddSambaSource) },
-                        enabled = !state.isWorking,
-                    ) {
-                        if (isSambaCreating) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.CloudSync, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isSambaCreating) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_connect_and_scan))
-                    }
-                }
-            }
-        }
-            MainShellElevatedCard(shape = RoundedCornerShape(28.dp)) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                Text("WebDAV", fontWeight = FontWeight.Bold)
-                if (!state.capabilities.supportsWebDavImport) {
-                    Text(uiString(Res.string.source_webdav_import_unsupported))
-                }
-                ImeAwareOutlinedTextField(
-                    value = state.webDavLabel,
-                    onValueChange = { onImportIntent(ImportIntent.WebDavLabelChanged(it)) },
-                    label = { Text(uiString(Res.string.common_name)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                ImeAwareOutlinedTextField(
-                    value = state.webDavRootUrl,
-                    onValueChange = { onImportIntent(ImportIntent.WebDavRootUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
-                    placeholder = { Text(uiString(Res.string.source_webdav_url_example)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = importFieldColors,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImeAwareOutlinedTextField(
-                        value = state.webDavUsername,
-                        onValueChange = { onImportIntent(ImportIntent.WebDavUsernameChanged(it)) },
-                        label = { Text(uiString(Res.string.source_optional_username_placeholder)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                    ImeAwareOutlinedTextField(
-                        value = state.webDavPassword,
-                        onValueChange = { onImportIntent(ImportIntent.WebDavPasswordChanged(it)) },
-                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = importFieldColors,
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
-                    Switch(
-                        checked = state.webDavAllowInsecureTls,
-                        onCheckedChange = {
-                            onImportIntent(
-                                ImportIntent.WebDavAllowInsecureTlsChanged(
-                                    it
-                                )
-                            )
-                        },
-                        colors = SwitchDefaults.colors(
-                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
-                            uncheckedBorderColor = shellColors.cardBorder,
-                        ),
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { onImportIntent(ImportIntent.TestWebDavSource) },
-                        enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
-                    ) {
-                        Text(uiString(Res.string.source_test_connection))
-                    }
-                    Button(
-                        onClick = { onImportIntent(ImportIntent.AddWebDavSource) },
-                        enabled = state.capabilities.supportsWebDavImport && !state.isWorking,
-                    ) {
-                        if (isWebDavCreating) {
-                            ButtonLoadingIndicator()
-                        } else {
-                            Icon(Icons.Rounded.CloudSync, null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isWebDavCreating) uiString(Res.string.source_scanning_status) else uiString(Res.string.source_connect_and_scan))
-                    }
-                }
-            }
-        }
-            SectionTitle(title = uiString(Res.string.source_connected_list_title), subtitle = uiString(Res.string.source_management_hint))
             if (state.sources.isEmpty()) {
                 EmptyStateCard(
                     title = uiString(Res.string.sources_empty_title),
@@ -3517,7 +3111,7 @@ internal fun SourcesTab(
                 }
             }
         }
-        if (state.editingSource == null) {
+        if (state.editingSource == null && state.creatingSourceType == null) {
             state.testMessage?.let { message ->
                 ToastCard(
                     message = message,
@@ -3771,6 +3365,393 @@ internal fun PlatformDescriptor.supportsLocalFolderPickerModeChoice(): Boolean {
 }
 
 @Composable
+private fun AddSourceTypeMenu(
+    expanded: Boolean,
+    capabilities: PlatformCapabilities,
+    onDismiss: () -> Unit,
+    onSelect: (ImportSourceType) -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        containerColor = mainShellColors.navContainer,
+    ) {
+        ADD_SOURCE_MENU_TYPES.forEach { type ->
+            DropdownMenuItem(
+                text = { Text(addSourceTypeLabel(type)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (type == ImportSourceType.LOCAL_FOLDER) Icons.Rounded.FolderOpen else Icons.Rounded.CloudSync,
+                        contentDescription = null,
+                    )
+                },
+                enabled = capabilities.supportsAddingSource(type),
+                onClick = { onSelect(type) },
+            )
+        }
+    }
+}
+
+private val ADD_SOURCE_MENU_TYPES = listOf(
+    ImportSourceType.LOCAL_FOLDER,
+    ImportSourceType.NAVIDROME,
+    ImportSourceType.SUBSONIC,
+    ImportSourceType.EMBY,
+    ImportSourceType.SAMBA,
+    ImportSourceType.WEBDAV,
+)
+
+/** Samba stays selectable everywhere: platforms without in-app SMB show a system-mount hint in its form instead. */
+private fun PlatformCapabilities.supportsAddingSource(type: ImportSourceType): Boolean = when (type) {
+    ImportSourceType.LOCAL_FOLDER -> supportsLocalFolderImport
+    ImportSourceType.SAMBA -> true
+    ImportSourceType.WEBDAV -> supportsWebDavImport
+    ImportSourceType.NAVIDROME -> supportsNavidromeImport
+    ImportSourceType.SUBSONIC -> supportsSubsonicImport
+    ImportSourceType.EMBY -> supportsEmbyImport
+}
+
+@Composable
+private fun addSourceTypeLabel(type: ImportSourceType): String = when (type) {
+    ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
+    ImportSourceType.SAMBA -> "Samba / SMB"
+    ImportSourceType.WEBDAV -> "WebDAV"
+    ImportSourceType.NAVIDROME -> "Navidrome"
+    ImportSourceType.SUBSONIC -> "Subsonic / OpenSubsonic"
+    ImportSourceType.EMBY -> "Emby"
+}
+
+@Composable
+private fun RemoteSourceCreatorDialog(
+    type: ImportSourceType,
+    state: ImportState,
+    isCreating: Boolean,
+    scanProgress: ImportScanProgress?,
+    constrainWidth: Boolean,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    onIntent: (ImportIntent) -> Unit,
+) {
+    val shellColors = mainShellColors
+    val scansFiles = type == ImportSourceType.SAMBA || type == ImportSourceType.WEBDAV
+    SourceFormDialog(
+        title = uiString(Res.string.source_add_named_type, addSourceTypeLabel(type)),
+        subtitle = null,
+        isWorking = state.isWorking,
+        primaryLabel = when {
+            isCreating && scansFiles -> uiString(Res.string.source_scanning_status)
+            isCreating -> uiString(Res.string.common_syncing)
+            scansFiles -> uiString(Res.string.source_connect_and_scan)
+            else -> uiString(Res.string.source_connect_and_sync)
+        },
+        primaryLoading = isCreating,
+        scanProgress = scanProgress,
+        constrainWidth = constrainWidth,
+        testMessage = state.testMessage?.displayText(),
+        onDismiss = { onIntent(ImportIntent.DismissRemoteSourceCreator) },
+        onTest = {
+            when (type) {
+                ImportSourceType.SAMBA -> ImportIntent.TestSambaSource
+                ImportSourceType.WEBDAV -> ImportIntent.TestWebDavSource
+                ImportSourceType.NAVIDROME -> ImportIntent.TestNavidromeSource
+                ImportSourceType.SUBSONIC -> ImportIntent.TestSubsonicSource
+                ImportSourceType.EMBY -> ImportIntent.TestEmbySource
+                ImportSourceType.LOCAL_FOLDER -> null
+            }?.let(onIntent)
+        },
+        onPrimary = {
+            when (type) {
+                ImportSourceType.SAMBA -> ImportIntent.AddSambaSource
+                ImportSourceType.WEBDAV -> ImportIntent.AddWebDavSource
+                ImportSourceType.NAVIDROME -> ImportIntent.AddNavidromeSource
+                ImportSourceType.SUBSONIC -> ImportIntent.AddSubsonicSource
+                ImportSourceType.EMBY -> ImportIntent.AddEmbySource
+                ImportSourceType.LOCAL_FOLDER -> null
+            }?.let(onIntent)
+        },
+    ) {
+        when (type) {
+            ImportSourceType.NAVIDROME -> {
+                ImeAwareOutlinedTextField(
+                    value = state.navidromeLabel,
+                    onValueChange = { onIntent(ImportIntent.NavidromeLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.navidromeBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.NavidromeBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
+                    placeholder = { Text("http://192.168.31.115:32768") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.navidromeWanBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.NavidromeWanBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
+                    placeholder = { Text("https://music.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.navidromeUsername,
+                        onValueChange = { onIntent(ImportIntent.NavidromeUsernameChanged(it)) },
+                        label = { Text(uiString(Res.string.common_username)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.navidromePassword,
+                        onValueChange = { onIntent(ImportIntent.NavidromePasswordChanged(it)) },
+                        label = { Text(uiString(Res.string.common_password)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                }
+            }
+
+            ImportSourceType.SUBSONIC -> {
+                ImeAwareOutlinedTextField(
+                    value = state.subsonicLabel,
+                    onValueChange = { onIntent(ImportIntent.SubsonicLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.subsonicBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.SubsonicBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
+                    placeholder = { Text("https://music.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.subsonicWanBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.SubsonicWanBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
+                    placeholder = { Text("https://music.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                SubsonicAuthModeSelector(
+                    selected = state.subsonicAuthMode,
+                    enabled = !state.isWorking,
+                    onSelect = { onIntent(ImportIntent.SubsonicAuthModeChanged(it)) },
+                )
+                if (state.subsonicAuthMode == SubsonicAuthMode.PASSWORD) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ImeAwareOutlinedTextField(
+                            value = state.subsonicUsername,
+                            onValueChange = { onIntent(ImportIntent.SubsonicUsernameChanged(it)) },
+                            label = { Text(uiString(Res.string.common_username)) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = fieldColors,
+                        )
+                        ImeAwareOutlinedTextField(
+                            value = state.subsonicCredential,
+                            onValueChange = { onIntent(ImportIntent.SubsonicCredentialChanged(it)) },
+                            label = { Text(uiString(Res.string.common_password)) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = fieldColors,
+                        )
+                    }
+                } else {
+                    ImeAwareOutlinedTextField(
+                        value = state.subsonicCredential,
+                        onValueChange = { onIntent(ImportIntent.SubsonicCredentialChanged(it)) },
+                        label = { Text(uiString(Res.string.settings_api_key)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                }
+            }
+
+            ImportSourceType.EMBY -> {
+                ImeAwareOutlinedTextField(
+                    value = state.embyLabel,
+                    onValueChange = { onIntent(ImportIntent.EmbyLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.embyBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.EmbyBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
+                    placeholder = { Text("https://emby.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.embyWanBaseUrl,
+                    onValueChange = { onIntent(ImportIntent.EmbyWanBaseUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
+                    placeholder = { Text("https://music.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.embyUsername,
+                        onValueChange = { onIntent(ImportIntent.EmbyUsernameChanged(it)) },
+                        label = { Text(uiString(Res.string.common_username)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.embyPassword,
+                        onValueChange = { onIntent(ImportIntent.EmbyPasswordChanged(it)) },
+                        label = { Text(uiString(Res.string.common_password)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                }
+            }
+
+            ImportSourceType.SAMBA -> {
+                if (!state.capabilities.supportsSambaImport) {
+                    Text(uiString(Res.string.source_samba_system_mount_hint))
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.sambaLabel,
+                    onValueChange = { onIntent(ImportIntent.SambaLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.sambaServer,
+                        onValueChange = { onIntent(ImportIntent.SambaServerChanged(it)) },
+                        label = { Text(uiString(Res.string.common_server_address)) },
+                        placeholder = { Text("192.168.31.115") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.sambaPort,
+                        onValueChange = { onIntent(ImportIntent.SambaPortChanged(it)) },
+                        label = { Text(uiString(Res.string.common_port)) },
+                        placeholder = { Text("445") },
+                        modifier = Modifier.width(140.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = fieldColors,
+                    )
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.sambaPath,
+                    onValueChange = { onIntent(ImportIntent.SambaPathChanged(it)) },
+                    label = { Text(uiString(Res.string.source_samba_path_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.sambaUsername,
+                        onValueChange = { onIntent(ImportIntent.SambaUsernameChanged(it)) },
+                        label = { Text(uiString(Res.string.common_username)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.sambaPassword,
+                        onValueChange = { onIntent(ImportIntent.SambaPasswordChanged(it)) },
+                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors
+                    )
+                }
+            }
+
+            ImportSourceType.WEBDAV -> {
+                ImeAwareOutlinedTextField(
+                    value = state.webDavLabel,
+                    onValueChange = { onIntent(ImportIntent.WebDavLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.webDavRootUrl,
+                    onValueChange = { onIntent(ImportIntent.WebDavRootUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
+                    placeholder = { Text(uiString(Res.string.source_webdav_url_example)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.webDavUsername,
+                        onValueChange = { onIntent(ImportIntent.WebDavUsernameChanged(it)) },
+                        label = { Text(uiString(Res.string.source_optional_username_placeholder)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.webDavPassword,
+                        onValueChange = { onIntent(ImportIntent.WebDavPasswordChanged(it)) },
+                        label = { Text(uiString(Res.string.source_optional_password_placeholder)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
+                    Switch(
+                        checked = state.webDavAllowInsecureTls,
+                        onCheckedChange = {
+                            onIntent(
+                                ImportIntent.WebDavAllowInsecureTlsChanged(
+                                    it
+                                )
+                            )
+                        },
+                        colors = SwitchDefaults.colors(
+                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                            uncheckedBorderColor = shellColors.cardBorder,
+                        ),
+                    )
+                }
+            }
+
+            ImportSourceType.LOCAL_FOLDER -> Unit
+        }
+    }
+}
+
+@Composable
 private fun RemoteSourceEditorDialog(
     state: top.iwesley.lyn.music.feature.importing.RemoteSourceEditorState,
     isWorking: Boolean,
@@ -3786,6 +3767,187 @@ private fun RemoteSourceEditorDialog(
     onIntent: (ImportIntent) -> Unit,
 ) {
     val shellColors = mainShellColors
+    SourceFormDialog(
+        title = when (state.type) {
+            ImportSourceType.SAMBA -> uiString(Res.string.source_edit_samba_title)
+            ImportSourceType.WEBDAV -> uiString(Res.string.source_edit_webdav_title)
+            ImportSourceType.NAVIDROME -> uiString(Res.string.source_edit_navidrome_title)
+            ImportSourceType.SUBSONIC -> uiString(Res.string.source_edit_subsonic_title)
+            ImportSourceType.EMBY -> uiString(Res.string.source_edit_emby_title)
+            ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_edit_title)
+        },
+        subtitle = remoteSourceEditorTrackCountLabel(
+            indexMode = sourceIndexMode,
+            currentTrackCount = currentTrackCount,
+            remoteTrackCount = remoteTrackCount,
+        ),
+        isWorking = isWorking,
+        primaryLabel = if (isSavingScan) uiString(Res.string.source_rescanning_status) else uiString(Res.string.source_save_and_rescan),
+        primaryLoading = isSavingScan,
+        scanProgress = scanProgress,
+        constrainWidth = constrainWidth,
+        testMessage = testMessage,
+        onDismiss = onDismiss,
+        onTest = { onIntent(ImportIntent.TestRemoteSource) },
+        onPrimary = { onIntent(ImportIntent.SaveRemoteSource) },
+    ) {
+        if (state.hasStoredCredential) {
+            Text(
+                uiString(Res.string.source_saved_credentials_hint),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        ImeAwareOutlinedTextField(
+            value = state.label,
+            onValueChange = { onIntent(ImportIntent.RemoteSourceLabelChanged(it)) },
+            label = { Text(uiString(Res.string.common_name)) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = fieldColors,
+        )
+        when (state.type) {
+            ImportSourceType.SAMBA -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.server,
+                        onValueChange = { onIntent(ImportIntent.RemoteSourceServerChanged(it)) },
+                        label = { Text(uiString(Res.string.common_server_address)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.port,
+                        onValueChange = { onIntent(ImportIntent.RemoteSourcePortChanged(it)) },
+                        label = { Text(uiString(Res.string.common_port)) },
+                        modifier = Modifier.width(140.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = fieldColors,
+                    )
+                }
+                ImeAwareOutlinedTextField(
+                    value = state.path,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
+                    label = { Text(uiString(Res.string.source_samba_path_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+            }
+
+            ImportSourceType.WEBDAV -> {
+                ImeAwareOutlinedTextField(
+                    value = state.rootUrl,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+            }
+
+            ImportSourceType.NAVIDROME,
+            ImportSourceType.SUBSONIC,
+            ImportSourceType.EMBY,
+            -> {
+                ImeAwareOutlinedTextField(
+                    value = state.rootUrl,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_lan_address_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.wanRootUrl,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourceWanRootUrlChanged(it)) },
+                    label = { Text(uiString(Res.string.source_wan_address_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+            }
+
+            ImportSourceType.LOCAL_FOLDER -> Unit
+        }
+        if (state.type == ImportSourceType.SUBSONIC) {
+            SubsonicAuthModeSelector(
+                selected = state.subsonicAuthMode,
+                enabled = !isWorking,
+                onSelect = { onIntent(ImportIntent.RemoteSourceSubsonicAuthModeChanged(it)) },
+            )
+        }
+        if (state.type == ImportSourceType.SUBSONIC && state.subsonicAuthMode == SubsonicAuthMode.API_KEY) {
+            ImeAwareOutlinedTextField(
+                value = state.password,
+                onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
+                label = {
+                    Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_api_key_placeholder) else "API Key")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ImeAwareOutlinedTextField(
+                    value = state.username,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourceUsernameChanged(it)) },
+                    label = {
+                        Text(if (state.type == ImportSourceType.WEBDAV) uiString(Res.string.source_optional_username_placeholder) else uiString(Res.string.common_username))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                ImeAwareOutlinedTextField(
+                    value = state.password,
+                    onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
+                    label = {
+                        Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_password_placeholder) else uiString(Res.string.common_password))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+            }
+        }
+        if (state.type == ImportSourceType.WEBDAV) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
+                Switch(
+                    checked = state.allowInsecureTls,
+                    onCheckedChange = { onIntent(ImportIntent.RemoteSourceAllowInsecureTlsChanged(it)) },
+                    colors = SwitchDefaults.colors(
+                        uncheckedThumbColor = MaterialTheme.colorScheme.background,
+                        uncheckedBorderColor = shellColors.cardBorder,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** Dialog shell shared by the add and edit source forms: header, scrollable fields, actions, scan progress and toast. */
+@Composable
+private fun SourceFormDialog(
+    title: String,
+    subtitle: String?,
+    isWorking: Boolean,
+    primaryLabel: String,
+    primaryLoading: Boolean,
+    scanProgress: ImportScanProgress?,
+    constrainWidth: Boolean,
+    testMessage: String?,
+    onDismiss: () -> Unit,
+    onTest: () -> Unit,
+    onPrimary: () -> Unit,
+    fields: @Composable ColumnScope.() -> Unit,
+) {
     val appDensity = LocalDensity.current
     Dialog(
         onDismissRequest = {
@@ -3824,26 +3986,17 @@ private fun RemoteSourceEditorDialog(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                when (state.type) {
-                                    ImportSourceType.SAMBA -> uiString(Res.string.source_edit_samba_title)
-                                    ImportSourceType.WEBDAV -> uiString(Res.string.source_edit_webdav_title)
-                                    ImportSourceType.NAVIDROME -> uiString(Res.string.source_edit_navidrome_title)
-                                    ImportSourceType.SUBSONIC -> uiString(Res.string.source_edit_subsonic_title)
-                                    ImportSourceType.EMBY -> uiString(Res.string.source_edit_emby_title)
-                                    ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_edit_title)
-                                },
+                                title,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                             )
-                            Text(
-                                text = remoteSourceEditorTrackCountLabel(
-                                    indexMode = sourceIndexMode,
-                                    currentTrackCount = currentTrackCount,
-                                    remoteTrackCount = remoteTrackCount,
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                            subtitle?.let {
+                                Text(
+                                    text = it,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                         Column(
                             modifier = Modifier
@@ -3852,146 +4005,8 @@ private fun RemoteSourceEditorDialog(
                                 .heightIn(max = 372.dp)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            if (state.hasStoredCredential) {
-                                Text(
-                                    uiString(Res.string.source_saved_credentials_hint),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            ImeAwareOutlinedTextField(
-                                value = state.label,
-                                onValueChange = { onIntent(ImportIntent.RemoteSourceLabelChanged(it)) },
-                                label = { Text(uiString(Res.string.common_name)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
-                                colors = fieldColors,
-                            )
-                            when (state.type) {
-                                ImportSourceType.SAMBA -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        ImeAwareOutlinedTextField(
-                                            value = state.server,
-                                            onValueChange = { onIntent(ImportIntent.RemoteSourceServerChanged(it)) },
-                                            label = { Text(uiString(Res.string.common_server_address)) },
-                                            modifier = Modifier.weight(1f),
-                                            shape = RoundedCornerShape(18.dp),
-                                            colors = fieldColors,
-                                        )
-                                        ImeAwareOutlinedTextField(
-                                            value = state.port,
-                                            onValueChange = { onIntent(ImportIntent.RemoteSourcePortChanged(it)) },
-                                            label = { Text(uiString(Res.string.common_port)) },
-                                            modifier = Modifier.width(140.dp),
-                                            shape = RoundedCornerShape(18.dp),
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            colors = fieldColors,
-                                        )
-                                    }
-                                    ImeAwareOutlinedTextField(
-                                        value = state.path,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
-                                        label = { Text(uiString(Res.string.source_samba_path_label)) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                }
-
-                                ImportSourceType.WEBDAV -> {
-                                    ImeAwareOutlinedTextField(
-                                        value = state.rootUrl,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
-                                        label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                }
-
-                                ImportSourceType.NAVIDROME,
-                                ImportSourceType.SUBSONIC,
-                                ImportSourceType.EMBY,
-                                -> {
-                                    ImeAwareOutlinedTextField(
-                                        value = state.rootUrl,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
-                                        label = { Text(uiString(Res.string.source_lan_address_label)) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                    ImeAwareOutlinedTextField(
-                                        value = state.wanRootUrl,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourceWanRootUrlChanged(it)) },
-                                        label = { Text(uiString(Res.string.source_wan_address_label)) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                }
-
-                                ImportSourceType.LOCAL_FOLDER -> Unit
-                            }
-                            if (state.type == ImportSourceType.SUBSONIC) {
-                                SubsonicAuthModeSelector(
-                                    selected = state.subsonicAuthMode,
-                                    enabled = !isWorking,
-                                    onSelect = { onIntent(ImportIntent.RemoteSourceSubsonicAuthModeChanged(it)) },
-                                )
-                            }
-                            if (state.type == ImportSourceType.SUBSONIC && state.subsonicAuthMode == SubsonicAuthMode.API_KEY) {
-                                ImeAwareOutlinedTextField(
-                                    value = state.password,
-                                    onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
-                                    label = {
-                                        Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_api_key_placeholder) else "API Key")
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = fieldColors,
-                                )
-                            } else {
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    ImeAwareOutlinedTextField(
-                                        value = state.username,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourceUsernameChanged(it)) },
-                                        label = {
-                                            Text(if (state.type == ImportSourceType.WEBDAV) uiString(Res.string.source_optional_username_placeholder) else uiString(Res.string.common_username))
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                    ImeAwareOutlinedTextField(
-                                        value = state.password,
-                                        onValueChange = { onIntent(ImportIntent.RemoteSourcePasswordChanged(it)) },
-                                        label = {
-                                            Text(if (state.hasStoredCredential) uiString(Res.string.source_saved_password_placeholder) else uiString(Res.string.common_password))
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(18.dp),
-                                        colors = fieldColors,
-                                    )
-                                }
-                            }
-                            if (state.type == ImportSourceType.WEBDAV) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    Text(uiString(Res.string.source_self_signed_certificates_label), fontWeight = FontWeight.Medium)
-                                    Switch(
-                                        checked = state.allowInsecureTls,
-                                        onCheckedChange = { onIntent(ImportIntent.RemoteSourceAllowInsecureTlsChanged(it)) },
-                                        colors = SwitchDefaults.colors(
-                                            uncheckedThumbColor = MaterialTheme.colorScheme.background,
-                                            uncheckedBorderColor = shellColors.cardBorder,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
+                            content = fields,
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
@@ -4005,7 +4020,7 @@ private fun RemoteSourceEditorDialog(
                             }
                             Spacer(Modifier.width(12.dp))
                             OutlinedButton(
-                                onClick = { onIntent(ImportIntent.TestRemoteSource) },
+                                onClick = onTest,
                                 enabled = !isWorking,
                             ) {
                                 Text(
@@ -4016,15 +4031,15 @@ private fun RemoteSourceEditorDialog(
                             }
                             Spacer(Modifier.width(12.dp))
                             Button(
-                                onClick = { onIntent(ImportIntent.SaveRemoteSource) },
+                                onClick = onPrimary,
                                 enabled = !isWorking,
                             ) {
-                                if (isSavingScan) {
+                                if (primaryLoading) {
                                     ButtonLoadingIndicator()
                                     Spacer(Modifier.width(8.dp))
                                 }
                                 Text(
-                                    text = if (isSavingScan) uiString(Res.string.source_rescanning_status) else uiString(Res.string.source_save_and_rescan),
+                                    text = primaryLabel,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
