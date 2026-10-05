@@ -71,6 +71,11 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 internal data class JvmWebDavPlaybackTarget(
     val media: CallbackMedia,
     val requestUrl: String,
+    /**
+     * Frees what the target holds outside VLC (FN Music's temporary copy of a Range-ignoring resource). Called when
+     * the load ends without VLC taking the media, and when the next load replaces it; safe to call more than once.
+     */
+    val release: () -> Unit = {},
 )
 
 internal suspend fun scanJvmWebDav(

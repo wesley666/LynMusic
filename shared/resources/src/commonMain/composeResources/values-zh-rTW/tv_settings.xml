@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tv_source_add_hint">新增本機資料夾、Samba、WebDAV、Navidrome、Subsonic 或 Emby 後，曲庫會開始掃描音樂。</string>
+    <string name="tv_source_add_hint">新增本機資料夾、Samba、WebDAV、Navidrome、Subsonic、Emby 或飛牛音樂 後，曲庫會開始掃描音樂。</string>
     <string name="tv_source_add_and_scan">新增並掃描</string>
     <string name="tv_source_add_named_type">新增%1$s來源</string>
     <string name="tv_source_add_action">新增來源</string>
@@ -16,7 +16,7 @@
     <string name="tv_source_last_scan_error">上次掃描失敗：%1$s</string>
     <string name="tv_source_saved_api_key_hint">留空則沿用已儲存 API Key</string>
     <string name="tv_source_saved_password_hint">留空則沿用已儲存密碼</string>
-    <string name="tv_source_management_description">管理本機、Samba、WebDAV、Navidrome、Subsonic 和 Emby 音樂來源。</string>
+    <string name="tv_source_management_description">管理本機、Samba、WebDAV、Navidrome、Subsonic、Emby 和飛牛音樂 音樂來源。</string>
     <string name="tv_sources_empty_title">還沒有來源</string>
     <string name="tv_storage_offline_music_description">手動下載到本機的非本機音樂檔案。</string>
     <string name="tv_source_not_scanned_status">未掃描</string>

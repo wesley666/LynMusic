@@ -107,6 +107,9 @@ kotlin {
                 implementation(libs.smbj)
                 // Samba share enumeration (srvsvc); Gradle resolves its smbj to the version above.
                 implementation(libs.smbjRpc)
+                // OkHttp (via Ktor's engine, which the apps already ship) for signed media streams: unlike
+                // HttpURLConnection, a call can be cancelled from another thread while its body read is blocked.
+                implementation(libs.ktor.client.okhttp)
             }
         }
         androidMain.get().dependsOn(jvmAndAndroidMain)

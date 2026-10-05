@@ -56,6 +56,17 @@ import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.LocalFolderPickerMode
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
+import top.iwesley.lyn.music.core.model.FnMusicSourceDraft
+import top.iwesley.lyn.music.domain.FN_MUSIC_NAME
+import top.iwesley.lyn.music.domain.FnMusicSessions
+import top.iwesley.lyn.music.domain.fnMusicAccessCodeCredentialKey
+import top.iwesley.lyn.music.domain.fnMusicConnectionModeOf
+import top.iwesley.lyn.music.domain.fnMusicIdOf
+import top.iwesley.lyn.music.domain.fnMusicRootReference
+import top.iwesley.lyn.music.domain.normalizeFnMusicBaseUrl
+import top.iwesley.lyn.music.domain.prepareFnMusicDraft
+import top.iwesley.lyn.music.domain.resolveFnMusicDeviceId
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsLookupMetadata
@@ -126,6 +137,7 @@ import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.core.model.warn
@@ -145,6 +157,9 @@ import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.WorkflowLyricsSourceConfigEntity
 import top.iwesley.lyn.music.domain.DEFAULT_LRCAPI_URL
 import top.iwesley.lyn.music.domain.EMBY_LYRICS_SOURCE_ID
+import top.iwesley.lyn.music.domain.FN_MUSIC_LYRICS_SOURCE_ID
+import top.iwesley.lyn.music.domain.resolveFnMusicSource
+import top.iwesley.lyn.music.domain.requestFnMusicLyricsDocument as requestFnMusicServerLyricsDocument
 import top.iwesley.lyn.music.domain.MANAGED_LRCAPI_SOURCE_ID
 import top.iwesley.lyn.music.domain.buildLyricsRequest
 import top.iwesley.lyn.music.domain.buildManagedLrcApiConfig
@@ -422,6 +437,30 @@ interface ImportSourceRepository {
         progressSink: ImportScanProgressSink,
     ): Result<ImportScanSummary> {
         return updateEmbySource(sourceId, draft, keepExistingCredentialWhenBlankPassword)
+    }
+    suspend fun testFnMusicSource(draft: FnMusicSourceDraft): Result<Unit> {
+        return Result.failure(UnsupportedOperationException("FN Music import is not supported."))
+    }
+    suspend fun testUpdatedFnMusicSource(
+        sourceId: String,
+        draft: FnMusicSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+    ): Result<Unit> {
+        return Result.failure(UnsupportedOperationException("FN Music import is not supported."))
+    }
+    suspend fun addFnMusicSource(
+        draft: FnMusicSourceDraft,
+        progressSink: ImportScanProgressSink = ImportScanProgressSink.NoOp,
+    ): Result<ImportScanSummary> {
+        return Result.failure(UnsupportedOperationException("FN Music import is not supported."))
+    }
+    suspend fun updateFnMusicSource(
+        sourceId: String,
+        draft: FnMusicSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean = true,
+        progressSink: ImportScanProgressSink = ImportScanProgressSink.NoOp,
+    ): Result<ImportScanSummary> {
+        return Result.failure(UnsupportedOperationException("FN Music import is not supported."))
     }
     suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?>
     suspend fun rescanSource(
@@ -1511,6 +1550,170 @@ class RoomImportSourceRepository(
         }
     }
 
+    override suspend fun testFnMusicSource(draft: FnMusicSourceDraft): Result<Unit> {
+        return runCatching {
+            val preparedDraft = prepareFnMusicDraft(draft)
+            requireUi(preparedDraft.password.isNotBlank()) { uiText(Res.string.server_password_required, FN_MUSIC_NAME) }
+            testFnMusicDraft(preparedDraft)
+        }
+    }
+
+    override suspend fun testUpdatedFnMusicSource(
+        sourceId: String,
+        draft: FnMusicSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): Result<Unit> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.FN_MUSIC)
+            testFnMusicDraft(prepareFnMusicDraft(draft.withStoredFnMusicSecrets(existing, keepExistingCredentialWhenBlankPassword)))
+        }
+    }
+
+    override suspend fun addFnMusicSource(
+        draft: FnMusicSourceDraft,
+        progressSink: ImportScanProgressSink,
+    ): Result<ImportScanSummary> {
+        return runCatching {
+            val sourceId = newId("fnmusic")
+            val preparedDraft = prepareFnMusicDraft(draft)
+            requireUi(preparedDraft.password.isNotBlank()) { uiText(Res.string.server_password_required, FN_MUSIC_NAME) }
+            val source = createFnMusicSource(sourceId, preparedDraft).copy(credentialKey = "credential-$sourceId")
+            validateImportSourceCreation(label = source.label)
+            withFnMusicAddress(sourceId, preparedDraft) { addressDraft ->
+                gateway.testFnMusic(addressDraft, resolveFnMusicDeviceId(secureCredentialStore))
+            }
+            source.credentialKey?.let { secureCredentialStore.put(it, preparedDraft.password) }
+            persistFnMusicAccessCode(sourceId, preparedDraft)
+            database.importSourceDao().upsert(source.toEntity())
+            runScan(source, progressSink) {
+                scanFnMusicDraft(sourceId, preparedDraft, progressSink)
+            }
+        }
+    }
+
+    override suspend fun updateFnMusicSource(
+        sourceId: String,
+        draft: FnMusicSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        progressSink: ImportScanProgressSink,
+    ): Result<ImportScanSummary> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.FN_MUSIC)
+            addressSelector.invalidate(sourceId)
+            FnMusicSessions.invalidate(sourceId)
+            val preparedDraft = prepareFnMusicDraft(draft.withStoredFnMusicSecrets(existing, keepExistingCredentialWhenBlankPassword))
+            val updatedSource = createFnMusicSource(
+                sourceId = existing.id,
+                draft = preparedDraft,
+                createdAt = existing.createdAt,
+                enabled = existing.enabled,
+            )
+            assertUniqueImportSourceLabel(updatedSource.label, excludingSourceId = existing.id)
+            val report = scanFnMusicDraft(sourceId, preparedDraft, progressSink)
+            val credentialKey = existing.credentialKey ?: "credential-$sourceId"
+            persistUpdatedCredential(
+                previousCredentialKey = existing.credentialKey,
+                nextCredentialKey = credentialKey,
+                password = preparedDraft.password,
+            )
+            persistFnMusicAccessCode(sourceId, preparedDraft)
+            persistScanWithProgress(updatedSource.copy(credentialKey = credentialKey), report, progressSink)
+        }
+    }
+
+    private suspend fun testFnMusicDraft(preparedDraft: FnMusicSourceDraft) {
+        val deviceId = resolveFnMusicDeviceId(secureCredentialStore)
+        when (preparedDraft.connectionMode) {
+            FnMusicConnectionMode.ADDRESS -> testEachRemoteSourceAddress(
+                sourceType = ImportSourceType.FN_MUSIC,
+                lanBaseUrl = preparedDraft.baseUrl,
+                wanBaseUrl = preparedDraft.wanBaseUrl,
+                normalizeBaseUrl = ::normalizeFnMusicBaseUrl,
+            ) { candidate ->
+                gateway.testFnMusic(preparedDraft.copy(baseUrl = candidate.value, wanBaseUrl = ""), deviceId)
+            }
+            FnMusicConnectionMode.FN_CONNECT -> gateway.testFnMusic(preparedDraft, deviceId)
+        }
+    }
+
+    private suspend fun scanFnMusicDraft(
+        sourceId: String,
+        preparedDraft: FnMusicSourceDraft,
+        progressSink: ImportScanProgressSink,
+    ): ImportScanReport {
+        val deviceId = resolveFnMusicDeviceId(secureCredentialStore)
+        return withFnMusicAddress(sourceId, preparedDraft) { addressDraft ->
+            gateway.scanFnMusic(addressDraft, sourceId, deviceId, progressSink)
+        }
+    }
+
+    /** Address-mode drafts go through the LAN/WAN fallback one address at a time; FN Connect resolves its own route. */
+    private suspend fun <T> withFnMusicAddress(
+        sourceId: String,
+        preparedDraft: FnMusicSourceDraft,
+        block: suspend (FnMusicSourceDraft) -> T,
+    ): T {
+        return when (preparedDraft.connectionMode) {
+            FnMusicConnectionMode.ADDRESS -> addressSelector.withAddressFallback(
+                sourceId = sourceId,
+                sourceType = ImportSourceType.FN_MUSIC,
+                lanBaseUrl = preparedDraft.baseUrl,
+                wanBaseUrl = preparedDraft.wanBaseUrl,
+                normalizeBaseUrl = ::normalizeFnMusicBaseUrl,
+            ) { candidate ->
+                block(preparedDraft.copy(baseUrl = candidate.value, wanBaseUrl = ""))
+            }
+            FnMusicConnectionMode.FN_CONNECT -> block(preparedDraft)
+        }
+    }
+
+    /** Fills a blank password/access code from the stored source; an address-mode source never keeps an access code. */
+    private suspend fun FnMusicSourceDraft.withStoredFnMusicSecrets(
+        existing: ImportSource,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+    ): FnMusicSourceDraft {
+        val resolvedPassword = if (password.isBlank() && keepExistingCredentialWhenBlankPassword) {
+            existing.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+        } else {
+            password
+        }
+        if (resolvedPassword.isBlank()) throw UiTextException(uiText(Res.string.source_credentials_missing, FN_MUSIC_NAME))
+        val resolvedAccessCode = when {
+            connectionMode == FnMusicConnectionMode.ADDRESS -> ""
+            accessCode.isNotBlank() -> accessCode
+            keepExistingCredentialWhenBlankPassword -> secureCredentialStore.get(fnMusicAccessCodeCredentialKey(existing.id)).orEmpty()
+            else -> ""
+        }
+        return copy(password = resolvedPassword, accessCode = resolvedAccessCode)
+    }
+
+    private suspend fun persistFnMusicAccessCode(sourceId: String, preparedDraft: FnMusicSourceDraft) {
+        val key = fnMusicAccessCodeCredentialKey(sourceId)
+        if (preparedDraft.connectionMode == FnMusicConnectionMode.FN_CONNECT && preparedDraft.accessCode.isNotEmpty()) {
+            secureCredentialStore.put(key, preparedDraft.accessCode)
+        } else {
+            secureCredentialStore.remove(key)
+        }
+    }
+
+    private suspend fun storedFnMusicDraft(source: ImportSource): FnMusicSourceDraft {
+        val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
+        if (password.isBlank()) throw UiTextException(uiText(Res.string.source_credentials_missing, FN_MUSIC_NAME))
+        val mode = fnMusicConnectionModeOf(source.rootReference)
+        return prepareFnMusicDraft(
+            FnMusicSourceDraft(
+                label = source.label,
+                connectionMode = mode,
+                baseUrl = if (mode == FnMusicConnectionMode.ADDRESS) source.rootReference else "",
+                wanBaseUrl = if (mode == FnMusicConnectionMode.ADDRESS) source.wanRootReference.orEmpty() else "",
+                fnId = fnMusicIdOf(source.rootReference).orEmpty(),
+                username = source.username.orEmpty(),
+                password = password,
+                accessCode = secureCredentialStore.get(fnMusicAccessCodeCredentialKey(source.id)).orEmpty(),
+            ),
+        )
+    }
+
     override suspend fun rescanSource(sourceId: String): Result<ImportScanSummary?> {
         return rescanSource(sourceId, ImportScanProgressSink.NoOp)
     }
@@ -1653,6 +1856,8 @@ class RoomImportSourceRepository(
                             )
                         }
                     }
+
+                    ImportSourceType.FN_MUSIC -> scanFnMusicDraft(source.id, storedFnMusicDraft(source), progressSink)
                 }
             }
             summary
@@ -1677,6 +1882,10 @@ class RoomImportSourceRepository(
                 .forEach { locator -> offlineDownloadGateway.delete(locator) }
             database.offlineDownloadDao().deleteBySourceId(source.id)
             source.credentialKey?.let { secureCredentialStore.remove(it) }
+            if (source.type == ImportSourceType.FN_MUSIC) {
+                secureCredentialStore.remove(fnMusicAccessCodeCredentialKey(source.id))
+                FnMusicSessions.invalidate(source.id)
+            }
             database.favoriteTrackDao().deleteBySourceId(source.id)
             cleanupPlaylistsForDeletedSource(source.id)
             database.trackPlaybackStatsDao().deleteBySourceId(source.id)
@@ -1886,6 +2095,25 @@ class RoomImportSourceRepository(
             label = label,
             rootReference = draft.baseUrl,
             wanRootReference = draft.wanBaseUrl.takeIf { it.isNotBlank() },
+            username = draft.username,
+            createdAt = createdAt,
+            enabled = enabled,
+        )
+    }
+
+    private fun createFnMusicSource(
+        sourceId: String,
+        draft: FnMusicSourceDraft,
+        createdAt: Long = now(),
+        enabled: Boolean = true,
+    ): ImportSource {
+        val label = draft.label.ifBlank { draft.baseUrl.ifBlank { draft.wanBaseUrl.ifBlank { draft.fnId } } }
+        return ImportSource(
+            id = sourceId,
+            type = ImportSourceType.FN_MUSIC,
+            label = label,
+            rootReference = draft.fnMusicRootReference(),
+            wanRootReference = draft.wanBaseUrl.takeIf { it.isNotBlank() && draft.connectionMode == FnMusicConnectionMode.ADDRESS },
             username = draft.username,
             createdAt = createdAt,
             enabled = enabled,
@@ -2826,9 +3054,14 @@ class DefaultLyricsRepository(
                 return resolved.withArtworkOverride(manualArtworkOverride)
             }
         val embyLocator = parseEmbySongLocator(track.mediaLocator)
-        if (embyLocator != null) {
+        val serverLyricsSourceId = when {
+            embyLocator != null -> EMBY_LYRICS_SOURCE_ID
+            parseFnMusicSongLocator(track.mediaLocator) != null -> FN_MUSIC_LYRICS_SOURCE_ID
+            else -> null
+        }
+        if (serverLyricsSourceId != null) {
             cachedRows
-                .firstOrNull { it.sourceId == EMBY_LYRICS_SOURCE_ID }
+                .firstOrNull { it.sourceId == serverLyricsSourceId }
                 ?.let { row ->
                     resolveCachedLyricsForTrack(
                         track = track,
@@ -2843,7 +3076,7 @@ class DefaultLyricsRepository(
 
             cachedRows
                 .firstNotNullOfOrNull { cache ->
-                    cache.takeUnless { it.sourceId == EMBY_LYRICS_SOURCE_ID }
+                    cache.takeUnless { it.sourceId == serverLyricsSourceId }
                         ?.let { row ->
                             resolveCachedLyricsForTrack(
                                 track = track,
@@ -2856,8 +3089,8 @@ class DefaultLyricsRepository(
                     logCacheHit(trackLabel, resolved.document)
                     return resolved.withArtworkOverride(manualArtworkOverride)
                 }
-            logger.debug(LYRICS_LOG_TAG) { "cache-miss track=$trackLabel fallback=emby-server" }
-            requestEmbyLyricsDocumentForPlayback(track)?.let { embyLyrics ->
+            logger.debug(LYRICS_LOG_TAG) { "cache-miss track=$trackLabel fallback=$serverLyricsSourceId" }
+            requestServerLyricsDocumentForPlayback(track)?.let { embyLyrics ->
                 storeLyricsDocument(track.id, embyLyrics)
                 logger.info(LYRICS_LOG_TAG) {
                     "resolved track=$trackLabel source=${embyLyrics.sourceId} synced=${embyLyrics.isSynced} lines=${embyLyrics.lines.size}"
@@ -3088,12 +3321,30 @@ class DefaultLyricsRepository(
         )
     }
 
-    private suspend fun requestEmbyLyricsDocumentForPlayback(track: Track): LyricsDocument? {
-        return runCatching { requestEmbyLyricsDocument(track) }
+    private suspend fun requestFnMusicLyricsDocument(track: Track): LyricsDocument? {
+        val locator = parseFnMusicSongLocator(track.mediaLocator) ?: return null
+        if (locator.first != track.sourceId) return null
+        val source = resolveFnMusicSource(database, secureCredentialStore, locator.first) ?: return null
+        return requestFnMusicServerLyricsDocument(
+            httpClient = httpClient,
+            source = source,
+            guid = locator.second,
+            addressSelector = addressSelector,
+            logger = logger,
+        )
+    }
+
+    /** Lyrics served by the track's own media server (Emby or FN Music). */
+    private suspend fun requestServerLyricsDocument(track: Track): LyricsDocument? {
+        return requestEmbyLyricsDocument(track) ?: requestFnMusicLyricsDocument(track)
+    }
+
+    private suspend fun requestServerLyricsDocumentForPlayback(track: Track): LyricsDocument? {
+        return runCatching { requestServerLyricsDocument(track) }
             .onFailure { throwable ->
                 throwable.throwIfCancellation()
                 logger.warn(LYRICS_LOG_TAG) {
-                    "playback-emby-lyrics-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+                    "playback-server-lyrics-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
                 }
             }
             .getOrNull()
@@ -3313,6 +3564,8 @@ class DefaultLyricsRepository(
             listOfNotNull(buildNavidromeTrackProvidedLyricsCandidate(track))
         } else if (parseEmbySongLocator(track.mediaLocator) != null) {
             listOfNotNull(buildEmbyTrackProvidedLyricsCandidate(track))
+        } else if (parseFnMusicSongLocator(track.mediaLocator) != null) {
+            listOfNotNull(buildFnMusicTrackProvidedLyricsCandidate(track))
         } else {
             buildList {
                 buildSameNameTrackProvidedLyricsCandidate(track)?.let(::add)
@@ -3355,6 +3608,29 @@ class DefaultLyricsRepository(
         return LyricsSearchCandidate(
             sourceId = document.sourceId,
             sourceName = "Emby",
+            document = document,
+            title = track.title.takeIf { it.isNotBlank() },
+            artistName = track.artistName?.takeIf { it.isNotBlank() },
+            albumTitle = track.albumTitle?.takeIf { it.isNotBlank() },
+            durationSeconds = track.durationSecondsOrNull(),
+            artworkLocator = normalizeArtworkLocator(track.artworkLocator),
+            isTrackProvided = true,
+        )
+    }
+
+    private suspend fun buildFnMusicTrackProvidedLyricsCandidate(track: Track): LyricsSearchCandidate? {
+        val document = runCatching { requestFnMusicLyricsDocument(track) }
+            .onFailure { throwable ->
+                logger.warn(LYRICS_LOG_TAG) {
+                    "manual-track-provided-fnmusic-failed track=${track.logIdentity()} reason=${throwable.message.orEmpty()}"
+                }
+            }
+            .getOrNull()
+            ?: return null
+        return LyricsSearchCandidate(
+            sourceId = document.sourceId,
+            sourceName = "飞牛音乐",
+            sourceNameText = FN_MUSIC_NAME,
             document = document,
             title = track.title.takeIf { it.isNotBlank() },
             artistName = track.artistName?.takeIf { it.isNotBlank() },
@@ -3443,6 +3719,7 @@ class DefaultLyricsRepository(
     private suspend fun readLiveSameNameLyricsDocument(track: Track): SameNameLyricsLookup {
         if (parseSubsonicCompatibleSongLocator(track.mediaLocator) != null) return SameNameLyricsLookup.Missing
         if (parseEmbySongLocator(track.mediaLocator) != null) return SameNameLyricsLookup.Missing
+        if (parseFnMusicSongLocator(track.mediaLocator) != null) return SameNameLyricsLookup.Missing
         val rawPayload = sameNameLyricsFileGateway.readSameNameLyrics(track).fold(
             onSuccess = { it?.trim()?.takeIf { value -> value.isNotBlank() } },
             onFailure = { throwable -> return SameNameLyricsLookup.Failed(throwable) },
@@ -4241,6 +4518,10 @@ internal fun embyTrackIdFor(sourceId: String, itemId: String): String {
     return "track:${sourceId}:emby:${itemId.lowercase()}"
 }
 
+internal fun fnMusicTrackIdFor(sourceId: String, guid: String): String {
+    return "track:${sourceId}:fnmusic:$guid"
+}
+
 private fun trackIdFor(sourceId: String, relativePath: String, mediaLocator: String): String {
     val subsonicSong = parseSubsonicCompatibleSongLocator(mediaLocator)
     if (subsonicSong != null) {
@@ -4249,6 +4530,10 @@ private fun trackIdFor(sourceId: String, relativePath: String, mediaLocator: Str
     val embySong = parseEmbySongLocator(mediaLocator)
     if (embySong != null) {
         return embyTrackIdFor(sourceId, embySong.second)
+    }
+    val fnMusicSong = parseFnMusicSongLocator(mediaLocator)
+    if (fnMusicSong != null) {
+        return fnMusicTrackIdFor(sourceId, fnMusicSong.second)
     }
     return "track:${sourceId}:${relativePath.lowercase()}"
 }

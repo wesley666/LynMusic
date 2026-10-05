@@ -61,6 +61,11 @@ import top.iwesley.lyn.music.domain.RemoteSourceResolvedUrl
 import top.iwesley.lyn.music.domain.isRemoteSourceAddressFallbackAllowed
 import top.iwesley.lyn.music.domain.checkOfflineDownloadHttpStatus
 import top.iwesley.lyn.music.domain.resolveEmbyDownloadUrlCandidates
+import top.iwesley.lyn.music.core.model.SignedRemoteStream
+import top.iwesley.lyn.music.domain.resolveFnMusicStreamSpec
+import top.iwesley.lyn.music.core.model.SignedRemoteStreamInputStream
+import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.domain.resolveNavidromeDownloadUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrlCandidates
 import kotlin.time.Clock
@@ -71,7 +76,8 @@ fun createJvmOfflineDownloadGateway(
     logger: DiagnosticLogger,
     rootDirectory: File = JvmAppDataDirectory.resolve("offline"),
     addressSelector: RemoteSourceAddressSelector = RemoteSourceAddressSelector(),
-): OfflineDownloadGateway = JvmOfflineDownloadGateway(database, secureCredentialStore, logger, rootDirectory, addressSelector)
+    fnMusicHttpClient: LyricsHttpClient? = null,
+): OfflineDownloadGateway = JvmOfflineDownloadGateway(database, secureCredentialStore, logger, rootDirectory, addressSelector, fnMusicHttpClient)
 
 private class JvmOfflineDownloadGateway(
     private val database: LynMusicDatabase,
@@ -79,6 +85,7 @@ private class JvmOfflineDownloadGateway(
     private val logger: DiagnosticLogger,
     private val rootDirectory: File,
     private val addressSelector: RemoteSourceAddressSelector,
+    private val fnMusicHttpClient: LyricsHttpClient?,
 ) : OfflineDownloadGateway {
     override suspend fun download(
         track: Track,
@@ -122,6 +129,14 @@ private class JvmOfflineDownloadGateway(
 
                 parseWebDavLocator(track.mediaLocator) != null -> {
                     downloadWebDav(track, partFile, onProgress)
+                }
+
+                parseFnMusicSongLocator(track.mediaLocator) != null -> {
+                    val stream = fnMusicHttpClient?.let { httpClient ->
+                        resolveFnMusicStreamSpec(database, secureCredentialStore, track.mediaLocator, httpClient, addressSelector)
+                            ?.let { SignedRemoteStream(it.candidates, it.hooks) }
+                    } ?: throw UiTextException(uiText(Res.string.offline_fn_music_source_unavailable))
+                    downloadFnMusic(stream, partFile, onProgress)
                 }
 
                 parseSambaLocator(track.mediaLocator) != null -> {
@@ -220,6 +235,41 @@ private class JvmOfflineDownloadGateway(
             }
         }
         throw lastFailure ?: UiTextException(uiText(Res.string.offline_download_address_unavailable))
+    }
+
+    /**
+     * Downloads through a resumable reader: an expired session is refreshed, and a body read that times out or ends
+     * early (e.g. a LAN address that just dropped) continues from the same byte on the next address, so a truncated
+     * file is never kept as complete.
+     */
+    private suspend fun downloadFnMusic(
+        stream: SignedRemoteStream,
+        target: File,
+        onProgress: suspend (OfflineDownloadProgress) -> Unit,
+    ): Long? {
+        target.delete()
+        return try {
+            SignedRemoteStreamInputStream(stream).use { reader ->
+                // A cancelled download closes the connection at once instead of waiting out a blocked read.
+                reader.bindToCurrentCoroutine()
+                reader.ensureOpenSuspending()
+                val totalBytes = reader.totalLength?.takeIf { it > 0L }
+                writeStream(
+                    input = reader,
+                    target = target,
+                    totalBytes = totalBytes,
+                    responseContentType = reader.contentType,
+                    onProgress = onProgress,
+                )
+                totalBytes
+            }
+        } catch (throwable: Throwable) {
+            target.delete()
+            throw throwable
+        } finally {
+            // Drops the temporary copy kept when the NAS ignored Range.
+            stream.close()
+        }
     }
 
     private suspend fun downloadWebDav(

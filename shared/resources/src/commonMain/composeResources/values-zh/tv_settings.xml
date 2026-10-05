@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tv_source_add_hint">添加本地文件夹、Samba、WebDAV、Navidrome、Subsonic 或 Emby 后，曲库会开始扫描音乐。</string>
+    <string name="tv_source_add_hint">添加本地文件夹、Samba、WebDAV、Navidrome、Subsonic、Emby 或飞牛音乐 后，曲库会开始扫描音乐。</string>
     <string name="tv_source_add_and_scan">添加并扫描</string>
     <string name="tv_source_add_named_type">新增%1$s来源</string>
     <string name="tv_source_add_action">新增来源</string>
@@ -16,7 +16,7 @@
     <string name="tv_source_last_scan_error">上次扫描失败：%1$s</string>
     <string name="tv_source_saved_api_key_hint">留空则沿用已保存 API Key</string>
     <string name="tv_source_saved_password_hint">留空则沿用已保存密码</string>
-    <string name="tv_source_management_description">管理本机、Samba、WebDAV、Navidrome、Subsonic 和 Emby 音乐来源。</string>
+    <string name="tv_source_management_description">管理本机、Samba、WebDAV、Navidrome、Subsonic、Emby 和飞牛音乐 音乐来源。</string>
     <string name="tv_sources_empty_title">还没有来源</string>
     <string name="tv_storage_offline_music_description">手动下载到本机的非本地音乐文件。</string>
     <string name="tv_source_not_scanned_status">未扫描</string>

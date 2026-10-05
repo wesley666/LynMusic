@@ -28,6 +28,7 @@ import top.iwesley.lyn.music.core.model.SubsonicAuthMode
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
@@ -37,6 +38,16 @@ import top.iwesley.lyn.music.data.db.PlaylistRemoteBindingEntity
 import top.iwesley.lyn.music.data.db.PlaylistTrackEntity
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.domain.addEmbyPlaylistItem
+import top.iwesley.lyn.music.domain.FN_MUSIC_NAME
+import top.iwesley.lyn.music.domain.FnMusicResolvedSource
+import top.iwesley.lyn.music.domain.addFnMusicPlaylistTracks
+import top.iwesley.lyn.music.domain.createFnMusicPlaylist
+import top.iwesley.lyn.music.domain.deleteFnMusicPlaylist
+import top.iwesley.lyn.music.domain.fetchFnMusicPlaylistTrackGuids
+import top.iwesley.lyn.music.domain.fetchFnMusicPlaylists
+import top.iwesley.lyn.music.domain.removeFnMusicPlaylistTracks
+import top.iwesley.lyn.music.domain.renameFnMusicPlaylist
+import top.iwesley.lyn.music.domain.resolveFnMusicSource
 import top.iwesley.lyn.music.domain.createEmbyPlaylist
 import top.iwesley.lyn.music.domain.deleteEmbyPlaylist
 import top.iwesley.lyn.music.domain.fetchEmbyPlaylistEntries
@@ -165,7 +176,18 @@ class RoomPlaylistRepository(
             val bindings = database.playlistRemoteBindingDao().getByPlaylistId(playlistId)
             val writableBindings = localPlaylistMutationRemoteBindings(playlist, bindings)
             writableBindings.forEach { binding ->
-                if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
+                if (database.importSourceDao().getById(binding.sourceId)?.isFnMusicSource() == true) {
+                    val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, binding.sourceId)
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_rename, FN_MUSIC_NAME))
+                    renameFnMusicPlaylist(
+                        httpClient = httpClient,
+                        source = resolvedSource,
+                        playlistGuid = binding.remotePlaylistId,
+                        name = displayName,
+                        addressSelector = addressSelector,
+                        logger = logger,
+                    )
+                } else if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
                     val resolvedSource = resolveEmbySource(database, secureCredentialStore, binding.sourceId, addressSelector)
                         ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_rename, "Emby"))
                     updateEmbyPlaylistName(
@@ -226,7 +248,17 @@ class RoomPlaylistRepository(
                 bindings = database.playlistRemoteBindingDao().getByPlaylistId(playlistId),
             )
             bindings.forEach { binding ->
-                if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
+                if (database.importSourceDao().getById(binding.sourceId)?.isFnMusicSource() == true) {
+                    val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, binding.sourceId)
+                        ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_delete, FN_MUSIC_NAME))
+                    deleteFnMusicPlaylist(
+                        httpClient = httpClient,
+                        source = resolvedSource,
+                        playlistGuid = binding.remotePlaylistId,
+                        addressSelector = addressSelector,
+                        logger = logger,
+                    )
+                } else if (database.importSourceDao().getById(binding.sourceId)?.isEmbySource() == true) {
                     val resolvedSource = resolveEmbySource(database, secureCredentialStore, binding.sourceId, addressSelector)
                         ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_delete, "Emby"))
                     deleteEmbyPlaylist(
@@ -268,8 +300,12 @@ class RoomPlaylistRepository(
             } else {
                 val embySong = parseEmbySongLocator(track.mediaLocator)
                     ?.takeIf { it.first == track.sourceId }
+                val fnMusicSong = parseFnMusicSongLocator(track.mediaLocator)
+                    ?.takeIf { it.first == track.sourceId }
                 if (embySong != null) {
                     addEmbyTrackToPlaylist(playlist, track, embySong.second)
+                } else if (fnMusicSong != null) {
+                    addFnMusicTrackToPlaylist(playlist, track, fnMusicSong.second)
                 } else {
                     addLocalTrackToPlaylist(playlist, track)
                 }
@@ -421,7 +457,13 @@ class RoomPlaylistRepository(
             val row = database.playlistTrackDao().getByPlaylistIdAndTrackId(playlistId, trackId) ?: return@runCatching
             val binding = database.playlistRemoteBindingDao().getByPlaylistIdAndSourceId(playlistId, row.sourceId)
             if (binding != null && row.remoteOrdinal != null && isLocalIndexedSource(row.sourceId)) {
-                if (database.importSourceDao().getById(row.sourceId)?.isEmbySource() == true) {
+                if (database.importSourceDao().getById(row.sourceId)?.isFnMusicSource() == true) {
+                    removeFnMusicTrackFromPlaylist(
+                        playlist = playlist,
+                        binding = binding,
+                        row = row,
+                    )
+                } else if (database.importSourceDao().getById(row.sourceId)?.isEmbySource() == true) {
                     removeEmbyTrackFromPlaylist(
                         playlist = playlist,
                         binding = binding,
@@ -459,7 +501,7 @@ class RoomPlaylistRepository(
     override suspend fun refreshNavidromePlaylists(): Result<Unit> {
         return runCatching {
             val remoteSources = database.importSourceDao().getAll()
-                .filter { it.subsonicCompatibleSourceType() != null || it.isEmbySource() }
+                .filter { it.subsonicCompatibleSourceType() != null || it.isEmbySource() || it.isFnMusicSource() }
             cleanupRemovedRemoteSources(remoteSources.mapTo(linkedSetOf()) { it.id })
             val failures = mutableListOf<UiText>()
             remoteSources
@@ -468,6 +510,8 @@ class RoomPlaylistRepository(
                 runCatching {
                     if (source.isEmbySource()) {
                         syncEmbySourcePlaylists(source)
+                    } else if (source.isFnMusicSource()) {
+                        syncFnMusicSourcePlaylists(source)
                     } else {
                         syncSourcePlaylists(source)
                     }
@@ -593,6 +637,198 @@ class RoomPlaylistRepository(
             remotePlaylistId = binding.remotePlaylistId,
             remoteName = binding.remoteName,
         )
+    }
+
+    private suspend fun addFnMusicTrackToPlaylist(
+        playlist: PlaylistEntity,
+        track: Track,
+        guid: String,
+    ) {
+        val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, track.sourceId)
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, FN_MUSIC_NAME))
+        val binding = ensureFnMusicRemoteBinding(playlist, track.sourceId, resolvedSource)
+        addFnMusicPlaylistTracks(
+            httpClient = httpClient,
+            source = resolvedSource,
+            playlistGuid = binding.remotePlaylistId,
+            trackGuids = listOf(guid),
+            addressSelector = addressSelector,
+            logger = logger,
+        )
+        syncFnMusicRemoteBinding(
+            playlist = playlist,
+            sourceId = track.sourceId,
+            remotePlaylistId = binding.remotePlaylistId,
+            remoteName = binding.remoteName,
+        )
+    }
+
+    private suspend fun removeFnMusicTrackFromPlaylist(
+        playlist: PlaylistEntity,
+        binding: PlaylistRemoteBindingEntity,
+        row: PlaylistTrackEntity,
+    ) {
+        val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, row.sourceId)
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_update, FN_MUSIC_NAME))
+        val guid = parseFnMusicSongLocator(
+            database.trackDao().getByIds(listOf(row.trackId)).firstOrNull()?.mediaLocator.orEmpty(),
+        )?.second
+            ?: fetchFnMusicPlaylistTrackGuids(httpClient, resolvedSource, binding.remotePlaylistId, addressSelector, logger)
+                .firstOrNull { fnMusicTrackIdFor(row.sourceId, it) == row.trackId }
+            ?: throw UiTextException(uiText(Res.string.playlist_remote_track_not_found))
+        removeFnMusicPlaylistTracks(
+            httpClient = httpClient,
+            source = resolvedSource,
+            playlistGuid = binding.remotePlaylistId,
+            trackGuids = listOf(guid),
+            addressSelector = addressSelector,
+            logger = logger,
+        )
+        syncFnMusicRemoteBinding(
+            playlist = playlist,
+            sourceId = row.sourceId,
+            remotePlaylistId = binding.remotePlaylistId,
+            remoteName = binding.remoteName,
+        )
+    }
+
+    private suspend fun ensureFnMusicRemoteBinding(
+        playlist: PlaylistEntity,
+        sourceId: String,
+        resolvedSource: FnMusicResolvedSource,
+    ): PlaylistRemoteBindingEntity {
+        database.playlistRemoteBindingDao().getByPlaylistIdAndSourceId(playlist.id, sourceId)?.let { return it }
+        val remotePlaylist = fetchFnMusicPlaylists(httpClient, resolvedSource, addressSelector, logger)
+            .firstOrNull { normalizePlaylistName(it.name) == playlist.normalizedName }
+            ?: createFnMusicPlaylist(
+                httpClient = httpClient,
+                source = resolvedSource,
+                name = playlist.name,
+                addressSelector = addressSelector,
+                logger = logger,
+            )
+        val binding = PlaylistRemoteBindingEntity(
+            playlistId = playlist.id,
+            sourceId = sourceId,
+            remotePlaylistId = remotePlaylist.guid,
+            remoteName = remotePlaylist.name,
+            lastSyncedAt = null,
+        )
+        database.playlistRemoteBindingDao().upsert(binding)
+        return binding
+    }
+
+    private suspend fun syncFnMusicSourcePlaylists(source: ImportSourceEntity) {
+        val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, source.id)
+            ?: throw UiTextException(uiText(Res.string.playlist_source_credentials_missing, FN_MUSIC_NAME))
+        val remotePlaylists = fetchFnMusicPlaylists(httpClient, resolvedSource, addressSelector, logger)
+        val remoteIds = remotePlaylists.mapTo(linkedSetOf()) { it.guid }
+        val existingBindingsByRemoteId = database.playlistRemoteBindingDao().getBySourceId(source.id)
+            .associateBy { it.remotePlaylistId }
+        val playlistsByNormalizedName = database.playlistDao().getAll()
+            .associateBy { it.normalizedName }
+            .toMutableMap()
+
+        remotePlaylists.forEach { remotePlaylist ->
+            val existingBinding = existingBindingsByRemoteId[remotePlaylist.guid]
+            val currentPlaylist = existingBinding?.let { database.playlistDao().getById(it.playlistId) }
+                ?: playlistsByNormalizedName[normalizePlaylistName(remotePlaylist.name)]
+            val playlist = currentPlaylist ?: PlaylistEntity(
+                id = newId("playlist"),
+                name = remotePlaylist.name,
+                normalizedName = normalizePlaylistName(remotePlaylist.name),
+                createdLocally = false,
+                createdAt = now(),
+                updatedAt = now(),
+            )
+            if (currentPlaylist == null) {
+                database.playlistDao().upsert(playlist)
+                playlistsByNormalizedName[playlist.normalizedName] = playlist
+            }
+            syncFnMusicRemoteBinding(
+                playlist = playlist,
+                sourceId = source.id,
+                remotePlaylistId = remotePlaylist.guid,
+                remoteName = remotePlaylist.name,
+            )
+        }
+
+        existingBindingsByRemoteId.values
+            .filter { it.remotePlaylistId !in remoteIds }
+            .forEach { binding ->
+                database.playlistRemoteBindingDao().deleteByPlaylistIdAndSourceId(binding.playlistId, binding.sourceId)
+                database.playlistTrackDao().deleteByPlaylistIdAndSourceId(binding.playlistId, binding.sourceId)
+                cleanupPlaylistIfNecessary(binding.playlistId)
+            }
+    }
+
+    private suspend fun syncFnMusicRemoteBinding(
+        playlist: PlaylistEntity,
+        sourceId: String,
+        remotePlaylistId: String,
+        remoteName: String,
+    ) {
+        val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, sourceId)
+            ?: throw UiTextException(uiText(Res.string.playlist_source_unavailable_sync, FN_MUSIC_NAME))
+        val remoteGuids = fetchFnMusicPlaylistTrackGuids(httpClient, resolvedSource, remotePlaylistId, addressSelector, logger)
+        writeRemotePlaylistRows(
+            playlist = playlist,
+            sourceId = sourceId,
+            remotePlaylistId = remotePlaylistId,
+            remoteName = remoteName,
+            trackIds = remoteGuids.map { fnMusicTrackIdFor(sourceId, it) },
+        )
+    }
+
+    /**
+     * Replaces a binding's rows with the remote order, touching the playlist only when the order changed. A remote
+     * playlist may list a track twice, but rows are keyed by (playlist, track): keep each track's first position, or
+     * the stored rows would never match and every sync would rewrite them and bump the playlist to the top.
+     */
+    private suspend fun writeRemotePlaylistRows(
+        playlist: PlaylistEntity,
+        sourceId: String,
+        remotePlaylistId: String,
+        remoteName: String,
+        trackIds: List<String>,
+    ) {
+        val nextRows = trackIds.withIndex().distinctBy { it.value }.map { (index, trackId) ->
+            PlaylistTrackEntity(
+                playlistId = playlist.id,
+                trackId = trackId,
+                sourceId = sourceId,
+                addedAt = now(),
+                localOrdinal = null,
+                remoteOrdinal = index,
+            )
+        }
+        database.immediateWriteTransaction {
+            val currentRemoteTrackOrder = database.playlistTrackDao().getByPlaylistIdAndSourceId(playlist.id, sourceId)
+                .sortedBy { it.remoteOrdinal ?: Int.MAX_VALUE }
+                .map { RemotePlaylistTrackSnapshot(trackId = it.trackId, remoteOrdinal = it.remoteOrdinal ?: -1) }
+            val nextRemoteTrackOrder = nextRows.map {
+                RemotePlaylistTrackSnapshot(trackId = it.trackId, remoteOrdinal = it.remoteOrdinal ?: -1)
+            }
+            val tracksChanged = currentRemoteTrackOrder != nextRemoteTrackOrder
+            if (tracksChanged) {
+                database.playlistTrackDao().deleteByPlaylistIdAndSourceId(playlist.id, sourceId)
+                if (nextRows.isNotEmpty()) {
+                    database.playlistTrackDao().upsertAll(nextRows)
+                }
+            }
+            database.playlistRemoteBindingDao().upsert(
+                PlaylistRemoteBindingEntity(
+                    playlistId = playlist.id,
+                    sourceId = sourceId,
+                    remotePlaylistId = remotePlaylistId,
+                    remoteName = remoteName,
+                    lastSyncedAt = now(),
+                ),
+            )
+            if (tracksChanged) {
+                touchPlaylist(playlist)
+            }
+        }
     }
 
     private suspend fun ensureRemoteBinding(
@@ -984,8 +1220,12 @@ class RoomPlaylistRepository(
         return type == ImportSourceType.EMBY.name
     }
 
+    private fun ImportSourceEntity.isFnMusicSource(): Boolean {
+        return type == ImportSourceType.FN_MUSIC.name
+    }
+
     private fun ImportSourceEntity.supportsRemotePlaylistMutations(): Boolean {
-        return isEmbySource() || subsonicCompatibleSourceType() != null
+        return isEmbySource() || isFnMusicSource() || subsonicCompatibleSourceType() != null
     }
 }
 

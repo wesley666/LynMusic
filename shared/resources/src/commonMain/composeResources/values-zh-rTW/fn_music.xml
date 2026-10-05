@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fn_music_name">飛牛音樂</string>
+    <string name="fn_music_connection_mode_label">連線方式</string>
+    <string name="fn_music_connection_mode_address">伺服器位址</string>
+    <string name="fn_music_connection_mode_fn_connect">FN Connect</string>
+    <string name="fn_music_fn_id_label">FN ID</string>
+    <string name="fn_music_fn_id_placeholder">例如 mynas 或 mynas.5ddd.com</string>
+    <string name="fn_music_access_code_label">存取碼（選填）</string>
+    <string name="fn_music_access_code_keep_hint">留空則保留已儲存的存取碼</string>
+    <string name="fn_music_fn_id_summary">FN ID: %1$s</string>
+    <string name="fn_music_fn_id_required">請填寫 FN ID。</string>
+    <string name="fn_music_fn_id_invalid">FN ID 無效，請填寫 ID 或其 .5ddd.com 位址。</string>
+    <string name="fn_music_access_code_invalid">FN Connect 存取碼錯誤或需要存取碼。</string>
+    <string name="fn_music_unreachable">無法連線到飛牛音樂。</string>
+    <string name="fn_music_response_invalid">飛牛音樂回傳的資料不完整或無效（%1$s）。</string>
+    <string name="fn_music_server_error">飛牛音樂錯誤：%1$s</string>
+    <string name="fn_music_cue_tracks_skipped">已略過 %1$d 首 CUE 分軌歌曲，暫不支援。</string>
+    <string name="source_fn_music_connection_failed">飛牛音樂連線測試失敗: %1$s</string>
+    <string name="source_fn_music_connection_succeeded">飛牛音樂連線測試成功。</string>
+    <string name="source_fn_music_import_failed">飛牛音樂匯入失敗: %1$s</string>
+    <string name="source_fn_music_imported">飛牛音樂音樂來源已匯入。</string>
+    <string name="source_fn_music_username_required">請先填寫飛牛音樂使用者名稱。</string>
+    <string name="source_fn_music_password_required">請先填寫飛牛音樂密碼。</string>
+    <string name="source_edit_fn_music_title">編輯飛牛音樂來源</string>
+    <string name="offline_fn_music_source_unavailable">飛牛音樂來源無法使用。</string>
+    <string name="fn_music_write_uncertain">飛牛音樂沒有確認這次修改（連線中斷），請先確認是否已生效再重試。</string>
+</resources>

@@ -27,6 +27,7 @@ import top.iwesley.lyn.music.core.model.LyricsShareSaveResult
 import top.iwesley.lyn.music.core.model.isIosArtworkCacheBackedLocator
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleCoverLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 import org.jetbrains.skia.FontMgr
@@ -152,6 +153,7 @@ private fun shouldResolveLyricsShareArtworkThroughCache(normalizedLocator: Strin
     return isIosArtworkCacheBackedLocator(normalizedLocator) ||
         parseSubsonicCompatibleCoverLocator(normalizedLocator) != null ||
         parseEmbyCoverLocator(normalizedLocator) != null ||
+        parseFnMusicCoverLocator(normalizedLocator) != null ||
         normalizedLocator.startsWith("http://", ignoreCase = true) ||
         normalizedLocator.startsWith("https://", ignoreCase = true)
 }

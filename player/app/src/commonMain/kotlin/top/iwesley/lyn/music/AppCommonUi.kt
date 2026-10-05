@@ -1372,6 +1372,13 @@ internal fun SourceCard(
                                 lanRootReference = state.source.rootReference,
                                 wanRootReference = state.source.wanRootReference,
                             )
+                            top.iwesley.lyn.music.core.model.ImportSourceType.FN_MUSIC ->
+                                top.iwesley.lyn.music.domain.fnMusicIdOf(state.source.rootReference)
+                                    ?.let { uiString(Res.string.fn_music_fn_id_summary, it) }
+                                    ?: remoteSourceAddressSummary(
+                                        lanRootReference = state.source.rootReference,
+                                        wanRootReference = state.source.wanRootReference,
+                                    )
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

@@ -128,6 +128,7 @@ import top.iwesley.lyn.music.core.model.ImportScanPhase
 import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LocalFolderPickerMode
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
@@ -2642,6 +2643,7 @@ private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String 
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
         LibrarySourceFilter.SUBSONIC -> "Subsonic"
         LibrarySourceFilter.EMBY -> "Emby"
+        LibrarySourceFilter.FN_MUSIC -> uiString(Res.string.fn_music_name)
         LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
     }
 }
@@ -3166,6 +3168,101 @@ private fun SubsonicAuthModeSelector(
     }
 }
 
+/** FN Music's connection choice: LAN/WAN server addresses, or an FN ID resolved through FN Connect. */
+@Composable
+private fun FnMusicConnectionFields(
+    connectionMode: FnMusicConnectionMode,
+    baseUrl: String,
+    wanBaseUrl: String,
+    fnId: String,
+    accessCode: String,
+    isEditing: Boolean,
+    enabled: Boolean,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    onConnectionModeChange: (FnMusicConnectionMode) -> Unit,
+    onBaseUrlChange: (String) -> Unit,
+    onWanBaseUrlChange: (String) -> Unit,
+    onFnIdChange: (String) -> Unit,
+    onAccessCodeChange: (String) -> Unit,
+) {
+    Text(uiString(Res.string.fn_music_connection_mode_label), fontWeight = FontWeight.Medium)
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FnMusicConnectionMode.entries.forEach { mode ->
+            val label = when (mode) {
+                FnMusicConnectionMode.ADDRESS -> uiString(Res.string.fn_music_connection_mode_address)
+                FnMusicConnectionMode.FN_CONNECT -> uiString(Res.string.fn_music_connection_mode_fn_connect)
+            }
+            if (mode == connectionMode) {
+                Button(
+                    onClick = { onConnectionModeChange(mode) },
+                    enabled = enabled,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(label)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onConnectionModeChange(mode) },
+                    enabled = enabled,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(label)
+                }
+            }
+        }
+    }
+    when (connectionMode) {
+        FnMusicConnectionMode.ADDRESS -> {
+            ImeAwareOutlinedTextField(
+                value = baseUrl,
+                onValueChange = onBaseUrlChange,
+                label = { Text(uiString(Res.string.source_lan_address_label)) },
+                placeholder = { Text("http://192.168.1.2:5666") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+            ImeAwareOutlinedTextField(
+                value = wanBaseUrl,
+                onValueChange = onWanBaseUrlChange,
+                label = { Text(uiString(Res.string.source_wan_address_label)) },
+                placeholder = { Text("https://music.example.com") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+        }
+
+        FnMusicConnectionMode.FN_CONNECT -> {
+            ImeAwareOutlinedTextField(
+                value = fnId,
+                onValueChange = onFnIdChange,
+                label = { Text(uiString(Res.string.fn_music_fn_id_label)) },
+                placeholder = { Text(uiString(Res.string.fn_music_fn_id_placeholder)) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+            ImeAwareOutlinedTextField(
+                value = accessCode,
+                onValueChange = onAccessCodeChange,
+                label = {
+                    Text(
+                        if (isEditing) {
+                            uiString(Res.string.fn_music_access_code_keep_hint)
+                        } else {
+                            uiString(Res.string.fn_music_access_code_label)
+                        },
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = fieldColors,
+            )
+        }
+    }
+}
+
 @Composable
 private fun LargeNavidromeLibraryDialog(
     trackCount: Int,
@@ -3406,6 +3503,7 @@ private val ADD_SOURCE_MENU_TYPES = listOf(
     ImportSourceType.NAVIDROME,
     ImportSourceType.SUBSONIC,
     ImportSourceType.EMBY,
+    ImportSourceType.FN_MUSIC,
     ImportSourceType.SAMBA,
     ImportSourceType.WEBDAV,
 )
@@ -3418,6 +3516,7 @@ private fun PlatformCapabilities.supportsAddingSource(type: ImportSourceType): B
     ImportSourceType.NAVIDROME -> supportsNavidromeImport
     ImportSourceType.SUBSONIC -> supportsSubsonicImport
     ImportSourceType.EMBY -> supportsEmbyImport
+    ImportSourceType.FN_MUSIC -> supportsFnMusicImport
 }
 
 @Composable
@@ -3428,6 +3527,7 @@ private fun addSourceTypeLabel(type: ImportSourceType): String = when (type) {
     ImportSourceType.NAVIDROME -> "Navidrome"
     ImportSourceType.SUBSONIC -> "Subsonic / OpenSubsonic"
     ImportSourceType.EMBY -> "Emby"
+    ImportSourceType.FN_MUSIC -> uiString(Res.string.fn_music_name)
 }
 
 @Composable
@@ -3465,6 +3565,7 @@ private fun RemoteSourceCreatorDialog(
                 ImportSourceType.NAVIDROME -> ImportIntent.TestNavidromeSource
                 ImportSourceType.SUBSONIC -> ImportIntent.TestSubsonicSource
                 ImportSourceType.EMBY -> ImportIntent.TestEmbySource
+                ImportSourceType.FN_MUSIC -> ImportIntent.TestFnMusicSource
                 ImportSourceType.LOCAL_FOLDER -> null
             }?.let(onIntent)
         },
@@ -3475,6 +3576,7 @@ private fun RemoteSourceCreatorDialog(
                 ImportSourceType.NAVIDROME -> ImportIntent.AddNavidromeSource
                 ImportSourceType.SUBSONIC -> ImportIntent.AddSubsonicSource
                 ImportSourceType.EMBY -> ImportIntent.AddEmbySource
+                ImportSourceType.FN_MUSIC -> ImportIntent.AddFnMusicSource
                 ImportSourceType.LOCAL_FOLDER -> null
             }?.let(onIntent)
         },
@@ -3629,6 +3731,50 @@ private fun RemoteSourceCreatorDialog(
                     ImeAwareOutlinedTextField(
                         value = state.embyPassword,
                         onValueChange = { onIntent(ImportIntent.EmbyPasswordChanged(it)) },
+                        label = { Text(uiString(Res.string.common_password)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                }
+            }
+
+            ImportSourceType.FN_MUSIC -> {
+                ImeAwareOutlinedTextField(
+                    value = state.fnMusicLabel,
+                    onValueChange = { onIntent(ImportIntent.FnMusicLabelChanged(it)) },
+                    label = { Text(uiString(Res.string.common_name)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = fieldColors,
+                )
+                FnMusicConnectionFields(
+                    connectionMode = state.fnMusicConnectionMode,
+                    baseUrl = state.fnMusicBaseUrl,
+                    wanBaseUrl = state.fnMusicWanBaseUrl,
+                    fnId = state.fnMusicId,
+                    accessCode = state.fnMusicAccessCode,
+                    isEditing = false,
+                    enabled = !state.isWorking,
+                    fieldColors = fieldColors,
+                    onConnectionModeChange = { onIntent(ImportIntent.FnMusicConnectionModeChanged(it)) },
+                    onBaseUrlChange = { onIntent(ImportIntent.FnMusicBaseUrlChanged(it)) },
+                    onWanBaseUrlChange = { onIntent(ImportIntent.FnMusicWanBaseUrlChanged(it)) },
+                    onFnIdChange = { onIntent(ImportIntent.FnMusicIdChanged(it)) },
+                    onAccessCodeChange = { onIntent(ImportIntent.FnMusicAccessCodeChanged(it)) },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ImeAwareOutlinedTextField(
+                        value = state.fnMusicUsername,
+                        onValueChange = { onIntent(ImportIntent.FnMusicUsernameChanged(it)) },
+                        label = { Text(uiString(Res.string.common_username)) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = fieldColors,
+                    )
+                    ImeAwareOutlinedTextField(
+                        value = state.fnMusicPassword,
+                        onValueChange = { onIntent(ImportIntent.FnMusicPasswordChanged(it)) },
                         label = { Text(uiString(Res.string.common_password)) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(18.dp),
@@ -3798,6 +3944,7 @@ private fun RemoteSourceEditorDialog(
             ImportSourceType.NAVIDROME -> uiString(Res.string.source_edit_navidrome_title)
             ImportSourceType.SUBSONIC -> uiString(Res.string.source_edit_subsonic_title)
             ImportSourceType.EMBY -> uiString(Res.string.source_edit_emby_title)
+            ImportSourceType.FN_MUSIC -> uiString(Res.string.source_edit_fn_music_title)
             ImportSourceType.LOCAL_FOLDER -> uiString(Res.string.source_edit_title)
         },
         subtitle = remoteSourceEditorTrackCountLabel(
@@ -3885,6 +4032,22 @@ private fun RemoteSourceEditorDialog(
                     colors = fieldColors,
                 )
             }
+
+            ImportSourceType.FN_MUSIC -> FnMusicConnectionFields(
+                connectionMode = state.fnMusicConnectionMode,
+                baseUrl = state.rootUrl,
+                wanBaseUrl = state.wanRootUrl,
+                fnId = state.fnMusicId,
+                accessCode = state.fnMusicAccessCode,
+                isEditing = true,
+                enabled = !isWorking,
+                fieldColors = fieldColors,
+                onConnectionModeChange = { onIntent(ImportIntent.RemoteSourceFnMusicConnectionModeChanged(it)) },
+                onBaseUrlChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
+                onWanBaseUrlChange = { onIntent(ImportIntent.RemoteSourceWanRootUrlChanged(it)) },
+                onFnIdChange = { onIntent(ImportIntent.RemoteSourceFnMusicIdChanged(it)) },
+                onAccessCodeChange = { onIntent(ImportIntent.RemoteSourceFnMusicAccessCodeChanged(it)) },
+            )
 
             ImportSourceType.LOCAL_FOLDER -> Unit
         }

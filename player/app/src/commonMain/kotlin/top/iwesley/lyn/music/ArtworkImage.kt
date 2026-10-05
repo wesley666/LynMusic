@@ -38,6 +38,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.isIosArtworkCacheBackedLocator
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleCoverLocator
 
 internal object ArtworkDecodeSize {
@@ -428,6 +429,7 @@ private fun shouldUseInitialArtworkTarget(
 ): Boolean {
     if (parseSubsonicCompatibleCoverLocator(normalizedLocator) != null) return false
     if (parseEmbyCoverLocator(normalizedLocator) != null) return false
+    if (parseFnMusicCoverLocator(normalizedLocator) != null) return false
     if (isIosArtworkCacheBackedLocator(normalizedLocator)) return false
     if (!cacheRemote) return true
     return !normalizedLocator.startsWith("http://", ignoreCase = true) &&

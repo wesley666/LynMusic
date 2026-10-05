@@ -17,6 +17,10 @@ import kotlinx.coroutines.yield
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.core.model.EmbyCredential
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
+import top.iwesley.lyn.music.core.model.FnMusicSourceDraft
+import top.iwesley.lyn.music.core.model.buildFnMusicSongLocator
+import top.iwesley.lyn.music.domain.fnMusicAccessCodeCredentialKey
 import top.iwesley.lyn.music.core.model.ImportScanPhase
 import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
@@ -1379,6 +1383,118 @@ class ImportSourceRepositoryTest {
     }
 
     @Test
+    fun `adding FN Music source stores password and imports tracks`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway(
+            fnMusicScanReportFactory = { sourceId ->
+                ImportScanReport(
+                    tracks = listOf(
+                        ImportedTrackCandidate(
+                            title = "FN Song",
+                            mediaLocator = buildFnMusicSongLocator(sourceId, "Guid-1"),
+                            relativePath = "Artist/Album/FN Song.flac",
+                        ),
+                    ),
+                    discoveredAudioFileCount = 1,
+                )
+            },
+        )
+        val credentials = ImportTestSecureCredentialStore()
+        val repository = RoomImportSourceRepository(database = database, gateway = gateway, secureCredentialStore = credentials)
+
+        val summary = repository.addFnMusicSource(
+            FnMusicSourceDraft(
+                label = " NAS ",
+                connectionMode = FnMusicConnectionMode.ADDRESS,
+                baseUrl = "http://192.168.1.2:5666/",
+                wanBaseUrl = "https://music.example.com",
+                username = " demo ",
+                password = "secret",
+                accessCode = "ignored",
+            ),
+        ).getOrThrow()
+
+        assertEquals("http://192.168.1.2:5666", gateway.fnMusicTestDrafts.single().baseUrl)
+        assertEquals("", gateway.fnMusicScanDrafts.single().wanBaseUrl)
+        val stored = assertNotNull(database.importSourceDao().getById(summary.sourceId))
+        assertEquals(ImportSourceType.FN_MUSIC.name, stored.type)
+        assertEquals("NAS", stored.label)
+        assertEquals("http://192.168.1.2:5666", stored.rootReference)
+        assertEquals("https://music.example.com", stored.wanRootReference)
+        assertEquals("demo", stored.username)
+        assertEquals("secret", credentials.get("credential-${summary.sourceId}"))
+        assertNull(credentials.get(fnMusicAccessCodeCredentialKey(summary.sourceId)))
+        val track = database.trackDao().getAll().single()
+        assertEquals("track:${summary.sourceId}:fnmusic:Guid-1", track.id)
+    }
+
+    @Test
+    fun `FN Connect source keeps its access code until the source is deleted`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val credentials = ImportTestSecureCredentialStore()
+        val repository = RoomImportSourceRepository(database = database, gateway = gateway, secureCredentialStore = credentials)
+
+        val summary = repository.addFnMusicSource(
+            FnMusicSourceDraft(
+                label = "",
+                connectionMode = FnMusicConnectionMode.FN_CONNECT,
+                fnId = "MyNas.5ddd.com",
+                username = "demo",
+                password = "secret",
+                accessCode = "1234",
+            ),
+        ).getOrThrow()
+        val sourceId = summary.sourceId
+        val stored = assertNotNull(database.importSourceDao().getById(sourceId))
+        assertEquals("fnconnect://mynas", stored.rootReference)
+        assertEquals("mynas", stored.label)
+        assertEquals("1234", credentials.get(fnMusicAccessCodeCredentialKey(sourceId)))
+
+        // Blank password and access code keep the stored ones.
+        repository.updateFnMusicSource(
+            sourceId = sourceId,
+            draft = FnMusicSourceDraft(
+                label = "NAS",
+                connectionMode = FnMusicConnectionMode.FN_CONNECT,
+                fnId = "mynas",
+                username = "demo",
+                password = "",
+            ),
+        ).getOrThrow()
+        val rescanDraft = gateway.fnMusicScanDrafts.last()
+        assertEquals("secret", rescanDraft.password)
+        assertEquals("1234", rescanDraft.accessCode)
+
+        repository.rescanSource(sourceId).getOrThrow()
+        assertEquals("1234", gateway.fnMusicScanDrafts.last().accessCode)
+
+        repository.deleteSource(sourceId).getOrThrow()
+        assertNull(credentials.get("credential-$sourceId"))
+        assertNull(credentials.get(fnMusicAccessCodeCredentialKey(sourceId)))
+    }
+
+    @Test
+    fun `switching an FN Music source to server addresses drops the access code`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val credentials = ImportTestSecureCredentialStore()
+        val repository = RoomImportSourceRepository(database = database, gateway = gateway, secureCredentialStore = credentials)
+        val sourceId = repository.addFnMusicSource(
+            FnMusicSourceDraft("NAS", FnMusicConnectionMode.FN_CONNECT, fnId = "mynas", username = "demo", password = "secret", accessCode = "1234"),
+        ).getOrThrow().sourceId
+
+        repository.updateFnMusicSource(
+            sourceId = sourceId,
+            draft = FnMusicSourceDraft("NAS", FnMusicConnectionMode.ADDRESS, baseUrl = "http://10.0.0.2:5666", username = "demo", password = ""),
+        ).getOrThrow()
+
+        assertEquals("http://10.0.0.2:5666", database.importSourceDao().getById(sourceId)?.rootReference)
+        assertEquals("", gateway.fnMusicScanDrafts.last().accessCode)
+        assertNull(credentials.get(fnMusicAccessCodeCredentialKey(sourceId)))
+    }
+
+    @Test
     fun `adding emby source stores token credential and imports tracks`() = runTest {
         val database = createImportTestDatabase()
         val gateway = RecordingImportSourceGateway(
@@ -1997,7 +2113,10 @@ private class RecordingImportSourceGateway(
         ImportTrackBatchSink,
     ) -> ImportStreamingScanReport)? = null,
     private val embyScanReportFactory: ((String) -> ImportScanReport)? = null,
+    private val fnMusicScanReportFactory: ((String) -> ImportScanReport)? = null,
 ) : ImportSourceGateway {
+    val fnMusicTestDrafts = mutableListOf<FnMusicSourceDraft>()
+    val fnMusicScanDrafts = mutableListOf<FnMusicSourceDraft>()
     var localFolderScanCount: Int = 0
     var sambaTestCount: Int = 0
     var sambaScanCount: Int = 0
@@ -2159,6 +2278,15 @@ private class RecordingImportSourceGateway(
         lastEmbyScanCredential = credential
         lastEmbyScanDeviceId = deviceId
         return embyScanReportFactory?.invoke(sourceId) ?: scanReport
+    }
+
+    override suspend fun testFnMusic(draft: FnMusicSourceDraft, deviceId: String) {
+        fnMusicTestDrafts += draft
+    }
+
+    override suspend fun scanFnMusic(draft: FnMusicSourceDraft, sourceId: String, deviceId: String): ImportScanReport {
+        fnMusicScanDrafts += draft
+        return fnMusicScanReportFactory?.invoke(sourceId) ?: scanReport
     }
 }
 

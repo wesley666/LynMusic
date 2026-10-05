@@ -10,6 +10,8 @@ private const val SUBSONIC_SCHEME = "lynmusic-subsonic://"
 private const val SUBSONIC_COVER_SCHEME = "lynmusic-subsonic-cover://"
 private const val EMBY_SCHEME = "lynmusic-emby://"
 private const val EMBY_COVER_SCHEME = "lynmusic-emby-cover://"
+private const val FN_MUSIC_SCHEME = "lynmusic-fnmusic://"
+private const val FN_MUSIC_COVER_SCHEME = "lynmusic-fnmusic-cover://"
 const val DEFAULT_SAMBA_PORT = 445
 
 data class SubsonicCompatibleLocator(
@@ -196,6 +198,22 @@ fun buildEmbyCoverLocator(sourceId: String, itemId: String): String {
 
 fun parseEmbyCoverLocator(locator: String): Pair<String, String>? {
     return parseEmbyLocator(locator, EMBY_COVER_SCHEME)
+}
+
+fun buildFnMusicSongLocator(sourceId: String, guid: String): String {
+    return FN_MUSIC_SCHEME + sourceId.encodeURLParameter() + "/" + guid.encodeURLParameter()
+}
+
+fun parseFnMusicSongLocator(locator: String): Pair<String, String>? {
+    return parseSubsonicLocator(locator, FN_MUSIC_SCHEME)
+}
+
+fun buildFnMusicCoverLocator(sourceId: String, coverId: String): String {
+    return FN_MUSIC_COVER_SCHEME + sourceId.encodeURLParameter() + "/" + coverId.encodeURLParameter()
+}
+
+fun parseFnMusicCoverLocator(locator: String): Pair<String, String>? {
+    return parseSubsonicLocator(locator, FN_MUSIC_COVER_SCHEME)
 }
 
 private fun parseNavidromeLocator(locator: String, scheme: String): Pair<String, String>? {

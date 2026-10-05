@@ -3,6 +3,7 @@ package top.iwesley.lyn.music
 import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
 import top.iwesley.lyn.music.core.model.ArtworkCacheResult
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,7 @@ import top.iwesley.lyn.music.core.model.DesktopLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DeviceInfoGateway
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
+import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.ImportSourceGateway
 import top.iwesley.lyn.music.core.model.LyricsShareFontLibraryPlatformService
 import top.iwesley.lyn.music.core.model.LyricsShareFontPreferencesStore
@@ -74,6 +76,14 @@ import top.iwesley.lyn.music.data.repository.DefaultSettingsRepository
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.EmbyPlaybackStatsReporter
+import top.iwesley.lyn.music.data.repository.FnMusicPlaybackStatsReporter
+import top.iwesley.lyn.music.domain.resolveFnMusicCoverCandidates as resolveFnMusicCoverCandidatesFor
+import top.iwesley.lyn.music.domain.isFnMusicMediaAuthFailure
+import top.iwesley.lyn.music.domain.refreshFnMusicCandidate
+import top.iwesley.lyn.music.domain.FnMusicRequestSigner
+import top.iwesley.lyn.music.domain.fnMusicTokenFromHeaders
+import top.iwesley.lyn.music.core.model.RemoteRequestSigner
+import top.iwesley.lyn.music.domain.resolveFnMusicStreamCandidates as resolveFnMusicStreamCandidatesFor
 import top.iwesley.lyn.music.data.repository.LocalPlaybackStatsReporter
 import top.iwesley.lyn.music.data.repository.LyricsRepository
 import top.iwesley.lyn.music.data.repository.NavidromePlaybackStatsReporter
@@ -271,8 +281,35 @@ fun buildSharedGraph(
                     secureCredentialStore = runtimeServices.secureCredentialStore,
                     locator = locator,
                     addressSelector = runtimeServices.remoteSourceAddressSelector,
-                )?.toRemotePlaybackUrlCandidates()
+                )?.toRemotePlaybackUrlCandidates() ?: resolveFnMusicStreamCandidates(locator)
             }
+
+            private suspend fun resolveFnMusicStreamCandidates(locator: String): List<RemotePlaybackUrlCandidate>? {
+                return fnMusicOrNull("stream-candidates", locator) {
+                    resolveFnMusicStreamCandidatesFor(
+                        database = database,
+                        secureCredentialStore = runtimeServices.secureCredentialStore,
+                        locator = locator,
+                        httpClient = runtimeServices.lyricsHttpClient,
+                        addressSelector = runtimeServices.remoteSourceAddressSelector,
+                    )
+                }
+            }
+
+            private suspend fun resolveFnMusicCoverCandidates(locator: String): List<RemotePlaybackUrlCandidate>? {
+                return fnMusicOrNull("cover-candidates", locator) {
+                    resolveFnMusicCoverCandidatesFor(
+                        database = database,
+                        secureCredentialStore = runtimeServices.secureCredentialStore,
+                        locator = locator,
+                        httpClient = runtimeServices.lyricsHttpClient,
+                        addressSelector = runtimeServices.remoteSourceAddressSelector,
+                    )
+                }
+            }
+
+            private suspend fun <T> fnMusicOrNull(operation: String, locator: String, block: suspend () -> T?): T? =
+                resolveFnMusicOrNull(runtimeServices.logger, operation, locator, block)
 
             override suspend fun resolveCoverArtUrl(locator: String): String? {
                 return resolveNavidromeCoverArtUrl(
@@ -299,7 +336,28 @@ fun buildSharedGraph(
                     secureCredentialStore = runtimeServices.secureCredentialStore,
                     locator = locator,
                     addressSelector = runtimeServices.remoteSourceAddressSelector,
-                )?.toRemotePlaybackUrlCandidates()
+                )?.toRemotePlaybackUrlCandidates() ?: resolveFnMusicCoverCandidates(locator)
+            }
+
+            override fun requestSigner(candidate: RemotePlaybackUrlCandidate): RemoteRequestSigner? =
+                FnMusicRequestSigner.takeIf { fnMusicTokenFromHeaders(candidate.headers) != null }
+
+            override suspend fun refreshCandidate(
+                candidate: RemotePlaybackUrlCandidate,
+                statusCode: Int,
+                body: String?,
+            ): RemotePlaybackUrlCandidate? {
+                if (!isFnMusicMediaAuthFailure(statusCode, body)) return null
+                // A refresh that fails (offline, login refused) leaves the caller with the original refusal.
+                return fnMusicOrNull("refresh-candidate", candidate.sourceId) {
+                    refreshFnMusicCandidate(
+                        database = database,
+                        secureCredentialStore = runtimeServices.secureCredentialStore,
+                        candidate = candidate,
+                        httpClient = runtimeServices.lyricsHttpClient,
+                        addressSelector = runtimeServices.remoteSourceAddressSelector,
+                    )
+                }
             }
 
             override fun markResolvedUrlSuccess(candidate: RemotePlaybackUrlCandidate) {
@@ -330,6 +388,13 @@ fun buildSharedGraph(
                 addressSelector = runtimeServices.remoteSourceAddressSelector,
             ),
             EmbyPlaybackStatsReporter(
+                database = database,
+                secureCredentialStore = runtimeServices.secureCredentialStore,
+                httpClient = runtimeServices.lyricsHttpClient,
+                logger = runtimeServices.logger,
+                addressSelector = runtimeServices.remoteSourceAddressSelector,
+            ),
+            FnMusicPlaybackStatsReporter(
                 database = database,
                 secureCredentialStore = runtimeServices.secureCredentialStore,
                 httpClient = runtimeServices.lyricsHttpClient,
@@ -467,4 +532,25 @@ fun buildSharedGraph(
         logger = runtimeServices.logger,
         scope = scope,
     )
+}
+
+/**
+ * Navidrome and Emby build their URLs locally, so callers of the locator resolver (artwork rendering among them)
+ * never expected it to throw. FN Music needs the network (login, FN Connect) for the same answer; keep that contract
+ * by logging a failure and answering "nothing" instead. Cancellation still propagates.
+ */
+internal suspend fun <T> resolveFnMusicOrNull(
+    logger: DiagnosticLogger,
+    operation: String,
+    locator: String,
+    block: suspend () -> T?,
+): T? {
+    return try {
+        block()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (failure: Throwable) {
+        logger.warn("FnMusic") { "$operation-failed locator=$locator reason=${failure.message.orEmpty()}" }
+        null
+    }
 }

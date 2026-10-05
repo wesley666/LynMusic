@@ -102,7 +102,8 @@ class PlaylistsStore(
                         .filter {
                             it.type == ImportSourceType.NAVIDROME ||
                                 it.type == ImportSourceType.SUBSONIC ||
-                                it.type == ImportSourceType.EMBY
+                                it.type == ImportSourceType.EMBY ||
+                                it.type == ImportSourceType.FN_MUSIC
                         }
                         .mapTo(linkedSetOf()) { it.id },
                 )
@@ -337,6 +338,7 @@ class PlaylistsStore(
             LibrarySourceFilter.NAVIDROME,
             LibrarySourceFilter.SUBSONIC,
             LibrarySourceFilter.EMBY,
+            LibrarySourceFilter.FN_MUSIC,
         )
     }
 }

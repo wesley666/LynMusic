@@ -2003,6 +2003,7 @@ private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String
         LibrarySourceFilter.NAVIDROME -> "Navidrome"
         LibrarySourceFilter.SUBSONIC -> "Subsonic"
         LibrarySourceFilter.EMBY -> "Emby"
+        LibrarySourceFilter.FN_MUSIC -> uiString(Res.string.fn_music_name)
         LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
     }
 }

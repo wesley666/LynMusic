@@ -1,6 +1,6 @@
 package top.iwesley.lyn.music.platform
 
-import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
+import top.iwesley.lyn.music.core.model.readRemoteSourceCandidateBytes
 import top.iwesley.lyn.music.resources.*
 
 import android.content.Context
@@ -17,6 +17,7 @@ import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
 import top.iwesley.lyn.music.core.model.isCompleteArtworkPayload
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleCoverLocator
 import top.iwesley.lyn.music.domain.readRemotePlaybackUrlCandidateWithFallback
 
@@ -48,7 +49,8 @@ internal class AndroidAudioTagEditorPlatformService(
             if (rawTarget.isBlank()) return@runCatching null
             val remoteCoverCandidates = if (
                 parseSubsonicCompatibleCoverLocator(rawTarget) != null ||
-                parseEmbyCoverLocator(rawTarget) != null
+                parseEmbyCoverLocator(rawTarget) != null ||
+                parseFnMusicCoverLocator(rawTarget) != null
             ) {
                 NavidromeLocatorRuntime.resolveCoverArtUrlCandidates(rawTarget).orEmpty()
             } else {
@@ -83,7 +85,7 @@ internal class AndroidAudioTagEditorPlatformService(
     ): ByteArray? {
         val resolved = readRemotePlaybackUrlCandidateWithFallback(
             candidates = targets,
-            read = { target -> readRemoteSourceUrlBytes(target.value) },
+            read = { target -> readRemoteSourceCandidateBytes(target) },
             isValidPayload = ::isCompleteArtworkPayload,
         ) ?: return null
         NavidromeLocatorRuntime.markResolvedUrlSuccess(resolved.first)

@@ -12,6 +12,7 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.isIosArtworkCacheBackedLocator
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleCoverLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
 
@@ -29,12 +30,16 @@ internal actual suspend fun resolveLynArtworkTarget(
             .getOrNull()
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?.takeIf { parseSubsonicCompatibleCoverLocator(it) == null && parseEmbyCoverLocator(it) == null }
+            ?.takeIf { parseSubsonicCompatibleCoverLocator(it) == null && parseEmbyCoverLocator(it) == null && parseFnMusicCoverLocator(it) == null }
     } else {
         null
     }
+    // Runs inside a composition's produceState: a failing resolver must cost the image, never crash the app.
     val target = cachedTarget
-        ?: resolveArtworkCacheTarget(normalized).takeUnless { isIosCacheBackedLocator }
+        ?: runCatching { resolveArtworkCacheTarget(normalized) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrNull()
+            .takeUnless { isIosCacheBackedLocator }
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
         ?: return@withContext null

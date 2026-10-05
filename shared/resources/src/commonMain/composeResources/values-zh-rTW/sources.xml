@@ -54,7 +54,7 @@
     <string name="library_navidrome_artist_albums_loading_hint">正在從 Navidrome 獲取這個藝人的專輯。</string>
     <string name="import_scan_failures_title">掃描失敗檔案</string>
     <string name="source_reauthorize_folder">重新授權</string>
-    <string name="library_empty_import_hint">先到“來源”頁匯入本機資料夾、Samba、WebDAV、Navidrome、Subsonic 或 Emby，掃描完成後會出現在這裡。</string>
+    <string name="library_empty_import_hint">先到“來源”頁匯入本機資料夾、Samba、WebDAV、Navidrome、Subsonic、Emby 或飛牛音樂，掃描完成後會出現在這裡。</string>
     <string name="source_import_all_action">全部匯入</string>
     <string name="source_lan_address_label">局域網/首選地址</string>
     <string name="source_navidrome_large_library_title">Navidrome 曲庫較大</string>

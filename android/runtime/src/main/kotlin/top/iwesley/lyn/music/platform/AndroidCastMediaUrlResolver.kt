@@ -20,7 +20,10 @@ import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.LyricsHttpClient
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
+import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 
@@ -29,6 +32,8 @@ internal class AndroidCastMediaUrlResolver(
     private val database: LynMusicDatabase,
     private val secureCredentialStore: SecureCredentialStore,
     private val logger: DiagnosticLogger,
+    private val fnMusicHttpClient: LyricsHttpClient? = null,
+    private val addressSelector: RemoteSourceAddressSelector = RemoteSourceAddressSelector(),
 ) : CastMediaUrlResolver {
     private val appContext = context.applicationContext
     private val server: AndroidCastProxyServer
@@ -120,6 +125,17 @@ internal class AndroidCastMediaUrlResolver(
                 secureCredentialStore = secureCredentialStore,
                 track = track,
                 mimeType = mimeType,
+                logger = logger,
+            )
+        }
+        if (parseFnMusicSongLocator(track.mediaLocator) != null && fnMusicHttpClient != null) {
+            return FnMusicCastProxyResource.create(
+                database = database,
+                secureCredentialStore = secureCredentialStore,
+                track = track,
+                mimeType = mimeType,
+                httpClient = fnMusicHttpClient,
+                addressSelector = addressSelector,
                 logger = logger,
             )
         }

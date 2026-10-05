@@ -33,6 +33,7 @@ import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
 import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.LocalFolderPickerMode
 import top.iwesley.lyn.music.core.model.NavidromeLibraryProbe
@@ -211,6 +212,40 @@ class ImportStoreTest {
         assertLocalizedEquals("", editing.password)
         assertTrue(editing.hasStoredCredential)
         assertTrue(editing.keepExistingCredential)
+        harness.close()
+    }
+
+    @Test
+    fun `changing an FN Music username drops the stored password`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "fn-1",
+                    type = ImportSourceType.FN_MUSIC,
+                    label = "NAS",
+                    rootReference = "fnconnect://mynas",
+                    username = "alice",
+                    credentialKey = "credential-fn-1",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("fn-1"))
+        advanceUntilIdle()
+        val opened = assertNotNull(store.state.value.editingSource)
+        assertEquals(FnMusicConnectionMode.FN_CONNECT, opened.fnMusicConnectionMode)
+        assertEquals("mynas", opened.fnMusicId)
+        assertTrue(opened.keepExistingCredential)
+
+        store.dispatch(ImportIntent.RemoteSourceUsernameChanged("bob"))
+        advanceUntilIdle()
+
+        val edited = assertNotNull(store.state.value.editingSource)
+        assertEquals("bob", edited.username)
+        assertEquals("", edited.password)
+        assertFalse(edited.keepExistingCredential)
         harness.close()
     }
 

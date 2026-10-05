@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="tv_source_add_hint">Add a local folder, Samba, WebDAV, Navidrome, Subsonic, or Emby source to start scanning music.</string>
+    <string name="tv_source_add_hint">Add a local folder, Samba, WebDAV, Navidrome, Subsonic, Emby, or FN Music source to start scanning music.</string>
     <string name="tv_source_add_and_scan">Add and scan</string>
     <string name="tv_source_add_named_type">Add %1$s source</string>
     <string name="tv_source_add_action">Add source</string>
@@ -16,7 +16,7 @@
     <string name="tv_source_last_scan_error">Last scan failed: %1$s</string>
     <string name="tv_source_saved_api_key_hint">Leave blank to keep the saved API key</string>
     <string name="tv_source_saved_password_hint">Leave blank to keep the saved password</string>
-    <string name="tv_source_management_description">Manage local, Samba, WebDAV, Navidrome, Subsonic, and Emby music sources.</string>
+    <string name="tv_source_management_description">Manage local, Samba, WebDAV, Navidrome, Subsonic, Emby, and FN Music music sources.</string>
     <string name="tv_sources_empty_title">No sources yet</string>
     <string name="tv_storage_offline_music_description">Non-local music downloaded manually to this device.</string>
     <string name="tv_source_not_scanned_status">Not scanned</string>

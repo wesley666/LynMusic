@@ -133,4 +133,36 @@ class ArtworkCacheLocatorsTest {
             ),
         )
     }
+
+    @Test
+    fun `plain artwork target skips candidates that need request headers`() = kotlinx.coroutines.test.runTest {
+        var candidateLookups = 0
+        NavidromeLocatorRuntime.install(
+            object : NavidromeLocatorResolver {
+                override suspend fun resolveStreamUrl(locator: String, audioQuality: NavidromeAudioQuality): String? = null
+                override suspend fun resolveCoverArtUrl(locator: String): String? = null
+                override suspend fun resolveCoverArtUrlCandidates(locator: String): List<RemotePlaybackUrlCandidate> {
+                    candidateLookups += 1
+                    return listOf(
+                        RemotePlaybackUrlCandidate(value = "https://nas/cover?id=1", headers = mapOf("Cookie" to "music-token=t")),
+                    )
+                }
+            },
+        )
+        try {
+            val locator = buildFnMusicCoverLocator("fn-1", "c1")
+            kotlin.test.assertNull(resolveArtworkCacheTarget(locator))
+            // FN Music covers are answered without resolving them: that would log in or look up FN Connect for nothing.
+            kotlin.test.assertEquals(0, candidateLookups)
+            kotlin.test.assertEquals(1, resolveArtworkCacheTargets(locator).size)
+            kotlin.test.assertEquals("https://example.com/a.jpg", resolveArtworkCacheTarget("https://example.com/a.jpg"))
+        } finally {
+            NavidromeLocatorRuntime.install(
+                object : NavidromeLocatorResolver {
+                    override suspend fun resolveStreamUrl(locator: String, audioQuality: NavidromeAudioQuality): String? = null
+                    override suspend fun resolveCoverArtUrl(locator: String): String? = null
+                },
+            )
+        }
+    }
 }

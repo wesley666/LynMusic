@@ -60,6 +60,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
+import io.ktor.http.contentType
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +105,9 @@ import top.iwesley.lyn.music.core.model.DesktopLyricsPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.EmbyCredential
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
+import top.iwesley.lyn.music.core.model.FnMusicSourceDraft
+import top.iwesley.lyn.music.domain.scanFnMusicLibrary
+import top.iwesley.lyn.music.domain.testFnMusicConnection
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS
 import top.iwesley.lyn.music.core.model.ImportScanFailure
@@ -120,6 +124,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.oneShotTextContent
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeAudioQualityPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeLibraryProbe
@@ -195,6 +200,9 @@ import top.iwesley.lyn.music.domain.resolveEmbyStreamUrl
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.domain.isRemoteSourceAddressFallbackAllowed
 import top.iwesley.lyn.music.domain.remoteCandidateIndexForNetworkChange
+import top.iwesley.lyn.music.domain.RemoteStreamNetworkAction
+import top.iwesley.lyn.music.domain.remoteStreamNetworkAction
+import top.iwesley.lyn.music.domain.addressKindOrNull
 import top.iwesley.lyn.music.domain.resolveEmbyStreamUrlCandidates
 import top.iwesley.lyn.music.domain.resolveNavidromeStreamUrlCandidates
 import top.iwesley.lyn.music.domain.scanEmbyLibrary
@@ -373,6 +381,7 @@ private fun createAndroidRuntimeGraph(
             supportsSambaImport = true,
             supportsWebDavImport = true,
             supportsNavidromeImport = true,
+            supportsFnMusicImport = true,
             supportsSystemMediaControls = true,
             supportsAppDisplayScaleAdjustment = true,
             supportsAndroidExtensionDecoder = true,
@@ -421,6 +430,7 @@ private fun createAndroidRuntimeGraph(
                     secureCredentialStore = secureStore,
                     logger = logger,
                     addressSelector = remoteSourceAddressSelector,
+                    fnMusicHttpClient = navidromeHttpClient,
                 ),
                 deviceInfoGateway = createAndroidDeviceInfoGateway(context),
                 audioTagGateway = AndroidAudioTagGateway(
@@ -465,6 +475,8 @@ private fun createAndroidRuntimeGraph(
                     database = database,
                     secureCredentialStore = secureStore,
                     logger = logger,
+                    fnMusicHttpClient = navidromeHttpClient,
+                    addressSelector = remoteSourceAddressSelector,
                 ),
                 castBackgroundRunSettingsOpener = if (platformName == "Android") {
                     AndroidCastBackgroundRunSettingsOpener(context)
@@ -581,7 +593,10 @@ internal class AndroidLyricsHttpClient : LyricsHttpClient {
                     RequestMethod.DELETE -> HttpMethod.Delete
                 }
                 request.headers.forEach { (key, value) -> headers.append(key, value) }
-                request.body?.let { setBody(it) }
+                request.body?.let { body ->
+                    // A write OkHttp must not resend; see [LyricsRequest.allowTransportRetry].
+                    if (request.allowTransportRetry) setBody(body) else setBody(oneShotTextContent(body, contentType()))
+                }
                 val requestTimeout = request.timeoutMillis?.takeIf { it > 0L }
                 val connectTimeout = request.effectiveConnectTimeoutMillis()
                 if (requestTimeout != null || connectTimeout != null) {
@@ -2033,6 +2048,38 @@ private class AndroidImportSourceGateway(
         )
     }
 
+    override suspend fun testFnMusic(draft: FnMusicSourceDraft, deviceId: String) {
+        testFnMusicConnection(
+            draft = draft,
+            deviceId = deviceId,
+            httpClient = navidromeHttpClient,
+            logger = logger,
+            timeoutMillis = IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS,
+        )
+    }
+
+    override suspend fun scanFnMusic(draft: FnMusicSourceDraft, sourceId: String, deviceId: String): ImportScanReport {
+        return scanFnMusic(draft, sourceId, deviceId, ImportScanProgressSink.NoOp)
+    }
+
+    override suspend fun scanFnMusic(
+        draft: FnMusicSourceDraft,
+        sourceId: String,
+        deviceId: String,
+        progressSink: ImportScanProgressSink,
+    ): ImportScanReport {
+        return scanFnMusicLibrary(
+            draft = draft,
+            sourceId = sourceId,
+            deviceId = deviceId,
+            httpClient = navidromeHttpClient,
+            supportedImportExtensions = ANDROID_SUPPORTED_IMPORT_AUDIO_EXTENSIONS,
+            logger = logger,
+            progressSink = progressSink,
+            timeoutMillis = IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS,
+        )
+    }
+
     private fun scanLocalTree(
         treeUri: Uri,
         sourceId: String,
@@ -2580,6 +2627,8 @@ internal class AndroidPlaybackGateway(
     private val networkConnectionTypeProvider: NetworkConnectionTypeProvider,
     private val addressSelector: RemoteSourceAddressSelector = RemoteSourceAddressSelector(networkConnectionTypeProvider),
     private val logger: DiagnosticLogger,
+    /** Logs in to FN Music before playback; FN Music tracks cannot play without it. */
+    private val fnMusicHttpClient: LyricsHttpClient? = null,
 ) : PlaybackGateway {
     private var activeAndroidExtensionDecoderEnabled =
         playbackDecoderPreferencesStore.useAndroidExtensionDecoder.value
@@ -2595,6 +2644,11 @@ internal class AndroidPlaybackGateway(
     private var currentRemoteLogTag: String? = null
     private var currentRemoteLabel: String? = null
     private var currentRemotePlaybackFallback: AndroidRemotePlaybackFallback? = null
+    /** The playing FN Music track's stream; it owns the address choice, so fallbacks reload through it. */
+    private var currentFnMusicTarget: AndroidFnMusicPlaybackTarget? = null
+    private var fnMusicErrorReloads = 0
+    /** Stream generation when the current FN media source was (re)loaded; see [tryRecoverFnMusicStream]. */
+    private var fnMusicLoadedGeneration = 0
     private var pendingLoadPlayWhenReady = false
     private var lastPublishedPlaybackLogKey: String? = null
 
@@ -2630,6 +2684,7 @@ internal class AndroidPlaybackGateway(
             }
             if (isPlaying) {
                 pendingLoadPlayWhenReady = false
+                fnMusicErrorReloads = 0
                 currentRemotePlaybackFallback?.currentCandidate()?.let { candidate ->
                     if (candidate.sourceId.isNotBlank()) {
                         addressSelector.markSuccess(candidate.sourceId, candidate.kind)
@@ -2726,14 +2781,67 @@ internal class AndroidPlaybackGateway(
     }
 
     private fun tryApplyRemoteAddressFallback(error: Throwable): Boolean {
+        currentFnMusicTarget?.let { target -> return tryRecoverFnMusicStream(target, error) }
         val fallback = currentRemotePlaybackFallback ?: return false
         if (!isRemoteSourceAddressFallbackAllowed(error)) return false
         return switchRemoteCandidate(fallback, fallback.selectedIndex + 1, reason = "retry")
     }
 
+    /**
+     * Each open already tries every address, so an error that reaches the player means the connection broke mid-read
+     * (or everything failed): move on to the next address and reload, at most once per address.
+     */
+    private fun tryRecoverFnMusicStream(target: AndroidFnMusicPlaybackTarget, error: Throwable): Boolean {
+        if (!isRemoteSourceAddressFallbackAllowed(error)) return false
+        val stream = target.stream
+        if (fnMusicErrorReloads >= stream.candidates.size) return false
+        fnMusicErrorReloads += 1
+        // The data source may already have moved the stream on for this failure; then a reload alone is enough,
+        // and moving again would land back on the address that just failed.
+        stream.moveToNextCandidate(expectedGeneration = fnMusicLoadedGeneration)
+        reloadFnMusicStream(target, reason = "retry")
+        return true
+    }
+
+    /** FN Music counterpart of [switchRemoteCandidateForNetwork]: switch to WAN, or re-resolve an FN Connect route. */
+    private fun switchFnMusicStreamForNetwork(target: AndroidFnMusicPlaybackTarget, networkState: NetworkConnectionState) {
+        val stream = target.stream
+        val action = remoteStreamNetworkAction(
+            candidateKinds = stream.candidates.map { it.addressKindOrNull },
+            currentIndex = stream.selectedIndex,
+            networkState = networkState,
+            isPlaybackActive = player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE,
+        )
+        when (action) {
+            is RemoteStreamNetworkAction.Switch -> stream.switchTo(action.index)
+            RemoteStreamNetworkAction.Reresolve -> stream.invalidateForReresolve()
+            RemoteStreamNetworkAction.None -> return
+        }
+        reloadFnMusicStream(target, reason = "network-change")
+    }
+
+    /** Rebuilds the media source so the open connection to the old address is dropped, keeping position and play state. */
+    private fun reloadFnMusicStream(target: AndroidFnMusicPlaybackTarget, reason: String) {
+        val retryPositionMs = player.currentPosition.takeIf { it >= 0L } ?: 0L
+        val retryPlayWhenReady = player.playWhenReady || pendingLoadPlayWhenReady
+        logger.warn(PLAYBACK_LOG_TAG) {
+            "fnmusic-stream-reload $reason index=${target.stream.selectedIndex} position=$retryPositionMs"
+        }
+        fnMusicLoadedGeneration = target.stream.generation
+        player.setMediaSource(target.mediaSource())
+        player.prepare()
+        player.seekTo(retryPositionMs)
+        player.playWhenReady = retryPlayWhenReady
+        mutableState.update { it.copy(errorMessage = null, errorText = null) }
+    }
+
     /** Leaves a LAN stream as soon as the device drops onto mobile data instead of waiting for it to stall. */
     private fun switchRemoteCandidateForNetwork(networkState: NetworkConnectionState) {
         if (released) return
+        currentFnMusicTarget?.let { target ->
+            switchFnMusicStreamForNetwork(target, networkState)
+            return
+        }
         val fallback = currentRemotePlaybackFallback ?: return
         val targetIndex = remoteCandidateIndexForNetworkChange(
             candidateKinds = fallback.candidates.map { it.kind },
@@ -2816,9 +2924,22 @@ internal class AndroidPlaybackGateway(
                 locator = track.mediaLocator,
                 logger = logger,
             ) else null
+            val fnMusicTarget = if (offlineTarget == null && webDavTarget == null && fnMusicHttpClient != null) {
+                resolveAndroidFnMusicPlaybackTarget(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    locator = track.mediaLocator,
+                    httpClient = fnMusicHttpClient,
+                    addressSelector = addressSelector,
+                    logger = logger,
+                )
+            } else {
+                null
+            }
             val sambaTarget = if (
                 offlineTarget == null &&
                 webDavTarget == null &&
+                fnMusicTarget == null &&
                 shouldUseAndroidSambaDirectPlayback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
             ) {
                 resolveAndroidSambaPlaybackTarget(
@@ -2836,7 +2957,7 @@ internal class AndroidPlaybackGateway(
                 }
                 return
             }
-            val subsonicCompatible = if (offlineTarget == null && webDavTarget == null && sambaTarget == null) {
+            val subsonicCompatible = if (offlineTarget == null && webDavTarget == null && fnMusicTarget == null && sambaTarget == null) {
                 parseSubsonicCompatibleSongLocator(track.mediaLocator)
             } else {
                 null
@@ -2849,14 +2970,14 @@ internal class AndroidPlaybackGateway(
                 )
                 else -> null
             }
-            val remotePlaybackCandidates = if (offlineTarget == null && webDavTarget == null && sambaTarget == null) {
+            val remotePlaybackCandidates = if (offlineTarget == null && webDavTarget == null && fnMusicTarget == null && sambaTarget == null) {
                 resolveLocatorCandidates(track.mediaLocator, navidromeAudioQuality)
             } else {
                 null
             }
             val resolvedUri = if (offlineTarget != null) {
                 Uri.fromFile(offlineTarget.file)
-            } else if (webDavTarget == null && sambaTarget == null) {
+            } else if (webDavTarget == null && fnMusicTarget == null && sambaTarget == null) {
                 remotePlaybackCandidates?.firstOrNull()?.value?.let(Uri::parse)
                     ?: resolveLocator(track.mediaLocator, navidromeAudioQuality)
             } else {
@@ -2883,6 +3004,13 @@ internal class AndroidPlaybackGateway(
                     currentRemoteLogTag = "WebDav"
                     currentRemoteLabel = webDavTarget.requestUrl
                     player.setMediaSource(webDavTarget.mediaSource)
+                } else if (fnMusicTarget != null) {
+                    currentRemoteLogTag = "FnMusic"
+                    currentRemoteLabel = track.mediaLocator
+                    currentFnMusicTarget = fnMusicTarget
+                    fnMusicErrorReloads = 0
+                    fnMusicLoadedGeneration = fnMusicTarget.stream.generation
+                    player.setMediaSource(fnMusicTarget.mediaSource())
                 } else if (sambaTarget != null) {
                     currentRemoteLogTag = SAMBA_LOG_TAG
                     currentRemoteLabel = sambaTarget.sourceReference
@@ -2946,6 +3074,9 @@ internal class AndroidPlaybackGateway(
             currentRemoteLogTag = null
             currentRemoteLabel = null
             currentRemotePlaybackFallback = null
+            // The player was stopped above, so nothing reads the temporary copy of a Range-ignoring stream anymore.
+            currentFnMusicTarget?.stream?.close()
+            currentFnMusicTarget = null
             mutableState.update {
                 it.resetForTrackSwitch(
                     volumeOverride = player.volume,
@@ -3040,6 +3171,8 @@ internal class AndroidPlaybackGateway(
         onPlayerThread {
             pendingLoadPlayWhenReady = false
             player.release()
+            currentFnMusicTarget?.stream?.close()
+            currentFnMusicTarget = null
         }
     }
 

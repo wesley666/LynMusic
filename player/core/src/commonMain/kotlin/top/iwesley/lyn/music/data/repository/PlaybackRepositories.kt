@@ -69,6 +69,7 @@ import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
@@ -1173,6 +1174,7 @@ internal fun remotePlaybackSourceIds(
 private fun Track.remotePlaybackSourceIdOrNull(): String? {
     return parseSubsonicCompatibleSongLocator(mediaLocator)?.sourceId
         ?: parseEmbySongLocator(mediaLocator)?.first
+        ?: parseFnMusicSongLocator(mediaLocator)?.first
 }
 
 internal fun playbackStatsSubmissionThresholdMs(durationMs: Long): Long {

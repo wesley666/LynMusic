@@ -30,6 +30,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpMethod
+import io.ktor.http.contentType
 import java.io.File
 import java.net.URI
 import java.net.URL
@@ -87,6 +88,9 @@ import top.iwesley.lyn.music.core.model.DesktopVlcPreferencesStore
 import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.EmbyCredential
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
+import top.iwesley.lyn.music.core.model.FnMusicSourceDraft
+import top.iwesley.lyn.music.domain.scanFnMusicLibrary
+import top.iwesley.lyn.music.domain.testFnMusicConnection
 import top.iwesley.lyn.music.core.model.IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS
 import top.iwesley.lyn.music.core.model.ImportScanFailure
 import top.iwesley.lyn.music.core.model.ImportScanPhase
@@ -100,6 +104,7 @@ import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LyricsHttpClient
 import top.iwesley.lyn.music.core.model.LyricsHttpResponse
 import top.iwesley.lyn.music.core.model.LyricsRequest
+import top.iwesley.lyn.music.core.model.oneShotTextContent
 import top.iwesley.lyn.music.core.model.MenuBarLyricsControlsPreferencesStore
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeLibraryProbe
@@ -159,6 +164,8 @@ import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
 import top.iwesley.lyn.music.core.model.parseEmbyCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
+import top.iwesley.lyn.music.core.model.readRemoteSourceCandidateBytes
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleCoverLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
@@ -263,6 +270,8 @@ fun createJvmAppComponent(
     )
     val menuBarLyricsControlsToken = resourceGuard.register { menuBarLyricsControls.service.close() }
     val remoteSourceAddressSelector = RemoteSourceAddressSelector(WifiNetworkConnectionTypeProvider)
+    val navidromeHttpClient = JvmLyricsHttpClient()
+    resourceGuard.register { navidromeHttpClient.close() }
     val playbackGateway = JvmPlaybackGateway(
         database = database,
         secureCredentialStore = secureStore,
@@ -270,10 +279,9 @@ fun createJvmAppComponent(
         desktopVlcPreferencesStore = appPreferencesStore,
         logger = logger,
         addressSelector = remoteSourceAddressSelector,
+        fnMusicHttpClient = navidromeHttpClient,
     )
     val playbackGatewayToken = resourceGuard.register { playbackGateway.release() }
-    val navidromeHttpClient = JvmLyricsHttpClient()
-    resourceGuard.register { navidromeHttpClient.close() }
     val platform = PlatformDescriptor(
         name = "Desktop",
         capabilities = PlatformCapabilities(
@@ -281,6 +289,7 @@ fun createJvmAppComponent(
             supportsSambaImport = true,
             supportsWebDavImport = true,
             supportsNavidromeImport = true,
+            supportsFnMusicImport = true,
             supportsSystemMediaControls = systemPlaybackControls.isSupported,
             supportsDesktopLyrics = true,
             supportsMenuBarLyricsControls = menuBarLyricsControls.isSupported,
@@ -327,6 +336,7 @@ fun createJvmAppComponent(
                 secureCredentialStore = secureStore,
                 logger = logger,
                 addressSelector = remoteSourceAddressSelector,
+                fnMusicHttpClient = navidromeHttpClient,
             ),
             deviceInfoGateway = createJvmDeviceInfoGateway(),
             audioTagGateway = JvmAudioTagGateway(
@@ -448,7 +458,10 @@ internal class JvmLyricsHttpClient : LyricsHttpClient {
                     top.iwesley.lyn.music.core.model.RequestMethod.DELETE -> HttpMethod.Delete
                 }
                 request.headers.forEach { (key, value) -> headers.append(key, value) }
-                request.body?.let { setBody(it) }
+                request.body?.let { body ->
+                    // A write OkHttp must not resend; see [LyricsRequest.allowTransportRetry].
+                    if (request.allowTransportRetry) setBody(body) else setBody(oneShotTextContent(body, contentType()))
+                }
                 val requestTimeout = request.timeoutMillis?.takeIf { it > 0L }
                 val connectTimeout = request.effectiveConnectTimeoutMillis()
                 if (requestTimeout != null || connectTimeout != null) {
@@ -1098,7 +1111,8 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
             } else {
                 val remoteCoverCandidates = if (
                     parseSubsonicCompatibleCoverLocator(rawTarget) != null ||
-                    parseEmbyCoverLocator(rawTarget) != null
+                    parseEmbyCoverLocator(rawTarget) != null ||
+                    parseFnMusicCoverLocator(rawTarget) != null
                 ) {
                     NavidromeLocatorRuntime.resolveCoverArtUrlCandidates(rawTarget).orEmpty()
                 } else {
@@ -1127,7 +1141,7 @@ private class JvmAudioTagEditorPlatformService : AudioTagEditorPlatformService {
     ): ByteArray? {
         val resolved = readRemotePlaybackUrlCandidateWithFallback(
             candidates = targets,
-            read = { target -> URL(target.value).openStream().use { it.readBytes() } },
+            read = { target -> readRemoteSourceCandidateBytes(target) },
             isValidPayload = ::isCompleteArtworkPayload,
         ) ?: return null
         NavidromeLocatorRuntime.markResolvedUrlSuccess(resolved.first)
@@ -1654,6 +1668,38 @@ internal class JvmImportSourceGateway(
         )
     }
 
+    override suspend fun testFnMusic(draft: FnMusicSourceDraft, deviceId: String) {
+        testFnMusicConnection(
+            draft = draft,
+            deviceId = deviceId,
+            httpClient = navidromeHttpClient,
+            logger = logger,
+            timeoutMillis = IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS,
+        )
+    }
+
+    override suspend fun scanFnMusic(draft: FnMusicSourceDraft, sourceId: String, deviceId: String): ImportScanReport {
+        return scanFnMusic(draft, sourceId, deviceId, ImportScanProgressSink.NoOp)
+    }
+
+    override suspend fun scanFnMusic(
+        draft: FnMusicSourceDraft,
+        sourceId: String,
+        deviceId: String,
+        progressSink: ImportScanProgressSink,
+    ): ImportScanReport {
+        return scanFnMusicLibrary(
+            draft = draft,
+            sourceId = sourceId,
+            deviceId = deviceId,
+            httpClient = navidromeHttpClient,
+            supportedImportExtensions = JVM_SUPPORTED_IMPORT_AUDIO_EXTENSIONS,
+            logger = logger,
+            progressSink = progressSink,
+            timeoutMillis = IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS,
+        )
+    }
+
     private fun collectSambaTracks(
         share: DiskShare,
         baseDirectory: String,
@@ -1864,6 +1910,8 @@ internal class JvmPlaybackGateway(
     private val desktopVlcPreferencesStore: DesktopVlcPreferencesStore,
     private val logger: DiagnosticLogger,
     private val addressSelector: RemoteSourceAddressSelector = RemoteSourceAddressSelector(WifiNetworkConnectionTypeProvider),
+    /** Logs in to FN Music before playback; FN Music tracks cannot play without it. */
+    private val fnMusicHttpClient: LyricsHttpClient? = null,
     private val runtimeInitializer: suspend () -> JvmVlcRuntimeInitializationResult = {
         createJvmVlcRuntimeInitializationResult(
             desktopVlcPreferencesStore = desktopVlcPreferencesStore,
@@ -1884,6 +1932,10 @@ internal class JvmPlaybackGateway(
         mkdirs()
     }
     private var currentCallbackMedia: CallbackMedia? = null
+
+    /** Frees what [currentCallbackMedia] holds outside VLC; see [JvmWebDavPlaybackTarget.release]. */
+    @Volatile
+    private var currentCallbackMediaRelease: (() -> Unit)? = null
     private val recentVlcLogs = ArrayDeque<String>(MAX_RECENT_VLC_LOGS)
     @Volatile
     private var currentPlaybackTarget: String? = null
@@ -2135,7 +2187,7 @@ internal class JvmPlaybackGateway(
                 }
                 runCatching { runtime.stop() }
                 clearRecentVlcLogs()
-                currentCallbackMedia = null
+                clearCurrentCallbackMedia()
                 currentPlaybackTarget = candidate.value
                 currentSourceReference = fallback.sourceReference
                 currentTrackForMetadata = fallback.track
@@ -2323,7 +2375,7 @@ internal class JvmPlaybackGateway(
                     errorText = if (playWhenReady) DESKTOP_VLC_UNAVAILABLE_TEXT else null,
                     clearMetadata = true,
                 )
-                currentCallbackMedia = null
+                clearCurrentCallbackMedia()
                 currentPlaybackTarget = null
                 currentSourceReference = track.mediaLocator
                 currentTrackForMetadata = track
@@ -2334,6 +2386,14 @@ internal class JvmPlaybackGateway(
         }
     }
 
+    /** Drops the current callback media and frees what it held outside VLC (after VLC stopped reading it). */
+    private fun clearCurrentCallbackMedia() {
+        currentCallbackMedia = null
+        val release = currentCallbackMediaRelease ?: return
+        currentCallbackMediaRelease = null
+        runCatching(release)
+    }
+
     private suspend fun loadWithRuntime(
         runtime: JvmVlcPlaybackRuntime,
         track: Track,
@@ -2342,6 +2402,9 @@ internal class JvmPlaybackGateway(
         loadToken: PlaybackLoadToken,
     ) {
         var initialSeekForLoad: PendingInitialSeek? = null
+        // An FN Music target resolved here holds a stream (and maybe a temporary file) that only VLC's close would
+        // free; every path that ends without VLC taking the media must release it itself.
+        var unhandedRelease: (() -> Unit)? = null
         try {
             if (!loadToken.isCurrent()) {
                 logger.debug(VLC_LOG_TAG) {
@@ -2356,9 +2419,23 @@ internal class JvmPlaybackGateway(
                 locator = track.mediaLocator,
                 logger = logger,
             ) else null
+            val fnMusicTarget = if (offlineTarget == null && webDavTarget == null && fnMusicHttpClient != null) {
+                resolveJvmFnMusicPlaybackTarget(
+                    database = database,
+                    secureCredentialStore = secureCredentialStore,
+                    locator = track.mediaLocator,
+                    httpClient = fnMusicHttpClient,
+                    addressSelector = addressSelector,
+                    logger = logger,
+                )
+            } else {
+                null
+            }
+            unhandedRelease = fnMusicTarget?.release
             val sambaTarget = if (
                 offlineTarget == null &&
                 webDavTarget == null &&
+                fnMusicTarget == null &&
                 shouldUseJvmSambaCallback(track.mediaLocator, playbackPreferencesStore.useSambaCache.value)
             ) {
                 resolveJvmSambaPlaybackTarget(
@@ -2376,7 +2453,7 @@ internal class JvmPlaybackGateway(
                 } else {
                     null
                 }
-            val remotePlaybackCandidates = if (offlineTarget == null && webDavTarget == null && sambaTarget == null) {
+            val remotePlaybackCandidates = if (offlineTarget == null && webDavTarget == null && fnMusicTarget == null && sambaTarget == null) {
                 resolveLocatorCandidates(track.mediaLocator)
             } else {
                 null
@@ -2386,6 +2463,7 @@ internal class JvmPlaybackGateway(
                 offlineTarget != null -> offlineTarget
                 sambaTarget != null -> sambaTarget.sourceReference
                 webDavTarget != null -> webDavTarget.requestUrl
+                fnMusicTarget != null -> fnMusicTarget.requestUrl
                 selectedRemotePlaybackCandidate != null -> selectedRemotePlaybackCandidate.value
                 else -> resolveLocator(track.mediaLocator)
             }
@@ -2393,6 +2471,7 @@ internal class JvmPlaybackGateway(
                 offlineTarget != null -> track.mediaLocator
                 parseSubsonicCompatibleSongLocator(track.mediaLocator) != null -> track.mediaLocator
                 parseEmbySongLocator(track.mediaLocator) != null -> track.mediaLocator
+                fnMusicTarget != null -> track.mediaLocator
                 else -> actualPlaybackSource
             }
             if (!loadToken.isCurrent()) {
@@ -2404,12 +2483,14 @@ internal class JvmPlaybackGateway(
             val playbackTarget = when {
                 offlineTarget != null -> offlineTarget
                 webDavTarget != null -> "webdav-callback://${track.id}"
+                fnMusicTarget != null -> "fnmusic-callback://${track.id}"
                 sambaTarget != null -> buildJvmSambaPlaybackTarget(track.id)
                 selectedRemotePlaybackCandidate != null -> selectedRemotePlaybackCandidate.value
                 else -> sourceReference
             }
             val playbackMedia = when {
                 webDavTarget != null -> JvmVlcPlaybackMedia.Callback(webDavTarget.media)
+                fnMusicTarget != null -> JvmVlcPlaybackMedia.Callback(fnMusicTarget.media)
                 sambaTarget != null -> JvmVlcPlaybackMedia.Callback(sambaTarget.media)
                 else -> JvmVlcPlaybackMedia.Source(actualPlaybackSource)
             }
@@ -2445,7 +2526,7 @@ internal class JvmPlaybackGateway(
                     loadSkipped = true
                     return@withLock true
                 }
-                currentCallbackMedia = null
+                clearCurrentCallbackMedia()
                 currentPlaybackTarget = null
                 currentSourceReference = null
                 currentRemotePlaybackFallback = null
@@ -2462,7 +2543,7 @@ internal class JvmPlaybackGateway(
                         loadToken = loadToken,
                     )
                 }
-                currentCallbackMedia = webDavTarget?.media ?: sambaTarget?.media
+                currentCallbackMedia = webDavTarget?.media ?: fnMusicTarget?.media ?: sambaTarget?.media
                 mutableState.update {
                     it.copy(
                         isPlaying = playWhenReady,
@@ -2489,11 +2570,17 @@ internal class JvmPlaybackGateway(
                     null
                 }
                 initialSeekForLoad?.let(::replacePendingInitialSeek) ?: clearPendingInitialSeek()
-                if (playWhenReady) {
+                val mediaStarted = if (playWhenReady) {
                     runtime.start(playbackMedia)
                 } else {
                     runtime.startPaused(playbackMedia)
                 }
+                if (mediaStarted) {
+                    // VLC owns the media now; its close, or the next load replacing it, frees the stream.
+                    currentCallbackMediaRelease = unhandedRelease
+                    unhandedRelease = null
+                }
+                mediaStarted
             }
             if (loadSkipped) return
             if (!started) {
@@ -2534,6 +2621,7 @@ internal class JvmPlaybackGateway(
             logger.error(VLC_LOG_TAG, throwable) {
                 "load-failed track=${track.id} locator=${track.mediaLocator} playWhenReady=$playWhenReady startPositionMs=$startPositionMs target=${currentPlaybackTarget.orEmpty()} source=${currentSourceReference.orEmpty()}"
             }
+            // Not released: a load failing before it stopped VLC leaves the previous media playing.
             currentCallbackMedia = null
             mutableState.update {
                 it.copy(
@@ -2546,6 +2634,9 @@ internal class JvmPlaybackGateway(
                     errorRevision = it.errorRevision + 1L,
                 )
             }
+        } finally {
+            // Stale, skipped, failed to start, failed or cancelled before VLC took the media.
+            unhandedRelease?.let { runCatching(it) }
         }
     }
 
@@ -2632,6 +2723,8 @@ internal class JvmPlaybackGateway(
                 runtime.release()
             }
         }
+        // After VLC let go of the media, so the temporary file is no longer open.
+        clearCurrentCallbackMedia()
         scope.cancel()
     }
 
@@ -2776,7 +2869,7 @@ internal class JvmPlaybackGateway(
         logger.info(VLC_LOG_TAG) {
             "load-pending reason=vlc-native-initializing track=${pending.track.id} playWhenReady=${pending.playWhenReady}"
         }
-        currentCallbackMedia = null
+        clearCurrentCallbackMedia()
         currentPlaybackTarget = null
         currentSourceReference = pending.track.mediaLocator
         currentTrackForMetadata = pending.track

@@ -27,12 +27,17 @@ import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.parseEmbySongLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicSongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.domain.fetchEmbyFavorites
+import top.iwesley.lyn.music.domain.FN_MUSIC_NAME
+import top.iwesley.lyn.music.domain.fetchFnMusicFavorites
+import top.iwesley.lyn.music.domain.resolveFnMusicSource
+import top.iwesley.lyn.music.domain.setFnMusicFavorite
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
 import top.iwesley.lyn.music.domain.isSubsonicCompatibleSourceType
 import top.iwesley.lyn.music.domain.normalizeSubsonicBaseUrl
@@ -116,8 +121,12 @@ class RoomFavoritesRepository(
             } else {
                 val embySong = parseEmbySongLocator(track.mediaLocator)
                     ?.takeIf { it.first == track.sourceId }
+                val fnMusicSong = parseFnMusicSongLocator(track.mediaLocator)
+                    ?.takeIf { it.first == track.sourceId }
                 if (embySong != null) {
                     setEmbyFavoriteTrack(track, embySong.second, favorite)
+                } else if (fnMusicSong != null) {
+                    setFnMusicFavoriteTrack(track, fnMusicSong.second, favorite)
                 } else {
                     setLocalFavorite(track, existing, favorite)
                 }
@@ -130,13 +139,15 @@ class RoomFavoritesRepository(
             val failures = mutableListOf<UiText>()
             database.importSourceDao().getAll()
                 .filter {
-                    (it.subsonicCompatibleSourceType() != null || it.isEmbySource()) &&
+                    (it.subsonicCompatibleSourceType() != null || it.isEmbySource() || it.isFnMusicSource()) &&
                         it.isLocalIndexedEnabled()
                 }
                 .forEach { source ->
                     runCatching {
                         if (source.isEmbySource()) {
                             syncEmbyFavorites(source)
+                        } else if (source.isFnMusicSource()) {
+                            syncFnMusicFavorites(source)
                         } else {
                             syncSubsonicCompatibleFavorites(source)
                         }
@@ -185,6 +196,39 @@ class RoomFavoritesRepository(
                 ),
             )
             logger.info(FAVORITES_LOG_TAG) { "favorite-emby track=${track.id} source=${track.sourceId} song=$remoteSongId" }
+            true
+        }
+    }
+
+    private suspend fun setFnMusicFavoriteTrack(
+        track: Track,
+        guid: String,
+        favorite: Boolean,
+    ): Boolean {
+        val resolvedSource = resolveFnMusicSource(database, secureCredentialStore, track.sourceId)
+            ?: throw UiTextException(uiText(Res.string.favorites_source_unavailable_update, FN_MUSIC_NAME))
+        setFnMusicFavorite(
+            httpClient = httpClient,
+            source = resolvedSource,
+            guid = guid,
+            favorite = favorite,
+            addressSelector = addressSelector,
+            logger = logger,
+        )
+        return if (!favorite) {
+            database.favoriteTrackDao().deleteByTrackId(track.id)
+            logger.info(FAVORITES_LOG_TAG) { "unfavorite-fnmusic track=${track.id} source=${track.sourceId} song=$guid" }
+            false
+        } else {
+            database.favoriteTrackDao().upsert(
+                FavoriteTrackEntity(
+                    trackId = track.id,
+                    sourceId = track.sourceId,
+                    remoteSongId = guid,
+                    favoritedAt = favoriteNow(),
+                ),
+            )
+            logger.info(FAVORITES_LOG_TAG) { "favorite-fnmusic track=${track.id} source=${track.sourceId} song=$guid" }
             true
         }
     }
@@ -283,6 +327,42 @@ class RoomFavoritesRepository(
         logger.info(FAVORITES_LOG_TAG) { "refresh-emby-complete source=${source.id} favorites=${favoriteRows.size}" }
     }
 
+    private suspend fun syncFnMusicFavorites(source: ImportSourceEntity) {
+        val resolved = resolveFnMusicSource(database, secureCredentialStore, source.id)
+            ?: throw UiTextException(uiText(Res.string.source_credentials_missing, FN_MUSIC_NAME))
+        val existingRows = database.favoriteTrackDao().getBySourceId(source.id)
+        val existingByRemoteSongId = existingRows
+            .mapNotNull { entity -> entity.remoteSongId?.let { it to entity } }
+            .toMap()
+        val syncedGuids = fetchFnMusicFavorites(
+            httpClient = httpClient,
+            source = resolved,
+            addressSelector = addressSelector,
+            logger = logger,
+        ).map { it.guid }
+        val newSongIds = syncedGuids.filterNot(existingByRemoteSongId::containsKey)
+        val maxExistingFavoritedAt = existingRows.maxOfOrNull { it.favoritedAt }
+        var nextNewFavoritedAt = maxOf(
+            favoriteNow(),
+            (maxExistingFavoritedAt ?: Long.MIN_VALUE) + newSongIds.size.toLong(),
+        )
+        val favoriteRows = syncedGuids.map { guid ->
+            FavoriteTrackEntity(
+                trackId = fnMusicTrackIdFor(source.id, guid),
+                sourceId = source.id,
+                remoteSongId = guid,
+                favoritedAt = existingByRemoteSongId[guid]?.favoritedAt ?: nextNewFavoritedAt--,
+            )
+        }
+        database.immediateWriteTransaction {
+            database.favoriteTrackDao().deleteBySourceId(source.id)
+            if (favoriteRows.isNotEmpty()) {
+                database.favoriteTrackDao().upsertAll(favoriteRows)
+            }
+        }
+        logger.info(FAVORITES_LOG_TAG) { "refresh-fnmusic-complete source=${source.id} favorites=${favoriteRows.size}" }
+    }
+
     private suspend fun syncSubsonicCompatibleFavorites(source: ImportSourceEntity) {
         val sourceType = source.subsonicCompatibleSourceType()
             ?: error("Subsonic-compatible 来源类型无效，无法同步喜欢。")
@@ -362,6 +442,10 @@ class RoomFavoritesRepository(
 
     private fun ImportSourceEntity.isEmbySource(): Boolean {
         return type == ImportSourceType.EMBY.name
+    }
+
+    private fun ImportSourceEntity.isFnMusicSource(): Boolean {
+        return type == ImportSourceType.FN_MUSIC.name
     }
 
     private companion object {

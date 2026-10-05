@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.platform
 
 import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
+import top.iwesley.lyn.music.core.model.readRemoteSourceCandidateBytes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -141,7 +142,15 @@ private suspend fun loadJvmRemoteArtworkPayload(
     return readRemotePlaybackUrlCandidateWithFallback(
         candidates = targets,
         isRemoteUrl = ::isRemoteArtworkTarget,
-        read = { target -> remoteBytesLoader(target.value) ?: error("远端封面读取失败。") },
+        read = { target ->
+            // Signed targets (FN Music) need their headers, which the plain URL loader cannot carry.
+            val payload = if (target.headers.isEmpty()) {
+                remoteBytesLoader(target.value)
+            } else {
+                readRemoteSourceCandidateBytes(target)
+            }
+            payload ?: error("远端封面读取失败。")
+        },
         isValidPayload = ::isCompleteArtworkPayload,
     )
 }

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fn_music_name">FN Music</string>
+    <string name="fn_music_connection_mode_label">Connection</string>
+    <string name="fn_music_connection_mode_address">Server address</string>
+    <string name="fn_music_connection_mode_fn_connect">FN Connect</string>
+    <string name="fn_music_fn_id_label">FN ID</string>
+    <string name="fn_music_fn_id_placeholder">e.g. mynas or mynas.5ddd.com</string>
+    <string name="fn_music_access_code_label">Access code (optional)</string>
+    <string name="fn_music_access_code_keep_hint">Leave blank to keep the saved access code</string>
+    <string name="fn_music_fn_id_summary">FN ID: %1$s</string>
+    <string name="fn_music_fn_id_required">Enter the FN ID.</string>
+    <string name="fn_music_fn_id_invalid">The FN ID is invalid. Enter the ID or its .5ddd.com address.</string>
+    <string name="fn_music_access_code_invalid">The FN Connect access code is incorrect or required.</string>
+    <string name="fn_music_unreachable">Unable to connect to FN Music.</string>
+    <string name="fn_music_response_invalid">The FN Music response is incomplete or invalid (%1$s).</string>
+    <string name="fn_music_server_error">FN Music error: %1$s</string>
+    <string name="fn_music_cue_tracks_skipped">Skipped %1$d CUE tracks, which are not supported yet.</string>
+    <string name="source_fn_music_connection_failed">FN Music connection failed: %1$s</string>
+    <string name="source_fn_music_connection_succeeded">FN Music connection successful.</string>
+    <string name="source_fn_music_import_failed">FN Music import failed: %1$s</string>
+    <string name="source_fn_music_imported">FN Music source imported.</string>
+    <string name="source_fn_music_username_required">Enter the FN Music username.</string>
+    <string name="source_fn_music_password_required">Enter the FN Music password.</string>
+    <string name="source_edit_fn_music_title">Edit FN Music source</string>
+    <string name="offline_fn_music_source_unavailable">The FN Music source is unavailable.</string>
+    <string name="fn_music_write_uncertain">FN Music didn't confirm the change because the connection dropped. Check whether it was applied before trying again.</string>
+</resources>

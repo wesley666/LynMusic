@@ -14,6 +14,11 @@ import top.iwesley.lyn.music.core.model.plus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.EmbySourceDraft
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
+import top.iwesley.lyn.music.core.model.FnMusicSourceDraft
+import top.iwesley.lyn.music.domain.FN_MUSIC_NAME
+import top.iwesley.lyn.music.domain.fnMusicConnectionModeOf
+import top.iwesley.lyn.music.domain.fnMusicIdOf
 import top.iwesley.lyn.music.core.model.ImportScanPhase
 import top.iwesley.lyn.music.core.model.ImportScanProgress
 import top.iwesley.lyn.music.core.model.ImportScanProgressSink
@@ -52,6 +57,10 @@ data class RemoteSourceEditorState(
     val subsonicAuthMode: SubsonicAuthMode = SubsonicAuthMode.PASSWORD,
     val hasStoredCredential: Boolean = false,
     val keepExistingCredential: Boolean = true,
+    val fnMusicConnectionMode: FnMusicConnectionMode = FnMusicConnectionMode.ADDRESS,
+    val fnMusicId: String = "",
+    /** A new FN Connect access code; blank keeps the saved one. */
+    val fnMusicAccessCode: String = "",
 )
 
 sealed interface PendingLargeNavidromeAction {
@@ -101,6 +110,14 @@ data class ImportState(
     val embyWanBaseUrl: String = "",
     val embyUsername: String = "",
     val embyPassword: String = "",
+    val fnMusicLabel: String = "",
+    val fnMusicConnectionMode: FnMusicConnectionMode = FnMusicConnectionMode.ADDRESS,
+    val fnMusicBaseUrl: String = "",
+    val fnMusicWanBaseUrl: String = "",
+    val fnMusicId: String = "",
+    val fnMusicUsername: String = "",
+    val fnMusicPassword: String = "",
+    val fnMusicAccessCode: String = "",
     val creatingSourceType: ImportSourceType? = null,
     val editingSource: RemoteSourceEditorState? = null,
     /** Folder picker of the open Samba/WebDAV add or edit dialog. */
@@ -133,6 +150,8 @@ sealed interface ImportIntent {
     data object AddSubsonicSource : ImportIntent
     data object TestEmbySource : ImportIntent
     data object AddEmbySource : ImportIntent
+    data object TestFnMusicSource : ImportIntent
+    data object AddFnMusicSource : ImportIntent
     data class OpenRemoteSourceCreator(val type: ImportSourceType) : ImportIntent
     data object DismissRemoteSourceCreator : ImportIntent
     data class OpenRemoteSourceEditor(val sourceId: String) : ImportIntent
@@ -169,6 +188,17 @@ sealed interface ImportIntent {
     data class EmbyWanBaseUrlChanged(val value: String) : ImportIntent
     data class EmbyUsernameChanged(val value: String) : ImportIntent
     data class EmbyPasswordChanged(val value: String) : ImportIntent
+    data class FnMusicLabelChanged(val value: String) : ImportIntent
+    data class FnMusicConnectionModeChanged(val value: FnMusicConnectionMode) : ImportIntent
+    data class FnMusicBaseUrlChanged(val value: String) : ImportIntent
+    data class FnMusicWanBaseUrlChanged(val value: String) : ImportIntent
+    data class FnMusicIdChanged(val value: String) : ImportIntent
+    data class FnMusicUsernameChanged(val value: String) : ImportIntent
+    data class FnMusicPasswordChanged(val value: String) : ImportIntent
+    data class FnMusicAccessCodeChanged(val value: String) : ImportIntent
+    data class RemoteSourceFnMusicConnectionModeChanged(val value: FnMusicConnectionMode) : ImportIntent
+    data class RemoteSourceFnMusicIdChanged(val value: String) : ImportIntent
+    data class RemoteSourceFnMusicAccessCodeChanged(val value: String) : ImportIntent
     data class RemoteSourceLabelChanged(val value: String) : ImportIntent
     data class RemoteSourceServerChanged(val value: String) : ImportIntent
     data class RemoteSourcePortChanged(val value: String) : ImportIntent
@@ -472,6 +502,35 @@ class ImportStore(
                 }
             }
 
+            ImportIntent.TestFnMusicSource -> {
+                val draft = createFnMusicDraftOrNull(state.value) ?: return
+                runImport {
+                    repository.testFnMusicSource(draft)
+                        .onSuccess { setTestMessage(uiText(Res.string.source_fn_music_connection_succeeded)) }
+                        .onFailure { setTestMessage(remoteConnectionTestFailureText(it, FN_MUSIC_NAME, Res.string.source_fn_music_connection_failed)) }
+                }
+            }
+
+            ImportIntent.AddFnMusicSource -> {
+                val draft = createFnMusicDraftOrNull(state.value) ?: return
+                runScanningImport(ImportScanOperation.CreateRemote(ImportSourceType.FN_MUSIC)) { progressSink ->
+                    repository.addFnMusicSource(draft, progressSink)
+                        .onSuccess { summary ->
+                            updateState {
+                                it.clearCreateDraft(ImportSourceType.FN_MUSIC).copy(
+                                    creatingSourceType = null,
+                                    testMessage = null,
+                                )
+                            }
+                            recordScanSummary(summary)
+                            setMessage(scanSuccessMessage(uiText(Res.string.source_fn_music_imported), summary))
+                        }
+                        .onFailure {
+                            setCreateOrPageMessage(ImportSourceType.FN_MUSIC, uiText(Res.string.source_fn_music_import_failed, it.uiErrorDetail()))
+                        }
+                }
+            }
+
             is ImportIntent.OpenRemoteSourceCreator -> {
                 if (intent.type == ImportSourceType.LOCAL_FOLDER) return
                 updateState { state ->
@@ -510,10 +569,10 @@ class ImportStore(
                             server = source.server.orEmpty(),
                             port = source.port?.toString().orEmpty(),
                             path = source.path.orEmpty(),
-                            rootUrl = if (source.type == ImportSourceType.WEBDAV) {
-                                displayWebDavRootUrl(source.rootReference)
-                            } else {
-                                source.rootReference
+                            rootUrl = when {
+                                source.type == ImportSourceType.WEBDAV -> displayWebDavRootUrl(source.rootReference)
+                                source.type == ImportSourceType.FN_MUSIC && fnMusicIdOf(source.rootReference) != null -> ""
+                                else -> source.rootReference
                             },
                             wanRootUrl = source.wanRootReference.orEmpty(),
                             username = source.username.orEmpty(),
@@ -522,6 +581,8 @@ class ImportStore(
                             subsonicAuthMode = source.subsonicAuthMode,
                             hasStoredCredential = source.credentialKey != null,
                             keepExistingCredential = true,
+                            fnMusicConnectionMode = fnMusicConnectionModeOf(source.rootReference),
+                            fnMusicId = fnMusicIdOf(source.rootReference).orEmpty(),
                         ),
                     ).withNewFolderTree(
                         newRemoteFolderTree(source.type, sambaRootPath = source.path.orEmpty())
@@ -610,6 +671,21 @@ class ImportStore(
                         }
                     }
 
+                    ImportSourceType.FN_MUSIC -> {
+                        val draft = editingFnMusicDraftOrNull(editor) ?: return
+                        runImport {
+                            repository.testUpdatedFnMusicSource(
+                                sourceId = editor.sourceId,
+                                draft = draft,
+                                keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
+                            ).onSuccess {
+                                setTestMessage(uiText(Res.string.source_fn_music_connection_succeeded))
+                            }.onFailure {
+                                setTestMessage(remoteConnectionTestFailureText(it, FN_MUSIC_NAME, Res.string.source_fn_music_connection_failed))
+                            }
+                        }
+                    }
+
                     ImportSourceType.LOCAL_FOLDER -> Unit
                 }
             }
@@ -693,6 +769,24 @@ class ImportStore(
                         val draft = editingEmbyDraftOrNull(editor) ?: return
                         runScanningImport(ImportScanOperation.UpdateRemote(editor.sourceId)) { progressSink ->
                             repository.updateEmbySource(
+                                sourceId = editor.sourceId,
+                                draft = draft,
+                                keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
+                                progressSink = progressSink,
+                            ).onSuccess { summary ->
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
+                                recordScanSummary(summary)
+                                setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
+                            }.onFailure {
+                                setMessage(uiText(Res.string.source_update_failed, it.uiErrorDetail()))
+                            }
+                        }
+                    }
+
+                    ImportSourceType.FN_MUSIC -> {
+                        val draft = editingFnMusicDraftOrNull(editor) ?: return
+                        runScanningImport(ImportScanOperation.UpdateRemote(editor.sourceId)) { progressSink ->
+                            repository.updateFnMusicSource(
                                 sourceId = editor.sourceId,
                                 draft = draft,
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
@@ -796,6 +890,17 @@ class ImportStore(
             is ImportIntent.EmbyWanBaseUrlChanged -> updateState { it.copy(embyWanBaseUrl = intent.value) }
             is ImportIntent.EmbyUsernameChanged -> updateState { it.copy(embyUsername = intent.value) }
             is ImportIntent.EmbyPasswordChanged -> updateState { it.copy(embyPassword = intent.value) }
+            is ImportIntent.FnMusicLabelChanged -> updateState { it.copy(fnMusicLabel = intent.value) }
+            is ImportIntent.FnMusicConnectionModeChanged -> updateState { it.copy(fnMusicConnectionMode = intent.value) }
+            is ImportIntent.FnMusicBaseUrlChanged -> updateState { it.copy(fnMusicBaseUrl = intent.value) }
+            is ImportIntent.FnMusicWanBaseUrlChanged -> updateState { it.copy(fnMusicWanBaseUrl = intent.value) }
+            is ImportIntent.FnMusicIdChanged -> updateState { it.copy(fnMusicId = intent.value) }
+            is ImportIntent.FnMusicUsernameChanged -> updateState { it.copy(fnMusicUsername = intent.value) }
+            is ImportIntent.FnMusicPasswordChanged -> updateState { it.copy(fnMusicPassword = intent.value) }
+            is ImportIntent.FnMusicAccessCodeChanged -> updateState { it.copy(fnMusicAccessCode = intent.value) }
+            is ImportIntent.RemoteSourceFnMusicConnectionModeChanged -> updateEditingSource { it.copy(fnMusicConnectionMode = intent.value) }
+            is ImportIntent.RemoteSourceFnMusicIdChanged -> updateEditingSource { it.copy(fnMusicId = intent.value) }
+            is ImportIntent.RemoteSourceFnMusicAccessCodeChanged -> updateEditingSource { it.copy(fnMusicAccessCode = intent.value) }
             is ImportIntent.RemoteSourceLabelChanged -> updateEditingSource { it.copy(label = intent.value) }
             is ImportIntent.RemoteSourceServerChanged -> updateEditingSourceAndFolders(
                 resetFolders = { it.server != intent.value },
@@ -820,7 +925,9 @@ class ImportStore(
                 resetFolders = { it.username != intent.value },
                 keepSelection = true,
             ) {
-                if (it.type == ImportSourceType.EMBY && it.username != intent.value) {
+                // The stored secret belongs to the old account: a new username needs its own password.
+                val accountBound = it.type == ImportSourceType.EMBY || it.type == ImportSourceType.FN_MUSIC
+                if (accountBound && it.username != intent.value) {
                     it.copy(username = intent.value, password = "", keepExistingCredential = false)
                 } else {
                     it.copy(username = intent.value)
@@ -1136,6 +1243,73 @@ class ImportStore(
         )
     }
 
+    private fun createFnMusicDraftOrNull(state: ImportState): FnMusicSourceDraft? = fnMusicDraftOrNull(
+        label = state.fnMusicLabel,
+        connectionMode = state.fnMusicConnectionMode,
+        baseUrl = state.fnMusicBaseUrl,
+        wanBaseUrl = state.fnMusicWanBaseUrl,
+        fnId = state.fnMusicId,
+        username = state.fnMusicUsername,
+        password = state.fnMusicPassword,
+        accessCode = state.fnMusicAccessCode,
+        allowBlankPassword = false,
+    )
+
+    private fun fnMusicDraftOrNull(
+        label: String,
+        connectionMode: FnMusicConnectionMode,
+        baseUrl: String,
+        wanBaseUrl: String,
+        fnId: String,
+        username: String,
+        password: String,
+        accessCode: String,
+        allowBlankPassword: Boolean,
+    ): FnMusicSourceDraft? {
+        val type = ImportSourceType.FN_MUSIC
+        if (connectionMode == FnMusicConnectionMode.ADDRESS && baseUrl.isBlank() && wanBaseUrl.isBlank()) {
+            setCreateOrPageMessage(type, uiText(Res.string.source_server_address_missing))
+            return null
+        }
+        if (connectionMode == FnMusicConnectionMode.FN_CONNECT && fnId.isBlank()) {
+            setCreateOrPageMessage(type, uiText(Res.string.fn_music_fn_id_required))
+            return null
+        }
+        if (username.isBlank()) {
+            setCreateOrPageMessage(type, uiText(Res.string.source_fn_music_username_required))
+            return null
+        }
+        if (!allowBlankPassword && password.isBlank()) {
+            setCreateOrPageMessage(type, uiText(Res.string.source_fn_music_password_required))
+            return null
+        }
+        return FnMusicSourceDraft(
+            label = label,
+            connectionMode = connectionMode,
+            baseUrl = if (connectionMode == FnMusicConnectionMode.ADDRESS) baseUrl else "",
+            wanBaseUrl = if (connectionMode == FnMusicConnectionMode.ADDRESS) wanBaseUrl else "",
+            fnId = if (connectionMode == FnMusicConnectionMode.FN_CONNECT) fnId else "",
+            username = username,
+            password = password,
+            accessCode = if (connectionMode == FnMusicConnectionMode.FN_CONNECT) accessCode else "",
+        )
+    }
+
+    private fun editingFnMusicDraftOrNull(editor: RemoteSourceEditorState): FnMusicSourceDraft? {
+        val canReuseStoredCredential = editor.keepExistingCredential && editor.hasStoredCredential
+        return fnMusicDraftOrNull(
+            label = editor.label,
+            connectionMode = editor.fnMusicConnectionMode,
+            baseUrl = editor.rootUrl,
+            wanBaseUrl = editor.wanRootUrl,
+            fnId = editor.fnMusicId,
+            username = editor.username,
+            password = editor.password,
+            accessCode = editor.fnMusicAccessCode,
+            allowBlankPassword = canReuseStoredCredential,
+        )
+    }
+
     /** Problems are shown inside the edit dialog, which would hide the page banner. */
     private fun editingSambaDraftOrNull(editor: RemoteSourceEditorState, requireSelection: Boolean): SambaSourceDraft? {
         val port = editor.port.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
@@ -1355,6 +1529,17 @@ class ImportStore(
                 embyPassword = "",
             )
 
+            ImportSourceType.FN_MUSIC -> copy(
+                fnMusicLabel = "",
+                fnMusicConnectionMode = FnMusicConnectionMode.ADDRESS,
+                fnMusicBaseUrl = "",
+                fnMusicWanBaseUrl = "",
+                fnMusicId = "",
+                fnMusicUsername = "",
+                fnMusicPassword = "",
+                fnMusicAccessCode = "",
+            )
+
             ImportSourceType.LOCAL_FOLDER -> this
         }
     }
@@ -1407,7 +1592,7 @@ class ImportStore(
     /** A test that reached the source through only one of its addresses reads as partial success, not failure. */
     private fun remoteConnectionTestFailureText(
         throwable: Throwable,
-        sourceLabel: String,
+        sourceLabel: Any,
         failedMessage: StringResource,
     ): UiText {
         val detail = throwable.uiErrorDetail()

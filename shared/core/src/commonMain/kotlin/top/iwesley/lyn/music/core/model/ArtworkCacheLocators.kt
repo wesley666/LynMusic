@@ -66,15 +66,22 @@ fun albumArtworkCacheKey(
     return "album:$normalizedSourceId:$normalizedArtist:$normalizedAlbumTitle"
 }
 
+/**
+ * A plain URL (or path) an image loader can fetch as-is. Candidates that need request headers (FN Music's signed
+ * covers) are skipped: without their headers they can only fail, so callers get null and rely on the cache, which
+ * reads them through [resolveArtworkCacheTargets] with their headers. FN Music covers only ever resolve to such
+ * candidates, so they are answered null up front, without the login or FN Connect lookup resolving them would cost.
+ */
 suspend fun resolveArtworkCacheTarget(locator: String?): String? {
-    return resolveArtworkCacheTargets(locator).firstOrNull()?.value
+    if (normalizedArtworkCacheLocator(locator)?.let(::parseFnMusicCoverLocator) != null) return null
+    return resolveArtworkCacheTargets(locator).firstOrNull { it.headers.isEmpty() }?.value
 }
 
 suspend fun resolveArtworkCacheTargets(locator: String?): List<RemotePlaybackUrlCandidate> {
     val rawTarget = normalizedArtworkCacheLocator(locator) ?: return emptyList()
     val targets = if (parseSubsonicCompatibleCoverLocator(rawTarget) != null) {
         NavidromeLocatorRuntime.resolveCoverArtUrlCandidates(rawTarget)
-    } else if (parseEmbyCoverLocator(rawTarget) != null) {
+    } else if (parseEmbyCoverLocator(rawTarget) != null || parseFnMusicCoverLocator(rawTarget) != null) {
         NavidromeLocatorRuntime.resolveCoverArtUrlCandidates(rawTarget)
     } else {
         listOf(RemotePlaybackUrlCandidate(value = rawTarget))

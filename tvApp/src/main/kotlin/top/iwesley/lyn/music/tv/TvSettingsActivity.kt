@@ -143,7 +143,9 @@ import top.iwesley.lyn.music.core.model.AppStorageCategoryUsage
 import top.iwesley.lyn.music.core.model.BuildMetadata
 import top.iwesley.lyn.music.core.model.DeviceInfoSnapshot
 import top.iwesley.lyn.music.core.model.ImportSource
+import top.iwesley.lyn.music.core.model.FnMusicConnectionMode
 import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.domain.fnMusicIdOf
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.LynMusicUpdateLinks
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
@@ -767,6 +769,16 @@ private fun TvAddSourcePanel(
                         ) {
                             onIntent(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.EMBY))
                         }
+
+                        "sources:add:fnmusic" -> TvAddTypeButton(
+                            label = uiString(Res.string.fn_music_name),
+                            selected = state.creatingSourceType == ImportSourceType.FN_MUSIC,
+                            focusKey = focusKey,
+                            focusChain = focusChain,
+                            restoreFocusAfterClick = false,
+                        ) {
+                            onIntent(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.FN_MUSIC))
+                        }
                     }
                 }
             }
@@ -793,6 +805,9 @@ private fun addSourceFocusRows(capabilities: PlatformCapabilities): List<List<St
         }
         if (capabilities.supportsEmbyImport) {
             add("sources:add:emby")
+        }
+        if (capabilities.supportsFnMusicImport) {
+            add("sources:add:fnmusic")
         }
     }
     return keys.chunked(3)
@@ -916,7 +931,14 @@ private fun TvRemoteSourceCreatorDialog(
     val folderRows = state.remoteFolderTree?.visibleRows(folderRootName).orEmpty()
     val treeFocusRows = tvFolderTreeFocusRows(focusPrefix, state.remoteFolderTree, folderRows, state.capabilities.supportsSambaImport)
     val focusChain = rememberTvDialogFocusChain(
-        focusRows = remember(focusPrefix, type, treeFocusRows) { remoteSourceDialogFocusRows(focusPrefix, type, treeFocusRows) },
+        focusRows = remember(focusPrefix, type, treeFocusRows, state.fnMusicConnectionMode) {
+            remoteSourceDialogFocusRows(
+                prefix = focusPrefix,
+                type = type,
+                folderTreeRows = treeFocusRows,
+                fnConnect = state.fnMusicConnectionMode == FnMusicConnectionMode.FN_CONNECT,
+            )
+        },
     )
     Dialog(
         onDismissRequest = { onIntent(ImportIntent.DismissRemoteSourceCreator) },
@@ -986,6 +1008,13 @@ private fun TvRemoteSourceCreatorDialog(
                             focusChain = focusChain,
                         )
 
+                        ImportSourceType.FN_MUSIC -> TvFnMusicSourceForm(
+                            state = state,
+                            onIntent = onIntent,
+                            focusPrefix = focusPrefix,
+                            focusChain = focusChain,
+                        )
+
                         ImportSourceType.LOCAL_FOLDER -> Unit
                     }
                     state.remoteFolderTree?.let { tree ->
@@ -1026,6 +1055,7 @@ private fun TvRemoteSourceCreatorDialog(
                                 ImportSourceType.NAVIDROME -> onIntent(ImportIntent.TestNavidromeSource)
                                 ImportSourceType.SUBSONIC -> onIntent(ImportIntent.TestSubsonicSource)
                                 ImportSourceType.EMBY -> onIntent(ImportIntent.TestEmbySource)
+                                ImportSourceType.FN_MUSIC -> onIntent(ImportIntent.TestFnMusicSource)
                                 ImportSourceType.LOCAL_FOLDER -> Unit
                             }
                         },
@@ -1050,6 +1080,7 @@ private fun TvRemoteSourceCreatorDialog(
                                 ImportSourceType.NAVIDROME -> onIntent(ImportIntent.AddNavidromeSource)
                                 ImportSourceType.SUBSONIC -> onIntent(ImportIntent.AddSubsonicSource)
                                 ImportSourceType.EMBY -> onIntent(ImportIntent.AddEmbySource)
+                                ImportSourceType.FN_MUSIC -> onIntent(ImportIntent.AddFnMusicSource)
                                 ImportSourceType.LOCAL_FOLDER -> Unit
                             }
                         },
@@ -1070,6 +1101,7 @@ private fun remoteSourceDialogFocusRows(
     prefix: String,
     type: ImportSourceType,
     folderTreeRows: List<List<String>> = emptyList(),
+    fnConnect: Boolean = false,
 ): List<List<String>> {
     val buttons = listOf("$prefix:test", "$prefix:cancel", "$prefix:submit")
     return when (type) {
@@ -1104,6 +1136,15 @@ private fun remoteSourceDialogFocusRows(
         ImportSourceType.EMBY -> listOf(
             listOf("$prefix:label"),
             listOf("$prefix:root"),
+            listOf("$prefix:username", "$prefix:password"),
+            buttons,
+        )
+
+        ImportSourceType.FN_MUSIC -> listOfNotNull(
+            listOf("$prefix:label"),
+            listOf("$prefix:fnconnect"),
+            if (fnConnect) listOf("$prefix:fnid") else listOf("$prefix:root"),
+            if (fnConnect) listOf("$prefix:access") else null,
             listOf("$prefix:username", "$prefix:password"),
             buttons,
         )
@@ -1555,6 +1596,112 @@ private fun TvEmbySourceForm(
 }
 
 @Composable
+private fun TvFnMusicSourceForm(
+    state: ImportState,
+    onIntent: (ImportIntent) -> Unit,
+    focusPrefix: String,
+    focusChain: TvSettingsFocusChain,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TvSettingsTextField(
+            label = uiString(Res.string.common_name),
+            value = state.fnMusicLabel,
+            onValueChange = { onIntent(ImportIntent.FnMusicLabelChanged(it)) },
+            placeholder = uiString(Res.string.fn_music_name),
+            focusKey = "$focusPrefix:label",
+            focusChain = focusChain,
+        )
+        TvFnMusicConnectionFields(
+            connectionMode = state.fnMusicConnectionMode,
+            baseUrl = state.fnMusicBaseUrl,
+            fnId = state.fnMusicId,
+            accessCode = state.fnMusicAccessCode,
+            isEditing = false,
+            onConnectionModeChange = { onIntent(ImportIntent.FnMusicConnectionModeChanged(it)) },
+            onBaseUrlChange = { onIntent(ImportIntent.FnMusicBaseUrlChanged(it)) },
+            onFnIdChange = { onIntent(ImportIntent.FnMusicIdChanged(it)) },
+            onAccessCodeChange = { onIntent(ImportIntent.FnMusicAccessCodeChanged(it)) },
+            focusPrefix = focusPrefix,
+            focusChain = focusChain,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TvSettingsTextField(
+                label = uiString(Res.string.common_username),
+                value = state.fnMusicUsername,
+                onValueChange = { onIntent(ImportIntent.FnMusicUsernameChanged(it)) },
+                modifier = Modifier.weight(1f),
+                focusKey = "$focusPrefix:username",
+                focusChain = focusChain,
+            )
+            TvSettingsTextField(
+                label = uiString(Res.string.common_password),
+                value = state.fnMusicPassword,
+                onValueChange = { onIntent(ImportIntent.FnMusicPasswordChanged(it)) },
+                modifier = Modifier.weight(1f),
+                password = true,
+                focusKey = "$focusPrefix:password",
+                focusChain = focusChain,
+            )
+        }
+    }
+}
+
+/** FN Connect switch plus either the server address or the FN ID and access code. */
+@Composable
+private fun TvFnMusicConnectionFields(
+    connectionMode: FnMusicConnectionMode,
+    baseUrl: String,
+    fnId: String,
+    accessCode: String,
+    isEditing: Boolean,
+    onConnectionModeChange: (FnMusicConnectionMode) -> Unit,
+    onBaseUrlChange: (String) -> Unit,
+    onFnIdChange: (String) -> Unit,
+    onAccessCodeChange: (String) -> Unit,
+    focusPrefix: String,
+    focusChain: TvSettingsFocusChain,
+) {
+    val fnConnect = connectionMode == FnMusicConnectionMode.FN_CONNECT
+    TvSettingsSwitchRow(
+        title = uiString(Res.string.fn_music_connection_mode_fn_connect),
+        checked = fnConnect,
+        onCheckedChange = {
+            onConnectionModeChange(if (it) FnMusicConnectionMode.FN_CONNECT else FnMusicConnectionMode.ADDRESS)
+        },
+        focusKey = "$focusPrefix:fnconnect",
+        focusChain = focusChain,
+    )
+    if (fnConnect) {
+        TvSettingsTextField(
+            label = uiString(Res.string.fn_music_fn_id_label),
+            value = fnId,
+            onValueChange = onFnIdChange,
+            placeholder = uiString(Res.string.fn_music_fn_id_placeholder),
+            focusKey = "$focusPrefix:fnid",
+            focusChain = focusChain,
+        )
+        TvSettingsTextField(
+            label = uiString(Res.string.fn_music_access_code_label),
+            value = accessCode,
+            onValueChange = onAccessCodeChange,
+            placeholder = if (isEditing) uiString(Res.string.fn_music_access_code_keep_hint) else "",
+            password = true,
+            focusKey = "$focusPrefix:access",
+            focusChain = focusChain,
+        )
+    } else {
+        TvSettingsTextField(
+            label = uiString(Res.string.common_server_address),
+            value = baseUrl,
+            onValueChange = onBaseUrlChange,
+            placeholder = "http://192.168.1.2:5666",
+            focusKey = "$focusPrefix:root",
+            focusChain = focusChain,
+        )
+    }
+}
+
+@Composable
 private fun TvSourceCard(
     sourceWithStatus: SourceWithStatus,
     latestSummary: top.iwesley.lyn.music.core.model.ImportScanSummary?,
@@ -1678,8 +1825,13 @@ private fun TvRemoteSourceEditorDialog(
     val folderRows = state.remoteFolderTree?.visibleRows(folderRootName).orEmpty()
     val treeFocusRows = tvFolderTreeFocusRows(focusPrefix, state.remoteFolderTree, folderRows, state.capabilities.supportsSambaImport)
     val focusChain = rememberTvDialogFocusChain(
-        focusRows = remember(focusPrefix, editor.type, treeFocusRows) {
-            remoteSourceDialogFocusRows(focusPrefix, editor.type, treeFocusRows)
+        focusRows = remember(focusPrefix, editor.type, treeFocusRows, editor.fnMusicConnectionMode) {
+            remoteSourceDialogFocusRows(
+                prefix = focusPrefix,
+                type = editor.type,
+                folderTreeRows = treeFocusRows,
+                fnConnect = editor.fnMusicConnectionMode == FnMusicConnectionMode.FN_CONNECT,
+            )
         },
     )
     Dialog(
@@ -1783,6 +1935,20 @@ private fun TvRemoteSourceEditorDialog(
                                 focusChain = focusChain,
                             )
                         }
+
+                        ImportSourceType.FN_MUSIC -> TvFnMusicConnectionFields(
+                            connectionMode = editor.fnMusicConnectionMode,
+                            baseUrl = editor.rootUrl,
+                            fnId = editor.fnMusicId,
+                            accessCode = editor.fnMusicAccessCode,
+                            isEditing = true,
+                            onConnectionModeChange = { onIntent(ImportIntent.RemoteSourceFnMusicConnectionModeChanged(it)) },
+                            onBaseUrlChange = { onIntent(ImportIntent.RemoteSourceRootUrlChanged(it)) },
+                            onFnIdChange = { onIntent(ImportIntent.RemoteSourceFnMusicIdChanged(it)) },
+                            onAccessCodeChange = { onIntent(ImportIntent.RemoteSourceFnMusicAccessCodeChanged(it)) },
+                            focusPrefix = focusPrefix,
+                            focusChain = focusChain,
+                        )
 
                         ImportSourceType.LOCAL_FOLDER -> Unit
                     }
@@ -3057,6 +3223,7 @@ private fun sourceTypeTitle(type: ImportSourceType): String {
         ImportSourceType.NAVIDROME -> "Navidrome"
         ImportSourceType.SUBSONIC -> "Subsonic"
         ImportSourceType.EMBY -> "Emby"
+        ImportSourceType.FN_MUSIC -> uiString(Res.string.fn_music_name)
     }
 }
 
@@ -3067,7 +3234,8 @@ private fun sourceTypeIcon(type: ImportSourceType): ImageVector {
         ImportSourceType.WEBDAV,
         ImportSourceType.NAVIDROME,
         ImportSourceType.SUBSONIC,
-        ImportSourceType.EMBY -> Icons.Rounded.Cloud
+        ImportSourceType.EMBY,
+        ImportSourceType.FN_MUSIC -> Icons.Rounded.Cloud
     }
 }
 
@@ -3081,6 +3249,9 @@ private fun sourceDisplayReference(source: ImportSource): String {
         ImportSourceType.NAVIDROME -> source.rootReference
         ImportSourceType.SUBSONIC -> source.rootReference
         ImportSourceType.EMBY -> source.rootReference
+        ImportSourceType.FN_MUSIC -> fnMusicIdOf(source.rootReference)
+            ?.let { uiString(Res.string.fn_music_fn_id_summary, it) }
+            ?: source.rootReference
     }
 }
 

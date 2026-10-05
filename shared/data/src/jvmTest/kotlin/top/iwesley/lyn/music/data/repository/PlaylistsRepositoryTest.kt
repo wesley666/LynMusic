@@ -1453,6 +1453,58 @@ class PlaylistsRepositoryTest {
     }
 
     @Test
+    fun `FN Music playlist listing a track twice is not rewritten on every refresh`() = runTest {
+        val database = createPlaylistTestDatabase()
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = "fn-source",
+                type = "FN_MUSIC",
+                label = "NAS",
+                rootReference = "http://nas.local:5666",
+                server = null,
+                shareName = null,
+                directoryPath = null,
+                username = "demo",
+                credentialKey = "fn-cred",
+                allowInsecureTls = false,
+                lastScannedAt = null,
+                createdAt = 1L,
+            ),
+        )
+        database.trackDao().upsertAll(listOf(fnMusicTrackEntity("g1"), fnMusicTrackEntity("g2")))
+        val httpClient = object : LyricsHttpClient {
+            override suspend fun request(request: LyricsRequest): Result<LyricsHttpResponse> = runCatching {
+                val data = when {
+                    request.url.contains("password-login") -> """{"userToken":"tok"}"""
+                    request.url.contains("/playlist/list") -> """{"list":[{"guid":"p1","name":"Mix","trackCount":3}],"total":1}"""
+                    request.url.contains("/track/playlist-detail/list") ->
+                        """{"list":[{"guid":"g1"},{"guid":"g2"},{"guid":"g1"}],"total":3}"""
+                    else -> error("unexpected ${request.url}")
+                }
+                LyricsHttpResponse(200, """{"code":0,"data":$data}""")
+            }
+        }
+        val repository = RoomPlaylistRepository(
+            database = database,
+            secureCredentialStore = MapPlaylistSecureCredentialStore(mutableMapOf("fn-cred" to "secret")),
+            httpClient = httpClient,
+            logger = NoopDiagnosticLogger,
+        )
+
+        repository.refreshNavidromePlaylists().getOrThrow()
+        val playlistId = repository.playlists.first().single().id
+        val firstUpdatedAt = database.playlistDao().getById(playlistId)?.updatedAt
+        repository.refreshNavidromePlaylists().getOrThrow()
+
+        assertEquals(firstUpdatedAt, database.playlistDao().getById(playlistId)?.updatedAt)
+        assertEquals(
+            listOf(fnMusicTrackIdFor("fn-source", "g1"), fnMusicTrackIdFor("fn-source", "g2")),
+            repository.observePlaylistDetail(playlistId).first()?.tracks?.map { it.track.id },
+        )
+        top.iwesley.lyn.music.domain.FnMusicSessions.invalidate("fn-source")
+    }
+
+    @Test
     fun `refresh merges same-name remote playlists across sources`() = runTest {
         val database = createPlaylistTestDatabase()
         seedNavidromeSource(database, sourceId = "nav-a", username = "alpha", credentialKey = "cred-a", label = "Alpha")
@@ -1967,6 +2019,26 @@ private fun embyTrack(itemId: String): Track {
         durationMs = 215_000L,
         mediaLocator = buildEmbySongLocator("emby-source", itemId),
         relativePath = "Artist Emby/Album Emby/Song $itemId.flac",
+    )
+}
+
+private fun fnMusicTrackEntity(guid: String): TrackEntity {
+    return TrackEntity(
+        id = fnMusicTrackIdFor("fn-source", guid),
+        sourceId = "fn-source",
+        title = "Song $guid",
+        artistId = "artist:fn",
+        artistName = "Artist FN",
+        albumId = "album:fn",
+        albumTitle = "Album FN",
+        durationMs = 215_000L,
+        trackNumber = 1,
+        discNumber = 1,
+        mediaLocator = top.iwesley.lyn.music.core.model.buildFnMusicSongLocator("fn-source", guid),
+        relativePath = "Artist FN/Album FN/Song $guid.flac",
+        artworkLocator = null,
+        sizeBytes = 0L,
+        modifiedAt = 0L,
     )
 }
 

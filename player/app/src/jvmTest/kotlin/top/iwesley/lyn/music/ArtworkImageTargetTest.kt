@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import top.iwesley.lyn.music.core.model.ArtworkCachedTarget
@@ -18,8 +19,11 @@ import top.iwesley.lyn.music.core.model.ArtworkCacheStore
 import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
 import top.iwesley.lyn.music.core.model.NavidromeLocatorResolver
 import top.iwesley.lyn.music.core.model.NavidromeLocatorRuntime
+import top.iwesley.lyn.music.core.model.RemotePlaybackUrlCandidate
+import top.iwesley.lyn.music.core.model.buildFnMusicCoverLocator
 import top.iwesley.lyn.music.core.model.buildIosArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.buildNavidromeCoverLocator
+import top.iwesley.lyn.music.core.model.parseFnMusicCoverLocator
 
 class ArtworkImageTargetTest {
     @kotlin.test.BeforeTest
@@ -146,6 +150,54 @@ class ArtworkImageTargetTest {
         assertEquals(locator, resolved.locator)
         assertEquals(coverUrl, resolved.target)
         assertFalse(resolved.isLocalFile)
+    }
+
+    @Test
+    fun `a resolver that fails costs the image instead of failing the composition`() = runBlocking {
+        val coverLookups = mutableListOf<String>()
+        NavidromeLocatorRuntime.install(
+            object : NavidromeLocatorResolver {
+                override suspend fun resolveStreamUrl(
+                    locator: String,
+                    audioQuality: NavidromeAudioQuality,
+                ): String? = null
+
+                override suspend fun resolveCoverArtUrl(locator: String): String? {
+                    coverLookups += locator
+                    throw java.net.UnknownHostException("Unable to resolve host \"5ddd.com\"")
+                }
+
+                override suspend fun resolveCoverArtUrlCandidates(locator: String): List<RemotePlaybackUrlCandidate>? {
+                    coverLookups += locator
+                    throw java.net.UnknownHostException("Unable to resolve host \"5ddd.com\"")
+                }
+            },
+        )
+        // Offline: the cache cannot download either, so resolution falls through to the resolver.
+        val offlineCache = FakeArtworkCacheStore(error = java.io.IOException("offline"))
+
+        try {
+            for (locator in listOf(buildNavidromeCoverLocator("nav-source", "cover-1"), buildFnMusicCoverLocator("fn-source", "cover-2"))) {
+                assertNull(
+                    resolveLynArtworkTarget(
+                        locator = locator,
+                        cacheKey = null,
+                        cacheRemote = true,
+                        artworkCacheStore = offlineCache,
+                    ),
+                )
+            }
+            assertTrue(coverLookups.isNotEmpty())
+            // The FN Music cover never reached the resolver at all.
+            assertTrue(coverLookups.none { parseFnMusicCoverLocator(it) != null })
+        } finally {
+            NavidromeLocatorRuntime.install(
+                object : NavidromeLocatorResolver {
+                    override suspend fun resolveStreamUrl(locator: String, audioQuality: NavidromeAudioQuality): String? = null
+                    override suspend fun resolveCoverArtUrl(locator: String): String? = null
+                },
+            )
+        }
     }
 
     @Test

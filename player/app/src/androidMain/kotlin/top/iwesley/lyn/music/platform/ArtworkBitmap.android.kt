@@ -1,6 +1,6 @@
 package top.iwesley.lyn.music.platform
 
-import top.iwesley.lyn.music.core.model.readRemoteSourceUrlBytes
+import top.iwesley.lyn.music.core.model.readRemoteSourceCandidateBytes
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -172,7 +172,7 @@ private suspend fun readAndroidRemoteArtworkPayload(
     return readRemotePlaybackUrlCandidateWithFallback(
         candidates = targets,
         isRemoteUrl = ::isRemoteArtworkTarget,
-        read = { target -> readRemoteSourceUrlBytes(target.value) },
+        read = { target -> readRemoteSourceCandidateBytes(target) },
         isValidPayload = ::isCompleteArtworkPayload,
     )
 }

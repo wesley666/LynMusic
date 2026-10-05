@@ -141,6 +141,9 @@ class RemoteSourceAddressSelector(
         }
     }
 
+    /** Changes whenever the network changes; callers cache resolved endpoints against it. */
+    fun networkVersion(): Long = networkConnectionTypeProvider.networkConnectionState.value.version
+
     fun invalidate(sourceId: String) {
         successfulAddressCache.update { cache -> cache - sourceId }
     }
@@ -166,6 +169,35 @@ fun remoteCandidateIndexForNetworkChange(
     if (!networkState.isConnected || networkState.type != NetworkConnectionType.MOBILE) return null
     if (candidateKinds.getOrNull(currentIndex) != RemoteSourceAddressKind.LAN) return null
     return candidateKinds.indexOf(RemoteSourceAddressKind.WAN).takeIf { it >= 0 }
+}
+
+/** What a playing signed stream should do after a network change; see [remoteStreamNetworkAction]. */
+sealed interface RemoteStreamNetworkAction {
+    data object None : RemoteStreamNetworkAction
+    data class Switch(val index: Int) : RemoteStreamNetworkAction
+    data object Reresolve : RemoteStreamNetworkAction
+}
+
+/**
+ * Like [remoteCandidateIndexForNetworkChange], but a LAN stream without a WAN candidate (an FN Connect route resolved
+ * at home) re-resolves its addresses instead of staying on the unreachable LAN address.
+ */
+fun remoteStreamNetworkAction(
+    candidateKinds: List<RemoteSourceAddressKind?>,
+    currentIndex: Int,
+    networkState: NetworkConnectionState,
+    isPlaybackActive: Boolean,
+): RemoteStreamNetworkAction {
+    remoteCandidateIndexForNetworkChange(candidateKinds, currentIndex, networkState, isPlaybackActive)
+        ?.let { return RemoteStreamNetworkAction.Switch(it) }
+    if (!isPlaybackActive || !networkState.isConnected || networkState.type != NetworkConnectionType.MOBILE) {
+        return RemoteStreamNetworkAction.None
+    }
+    return if (candidateKinds.getOrNull(currentIndex) == RemoteSourceAddressKind.LAN) {
+        RemoteStreamNetworkAction.Reresolve
+    } else {
+        RemoteStreamNetworkAction.None
+    }
 }
 
 /**
@@ -288,6 +320,27 @@ fun isRemoteSourceAddressFallbackAllowed(throwable: Throwable): Boolean {
         lowered.contains("ssl")
 }
 
+/**
+ * True when [throwable] proves the request never reached the server (refused connection, unknown host, connect
+ * timeout), so even a write can safely be sent to another address. Read timeouts and resets are not: the server may
+ * already have applied it. Classified by exception type names, never by message text.
+ */
+fun isRequestNotSentFailure(throwable: Throwable): Boolean {
+    return throwable.failureChain().any { failure ->
+        val name = failure::class.simpleName.orEmpty()
+        REQUEST_NOT_SENT_EXCEPTION_NAMES.any { name.contains(it) }
+    }
+}
+
+private val REQUEST_NOT_SENT_EXCEPTION_NAMES = listOf(
+    "ConnectException",
+    "ConnectTimeout",
+    "UnknownHost",
+    "NoRouteToHost",
+    "PortUnreachable",
+    "UnresolvedAddress",
+)
+
 suspend fun <T> readRemotePlaybackUrlCandidateWithFallback(
     candidates: List<RemotePlaybackUrlCandidate>,
     isRemoteUrl: (String) -> Boolean = { value ->
@@ -355,7 +408,7 @@ private fun normalizeAddresses(
     val wan = wanBaseUrl.orEmpty().trim()
         .takeIf { it.isNotBlank() }
         ?.let(normalizeBaseUrl)
-    requireUi(lan != null || wan != null) { uiText(Res.string.source_server_address_required, sourceType.displayName()) }
+    requireUi(lan != null || wan != null) { uiText(Res.string.source_server_address_required, sourceType.displayNameArgument()) }
     return buildList {
         lan?.let { add(RemoteSourceBaseUrl(RemoteSourceAddressKind.LAN, it)) }
         wan?.let { add(RemoteSourceBaseUrl(RemoteSourceAddressKind.WAN, it)) }
@@ -396,11 +449,18 @@ private fun List<Throwable>.messageChain(): String {
         .joinToString(" -> ")
 }
 
+/** The source name as a UI text argument: a localized resource where one exists, the brand name otherwise. */
+private fun ImportSourceType.displayNameArgument(): Any = when (this) {
+    ImportSourceType.FN_MUSIC -> FN_MUSIC_NAME
+    else -> displayName()
+}
+
 private fun ImportSourceType.displayName(): String {
     return when (this) {
         ImportSourceType.NAVIDROME -> "Navidrome"
         ImportSourceType.SUBSONIC -> "Subsonic"
         ImportSourceType.EMBY -> "Emby"
+        ImportSourceType.FN_MUSIC -> "飞牛音乐"
         else -> "远程"
     }
 }

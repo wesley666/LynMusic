@@ -37,6 +37,8 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.TrackPlaybackStatsEntity
 import top.iwesley.lyn.music.domain.fetchEmbyRecentTracks
+import top.iwesley.lyn.music.domain.fetchFnMusicRecentTracks
+import top.iwesley.lyn.music.domain.resolveFnMusicSource
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
 import top.iwesley.lyn.music.domain.isSubsonicCompatibleSourceType
 import top.iwesley.lyn.music.domain.normalizeSubsonicBaseUrl
@@ -173,11 +175,13 @@ class RoomMyRepository(
         return runCatching {
             val failures = mutableListOf<Throwable>()
             database.importSourceDao().getAll()
-                .filter { (it.subsonicCompatibleSourceType() != null || it.isEmbySource()) && it.isLocalIndexedEnabled() }
+                .filter { (it.subsonicCompatibleSourceType() != null || it.isEmbySource() || it.isFnMusicSource()) && it.isLocalIndexedEnabled() }
                 .forEach { source ->
                     runCatching {
                         if (source.isEmbySource()) {
                             refreshEmbyRecentPlays(source)
+                        } else if (source.isFnMusicSource()) {
+                            refreshFnMusicRecentPlays(source)
                         } else {
                             refreshSubsonicCompatibleRecentPlays(source)
                         }
@@ -295,9 +299,43 @@ class RoomMyRepository(
             limit = max(recentTrackLimit, recentAlbumLimit).coerceAtLeast(DEFAULT_RECENT_ITEM_LIMIT) * 2,
             logger = logger,
         )
+        applyRemoteRecentPlays(
+            recentItems.map { item ->
+                RemoteRecentPlaySync(
+                    trackId = embyTrackIdFor(source.id, item.itemId),
+                    playedAt = item.playedAt,
+                    playCount = item.playCount,
+                )
+            },
+        )
+    }
+
+    private suspend fun refreshFnMusicRecentPlays(source: ImportSourceEntity) {
+        val resolved = resolveFnMusicSource(database, secureCredentialStore, source.id)
+            ?: error("飞牛音乐来源缺少有效凭据。")
+        val recentItems = fetchFnMusicRecentTracks(
+            httpClient = httpClient,
+            source = resolved,
+            limit = max(recentTrackLimit, recentAlbumLimit).coerceAtLeast(DEFAULT_RECENT_ITEM_LIMIT) * 2,
+            addressSelector = addressSelector,
+            logger = logger,
+        )
+        applyRemoteRecentPlays(
+            recentItems.map { item ->
+                RemoteRecentPlaySync(
+                    trackId = fnMusicTrackIdFor(source.id, item.guid),
+                    playedAt = item.playedAt,
+                    playCount = null,
+                )
+            },
+        )
+    }
+
+    /** Writes play stats for remote recent plays whose tracks are in the local index. */
+    private suspend fun applyRemoteRecentPlays(recentItems: List<RemoteRecentPlaySync>) {
         if (recentItems.isEmpty()) return
         val trackIds = recentItems
-            .map { item -> embyTrackIdFor(source.id, item.itemId) }
+            .map { item -> item.trackId }
             .distinct()
         val localTracksById = database.trackDao()
             .getByIds(trackIds)
@@ -319,7 +357,7 @@ class RoomMyRepository(
         val albumUpdates = mutableMapOf<String, EmbyAlbumRecentSync>()
         recentItems.forEach { item ->
             val playedAt = item.playedAt ?: return@forEach
-            val trackId = embyTrackIdFor(source.id, item.itemId)
+            val trackId = item.trackId
             val localTrack = localTracksById[trackId] ?: return@forEach
             database.trackPlaybackStatsDao().setPlayStats(
                 trackId = localTrack.id,
@@ -529,6 +567,10 @@ class RoomMyRepository(
 
     private fun ImportSourceEntity.isEmbySource(): Boolean {
         return type == ImportSourceType.EMBY.name
+    }
+
+    private fun ImportSourceEntity.isFnMusicSource(): Boolean {
+        return type == ImportSourceType.FN_MUSIC.name
     }
 }
 
@@ -911,6 +953,12 @@ private data class NavidromeAlbumDetailPayload(
 
 private data class NavidromeRecentSongPayload(
     val songId: String,
+    val playedAt: Long?,
+    val playCount: Int?,
+)
+
+private data class RemoteRecentPlaySync(
+    val trackId: String,
     val playedAt: Long?,
     val playCount: Int?,
 )

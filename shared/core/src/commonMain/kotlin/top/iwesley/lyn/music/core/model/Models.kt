@@ -30,6 +30,7 @@ enum class ImportSourceType {
     NAVIDROME,
     SUBSONIC,
     EMBY,
+    FN_MUSIC,
 }
 
 enum class ImportSourceIndexMode {
@@ -240,6 +241,26 @@ data class EmbySourceDraft(
     val wanBaseUrl: String = "",
     val username: String,
     val password: String,
+)
+
+enum class FnMusicConnectionMode {
+    /** LAN/WAN server addresses entered by the user. */
+    ADDRESS,
+
+    /** An FN ID resolved through FN Connect into LAN, public and relay addresses. */
+    FN_CONNECT,
+}
+
+data class FnMusicSourceDraft(
+    val label: String,
+    val connectionMode: FnMusicConnectionMode = FnMusicConnectionMode.ADDRESS,
+    val baseUrl: String = "",
+    val wanBaseUrl: String = "",
+    val fnId: String = "",
+    val username: String,
+    val password: String,
+    /** Optional FN Connect access code; blank when none is set. */
+    val accessCode: String = "",
 )
 
 data class ImportedTrackCandidate(
@@ -521,6 +542,12 @@ data class LyricsRequest(
     val headers: Map<String, String> = emptyMap(),
     val body: String? = null,
     val timeoutMillis: Long? = null,
+    /**
+     * Whether the HTTP library may silently resend this request once it went out: after the connection broke, or on
+     * a follow-up like `503` with `Retry-After: 0`. False for writes that are not idempotent, since the server may
+     * already have applied them. (OkHttp resends unless the body is one-shot; NSURLSession never resends a POST.)
+     */
+    val allowTransportRetry: Boolean = true,
 )
 
 const val IMPORT_SOURCE_REQUEST_TIMEOUT_MILLIS = 60_000L
@@ -547,6 +574,7 @@ data class PlatformCapabilities(
     val supportsSystemMediaControls: Boolean,
     val supportsSubsonicImport: Boolean = supportsNavidromeImport,
     val supportsEmbyImport: Boolean = supportsNavidromeImport,
+    val supportsFnMusicImport: Boolean = false,
     val supportsAppDisplayScaleAdjustment: Boolean = false,
     val supportsAndroidExtensionDecoder: Boolean = false,
     val supportsDesktopLyrics: Boolean = false,
@@ -669,6 +697,24 @@ interface ImportSourceGateway {
     ): ImportScanReport {
         return scanEmby(draft, credential, sourceId, deviceId)
     }
+    suspend fun testFnMusic(draft: FnMusicSourceDraft, deviceId: String) {
+        throw UnsupportedOperationException("FN Music import is not supported on this platform.")
+    }
+    suspend fun scanFnMusic(
+        draft: FnMusicSourceDraft,
+        sourceId: String,
+        deviceId: String,
+    ): ImportScanReport {
+        throw UnsupportedOperationException("FN Music import is not supported on this platform.")
+    }
+    suspend fun scanFnMusic(
+        draft: FnMusicSourceDraft,
+        sourceId: String,
+        deviceId: String,
+        progressSink: ImportScanProgressSink,
+    ): ImportScanReport {
+        return scanFnMusic(draft, sourceId, deviceId)
+    }
 }
 
 data class EmbyCredential(
@@ -767,6 +813,8 @@ data class RemotePlaybackUrlCandidate(
     val sourceId: String = "",
     val addressKind: String = "",
     val value: String,
+    /** Request headers the URL needs (FN Music signs every request); empty for self-contained URLs. */
+    val headers: Map<String, String> = emptyMap(),
 )
 
 interface NavidromeLocatorResolver {
@@ -786,6 +834,15 @@ interface NavidromeLocatorResolver {
     }
 
     fun markResolvedUrlSuccess(candidate: RemotePlaybackUrlCandidate) = Unit
+
+    /**
+     * The [candidate] with fresh credentials after the server refused it with [statusCode] ([body] is its JSON answer,
+     * if any), or null when it cannot be recovered.
+     */
+    suspend fun refreshCandidate(candidate: RemotePlaybackUrlCandidate, statusCode: Int, body: String?): RemotePlaybackUrlCandidate? = null
+
+    /** Signs [candidate]'s requests per URL when its headers need it, or null for self-contained headers. */
+    fun requestSigner(candidate: RemotePlaybackUrlCandidate): RemoteRequestSigner? = null
 }
 
 object NavidromeLocatorRuntime {
@@ -814,4 +871,9 @@ object NavidromeLocatorRuntime {
     fun markResolvedUrlSuccess(candidate: RemotePlaybackUrlCandidate) {
         resolver?.markResolvedUrlSuccess(candidate)
     }
+
+    suspend fun refreshCandidate(candidate: RemotePlaybackUrlCandidate, statusCode: Int, body: String?): RemotePlaybackUrlCandidate? =
+        resolver?.refreshCandidate(candidate, statusCode, body)
+
+    fun requestSigner(candidate: RemotePlaybackUrlCandidate): RemoteRequestSigner? = resolver?.requestSigner(candidate)
 }

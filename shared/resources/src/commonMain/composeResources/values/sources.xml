@@ -54,7 +54,7 @@
     <string name="library_navidrome_artist_albums_loading_hint">Fetching artist albums from Navidrome.</string>
     <string name="import_scan_failures_title">Files that failed to scan</string>
     <string name="source_reauthorize_folder">Grant access again</string>
-    <string name="library_empty_import_hint">Import a local folder, Samba, WebDAV, Navidrome, Subsonic, or Emby source on the Sources page. Songs will appear here after scanning.</string>
+    <string name="library_empty_import_hint">Import a local folder, Samba, WebDAV, Navidrome, Subsonic, Emby, or FN Music source on the Sources page. Songs will appear here after scanning.</string>
     <string name="source_import_all_action">Import all</string>
     <string name="source_lan_address_label">LAN / preferred address</string>
     <string name="source_navidrome_large_library_title">Large Navidrome library</string>
