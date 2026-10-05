@@ -37,13 +37,21 @@ internal object SharedAndroidArtworkCacheStore {
 
     fun get(cacheDirectory: File): ArtworkCacheStore {
         val directory = File(cacheDirectory, "artwork-cache")
-        return stores.computeIfAbsent(directory.canonicalPath) {
-            CoordinatedArtworkCacheStore(AndroidArtworkCacheBackend(directory), Dispatchers.IO)
+        val canonicalPath = directory.canonicalPath
+        return synchronized(stores) {
+            stores[canonicalPath] ?: CoordinatedArtworkCacheStore(
+                AndroidArtworkCacheBackend(directory),
+                Dispatchers.IO,
+            ).also { store ->
+                stores[canonicalPath] = store
+            }
         }
     }
 
     internal fun resetForTesting() {
-        stores.clear()
+        synchronized(stores) {
+            stores.clear()
+        }
     }
 
 }
