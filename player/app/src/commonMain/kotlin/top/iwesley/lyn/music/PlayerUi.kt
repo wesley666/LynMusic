@@ -1291,13 +1291,13 @@ private fun PlayerOverlay(
                         end = Offset(size.width, size.height),
                     ),
                 )
-                drawRect(color = Color.Black.copy(alpha = 0.32f))
+                drawRect(color = Color.Black.copy(alpha = 0.18f))
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.16f),
+                            Color.Black.copy(alpha = 0.08f),
                             Color.Transparent,
-                            Color.Black.copy(alpha = 0.44f),
+                            Color.Black.copy(alpha = 0.24f),
                         ),
                         startY = 0f,
                         endY = size.height,
