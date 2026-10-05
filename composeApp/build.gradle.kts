@@ -249,9 +249,11 @@ android.applicationVariants.configureEach {
     }
 }
 
+val applicationMainClass = "top.iwesley.lyn.music.MainKt"
+
 compose.desktop {
     application {
-        mainClass = "top.iwesley.lyn.music.MainKt"
+        mainClass = applicationMainClass
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Pkg, TargetFormat.Msi, TargetFormat.Deb)
@@ -274,6 +276,9 @@ compose.desktop {
             }
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/desktop-icon.png"))
+                desktopEntry = mapOf(
+                    "StartupWMClass" to applicationMainClass.replace('.', '-')
+                )
             }
         }
     }
