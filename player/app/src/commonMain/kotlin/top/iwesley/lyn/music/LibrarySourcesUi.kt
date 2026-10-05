@@ -21,6 +21,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,6 +32,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -91,6 +94,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -3021,7 +3025,7 @@ internal fun SourcesTab(
     }
     state.testMessage?.let { message ->
         LaunchedEffect(message) {
-            delay(2_500)
+            delay(5_000)
             onImportIntent(ImportIntent.ClearTestMessage)
         }
     }
@@ -4264,7 +4268,7 @@ private fun ManualSambaShareField(
     }
 }
 
-/** Dialog shell shared by the add and edit source forms: header, scrollable fields, actions, scan progress and toast. */
+/** Content-sized add/edit dialog with a bounded form and fixed header, actions and feedback. */
 @Composable
 private fun SourceFormDialog(
     title: String,
@@ -4291,11 +4295,14 @@ private fun SourceFormDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         CompositionLocalProvider(LocalDensity provides appDensity) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
+                    .imePadding()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 24.dp),
             ) {
+                val dialogMaxHeight = maxHeight * 0.9f
                 MainShellElevatedCard(
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -4308,13 +4315,13 @@ private fun SourceFormDialog(
                                 Modifier.fillMaxWidth()
                             },
                         )
-                        .fillMaxHeight(0.6f),
+                        .heightIn(max = dialogMaxHeight),
                     shape = RoundedCornerShape(28.dp),
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                            .fillMaxWidth()
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -4331,15 +4338,39 @@ private fun SourceFormDialog(
                                 )
                             }
                         }
-                        Column(
+                        BoxWithConstraints(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f, fill = false)
-                                .heightIn(max = 372.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            content = fields,
-                        )
+                                .weight(1f, fill = false),
+                        ) {
+                            // Budget feedback from the space left after the fixed header and actions.
+                            val feedbackSpacing = minOf(8.dp, maxHeight / 4f)
+                            val feedbackMaxHeight = minOf(120.dp, (maxHeight - feedbackSpacing) / 3f)
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(feedbackSpacing),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f, fill = false)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    content = fields,
+                                )
+                                testMessage?.let { message ->
+                                    key(message) {
+                                        ToastCard(
+                                            message = message,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = feedbackMaxHeight)
+                                                .verticalScroll(rememberScrollState()),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End,
@@ -4382,14 +4413,6 @@ private fun SourceFormDialog(
                             RemoteSourceEditorScanProgress(progress)
                         }
                     }
-                }
-                testMessage?.let { message ->
-                    ToastCard(
-                        message = message,
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 20.dp, vertical = 24.dp),
-                    )
                 }
             }
         }
