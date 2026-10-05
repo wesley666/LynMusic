@@ -20,6 +20,7 @@ import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlinx.coroutines.CancellationException
 import org.apache.http.conn.ssl.NoopHostnameVerifier
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory
 import org.apache.http.impl.client.HttpClientBuilder
@@ -443,6 +444,7 @@ private fun collectJvmWebDavTracks(
                             logger = logger,
                         )
                     }.onFailure { throwable ->
+                        if (throwable is CancellationException || throwable !is Exception) throw throwable
                         logger.warn(WEBDAV_LOG_TAG) {
                             "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
                         }
@@ -504,6 +506,11 @@ private fun resolveJvmWebDavScanCandidate(
         resource = resource,
         metadata = metadata,
         storeArtwork = { bytes -> storeJvmWebDavArtwork(resource.relativePath, bytes) },
+        onArtworkFailure = { exception ->
+            logger.warn(WEBDAV_LOG_TAG) {
+                "metadata-artwork-failed source=$sourceId url=$requestUrl reason=${exception.message.orEmpty()}"
+            }
+        },
     )
     logger.info(WEBDAV_LOG_TAG) {
         "metadata-hit source=$sourceId url=$requestUrl title=${candidate.title} artist=${candidate.artistName.orEmpty()} album=${candidate.albumTitle.orEmpty()}"
@@ -511,7 +518,7 @@ private fun resolveJvmWebDavScanCandidate(
     return candidate
 }
 
-private fun readJvmWebDavRemoteMetadata(
+internal fun readJvmWebDavRemoteMetadata(
     requestUrl: String,
     username: String,
     password: String,
@@ -577,17 +584,24 @@ private fun readJvmWebDavRemoteMetadata(
             null
         } else {
             totalProbeBytes += requestedTailBytes
-            downloadJvmWebDavRange(
-                requestUrl = requestUrl,
-                username = username,
-                password = password,
-                allowInsecureTls = allowInsecureTls,
-                startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
-                length = requestedTailBytes,
-                authEnabled = authEnabled,
-                operation = WebDavOperation.ProbeMetadata,
-                allowFullResponseFallback = false,
-            )
+            try {
+                downloadJvmWebDavRange(
+                    requestUrl = requestUrl,
+                    username = username,
+                    password = password,
+                    allowInsecureTls = allowInsecureTls,
+                    startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                    length = requestedTailBytes,
+                    authEnabled = authEnabled,
+                    operation = WebDavOperation.ProbeMetadata,
+                    allowFullResponseFallback = false,
+                )
+            } catch (exception: IOException) {
+                logger.warn(WEBDAV_LOG_TAG) {
+                    "metadata-tail-failed source=$sourceId url=$requestUrl reason=${exception.message.orEmpty()}"
+                }
+                null
+            }
         }
     } else {
         null

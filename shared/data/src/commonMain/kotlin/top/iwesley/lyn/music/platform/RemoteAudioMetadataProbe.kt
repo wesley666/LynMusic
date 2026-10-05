@@ -121,12 +121,13 @@ private fun parseId3v2(bytes: ByteArray): RemoteAudioMetadata? {
     val flags = bytes[5].toInt() and 0xFF
     val tagSize = readSyncSafeInt(bytes, 6)
     if (tagSize <= 0) return null
+    val declaredTagEnd = ID3_HEADER_SIZE + tagSize
     val footerSize = if ((flags and ID3_FLAG_FOOTER) != 0) ID3_HEADER_SIZE else 0
-    val tagEnd = (ID3_HEADER_SIZE + tagSize + footerSize).coerceAtMost(bytes.size)
+    val tagEnd = (declaredTagEnd + footerSize).coerceAtMost(bytes.size)
     if (tagEnd <= ID3_HEADER_SIZE) return null
 
     val metadata = MutableRemoteAudioMetadata()
-    var position = ID3_HEADER_SIZE
+    var position = id3FrameStart(bytes, version, flags, declaredTagEnd.coerceAtMost(bytes.size)) ?: return null
     while (position < tagEnd) {
         val headerSize = when (version) {
             2 -> 6
@@ -163,6 +164,46 @@ private fun parseId3v2(bytes: ByteArray): RemoteAudioMetadata? {
         position = payloadEnd
     }
     return metadata.build()
+}
+
+private fun id3FrameStart(bytes: ByteArray, version: Int, flags: Int, tagEnd: Int): Int? {
+    if (version == 2 || (flags and ID3_FLAG_EXTENDED_HEADER) == 0) return ID3_HEADER_SIZE
+    val start = ID3_HEADER_SIZE
+    if (start + 4 > tagEnd) return null
+    val extendedSize = when (version) {
+        // ID3v2.3 excludes the four size bytes; ID3v2.4 includes them.
+        3 -> readInt32BE(bytes, start).toLong() + 4L
+        else -> {
+            if ((start until start + 4).any { (bytes[it].toInt() and 0x80) != 0 }) return null
+            readSyncSafeInt(bytes, start).toLong()
+        }
+    }
+    val minimumSize = if (version == 3) 10L else 6L
+    val end = start.toLong() + extendedSize
+    if (extendedSize < minimumSize || end > tagEnd) return null
+
+    if (version == 3) {
+        val extendedFlags = readUInt16BE(bytes, start + 4)
+        if ((extendedFlags and 0x7FFF) != 0) return null
+        val expectedSize = if ((extendedFlags and 0x8000) != 0) 14L else 10L
+        return end.toInt().takeIf { extendedSize == expectedSize }
+    }
+
+    if (bytes[start + 4].toInt() != 1) return null
+    val extendedFlags = bytes[start + 5].toInt() and 0xFF
+    if ((extendedFlags and 0x8F) != 0) return null
+    var position = start + 6
+    for ((flag, dataSize) in listOf(0x40 to 0, 0x20 to 5, 0x10 to 1)) {
+        if ((extendedFlags and flag) == 0) continue
+        if (position >= end || (bytes[position].toInt() and 0xFF) != dataSize) return null
+        position += 1
+        if (position.toLong() + dataSize > end) return null
+        if (flag == 0x20 && (position until position + dataSize).any { (bytes[it].toInt() and 0x80) != 0 }) {
+            return null
+        }
+        position += dataSize
+    }
+    return end.toInt().takeIf { position == it }
 }
 
 private fun parseId3TextFrame(payload: ByteArray): String? {
@@ -761,6 +802,7 @@ private val FLAC_MAGIC = byteArrayOf('f'.code.toByte(), 'L'.code.toByte(), 'a'.c
 private val MP4_EXTENSIONS = setOf("m4a", "aac", "mp4", "alac")
 
 private const val ID3_HEADER_SIZE = 10
+private const val ID3_FLAG_EXTENDED_HEADER = 0x40
 private const val ID3_FLAG_FOOTER = 0x10
 private const val ID3_TIMESTAMP_MILLISECONDS = 2
 

@@ -62,6 +62,91 @@ class RemoteAudioMetadataProbeTest {
     }
 
     @Test
+    fun `mp3 parser skips version specific extended headers including crc`() {
+        for (version in listOf(3, 4)) {
+            for (withCrc in listOf(false, true)) {
+                val extendedHeader = if (version == 3) {
+                    be32(if (withCrc) 10 else 6) +
+                        byteArrayOf((if (withCrc) 0x80 else 0).toByte(), 0) +
+                        be32(0) +
+                        (if (withCrc) be32(0) else ByteArray(0))
+                } else {
+                    syncSafe(if (withCrc) 12 else 6) +
+                        byteArrayOf(1, (if (withCrc) 0x20 else 0).toByte()) +
+                        (if (withCrc) byteArrayOf(5, 0, 0, 0, 0, 0) else ByteArray(0))
+                }
+                val frames = textFrame("TIT2", "Extended Title", version) +
+                    textFrame("TPE1", "Extended Artist", version) +
+                    textFrame("TALB", "Extended Album", version)
+                val bytes = buildId3Tag(version, extendedHeader + frames, flags = 0x40)
+                val metadata = assertNotNull(RemoteAudioMetadataProbe.parse("Track.mp3", bytes))
+
+                assertEquals("Extended Title", metadata.title)
+                assertEquals("Extended Artist", metadata.artistName)
+                assertEquals("Extended Album", metadata.albumTitle)
+                assertEquals(bytes.size.toLong(), RemoteAudioMetadataProbe.requiredExpandedHeadBytes("Track.mp3", bytes))
+            }
+        }
+    }
+
+    @Test
+    fun `mp3 parser skips version four extended header with all supported flags`() {
+        val extendedHeader = syncSafe(15) + byteArrayOf(1, 0x70, 0, 5, 0, 0, 0, 0, 0, 1, 0)
+        val frames = textFrame("TIT2", "Updated Title", version = 4)
+        val metadata = assertNotNull(
+            RemoteAudioMetadataProbe.parse("Track.mp3", buildId3Tag(4, extendedHeader + frames, flags = 0x40)),
+        )
+        assertEquals("Updated Title", metadata.title)
+    }
+
+    @Test
+    fun `mp3 parser rejects invalid and truncated extended headers`() {
+        val invalidHeaders = listOf(
+            3 to byteArrayOf(0, 0, 0),
+            3 to (be32(5) + ByteArray(5)),
+            3 to (be32(-1) + ByteArray(6)),
+            3 to (be32(Int.MAX_VALUE) + ByteArray(6)),
+            3 to (be32(6) + byteArrayOf(0x80.toByte(), 0) + be32(0)),
+            4 to (syncSafe(5) + byteArrayOf(1, 0)),
+            4 to (byteArrayOf(0x80.toByte(), 0, 0, 6, 1, 0)),
+            4 to (syncSafe(6) + byteArrayOf(0, 0)),
+            4 to (syncSafe(6) + byteArrayOf(1, 0x80.toByte())),
+            4 to (syncSafe(6) + byteArrayOf(1, 0x20)),
+            4 to (syncSafe(12) + byteArrayOf(1, 0x20, 4, 0, 0, 0, 0, 0)),
+            4 to (syncSafe(12) + byteArrayOf(1, 0x20, 5, 0x80.toByte(), 0, 0, 0, 0)),
+        )
+        invalidHeaders.forEach { (version, header) ->
+            assertNull(RemoteAudioMetadataProbe.parse("Track.mp3", buildId3Tag(version, header, flags = 0x40)))
+        }
+        for (version in listOf(3, 4)) {
+            val header = if (version == 3) be32(6) + ByteArray(6) else syncSafe(6) + byteArrayOf(1, 0)
+            val bytes = buildId3Tag(version, header + textFrame("TIT2", "Out of bounds", version), flags = 0x40)
+            assertNull(RemoteAudioMetadataProbe.parse("Track.mp3", bytes.copyOf(10 + header.size - 1)))
+            // Extra bytes in the file must not make a header fit past the declared tag boundary.
+            syncSafe(header.size - 1).copyInto(bytes, destinationOffset = 6)
+            assertNull(RemoteAudioMetadataProbe.parse("Track.mp3", bytes))
+        }
+    }
+
+    @Test
+    fun `mp3 parser preserves tags without extended headers for versions two and four`() {
+        val payload = byteArrayOf(0) + ascii("Legacy Title")
+        val legacyFrame = ascii("TT2") + byteArrayOf(0, 0, payload.size.toByte()) + payload
+        val legacy = assertNotNull(RemoteAudioMetadataProbe.parse("Track.mp3", buildId3Tag(2, legacyFrame)))
+        val modern = assertNotNull(
+            RemoteAudioMetadataProbe.parse("Track.mp3", buildId3Tag(4, textFrame("TIT2", "Modern Title", 4))),
+        )
+        val frames = textFrame("TIT2", "Footer Title", version = 4)
+        val footer = ascii("3DI") + byteArrayOf(4, 0, 0x10) + syncSafe(frames.size)
+        val withFooter = assertNotNull(
+            RemoteAudioMetadataProbe.parse("Track.mp3", buildId3Tag(4, frames, flags = 0x10) + footer),
+        )
+        assertEquals("Legacy Title", legacy.title)
+        assertEquals("Modern Title", modern.title)
+        assertEquals("Footer Title", withFooter.title)
+    }
+
+    @Test
     fun `flac parser extracts vorbis fields picture and lyrics`() {
         val pictureBytes = byteArrayOf(9, 8, 7, 6)
         val metadata = RemoteAudioMetadataProbe.parse(
@@ -132,19 +217,24 @@ class RemoteAudioMetadataProbeTest {
 
 private fun buildId3v23Tag(vararg frames: ByteArray): ByteArray {
     val payload = frames.fold(ByteArray(0)) { acc, frame -> acc + frame }
+    return buildId3Tag(version = 3, payload = payload)
+}
+
+private fun buildId3Tag(version: Int, payload: ByteArray, flags: Int = 0): ByteArray {
     return byteArrayOf(
         'I'.code.toByte(),
         'D'.code.toByte(),
         '3'.code.toByte(),
-        3,
+        version.toByte(),
         0,
-        0,
+        flags.toByte(),
     ) + syncSafe(payload.size) + payload
 }
 
-private fun textFrame(id: String, value: String): ByteArray {
+private fun textFrame(id: String, value: String, version: Int = 3): ByteArray {
     val payload = byteArrayOf(3) + value.encodeToByteArray()
-    return id.encodeToByteArray() + be32(payload.size) + byteArrayOf(0, 0) + payload
+    val size = if (version == 4) syncSafe(payload.size) else be32(payload.size)
+    return id.encodeToByteArray() + size + byteArrayOf(0, 0) + payload
 }
 
 private fun usltFrame(lyrics: String): ByteArray {

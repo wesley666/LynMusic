@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.platform
 
+import kotlinx.coroutines.CancellationException
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
 import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
@@ -63,8 +64,19 @@ fun buildWebDavImportedTrackCandidate(
     resource: WebDavResolvedResource,
     metadata: RemoteAudioMetadata,
     storeArtwork: (ByteArray) -> String? = { null },
+    onArtworkFailure: (Exception) -> Unit = {},
 ): ImportedTrackCandidate {
     val fallbackTitle = resource.fileName.substringBeforeLast('.')
+    val artworkLocator = metadata.artworkBytes?.takeIf { it.isNotEmpty() }?.let { bytes ->
+        try {
+            storeArtwork(bytes)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (exception: Exception) {
+            onArtworkFailure(exception)
+            null
+        }
+    }
     return ImportedTrackCandidate(
         title = metadata.title?.trim()?.takeIf { it.isNotBlank() } ?: fallbackTitle,
         artistName = metadata.artistName?.trim()?.takeIf { it.isNotBlank() },
@@ -74,7 +86,7 @@ fun buildWebDavImportedTrackCandidate(
         discNumber = metadata.discNumber,
         mediaLocator = buildWebDavLocator(sourceId, resource.relativePath),
         relativePath = resource.relativePath,
-        artworkLocator = metadata.artworkBytes?.takeIf { it.isNotEmpty() }?.let(storeArtwork),
+        artworkLocator = artworkLocator,
         embeddedLyrics = metadata.embeddedLyrics?.trim()?.takeIf { it.isNotBlank() },
         sizeBytes = resource.contentLength,
         modifiedAt = resource.modifiedAt,

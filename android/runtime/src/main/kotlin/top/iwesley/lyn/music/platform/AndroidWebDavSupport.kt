@@ -27,6 +27,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlinx.coroutines.CancellationException
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -319,6 +320,7 @@ private fun collectAndroidWebDavTracks(
                             logger = logger,
                         )
                     }.onFailure { throwable ->
+                        if (throwable is CancellationException || throwable !is Exception) throw throwable
                         logger.warn(WEBDAV_LOG_TAG) {
                             "metadata-failed source=$sourceId url=$requestUrl reason=${throwable.message.orEmpty()}"
                         }
@@ -381,6 +383,11 @@ private fun resolveAndroidWebDavScanCandidate(
                 relativePath = resource.relativePath,
                 bytes = bytes,
             )
+        },
+        onArtworkFailure = { exception ->
+            logger.warn(WEBDAV_LOG_TAG) {
+                "metadata-artwork-failed source=$sourceId url=$requestUrl reason=${exception.message.orEmpty()}"
+            }
         },
     )
     logger.info(WEBDAV_LOG_TAG) {
@@ -454,7 +461,7 @@ private fun DavResource.toWebDavListedResource(): WebDavListedResource {
     )
 }
 
-private fun readAndroidWebDavRemoteMetadata(
+internal fun readAndroidWebDavRemoteMetadata(
     callFactory: Call.Factory,
     sourceId: String,
     requestUrl: String,
@@ -514,15 +521,22 @@ private fun readAndroidWebDavRemoteMetadata(
             null
         } else {
             totalProbeBytes += requestedTailBytes
-            downloadAndroidWebDavRange(
-                callFactory = callFactory,
-                requestUrl = requestUrl,
-                startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
-                length = requestedTailBytes,
-                authEnabled = authEnabled,
-                operation = WebDavOperation.ProbeMetadata,
-                allowFullResponseFallback = false,
-            )
+            try {
+                downloadAndroidWebDavRange(
+                    callFactory = callFactory,
+                    requestUrl = requestUrl,
+                    startByte = (sizeBytes - requestedTailBytes.toLong()).coerceAtLeast(0L),
+                    length = requestedTailBytes,
+                    authEnabled = authEnabled,
+                    operation = WebDavOperation.ProbeMetadata,
+                    allowFullResponseFallback = false,
+                )
+            } catch (exception: IOException) {
+                logger.warn(WEBDAV_LOG_TAG) {
+                    "metadata-tail-failed source=$sourceId url=$requestUrl reason=${exception.message.orEmpty()}"
+                }
+                null
+            }
         }
     } else {
         null
