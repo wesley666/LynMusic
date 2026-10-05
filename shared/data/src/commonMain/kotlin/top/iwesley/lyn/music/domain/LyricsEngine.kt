@@ -145,6 +145,7 @@ fun serializeLyricsDocument(document: LyricsDocument): String {
 fun parseCachedLyrics(sourceId: String, rawPayload: String): LyricsDocument? {
     parseStructuredLyricsPayload(rawPayload)?.let { parsed ->
         if (parsed.lines.isNotEmpty()) {
+            if (isFnMusicNoLyricsPlaceholder(sourceId, parsed.lines)) return null
             return LyricsDocument(
                 lines = parsed.lines,
                 offsetMs = parsed.offsetMs,
@@ -155,13 +156,20 @@ fun parseCachedLyrics(sourceId: String, rawPayload: String): LyricsDocument? {
     }
     val lrcLines = parseLrc(rawPayload)
     val lines = if (lrcLines.isNotEmpty()) lrcLines else parsePlainText(rawPayload)
-    if (lines.isEmpty()) return null
+    if (lines.isEmpty() || isFnMusicNoLyricsPlaceholder(sourceId, lines)) return null
     return LyricsDocument(
         lines = lines,
         offsetMs = 0L,
         sourceId = sourceId,
         rawPayload = rawPayload,
     )
+}
+
+private fun isFnMusicNoLyricsPlaceholder(sourceId: String, lines: List<LyricsLine>): Boolean {
+    if (sourceId != FN_MUSIC_LYRICS_SOURCE_ID) return false
+    return lines.any { it.text.isNotBlank() } && lines.all { line ->
+        line.text.isBlank() || line.text.trim() == "暂无歌词"
+    }
 }
 
 private fun parseJsonPayloads(extractor: String, payload: String): List<ExtractedLyricsPayload> {
