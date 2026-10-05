@@ -31,7 +31,6 @@
     <string name="source_emby_connection_succeeded">Emby 連接測試成功。</string>
     <string name="source_emby_import_failed">Emby 匯入失敗: %1$s</string>
     <string name="source_emby_imported">Emby 音樂源已匯入。</string>
-    <string name="source_samba_share_path_required">請填寫路徑，至少包含共享名，例如 Media 或 Media/Music。</string>
     <string name="lyrics_source_name_and_url_required">請至少填寫歌詞源名稱和 URL。</string>
     <string name="source_server_address_missing">請至少填寫一個伺服器地址。</string>
     <string name="source_emby_password_required">請先填寫 Emby 密碼。</string>

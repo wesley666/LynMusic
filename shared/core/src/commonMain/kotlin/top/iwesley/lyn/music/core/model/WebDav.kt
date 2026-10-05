@@ -82,6 +82,10 @@ fun displayWebDavRootUrl(rootUrl: String): String {
     }.getOrElse { rootUrl }
 }
 
+/** URL of a folder under the root, with the trailing slash WebDAV servers expect for collections. */
+fun buildWebDavDirectoryUrl(rootUrl: String, relativePath: String): String =
+    normalizeWebDavRootUrl(buildWebDavTrackUrl(rootUrl, relativePath))
+
 fun buildWebDavTrackUrl(rootUrl: String, relativePath: String): String {
     val normalizedRoot = normalizeWebDavRootUrl(rootUrl)
     val segments = relativePath.trim().split('/').filter { it.isNotBlank() }
@@ -155,7 +159,8 @@ enum class WebDavOperation(private val resource: org.jetbrains.compose.resources
     Scan(Res.string.webdav_operation_scan),
     ReadLyrics(Res.string.webdav_operation_read_lyrics),
     ProbeMetadata(Res.string.webdav_operation_probe_metadata),
-    Playback(Res.string.webdav_operation_playback);
+    Playback(Res.string.webdav_operation_playback),
+    ListFolders(Res.string.webdav_operation_list_folders);
 
     val text: UiText get() = uiText(resource)
 }

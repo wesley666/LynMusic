@@ -29,7 +29,6 @@
     <string name="tv_source_save_and_scan">保存并扫描</string>
     <string name="tv_source_server_label">服务器</string>
     <string name="tv_settings_unavailable_title">设置页不可用</string>
-    <string name="tv_source_samba_path_example">共享文件/Music</string>
     <string name="tv_device_information_description">系统和硬件信息</string>
     <string name="tv_storage_tags_temporary_description">编辑标签封面时写入的临时中转文件。</string>
     <string name="tv_storage_lyrics_share_temporary_description">生成歌词分享图时写入的临时图片。</string>

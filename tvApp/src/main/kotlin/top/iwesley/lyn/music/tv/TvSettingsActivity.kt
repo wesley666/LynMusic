@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music.tv
 
+import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.feature.importing.RemoteFolderRow
+import top.iwesley.lyn.music.feature.importing.RemoteFolderTreeState
+import top.iwesley.lyn.music.feature.importing.folderSourceEndpointText
 import top.iwesley.lyn.music.core.model.ProvideUiLanguage
 
 import top.iwesley.lyn.music.resources.*
@@ -54,6 +58,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -839,37 +847,37 @@ private fun TvSettingsActionButton(
     }
     val buttonEnabled = enabled || focusable
 
-    when (style) {
-        TvSettingsActionButtonStyle.Filled,
-        TvSettingsActionButtonStyle.Selected -> TvButton(
-            onClick = click,
-            enabled = buttonEnabled,
-            modifier = buttonModifier,
-            colors = TvButtonDefaults.colors(
+    // One Button for every style: switching between Button and OutlinedButton would replace the focused node when the
+    // style changes on click (e.g. a source type turning "selected"), dropping focus to the first settings section.
+    val outlined = style == TvSettingsActionButtonStyle.Outlined
+    TvButton(
+        onClick = click,
+        enabled = buttonEnabled,
+        modifier = buttonModifier,
+        scale = if (outlined) TvOutlinedButtonDefaults.scale() else TvButtonDefaults.scale(),
+        glow = if (outlined) TvOutlinedButtonDefaults.glow() else TvButtonDefaults.glow(),
+        shape = if (outlined) TvOutlinedButtonDefaults.shape() else TvButtonDefaults.shape(),
+        colors = if (outlined) {
+            TvOutlinedButtonDefaults.colors(
+                focusedContainerColor = Color.White,
+                focusedContentColor = focusedContentColor,
+                pressedContainerColor = Color.White,
+                pressedContentColor = focusedContentColor,
+            )
+        } else {
+            TvButtonDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = normalContentColor,
                 focusedContainerColor = Color.White,
                 focusedContentColor = focusedContentColor,
                 pressedContainerColor = Color.White,
                 pressedContentColor = focusedContentColor,
-            ),
-        ) {
-            content(contentColor)
-        }
-
-        TvSettingsActionButtonStyle.Outlined -> TvOutlinedButton(
-            onClick = click,
-            enabled = buttonEnabled,
-            modifier = buttonModifier,
-            colors = TvOutlinedButtonDefaults.colors(
-                focusedContainerColor = Color.White,
-                focusedContentColor = focusedContentColor,
-                pressedContainerColor = Color.White,
-                pressedContentColor = focusedContentColor,
-            ),
-        ) {
-            content(contentColor)
-        }
+            )
+        },
+        border = if (outlined) TvOutlinedButtonDefaults.border() else TvButtonDefaults.border(),
+        contentPadding = if (outlined) TvOutlinedButtonDefaults.ContentPadding else TvButtonDefaults.ContentPadding,
+    ) {
+        content(contentColor)
     }
 }
 
@@ -900,8 +908,15 @@ private fun TvRemoteSourceCreatorDialog(
     onIntent: (ImportIntent) -> Unit,
 ) {
     val focusPrefix = remember(type) { "create:${type.name}" }
+    val folderRootName = when (type) {
+        ImportSourceType.SAMBA -> formatSambaEndpoint(state.sambaServer, state.sambaPort.toIntOrNull(), null)
+        else -> state.webDavRootUrl.trim()
+    }
+    // Flatten the tree once: the focus rows and the rendered rows must match anyway.
+    val folderRows = state.remoteFolderTree?.visibleRows(folderRootName).orEmpty()
+    val treeFocusRows = tvFolderTreeFocusRows(focusPrefix, state.remoteFolderTree, folderRows, state.capabilities.supportsSambaImport)
     val focusChain = rememberTvDialogFocusChain(
-        focusRows = remember(focusPrefix, type) { remoteSourceDialogFocusRows(focusPrefix, type) },
+        focusRows = remember(focusPrefix, type, treeFocusRows) { remoteSourceDialogFocusRows(focusPrefix, type, treeFocusRows) },
     )
     Dialog(
         onDismissRequest = { onIntent(ImportIntent.DismissRemoteSourceCreator) },
@@ -973,6 +988,17 @@ private fun TvRemoteSourceCreatorDialog(
 
                         ImportSourceType.LOCAL_FOLDER -> Unit
                     }
+                    state.remoteFolderTree?.let { tree ->
+                        TvRemoteFolderTree(
+                            tree = tree,
+                            rows = folderRows,
+                            enabled = !state.isWorking,
+                            allowManualShare = state.capabilities.supportsSambaImport,
+                            onIntent = onIntent,
+                            focusPrefix = focusPrefix,
+                            focusChain = focusChain,
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -1027,7 +1053,7 @@ private fun TvRemoteSourceCreatorDialog(
                                 ImportSourceType.LOCAL_FOLDER -> Unit
                             }
                         },
-                        enabled = !state.isWorking,
+                        enabled = !state.isWorking && state.remoteFolderTree?.selected?.isNotEmpty() != false,
                         style = TvSettingsActionButtonStyle.Filled,
                         focusKey = "$focusPrefix:submit",
                         focusChain = focusChain,
@@ -1043,24 +1069,22 @@ private fun TvRemoteSourceCreatorDialog(
 private fun remoteSourceDialogFocusRows(
     prefix: String,
     type: ImportSourceType,
+    folderTreeRows: List<List<String>> = emptyList(),
 ): List<List<String>> {
     val buttons = listOf("$prefix:test", "$prefix:cancel", "$prefix:submit")
     return when (type) {
         ImportSourceType.SAMBA -> listOf(
             listOf("$prefix:label"),
             listOf("$prefix:server", "$prefix:port"),
-            listOf("$prefix:path"),
             listOf("$prefix:username", "$prefix:password"),
-            buttons,
-        )
+        ) + folderTreeRows + listOf(buttons)
 
         ImportSourceType.WEBDAV -> listOf(
             listOf("$prefix:label"),
             listOf("$prefix:root"),
             listOf("$prefix:username", "$prefix:password"),
             listOf("$prefix:tls"),
-            buttons,
-        )
+        ) + folderTreeRows + listOf(buttons)
 
         ImportSourceType.NAVIDROME -> listOf(
             listOf("$prefix:label"),
@@ -1085,6 +1109,174 @@ private fun remoteSourceDialogFocusRows(
         )
 
         ImportSourceType.LOCAL_FOLDER -> emptyList()
+    }
+}
+
+/** Focus rows for [TvRemoteFolderTree], in the same order it renders them. */
+private fun tvFolderTreeFocusRows(
+    prefix: String,
+    tree: RemoteFolderTreeState?,
+    rows: List<RemoteFolderRow>,
+    allowManualShare: Boolean,
+): List<List<String>> {
+    tree ?: return emptyList()
+    return buildList {
+        add(listOf("$prefix:tree-browse"))
+        rows.forEach { row ->
+            when (row) {
+                is RemoteFolderRow.Folder -> add(listOf("$prefix:tree:${row.path}:expand", "$prefix:tree:${row.path}:check"))
+                is RemoteFolderRow.Message -> if (row.isError) add(listOf("$prefix:tree:${row.parentPath}:retry"))
+            }
+        }
+        if (tree.canAddManualShare && allowManualShare) {
+            add(listOf("$prefix:tree-share", "$prefix:tree-share-add"))
+        }
+    }
+}
+
+/** D-pad version of the Samba/WebDAV folder picker: OK on the arrow expands a folder, OK on the box ticks it. */
+@Composable
+private fun TvRemoteFolderTree(
+    tree: RemoteFolderTreeState,
+    rows: List<RemoteFolderRow>,
+    enabled: Boolean,
+    allowManualShare: Boolean,
+    onIntent: (ImportIntent) -> Unit,
+    focusPrefix: String,
+    focusChain: TvSettingsFocusChain,
+) {
+    var manualShare by remember { mutableStateOf("") }
+    val rootNode = tree.nodes[RemoteFolderTreeState.ROOT]
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(uiString(Res.string.source_folders_title), color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = if (tree.selected.isEmpty()) {
+                        uiString(Res.string.source_folders_hint)
+                    } else {
+                        uiPlural(Res.plurals.source_selected_folder_count, tree.selected.size, tree.selected.size).uiDisplayText()
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            TvSettingsActionButton(
+                onClick = { onIntent(ImportIntent.LoadRemoteFolder()) },
+                enabled = enabled && rootNode?.isLoading != true,
+                focusKey = "$focusPrefix:tree-browse",
+                focusChain = focusChain,
+                restoreFocusAfterClick = false,
+            ) { contentColor ->
+                Text(
+                    uiString(if (tree.isBrowsed) Res.string.source_reload_folders else Res.string.source_browse_folders),
+                    color = contentColor,
+                )
+            }
+        }
+        if (!tree.rootSelectable && rootNode?.isLoading == true) {
+            Text(uiString(Res.string.folder_picker_loading_folder), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        rows.forEach { row ->
+            when (row) {
+                is RemoteFolderRow.Folder -> Row(
+                    modifier = Modifier.padding(start = (row.depth * 28).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TvSettingsActionButton(
+                        onClick = { onIntent(ImportIntent.ToggleRemoteFolderExpanded(row.path)) },
+                        enabled = enabled && !row.isLoading,
+                        focusKey = "$focusPrefix:tree:${row.path}:expand",
+                        focusChain = focusChain,
+                        restoreFocusAfterClick = false,
+                    ) { contentColor ->
+                        Icon(
+                            imageVector = if (row.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = contentColor,
+                        )
+                    }
+                    TvSettingsActionButton(
+                        onClick = { onIntent(ImportIntent.ToggleRemoteFolderSelected(row.path)) },
+                        enabled = enabled && !row.isLockedByAncestor,
+                        style = if (row.isChecked) TvSettingsActionButtonStyle.Selected else TvSettingsActionButtonStyle.Outlined,
+                        focusKey = "$focusPrefix:tree:${row.path}:check",
+                        focusChain = focusChain,
+                        restoreFocusAfterClick = false,
+                    ) { contentColor ->
+                        Icon(
+                            imageVector = if (row.isChecked) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+                            contentDescription = null,
+                            tint = contentColor,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(row.name, color = contentColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+
+                is RemoteFolderRow.Message -> Row(
+                    modifier = Modifier.padding(start = (row.depth * 28 + 12).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = row.text.uiDisplayText(),
+                        color = if (row.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (row.isError) {
+                        TvSettingsActionButton(
+                            onClick = {
+                                // This row disappears once the retry works; park focus on a row that stays.
+                                val stableKey = if (row.parentPath == RemoteFolderTreeState.ROOT) {
+                                    "$focusPrefix:tree-browse"
+                                } else {
+                                    "$focusPrefix:tree:${row.parentPath}:expand"
+                                }
+                                focusChain.requestFocus(stableKey)
+                                onIntent(ImportIntent.LoadRemoteFolder(row.parentPath))
+                            },
+                            enabled = enabled,
+                            focusKey = "$focusPrefix:tree:${row.parentPath}:retry",
+                            focusChain = focusChain,
+                            restoreFocusAfterClick = false,
+                        ) { contentColor ->
+                            Text(uiString(Res.string.source_reload_folders), color = contentColor)
+                        }
+                    }
+                }
+            }
+        }
+        if (tree.canAddManualShare && allowManualShare) {
+            Text(
+                uiString(Res.string.source_samba_manual_share_hint),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                TvSettingsTextField(
+                    label = uiString(Res.string.source_samba_manual_share),
+                    value = manualShare,
+                    onValueChange = { manualShare = it },
+                    modifier = Modifier.weight(1f),
+                    focusKey = "$focusPrefix:tree-share",
+                    focusChain = focusChain,
+                )
+                TvSettingsActionButton(
+                    onClick = {
+                        onIntent(ImportIntent.AddManualSambaShare(manualShare))
+                        manualShare = ""
+                    },
+                    enabled = enabled && manualShare.isNotBlank(),
+                    focusKey = "$focusPrefix:tree-share-add",
+                    focusChain = focusChain,
+                    restoreFocusAfterClick = false,
+                ) { contentColor ->
+                    Text(uiString(Res.string.source_samba_manual_share_add), color = contentColor)
+                }
+            }
+        }
     }
 }
 
@@ -1124,14 +1316,6 @@ private fun TvSambaSourceForm(
                 focusChain = focusChain,
             )
         }
-        TvSettingsTextField(
-            label = uiString(Res.string.common_path),
-            value = state.sambaPath,
-            onValueChange = { onIntent(ImportIntent.SambaPathChanged(it)) },
-            placeholder = uiString(Res.string.tv_source_samba_path_example),
-            focusKey = "$focusPrefix:path",
-            focusChain = focusChain,
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvSettingsTextField(
                 label = uiString(Res.string.common_username),
@@ -1171,7 +1355,7 @@ private fun TvWebDavSourceForm(
             focusChain = focusChain,
         )
         TvSettingsTextField(
-            label = uiString(Res.string.tv_source_root_address),
+            label = uiString(Res.string.source_server_address_label),
             value = state.webDavRootUrl,
             onValueChange = { onIntent(ImportIntent.WebDavRootUrlChanged(it)) },
             placeholder = uiString(Res.string.source_webdav_url_example),
@@ -1486,8 +1670,17 @@ private fun TvRemoteSourceEditorDialog(
     onIntent: (ImportIntent) -> Unit,
 ) {
     val focusPrefix = remember(editor.sourceId, editor.type) { "edit:${editor.sourceId}:${editor.type.name}" }
+    val folderRootName = when (editor.type) {
+        ImportSourceType.SAMBA -> formatSambaEndpoint(editor.server, editor.port.toIntOrNull(), editor.path)
+        else -> editor.rootUrl.trim()
+    }
+    // Flatten the tree once: the focus rows and the rendered rows must match anyway.
+    val folderRows = state.remoteFolderTree?.visibleRows(folderRootName).orEmpty()
+    val treeFocusRows = tvFolderTreeFocusRows(focusPrefix, state.remoteFolderTree, folderRows, state.capabilities.supportsSambaImport)
     val focusChain = rememberTvDialogFocusChain(
-        focusRows = remember(focusPrefix, editor.type) { remoteSourceDialogFocusRows(focusPrefix, editor.type) },
+        focusRows = remember(focusPrefix, editor.type, treeFocusRows) {
+            remoteSourceDialogFocusRows(focusPrefix, editor.type, treeFocusRows)
+        },
     )
     Dialog(
         onDismissRequest = { onIntent(ImportIntent.DismissRemoteSourceEditor) },
@@ -1549,13 +1742,6 @@ private fun TvRemoteSourceEditorDialog(
                                     focusChain = focusChain,
                                 )
                             }
-                            TvSettingsTextField(
-                                label = uiString(Res.string.common_path),
-                                value = editor.path,
-                                onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
-                                focusKey = "$focusPrefix:path",
-                                focusChain = focusChain,
-                            )
                         }
 
                         ImportSourceType.WEBDAV -> {
@@ -1656,6 +1842,17 @@ private fun TvRemoteSourceEditorDialog(
                             focusChain = focusChain,
                         )
                     }
+                    state.remoteFolderTree?.let { tree ->
+                        TvRemoteFolderTree(
+                            tree = tree,
+                            rows = folderRows,
+                            enabled = !state.isWorking,
+                            allowManualShare = state.capabilities.supportsSambaImport,
+                            onIntent = onIntent,
+                            focusPrefix = focusPrefix,
+                            focusChain = focusChain,
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier
@@ -1692,7 +1889,7 @@ private fun TvRemoteSourceEditorDialog(
                     }
                     TvSettingsActionButton(
                         onClick = { onIntent(ImportIntent.SaveRemoteSource) },
-                        enabled = !state.isWorking,
+                        enabled = !state.isWorking && state.remoteFolderTree?.selected?.isNotEmpty() != false,
                         style = TvSettingsActionButtonStyle.Filled,
                         focusKey = "$focusPrefix:submit",
                         focusChain = focusChain,
@@ -2279,8 +2476,10 @@ private fun rememberTvDialogFocusChain(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val focusKeys = remember(focusRows) { focusRows.flatten() }
+    // Rows change while the dialog is open (e.g. folders expanding); keep each key's requester so focus stays put.
+    val requesterCache = remember { mutableMapOf<String, FocusRequester>() }
     val requesters = remember(focusKeys) {
-        focusKeys.associateWith { FocusRequester() }
+        focusKeys.associateWith { key -> requesterCache.getOrPut(key) { FocusRequester() } }
     }
     val chain = remember(focusRows, focusKeys, requesters, listState, coroutineScope) {
         TvSettingsFocusChain(
@@ -2292,9 +2491,10 @@ private fun rememberTvDialogFocusChain(
             focusCoordinator = null,
         )
     }
-    LaunchedEffect(chain, focusKeys) {
+    val currentChain = androidx.compose.runtime.rememberUpdatedState(chain)
+    LaunchedEffect(Unit) {
         withFrameNanos { }
-        focusKeys.firstOrNull()?.let(chain::requestFocus)
+        focusKeys.firstOrNull()?.let { currentChain.value.requestFocus(it) }
     }
     return chain
 }
@@ -2871,11 +3071,13 @@ private fun sourceTypeIcon(type: ImportSourceType): ImageVector {
     }
 }
 
+@Composable
 private fun sourceDisplayReference(source: ImportSource): String {
     return when (source.type) {
         ImportSourceType.LOCAL_FOLDER -> source.rootReference
-        ImportSourceType.SAMBA -> formatSambaEndpoint(source.server, source.port, source.path)
-        ImportSourceType.WEBDAV -> displayWebDavRootUrl(source.rootReference)
+        ImportSourceType.SAMBA,
+        ImportSourceType.WEBDAV,
+        -> source.folderSourceEndpointText().displayText()
         ImportSourceType.NAVIDROME -> source.rootReference
         ImportSourceType.SUBSONIC -> source.rootReference
         ImportSourceType.EMBY -> source.rootReference

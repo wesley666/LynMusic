@@ -13,6 +13,25 @@
     <string name="source_connected_list_title">已连接来源</string>
     <string name="source_add_action">添加来源</string>
     <string name="source_add_named_type">添加 %1$s 来源</string>
+    <string name="source_server_address_label">服务器地址</string>
+    <string name="source_browse_folders">浏览文件夹</string>
+    <string name="source_reload_folders">重新加载</string>
+    <string name="source_folders_title">扫描的文件夹</string>
+    <string name="source_folders_hint">浏览服务器并勾选要扫描的文件夹。</string>
+    <string name="source_folder_selection_required">请至少选择一个要扫描的文件夹。</string>
+    <string name="source_folder_tree_empty">没有子文件夹</string>
+    <string name="source_folder_tree_load_failed">加载文件夹失败：%1$s</string>
+    <string name="source_samba_manual_share">共享名称</string>
+    <string name="source_samba_manual_share_add">添加共享</string>
+    <string name="source_samba_manual_share_hint">列表里没有的共享（例如隐藏共享）可以手动输入名称后浏览。</string>
+    <plurals name="source_selected_folder_count">
+        <item quantity="one">已选择 %1$s 个文件夹</item>
+        <item quantity="other">已选择 %1$s 个文件夹</item>
+    </plurals>
+    <plurals name="source_folder_count">
+        <item quantity="one">%1$s 个文件夹</item>
+        <item quantity="other">%1$s 个文件夹</item>
+    </plurals>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">检测到“%1$s”远端共有 %2$s 首歌曲。建议切换为在线模式，旧本地索引会隐藏并保留；也可以继续全量重扫，把远端歌曲重新写入本地索引。</item>
         <item quantity="other">检测到“%1$s”远端共有 %2$s 首歌曲。建议切换为在线模式，旧本地索引会隐藏并保留；也可以继续全量重扫，把远端歌曲重新写入本地索引。</item>
@@ -72,7 +91,6 @@
     <string name="library_online_artist_detail_title">在线艺人详情</string>
     <string name="source_saved_password_placeholder">密码（留空沿用）</string>
     <string name="source_optional_password_placeholder">密码（选填）</string>
-    <string name="source_samba_path_label">路径（Share/子目录）</string>
     <string name="library_play_all_tracks">播放全部歌曲</string>
     <string name="library_play_count_sort">播放次数</string>
     <string name="library_play_loaded_tracks">播放已加载</string>

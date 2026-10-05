@@ -155,6 +155,8 @@ data class ImportSource(
     val createdAt: Long = 0L,
     val wanRootReference: String? = null,
     val indexMode: ImportSourceIndexMode = ImportSourceIndexMode.LOCAL_INDEX,
+    /** Folders to scan, relative to the source root; empty means the whole root (sources created before folder selection). */
+    val selectedDirectories: List<String> = emptyList(),
 )
 
 data class ImportIndexState(
@@ -193,9 +195,11 @@ data class SambaSourceDraft(
     val label: String,
     val server: String,
     val port: Int? = null,
+    /** Source root as `share/sub/path`; blank for sources rooted at the server, whose folders start with the share name. */
     val path: String = "",
     val username: String,
     val password: String,
+    val selectedDirectories: List<String> = emptyList(),
 )
 
 data class WebDavSourceDraft(
@@ -204,6 +208,13 @@ data class WebDavSourceDraft(
     val username: String,
     val password: String,
     val allowInsecureTls: Boolean = false,
+    val selectedDirectories: List<String> = emptyList(),
+)
+
+/** A folder listed while browsing a remote source; [relativePath] is relative to the source root. */
+data class RemoteDirectoryEntry(
+    val name: String,
+    val relativePath: String,
 )
 
 data class NavidromeSourceDraft(
@@ -269,6 +280,8 @@ data class ImportScanReport(
     val failures: List<ImportScanFailure> = emptyList(),
     val totalTrackCount: Int? = null,
     val refreshedPersistentReference: String? = null,
+    /** Selected folders that could not be read this time; their tracks already in the library are kept as they are. */
+    val unreadableFolders: List<String> = emptyList(),
 )
 
 data class ImportStreamingScanReport(
@@ -574,7 +587,15 @@ interface ImportSourceGateway {
     ): ImportScanReport {
         return scanSamba(draft, sourceId)
     }
+    /** Lists the folders directly under [relativePath] (relative to the draft root); a blank server root lists shares. */
+    suspend fun listSambaDirectories(draft: SambaSourceDraft, relativePath: String): List<RemoteDirectoryEntry> {
+        throw UnsupportedOperationException("Samba folder browsing is not supported on this platform.")
+    }
     suspend fun testWebDav(draft: WebDavSourceDraft)
+    /** Lists the folders directly under [relativePath], relative to the draft root URL. */
+    suspend fun listWebDavDirectories(draft: WebDavSourceDraft, relativePath: String): List<RemoteDirectoryEntry> {
+        throw UnsupportedOperationException("WebDAV folder browsing is not supported on this platform.")
+    }
     suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport
     suspend fun scanWebDav(
         draft: WebDavSourceDraft,

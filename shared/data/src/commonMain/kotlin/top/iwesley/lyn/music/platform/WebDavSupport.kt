@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.platform
 
 import top.iwesley.lyn.music.core.model.ImportedTrackCandidate
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 
@@ -36,6 +37,12 @@ fun resolveWebDavListedResource(
         modifiedAt = resource.modifiedAt.coerceAtLeast(0L),
     )
 }
+
+/** Folders among listed resources, as browsing entries sorted by name. */
+fun List<WebDavResolvedResource>.toRemoteDirectoryEntries(): List<RemoteDirectoryEntry> =
+    filter { it.isDirectory }
+        .map { RemoteDirectoryEntry(name = it.fileName.trim('/'), relativePath = it.relativePath.trim('/')) }
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
 
 fun buildWebDavImportedTrackCandidate(
     sourceId: String,

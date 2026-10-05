@@ -29,7 +29,6 @@
     <string name="tv_source_save_and_scan">Save and scan</string>
     <string name="tv_source_server_label">Server</string>
     <string name="tv_settings_unavailable_title">Settings unavailable</string>
-    <string name="tv_source_samba_path_example">shared/Music</string>
     <string name="tv_device_information_description">System and hardware information</string>
     <string name="tv_storage_tags_temporary_description">Temporary files used while editing tag artwork.</string>
     <string name="tv_storage_lyrics_share_temporary_description">Temporary images created when sharing lyrics.</string>

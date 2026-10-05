@@ -24,6 +24,8 @@ import top.iwesley.lyn.music.core.model.LocalFolderPickerMode
 import top.iwesley.lyn.music.core.model.LocalFolderSelection
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
+import top.iwesley.lyn.music.core.model.effectiveSelectedDirectories
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.SubsonicAuthMode
@@ -40,6 +42,7 @@ data class RemoteSourceEditorState(
     val label: String = "",
     val server: String = "",
     val port: String = "",
+    /** Samba source root (`share/sub` for sources created before folder browsing, blank otherwise); not editable. */
     val path: String = "",
     val rootUrl: String = "",
     val wanRootUrl: String = "",
@@ -75,7 +78,6 @@ data class ImportState(
     val sambaLabel: String = "",
     val sambaServer: String = "",
     val sambaPort: String = "",
-    val sambaPath: String = "",
     val sambaUsername: String = "",
     val sambaPassword: String = "",
     val webDavLabel: String = "",
@@ -101,6 +103,10 @@ data class ImportState(
     val embyPassword: String = "",
     val creatingSourceType: ImportSourceType? = null,
     val editingSource: RemoteSourceEditorState? = null,
+    /** Folder picker of the open Samba/WebDAV add or edit dialog. */
+    val remoteFolderTree: RemoteFolderTreeState? = null,
+    /** Last [RemoteFolderTreeState.instanceId] handed out, so every opened dialog gets a tree id never used before. */
+    val lastRemoteFolderTreeId: Long = 0L,
     val isWorking: Boolean = false,
     val activeScanOperation: ImportScanOperation? = null,
     val scanProgress: ImportScanProgress? = null,
@@ -140,7 +146,6 @@ sealed interface ImportIntent {
     data class SambaLabelChanged(val value: String) : ImportIntent
     data class SambaServerChanged(val value: String) : ImportIntent
     data class SambaPortChanged(val value: String) : ImportIntent
-    data class SambaPathChanged(val value: String) : ImportIntent
     data class SambaUsernameChanged(val value: String) : ImportIntent
     data class SambaPasswordChanged(val value: String) : ImportIntent
     data class WebDavLabelChanged(val value: String) : ImportIntent
@@ -167,13 +172,16 @@ sealed interface ImportIntent {
     data class RemoteSourceLabelChanged(val value: String) : ImportIntent
     data class RemoteSourceServerChanged(val value: String) : ImportIntent
     data class RemoteSourcePortChanged(val value: String) : ImportIntent
-    data class RemoteSourcePathChanged(val value: String) : ImportIntent
     data class RemoteSourceRootUrlChanged(val value: String) : ImportIntent
     data class RemoteSourceWanRootUrlChanged(val value: String) : ImportIntent
     data class RemoteSourceUsernameChanged(val value: String) : ImportIntent
     data class RemoteSourcePasswordChanged(val value: String) : ImportIntent
     data class RemoteSourceAllowInsecureTlsChanged(val value: Boolean) : ImportIntent
     data class RemoteSourceSubsonicAuthModeChanged(val value: SubsonicAuthMode) : ImportIntent
+    data class LoadRemoteFolder(val path: String = RemoteFolderTreeState.ROOT) : ImportIntent
+    data class ToggleRemoteFolderExpanded(val path: String) : ImportIntent
+    data class ToggleRemoteFolderSelected(val path: String) : ImportIntent
+    data class AddManualSambaShare(val name: String) : ImportIntent
     data object ClearMessage : ImportIntent
     data object ClearTestMessage : ImportIntent
 }
@@ -193,11 +201,15 @@ class ImportStore(
             repository.observeSources().collect { sources ->
                 updateState { state ->
                     val sourceIds = sources.mapTo(mutableSetOf()) { it.source.id }
+                    val editingSource = state.editingSource?.takeIf { editing ->
+                        sources.any { it.source.id == editing.sourceId && it.source.type == editing.type }
+                    }
+                    // The edited source is gone: its dialog closes, so its folder tree goes with it.
+                    val editorClosed = state.editingSource != null && editingSource == null
                     state.copy(
                         sources = sources,
-                        editingSource = state.editingSource?.takeIf { editing ->
-                            sources.any { it.source.id == editing.sourceId && it.source.type == editing.type }
-                        },
+                        editingSource = editingSource,
+                        remoteFolderTree = if (editorClosed) null else state.remoteFolderTree,
                         latestScanSummariesBySourceId = state.latestScanSummariesBySourceId.filterKeys { it in sourceIds },
                     )
                 }
@@ -225,7 +237,7 @@ class ImportStore(
             }
 
             ImportIntent.TestSambaSource -> {
-                val draft = sambaDraftOrNull(state.value) ?: return
+                val draft = sambaDraftOrNull(state.value, requireSelection = false) ?: return
                 runImport {
                     repository.testSambaSource(draft)
                         .onSuccess { setTestMessage(uiText(Res.string.source_samba_connection_succeeded)) }
@@ -235,17 +247,17 @@ class ImportStore(
 
             ImportIntent.AddSambaSource -> {
                 val currentState = state.value
-                val draft = sambaDraftOrNull(currentState) ?: return
+                val draft = sambaDraftOrNull(currentState, requireSelection = true) ?: return
                 runScanningImport(ImportScanOperation.CreateRemote(ImportSourceType.SAMBA)) { progressSink ->
                     repository.addSambaSource(draft, progressSink)
                         .onSuccess { summary ->
                             updateState {
                                 it.copy(
                                     creatingSourceType = null,
+                                    remoteFolderTree = null,
                                     sambaLabel = "",
                                     sambaServer = "",
                                     sambaPort = "",
-                                    sambaPath = "",
                                     sambaUsername = "",
                                     sambaPassword = "",
                                     testMessage = null,
@@ -259,7 +271,7 @@ class ImportStore(
             }
 
             ImportIntent.TestWebDavSource -> {
-                val draft = webDavDraftOrNull(state.value, allowBlankPassword = true) ?: return
+                val draft = webDavDraftOrNull(state.value, allowBlankPassword = true, requireSelection = false) ?: return
                 runImport {
                     repository.testWebDavSource(draft)
                         .onSuccess { setTestMessage(uiText(Res.string.source_webdav_connection_succeeded)) }
@@ -268,13 +280,14 @@ class ImportStore(
             }
 
             ImportIntent.AddWebDavSource -> {
-                val draft = webDavDraftOrNull(state.value, allowBlankPassword = true) ?: return
+                val draft = webDavDraftOrNull(state.value, allowBlankPassword = true, requireSelection = true) ?: return
                 runScanningImport(ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV)) { progressSink ->
                     repository.addWebDavSource(draft, progressSink)
                         .onSuccess { summary ->
                             updateState {
                                 it.copy(
                                     creatingSourceType = null,
+                                    remoteFolderTree = null,
                                     webDavLabel = "",
                                     webDavRootUrl = "",
                                     webDavUsername = "",
@@ -467,7 +480,7 @@ class ImportStore(
                         editingSource = null,
                         pendingLargeNavidromeImport = null,
                         testMessage = null,
-                    )
+                    ).withNewFolderTree(newRemoteFolderTree(intent.type, sambaRootPath = ""))
                 }
             }
 
@@ -478,6 +491,7 @@ class ImportStore(
                 } else {
                     state.clearCreateDraft(type).copy(
                         creatingSourceType = null,
+                        remoteFolderTree = null,
                         pendingLargeNavidromeImport = null,
                         testMessage = null,
                     )
@@ -487,8 +501,8 @@ class ImportStore(
             is ImportIntent.OpenRemoteSourceEditor -> {
                 val source = state.value.sources.firstOrNull { it.source.id == intent.sourceId }?.source ?: return
                 if (source.type == ImportSourceType.LOCAL_FOLDER) return
-                updateState {
-                    it.copy(
+                updateState { state ->
+                    state.copy(
                         editingSource = RemoteSourceEditorState(
                             sourceId = source.id,
                             type = source.type,
@@ -509,17 +523,20 @@ class ImportStore(
                             hasStoredCredential = source.credentialKey != null,
                             keepExistingCredential = true,
                         ),
+                    ).withNewFolderTree(
+                        newRemoteFolderTree(source.type, sambaRootPath = source.path.orEmpty())
+                            ?.copy(selected = effectiveSelectedDirectories(source.selectedDirectories).toSet()),
                     )
                 }
             }
 
-            ImportIntent.DismissRemoteSourceEditor -> updateState { it.copy(editingSource = null) }
+            ImportIntent.DismissRemoteSourceEditor -> updateState { it.copy(editingSource = null, remoteFolderTree = null) }
 
             ImportIntent.TestRemoteSource -> {
                 val editor = state.value.editingSource ?: return
                 when (editor.type) {
                     ImportSourceType.SAMBA -> {
-                        val draft = editingSambaDraftOrNull(editor) ?: return
+                        val draft = editingSambaDraftOrNull(editor, requireSelection = false) ?: return
                         runImport {
                             repository.testUpdatedSambaSource(
                                 sourceId = editor.sourceId,
@@ -534,7 +551,7 @@ class ImportStore(
                     }
 
                     ImportSourceType.WEBDAV -> {
-                        val draft = editingWebDavDraftOrNull(editor) ?: return
+                        val draft = editingWebDavDraftOrNull(editor, requireSelection = false) ?: return
                         runImport {
                             repository.testUpdatedWebDavSource(
                                 sourceId = editor.sourceId,
@@ -601,7 +618,7 @@ class ImportStore(
                 val editor = state.value.editingSource ?: return
                 when (editor.type) {
                     ImportSourceType.SAMBA -> {
-                        val draft = editingSambaDraftOrNull(editor) ?: return
+                        val draft = editingSambaDraftOrNull(editor, requireSelection = true) ?: return
                         runScanningImport(ImportScanOperation.UpdateRemote(editor.sourceId)) { progressSink ->
                             repository.updateSambaSource(
                                 sourceId = editor.sourceId,
@@ -609,7 +626,7 @@ class ImportStore(
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                                 progressSink = progressSink,
                             ).onSuccess { summary ->
-                                updateState { it.copy(editingSource = null) }
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
                                 recordScanSummary(summary)
                                 setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
@@ -619,7 +636,7 @@ class ImportStore(
                     }
 
                     ImportSourceType.WEBDAV -> {
-                        val draft = editingWebDavDraftOrNull(editor) ?: return
+                        val draft = editingWebDavDraftOrNull(editor, requireSelection = true) ?: return
                         runScanningImport(ImportScanOperation.UpdateRemote(editor.sourceId)) { progressSink ->
                             repository.updateWebDavSource(
                                 sourceId = editor.sourceId,
@@ -627,7 +644,7 @@ class ImportStore(
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                                 progressSink = progressSink,
                             ).onSuccess { summary ->
-                                updateState { it.copy(editingSource = null) }
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
                                 recordScanSummary(summary)
                                 setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
@@ -645,7 +662,7 @@ class ImportStore(
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                                 progressSink = progressSink,
                             ).onSuccess { summary ->
-                                updateState { it.copy(editingSource = null) }
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
                                 recordScanSummary(summary)
                                 setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
@@ -663,7 +680,7 @@ class ImportStore(
                                 keepExistingCredentialWhenBlankCredential = editor.keepExistingCredential,
                                 progressSink = progressSink,
                             ).onSuccess { summary ->
-                                updateState { it.copy(editingSource = null) }
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
                                 recordScanSummary(summary)
                                 setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
@@ -681,7 +698,7 @@ class ImportStore(
                                 keepExistingCredentialWhenBlankPassword = editor.keepExistingCredential,
                                 progressSink = progressSink,
                             ).onSuccess { summary ->
-                                updateState { it.copy(editingSource = null) }
+                                updateState { it.copy(editingSource = null, remoteFolderTree = null) }
                                 recordScanSummary(summary)
                                 setMessage(scanSuccessMessage(uiText(Res.string.source_updated_and_rescanned), summary))
                             }.onFailure {
@@ -727,16 +744,32 @@ class ImportStore(
             }
 
             is ImportIntent.SambaLabelChanged -> updateState { it.copy(sambaLabel = intent.value) }
-            is ImportIntent.SambaServerChanged -> updateState { it.copy(sambaServer = intent.value) }
-            is ImportIntent.SambaPortChanged -> updateState { it.copy(sambaPort = intent.value) }
-            is ImportIntent.SambaPathChanged -> updateState { it.copy(sambaPath = intent.value) }
-            is ImportIntent.SambaUsernameChanged -> updateState { it.copy(sambaUsername = intent.value) }
-            is ImportIntent.SambaPasswordChanged -> updateState { it.copy(sambaPassword = intent.value) }
+            is ImportIntent.SambaServerChanged -> updateState {
+                it.copy(sambaServer = intent.value).resetFolderTreeIf(it.sambaServer != intent.value, keepSelection = false)
+            }
+            is ImportIntent.SambaPortChanged -> updateState {
+                it.copy(sambaPort = intent.value).resetFolderTreeIf(it.sambaPort != intent.value, keepSelection = false)
+            }
+            is ImportIntent.SambaUsernameChanged -> updateState {
+                it.copy(sambaUsername = intent.value).resetFolderTreeIf(it.sambaUsername != intent.value, keepSelection = true)
+            }
+            is ImportIntent.SambaPasswordChanged -> updateState {
+                it.copy(sambaPassword = intent.value).resetFolderTreeIf(it.sambaPassword != intent.value, keepSelection = true)
+            }
             is ImportIntent.WebDavLabelChanged -> updateState { it.copy(webDavLabel = intent.value) }
-            is ImportIntent.WebDavRootUrlChanged -> updateState { it.copy(webDavRootUrl = intent.value) }
-            is ImportIntent.WebDavUsernameChanged -> updateState { it.copy(webDavUsername = intent.value) }
-            is ImportIntent.WebDavPasswordChanged -> updateState { it.copy(webDavPassword = intent.value) }
-            is ImportIntent.WebDavAllowInsecureTlsChanged -> updateState { it.copy(webDavAllowInsecureTls = intent.value) }
+            is ImportIntent.WebDavRootUrlChanged -> updateState {
+                it.copy(webDavRootUrl = intent.value).resetFolderTreeIf(it.webDavRootUrl != intent.value, keepSelection = false)
+            }
+            is ImportIntent.WebDavUsernameChanged -> updateState {
+                it.copy(webDavUsername = intent.value).resetFolderTreeIf(it.webDavUsername != intent.value, keepSelection = true)
+            }
+            is ImportIntent.WebDavPasswordChanged -> updateState {
+                it.copy(webDavPassword = intent.value).resetFolderTreeIf(it.webDavPassword != intent.value, keepSelection = true)
+            }
+            is ImportIntent.WebDavAllowInsecureTlsChanged -> updateState {
+                it.copy(webDavAllowInsecureTls = intent.value)
+                    .resetFolderTreeIf(it.webDavAllowInsecureTls != intent.value, keepSelection = true)
+            }
             is ImportIntent.NavidromeLabelChanged -> updateState { it.copy(navidromeLabel = intent.value) }
             is ImportIntent.NavidromeBaseUrlChanged -> updateState { it.copy(navidromeBaseUrl = intent.value) }
             is ImportIntent.NavidromeWanBaseUrlChanged -> updateState { it.copy(navidromeWanBaseUrl = intent.value) }
@@ -764,10 +797,18 @@ class ImportStore(
             is ImportIntent.EmbyUsernameChanged -> updateState { it.copy(embyUsername = intent.value) }
             is ImportIntent.EmbyPasswordChanged -> updateState { it.copy(embyPassword = intent.value) }
             is ImportIntent.RemoteSourceLabelChanged -> updateEditingSource { it.copy(label = intent.value) }
-            is ImportIntent.RemoteSourceServerChanged -> updateEditingSource { it.copy(server = intent.value) }
-            is ImportIntent.RemoteSourcePortChanged -> updateEditingSource { it.copy(port = intent.value) }
-            is ImportIntent.RemoteSourcePathChanged -> updateEditingSource { it.copy(path = intent.value) }
-            is ImportIntent.RemoteSourceRootUrlChanged -> updateEditingSource {
+            is ImportIntent.RemoteSourceServerChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.server != intent.value },
+                keepSelection = false,
+            ) { it.copy(server = intent.value) }
+            is ImportIntent.RemoteSourcePortChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.port != intent.value },
+                keepSelection = false,
+            ) { it.copy(port = intent.value) }
+            is ImportIntent.RemoteSourceRootUrlChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.rootUrl != intent.value },
+                keepSelection = false,
+            ) {
                 if (it.type == ImportSourceType.EMBY && it.rootUrl != intent.value) {
                     it.copy(rootUrl = intent.value, password = "", keepExistingCredential = false)
                 } else {
@@ -775,20 +816,38 @@ class ImportStore(
                 }
             }
             is ImportIntent.RemoteSourceWanRootUrlChanged -> updateEditingSource { it.copy(wanRootUrl = intent.value) }
-            is ImportIntent.RemoteSourceUsernameChanged -> updateEditingSource {
+            is ImportIntent.RemoteSourceUsernameChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.username != intent.value },
+                keepSelection = true,
+            ) {
                 if (it.type == ImportSourceType.EMBY && it.username != intent.value) {
                     it.copy(username = intent.value, password = "", keepExistingCredential = false)
                 } else {
                     it.copy(username = intent.value)
                 }
             }
-            is ImportIntent.RemoteSourcePasswordChanged -> updateEditingSource {
+            is ImportIntent.RemoteSourcePasswordChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.password != intent.value },
+                keepSelection = true,
+            ) {
                 it.copy(
                     password = intent.value,
                     keepExistingCredential = intent.value.isBlank(),
                 )
             }
-            is ImportIntent.RemoteSourceAllowInsecureTlsChanged -> updateEditingSource { it.copy(allowInsecureTls = intent.value) }
+            is ImportIntent.RemoteSourceAllowInsecureTlsChanged -> updateEditingSourceAndFolders(
+                resetFolders = { it.allowInsecureTls != intent.value },
+                keepSelection = true,
+            ) { it.copy(allowInsecureTls = intent.value) }
+            is ImportIntent.LoadRemoteFolder -> loadRemoteFolder(intent.path)
+            is ImportIntent.ToggleRemoteFolderExpanded -> {
+                val tree = state.value.remoteFolderTree ?: return
+                val expanding = intent.path !in tree.expanded
+                updateFolderTree { it.toggleExpanded(intent.path) }
+                if (expanding && tree.needsLoading(intent.path)) loadRemoteFolder(intent.path)
+            }
+            is ImportIntent.ToggleRemoteFolderSelected -> updateFolderTree { it.toggleSelected(intent.path) }
+            is ImportIntent.AddManualSambaShare -> updateFolderTree { it.withManualShare(intent.name) }
             is ImportIntent.RemoteSourceSubsonicAuthModeChanged -> updateEditingSource {
                 if (it.subsonicAuthMode == intent.value) {
                     it
@@ -930,7 +989,7 @@ class ImportStore(
         }
     }
 
-    private fun sambaDraftOrNull(state: ImportState): SambaSourceDraft? {
+    private fun sambaDraftOrNull(state: ImportState, requireSelection: Boolean): SambaSourceDraft? {
         val port = state.sambaPort.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         if (state.sambaServer.isBlank()) {
             setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_samba_address_required))
@@ -940,23 +999,25 @@ class ImportStore(
             setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_port_invalid))
             return null
         }
-        if (state.sambaPath.isBlank()) {
-            setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_samba_share_path_required))
+        val selectedDirectories = state.remoteFolderTree?.selectedDirectories.orEmpty()
+        if (requireSelection && selectedDirectories.isEmpty()) {
+            setCreateOrPageMessage(ImportSourceType.SAMBA, uiText(Res.string.source_folder_selection_required))
             return null
         }
         return SambaSourceDraft(
             label = state.sambaLabel,
             server = state.sambaServer,
             port = port,
-            path = state.sambaPath,
             username = state.sambaUsername,
             password = state.sambaPassword,
+            selectedDirectories = selectedDirectories,
         )
     }
 
     private fun webDavDraftOrNull(
         state: ImportState,
         allowBlankPassword: Boolean,
+        requireSelection: Boolean,
     ): WebDavSourceDraft? {
         if (state.webDavRootUrl.isBlank()) {
             setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.source_webdav_root_url_required))
@@ -970,12 +1031,18 @@ class ImportStore(
             setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.webdav_password_username_required))
             return null
         }
+        val selectedDirectories = state.remoteFolderTree?.selectedDirectories.orEmpty()
+        if (requireSelection && selectedDirectories.isEmpty()) {
+            setCreateOrPageMessage(ImportSourceType.WEBDAV, uiText(Res.string.source_folder_selection_required))
+            return null
+        }
         return WebDavSourceDraft(
             label = state.webDavLabel,
             rootUrl = state.webDavRootUrl,
             username = state.webDavUsername,
             password = state.webDavPassword,
             allowInsecureTls = state.webDavAllowInsecureTls,
+            selectedDirectories = selectedDirectories,
         )
     }
 
@@ -1069,20 +1136,18 @@ class ImportStore(
         )
     }
 
-    private fun editingSambaDraftOrNull(editor: RemoteSourceEditorState): SambaSourceDraft? {
+    /** Problems are shown inside the edit dialog, which would hide the page banner. */
+    private fun editingSambaDraftOrNull(editor: RemoteSourceEditorState, requireSelection: Boolean): SambaSourceDraft? {
         val port = editor.port.trim().takeIf { it.isNotBlank() }?.toIntOrNull()
         if (editor.server.isBlank()) {
-            setMessage(uiText(Res.string.source_samba_address_required))
+            setTestMessage(uiText(Res.string.source_samba_address_required))
             return null
         }
         if (editor.port.isNotBlank() && port == null) {
-            setMessage(uiText(Res.string.source_port_invalid))
+            setTestMessage(uiText(Res.string.source_port_invalid))
             return null
         }
-        if (editor.path.isBlank()) {
-            setMessage(uiText(Res.string.source_samba_share_path_required))
-            return null
-        }
+        if (requireSelection && !hasSelectedFolders()) return null
         return SambaSourceDraft(
             label = editor.label,
             server = editor.server,
@@ -1090,29 +1155,40 @@ class ImportStore(
             path = editor.path,
             username = editor.username,
             password = editor.password,
+            selectedDirectories = state.value.remoteFolderTree?.selectedDirectories.orEmpty(),
         )
     }
 
-    private fun editingWebDavDraftOrNull(editor: RemoteSourceEditorState): WebDavSourceDraft? {
+    /** Problems are shown inside the edit dialog, which would hide the page banner. */
+    private fun editingWebDavDraftOrNull(editor: RemoteSourceEditorState, requireSelection: Boolean): WebDavSourceDraft? {
         if (editor.rootUrl.isBlank()) {
-            setMessage(uiText(Res.string.source_webdav_root_url_required))
+            setTestMessage(uiText(Res.string.source_webdav_root_url_required))
             return null
         }
         if (!editor.keepExistingCredential && editor.password.isBlank()) {
-            setMessage(uiText(Res.string.source_webdav_password_required))
+            setTestMessage(uiText(Res.string.source_webdav_password_required))
             return null
         }
         if (editor.password.isNotBlank() && editor.username.isBlank()) {
-            setMessage(uiText(Res.string.webdav_password_username_required))
+            setTestMessage(uiText(Res.string.webdav_password_username_required))
             return null
         }
+        if (requireSelection && !hasSelectedFolders()) return null
         return WebDavSourceDraft(
             label = editor.label,
             rootUrl = editor.rootUrl,
             username = editor.username,
             password = editor.password,
             allowInsecureTls = editor.allowInsecureTls,
+            selectedDirectories = state.value.remoteFolderTree?.selectedDirectories.orEmpty(),
         )
+    }
+
+    /** Saving must scan at least one folder: an empty selection would be stored as "the whole root". */
+    private fun hasSelectedFolders(): Boolean {
+        if (state.value.remoteFolderTree?.selectedDirectories.orEmpty().isNotEmpty()) return true
+        setTestMessage(uiText(Res.string.source_folder_selection_required))
+        return false
     }
 
     private fun editingNavidromeDraftOrNull(editor: RemoteSourceEditorState): NavidromeSourceDraft? {
@@ -1158,13 +1234,90 @@ class ImportStore(
         }
     }
 
+    /** Edits the open editor and drops browsed folders when a connection detail it depends on changed. */
+    private fun updateEditingSourceAndFolders(
+        resetFolders: (RemoteSourceEditorState) -> Boolean,
+        keepSelection: Boolean,
+        transform: (RemoteSourceEditorState) -> RemoteSourceEditorState,
+    ) {
+        updateState { state ->
+            val editor = state.editingSource ?: return@updateState state
+            state.copy(editingSource = transform(editor))
+                .resetFolderTreeIf(resetFolders(editor), keepSelection)
+        }
+    }
+
+    private fun ImportState.resetFolderTreeIf(changed: Boolean, keepSelection: Boolean): ImportState =
+        if (changed && remoteFolderTree != null) copy(remoteFolderTree = remoteFolderTree.reset(keepSelection)) else this
+
+    private fun updateFolderTree(transform: (RemoteFolderTreeState) -> RemoteFolderTreeState) {
+        updateState { state -> state.copy(remoteFolderTree = state.remoteFolderTree?.let(transform)) }
+    }
+
+    /** Installs the folder tree of a newly opened dialog under a fresh id, so listings of earlier dialogs can't land in it. */
+    private fun ImportState.withNewFolderTree(tree: RemoteFolderTreeState?): ImportState {
+        val instanceId = lastRemoteFolderTreeId + 1
+        return copy(remoteFolderTree = tree?.copy(instanceId = instanceId), lastRemoteFolderTreeId = instanceId)
+    }
+
+    private fun newRemoteFolderTree(type: ImportSourceType, sambaRootPath: String): RemoteFolderTreeState? = when (type) {
+        ImportSourceType.SAMBA -> RemoteFolderTreeState(rootSelectable = sambaRootPath.isNotBlank())
+        ImportSourceType.WEBDAV -> RemoteFolderTreeState(rootSelectable = true)
+        else -> null
+    }
+
+    /**
+     * Lists one folder of the open add/edit dialog's source. Results are dropped when the dialog was closed or replaced
+     * (another tree id) or its connection details changed meanwhile (another generation).
+     */
+    private suspend fun loadRemoteFolder(path: String) {
+        val current = state.value
+        val tree = current.remoteFolderTree ?: return
+        val editor = current.editingSource
+        val creatingType = current.creatingSourceType
+        val listing: suspend () -> Result<List<RemoteDirectoryEntry>> = when {
+            editor?.type == ImportSourceType.SAMBA -> {
+                val draft = editingSambaDraftOrNull(editor, requireSelection = false) ?: return
+                suspend {
+                    repository.listUpdatedSambaDirectories(editor.sourceId, draft, editor.keepExistingCredential, path)
+                }
+            }
+            editor?.type == ImportSourceType.WEBDAV -> {
+                val draft = editingWebDavDraftOrNull(editor, requireSelection = false) ?: return
+                suspend {
+                    repository.listUpdatedWebDavDirectories(editor.sourceId, draft, editor.keepExistingCredential, path)
+                }
+            }
+            editor == null && creatingType == ImportSourceType.SAMBA -> {
+                val draft = sambaDraftOrNull(current, requireSelection = false) ?: return
+                suspend { repository.listSambaDirectories(draft, path) }
+            }
+            editor == null && creatingType == ImportSourceType.WEBDAV -> {
+                val draft = webDavDraftOrNull(current, allowBlankPassword = true, requireSelection = false) ?: return
+                suspend { repository.listWebDavDirectories(draft, path) }
+            }
+            else -> return
+        }
+        val isSameTree = { candidate: RemoteFolderTreeState ->
+            candidate.instanceId == tree.instanceId && candidate.generation == tree.generation
+        }
+        updateFolderTree { if (isSameTree(it)) it.loading(path) else it }
+        val result = listing()
+        updateFolderTree { latest ->
+            if (isSameTree(latest)) {
+                latest.loaded(path, result) { uiText(Res.string.source_folder_tree_load_failed, it.uiErrorDetail()) }
+            } else {
+                latest
+            }
+        }
+    }
+
     private fun ImportState.clearCreateDraft(type: ImportSourceType): ImportState {
         return when (type) {
             ImportSourceType.SAMBA -> copy(
                 sambaLabel = "",
                 sambaServer = "",
                 sambaPort = "",
-                sambaPath = "",
                 sambaUsername = "",
                 sambaPassword = "",
             )

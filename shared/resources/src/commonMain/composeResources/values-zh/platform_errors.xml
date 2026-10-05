@@ -2,6 +2,7 @@
 <resources>
     <string name="webdav_operation_test_connection">测试连接</string>
     <string name="webdav_operation_scan">扫描</string>
+    <string name="webdav_operation_list_folders">列出文件夹</string>
     <string name="webdav_operation_read_lyrics">读取同名歌词</string>
     <string name="webdav_operation_probe_metadata">标签探测</string>
     <string name="webdav_operation_playback">播放</string>

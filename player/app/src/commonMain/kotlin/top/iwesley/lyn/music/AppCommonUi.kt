@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.feature.importing.folderSourceEndpointText
 import top.iwesley.lyn.music.resources.*
 import top.iwesley.lyn.music.core.model.plus
 import top.iwesley.lyn.music.core.model.uiText
@@ -1361,14 +1362,9 @@ internal fun SourceCard(
                         when (state.source.type) {
                             top.iwesley.lyn.music.core.model.ImportSourceType.LOCAL_FOLDER ->
                                 displayLocalFolderReference(state.source.rootReference).displayText()
-                            top.iwesley.lyn.music.core.model.ImportSourceType.SAMBA -> top.iwesley.lyn.music.core.model.formatSambaEndpoint(
-                                server = state.source.server,
-                                port = state.source.port,
-                                path = state.source.path,
-                            )
-
-                            top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV ->
-                                displayWebDavRootUrl(state.source.rootReference)
+                            top.iwesley.lyn.music.core.model.ImportSourceType.SAMBA,
+                            top.iwesley.lyn.music.core.model.ImportSourceType.WEBDAV,
+                            -> state.source.folderSourceEndpointText().displayText()
                             top.iwesley.lyn.music.core.model.ImportSourceType.NAVIDROME,
                             top.iwesley.lyn.music.core.model.ImportSourceType.SUBSONIC,
                             top.iwesley.lyn.music.core.model.ImportSourceType.EMBY,

@@ -41,7 +41,9 @@ import top.iwesley.lyn.music.core.model.buildIosLocalFolderReference
 import top.iwesley.lyn.music.core.model.buildIosLocalMediaLocator
 import top.iwesley.lyn.music.core.model.buildEmbySongLocator
 import top.iwesley.lyn.music.core.model.normalizeWebDavRootUrl
+import top.iwesley.lyn.music.data.db.FavoriteTrackEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
+import top.iwesley.lyn.music.data.db.TrackEntity
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 import top.iwesley.lyn.music.domain.EMBY_DEVICE_ID_CREDENTIAL_KEY
@@ -646,6 +648,239 @@ class ImportSourceRepositoryTest {
 
         assertEquals("source_name_already_exists", result.exceptionOrNull()?.message)
         assertEquals(1, database.importSourceDao().getAll().size)
+    }
+
+    @Test
+    fun `samba source rooted at the server keeps its selected folders for rescans`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val repository = createRepository(database = database, gateway = gateway)
+
+        repository.addSambaSource(
+            SambaSourceDraft(
+                label = "",
+                server = "nas.local",
+                username = "",
+                password = "",
+                selectedDirectories = listOf("Media/Music", "Backup/Audio", "Media/Music/Live"),
+            ),
+        ).getOrThrow()
+        val stored = database.importSourceDao().getAll().single()
+        repository.rescanSource(stored.id).getOrThrow()
+
+        assertEquals(null, stored.directoryPath)
+        val sources = repository.observeSources().first()
+        assertEquals(listOf("Backup/Audio", "Media/Music"), sources.single().source.selectedDirectories)
+        assertEquals(null, sources.single().source.path)
+        assertEquals(listOf("Backup/Audio", "Media/Music"), gateway.sambaScanDrafts.last().selectedDirectories)
+        assertEquals("", gateway.sambaScanDrafts.last().path)
+    }
+
+    @Test
+    fun `an unreadable selected folder keeps its tracks favorites and embedded lyrics`() = runTest {
+        val database = createImportTestDatabase()
+        fun candidate(path: String, lyrics: String? = null) = ImportedTrackCandidate(
+            title = path.substringAfterLast('/'),
+            mediaLocator = "lynmusic-smb://placeholder/$path",
+            relativePath = path,
+            embeddedLyrics = lyrics,
+        )
+        val firstScan = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(tracks = listOf(candidate("Media/Music/a.mp3"), candidate("Backup/Live/b.mp3", "[00:01]live"))),
+        )
+        createRepository(database = database, gateway = firstScan).addSambaSource(
+            SambaSourceDraft(
+                label = "NAS",
+                server = "nas.local",
+                username = "",
+                password = "",
+                selectedDirectories = listOf("Media/Music", "Backup/Live"),
+            ),
+        ).getOrThrow()
+        val sourceId = database.importSourceDao().getAll().single().id
+        val liveTrack = database.trackDao().getBySourceId(sourceId).single { it.relativePath == "Backup/Live/b.mp3" }
+        database.favoriteTrackDao().upsert(FavoriteTrackEntity(liveTrack.id, sourceId, remoteSongId = null, favoritedAt = 1L))
+
+        val rescan = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(candidate("Media/Music/a.mp3"), candidate("Media/Music/c.mp3")),
+                unreadableFolders = listOf("Backup/Live"),
+            ),
+        )
+        createRepository(database = database, gateway = rescan).rescanSource(sourceId).getOrThrow()
+
+        val paths = database.trackDao().getBySourceId(sourceId).map { it.relativePath }.sorted()
+        assertEquals(listOf("Backup/Live/b.mp3", "Media/Music/a.mp3", "Media/Music/c.mp3"), paths)
+        assertEquals(liveTrack.id, database.favoriteTrackDao().getByTrackId(liveTrack.id)?.trackId)
+        assertEquals("[00:01]live", database.lyricsCacheDao().getByTrackIdAndSourceId(liveTrack.id, "embedded-tag")?.rawPayload)
+        assertEquals(3, database.importIndexStateDao().getBySourceId(sourceId)?.trackCount)
+    }
+
+    @Test
+    fun `moving a source to another server drops tracks of folders it cannot read`() = runTest {
+        val database = createImportTestDatabase()
+        val firstScan = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(title = "b", mediaLocator = "lynmusic-smb://x/Backup/Live/b.mp3", relativePath = "Backup/Live/b.mp3"),
+                ),
+            ),
+        )
+        createRepository(database = database, gateway = firstScan).addSambaSource(
+            SambaSourceDraft(label = "NAS", server = "nas.local", username = "", password = "", selectedDirectories = listOf("Backup/Live")),
+        ).getOrThrow()
+        val sourceId = database.importSourceDao().getAll().single().id
+
+        val moved = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(title = "a", mediaLocator = "lynmusic-smb://x/Media/a.mp3", relativePath = "Media/a.mp3"),
+                ),
+                unreadableFolders = listOf("Backup/Live"),
+            ),
+        )
+        createRepository(database = database, gateway = moved).updateSambaSource(
+            sourceId = sourceId,
+            draft = SambaSourceDraft(
+                label = "NAS",
+                server = "other-nas.local",
+                username = "",
+                password = "",
+                selectedDirectories = listOf("Backup/Live", "Media"),
+            ),
+        ).getOrThrow()
+
+        assertEquals(listOf("Media/a.mp3"), database.trackDao().getBySourceId(sourceId).map { it.relativePath })
+    }
+
+    @Test
+    fun `legacy samba rows with an old root reference still keep unreadable folders on edit`() = runTest {
+        val database = createImportTestDatabase()
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = "smb-old",
+                type = "SAMBA",
+                label = "NAS",
+                // Pre-port schema: the share sat in shareName and rootReference held something else.
+                rootReference = "Media",
+                server = "nas.local",
+                shareName = "Media",
+                directoryPath = "Music",
+                username = "",
+                credentialKey = null,
+                allowInsecureTls = false,
+                lastScannedAt = null,
+                createdAt = 1L,
+            ),
+        )
+        database.trackDao().upsertAll(
+            listOf(
+                TrackEntity(
+                    id = "track:smb-old:live/b.mp3",
+                    sourceId = "smb-old",
+                    title = "b",
+                    artistId = null,
+                    artistName = null,
+                    albumId = null,
+                    albumTitle = null,
+                    durationMs = 0L,
+                    trackNumber = null,
+                    discNumber = null,
+                    mediaLocator = "lynmusic-smb://smb-old/Live/b.mp3",
+                    relativePath = "Live/b.mp3",
+                    artworkLocator = null,
+                    sizeBytes = 0L,
+                    modifiedAt = 0L,
+                ),
+            ),
+        )
+        val gateway = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(tracks = emptyList(), unreadableFolders = listOf("Live")),
+        )
+
+        createRepository(database = database, gateway = gateway).updateSambaSource(
+            sourceId = "smb-old",
+            draft = SambaSourceDraft(
+                label = "NAS renamed",
+                server = "nas.local",
+                path = "Media/Music",
+                username = "",
+                password = "",
+                selectedDirectories = listOf("Live", "Studio"),
+            ),
+        ).getOrThrow()
+
+        assertEquals(listOf("Live/b.mp3"), database.trackDao().getBySourceId("smb-old").map { it.relativePath })
+    }
+
+    @Test
+    fun `filling in the default port does not count as moving the source`() = runTest {
+        val database = createImportTestDatabase()
+        val firstScan = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(title = "b", mediaLocator = "lynmusic-smb://x/Backup/b.mp3", relativePath = "Backup/b.mp3"),
+                ),
+            ),
+        )
+        createRepository(database = database, gateway = firstScan).addSambaSource(
+            SambaSourceDraft(label = "NAS", server = "nas.local", username = "", password = "", selectedDirectories = listOf("Backup", "Media")),
+        ).getOrThrow()
+        val sourceId = database.importSourceDao().getAll().single().id
+
+        val rescan = RecordingImportSourceGateway(
+            scanReport = ImportScanReport(
+                tracks = listOf(
+                    ImportedTrackCandidate(title = "a", mediaLocator = "lynmusic-smb://x/Media/a.mp3", relativePath = "Media/a.mp3"),
+                ),
+                unreadableFolders = listOf("Backup"),
+            ),
+        )
+        createRepository(database = database, gateway = rescan).updateSambaSource(
+            sourceId = sourceId,
+            draft = SambaSourceDraft(
+                label = "NAS",
+                server = "nas.local",
+                port = 445,
+                username = "",
+                password = "",
+                selectedDirectories = listOf("Backup", "Media"),
+            ),
+        ).getOrThrow()
+
+        assertEquals(
+            listOf("Backup/b.mp3", "Media/a.mp3"),
+            database.trackDao().getBySourceId(sourceId).map { it.relativePath }.sorted(),
+        )
+    }
+
+    @Test
+    fun `legacy samba rows keep their root and scan it whole`() = runTest {
+        val database = createImportTestDatabase()
+        val gateway = RecordingImportSourceGateway()
+        val repository = createRepository(database = database, gateway = gateway)
+        database.importSourceDao().upsert(
+            ImportSourceEntity(
+                id = "smb-legacy",
+                type = "SAMBA",
+                label = "NAS",
+                rootReference = "Media/Music",
+                server = "nas.local",
+                shareName = "445",
+                directoryPath = "Media/Music",
+                username = "",
+                credentialKey = null,
+                allowInsecureTls = false,
+                lastScannedAt = null,
+                createdAt = 1L,
+            ),
+        )
+
+        repository.rescanSource("smb-legacy").getOrThrow()
+
+        val draft = gateway.sambaScanDrafts.single()
+        assertEquals("Media/Music", draft.path)
+        assertEquals(emptyList(), draft.selectedDirectories)
     }
 
     @Test
@@ -1766,6 +2001,7 @@ private class RecordingImportSourceGateway(
     var localFolderScanCount: Int = 0
     var sambaTestCount: Int = 0
     var sambaScanCount: Int = 0
+    val sambaScanDrafts = mutableListOf<SambaSourceDraft>()
     var webDavTestCount: Int = 0
     var webDavScanCount: Int = 0
     var navidromeTestCount: Int = 0
@@ -1803,6 +2039,7 @@ private class RecordingImportSourceGateway(
 
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         sambaScanCount += 1
+        sambaScanDrafts += draft
         return scanReport
     }
 

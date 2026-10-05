@@ -7,6 +7,7 @@ import top.iwesley.lyn.music.core.model.plus
 
 import top.iwesley.lyn.music.core.model.reasonUiText
 import top.iwesley.lyn.music.core.model.uiPlural
+import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.uiText
 
 import androidx.compose.foundation.BorderStroke
@@ -49,6 +50,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
@@ -56,6 +58,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -64,6 +67,8 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -136,6 +141,8 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportScanOperation
 import top.iwesley.lyn.music.feature.importing.ImportState
+import top.iwesley.lyn.music.feature.importing.RemoteFolderRow
+import top.iwesley.lyn.music.feature.importing.RemoteFolderTreeState
 import top.iwesley.lyn.music.feature.importing.PendingLargeNavidromeAction
 import top.iwesley.lyn.music.feature.library.LibraryAlbumUiItem
 import top.iwesley.lyn.music.feature.library.LibraryArtistUiItem
@@ -2902,6 +2909,8 @@ internal fun SourcesTab(
             scanProgress = editingScanProgress,
             constrainWidth = !isMobileSourcesPlatform(platform),
             testMessage = state.testMessage?.displayText(),
+            folderTree = state.remoteFolderTree,
+            allowManualSambaShare = state.capabilities.supportsSambaImport,
             fieldColors = importFieldColors,
             onDismiss = { onImportIntent(ImportIntent.DismissRemoteSourceEditor) },
             onIntent = onImportIntent,
@@ -3444,6 +3453,7 @@ private fun RemoteSourceCreatorDialog(
             else -> uiString(Res.string.source_connect_and_sync)
         },
         primaryLoading = isCreating,
+        primaryEnabled = state.remoteFolderTree?.selected?.isNotEmpty() ?: true,
         scanProgress = scanProgress,
         constrainWidth = constrainWidth,
         testMessage = state.testMessage?.displayText(),
@@ -3660,14 +3670,6 @@ private fun RemoteSourceCreatorDialog(
                         colors = fieldColors,
                     )
                 }
-                ImeAwareOutlinedTextField(
-                    value = state.sambaPath,
-                    onValueChange = { onIntent(ImportIntent.SambaPathChanged(it)) },
-                    label = { Text(uiString(Res.string.source_samba_path_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = fieldColors,
-                )
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ImeAwareOutlinedTextField(
                         value = state.sambaUsername,
@@ -3686,6 +3688,16 @@ private fun RemoteSourceCreatorDialog(
                         colors = fieldColors
                     )
                 }
+                state.remoteFolderTree?.let { tree ->
+                    RemoteFolderTreeSection(
+                        tree = tree,
+                        rootName = formatSambaEndpoint(state.sambaServer, state.sambaPort.toIntOrNull(), null),
+                        enabled = !state.isWorking,
+                        allowManualShare = state.capabilities.supportsSambaImport,
+                        fieldColors = fieldColors,
+                        onIntent = onIntent,
+                    )
+                }
             }
 
             ImportSourceType.WEBDAV -> {
@@ -3700,7 +3712,7 @@ private fun RemoteSourceCreatorDialog(
                 ImeAwareOutlinedTextField(
                     value = state.webDavRootUrl,
                     onValueChange = { onIntent(ImportIntent.WebDavRootUrlChanged(it)) },
-                    label = { Text(uiString(Res.string.source_webdav_root_url_label)) },
+                    label = { Text(uiString(Res.string.source_server_address_label)) },
                     placeholder = { Text(uiString(Res.string.source_webdav_url_example)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
@@ -3744,6 +3756,16 @@ private fun RemoteSourceCreatorDialog(
                         ),
                     )
                 }
+                state.remoteFolderTree?.let { tree ->
+                    RemoteFolderTreeSection(
+                        tree = tree,
+                        rootName = state.webDavRootUrl.trim(),
+                        enabled = !state.isWorking,
+                        allowManualShare = false,
+                        fieldColors = fieldColors,
+                        onIntent = onIntent,
+                    )
+                }
             }
 
             ImportSourceType.LOCAL_FOLDER -> Unit
@@ -3762,6 +3784,8 @@ private fun RemoteSourceEditorDialog(
     scanProgress: ImportScanProgress?,
     constrainWidth: Boolean,
     testMessage: String?,
+    folderTree: RemoteFolderTreeState?,
+    allowManualSambaShare: Boolean,
     fieldColors: androidx.compose.material3.TextFieldColors,
     onDismiss: () -> Unit,
     onIntent: (ImportIntent) -> Unit,
@@ -3784,6 +3808,7 @@ private fun RemoteSourceEditorDialog(
         isWorking = isWorking,
         primaryLabel = if (isSavingScan) uiString(Res.string.source_rescanning_status) else uiString(Res.string.source_save_and_rescan),
         primaryLoading = isSavingScan,
+        primaryEnabled = folderTree?.selected?.isNotEmpty() ?: true,
         scanProgress = scanProgress,
         constrainWidth = constrainWidth,
         testMessage = testMessage,
@@ -3826,14 +3851,6 @@ private fun RemoteSourceEditorDialog(
                         colors = fieldColors,
                     )
                 }
-                ImeAwareOutlinedTextField(
-                    value = state.path,
-                    onValueChange = { onIntent(ImportIntent.RemoteSourcePathChanged(it)) },
-                    label = { Text(uiString(Res.string.source_samba_path_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = fieldColors,
-                )
             }
 
             ImportSourceType.WEBDAV -> {
@@ -3929,6 +3946,158 @@ private fun RemoteSourceEditorDialog(
                 )
             }
         }
+        folderTree?.let { tree ->
+            RemoteFolderTreeSection(
+                tree = tree,
+                rootName = if (state.type == ImportSourceType.SAMBA) {
+                    formatSambaEndpoint(state.server, state.port.toIntOrNull(), state.path)
+                } else {
+                    state.rootUrl.trim()
+                },
+                enabled = !isWorking,
+                allowManualShare = allowManualSambaShare,
+                fieldColors = fieldColors,
+                onIntent = onIntent,
+            )
+        }
+    }
+}
+
+/**
+ * Folder picker for Samba/WebDAV sources: browses the server lazily and lets the user tick folders to scan. A ticked
+ * folder covers everything below it, so its sub-folders show as ticked and locked.
+ */
+@Composable
+private fun RemoteFolderTreeSection(
+    tree: RemoteFolderTreeState,
+    rootName: String,
+    enabled: Boolean,
+    /** Typing a share only helps where Samba scanning works in-app. */
+    allowManualShare: Boolean,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    onIntent: (ImportIntent) -> Unit,
+) {
+    val rootNode = tree.nodes[RemoteFolderTreeState.ROOT]
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(uiString(Res.string.source_folders_title), fontWeight = FontWeight.Medium)
+                Text(
+                    text = if (tree.selected.isEmpty()) {
+                        uiString(Res.string.source_folders_hint)
+                    } else {
+                        uiPlural(Res.plurals.source_selected_folder_count, tree.selected.size, tree.selected.size).displayText()
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(
+                onClick = { onIntent(ImportIntent.LoadRemoteFolder()) },
+                enabled = enabled && rootNode?.isLoading != true,
+            ) {
+                Text(uiString(if (tree.isBrowsed) Res.string.source_reload_folders else Res.string.source_browse_folders))
+            }
+        }
+        if (!tree.rootSelectable && rootNode?.isLoading == true) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        tree.visibleRows(rootName).forEach { row ->
+            when (row) {
+                is RemoteFolderRow.Folder -> RemoteFolderTreeFolderRow(row = row, enabled = enabled, onIntent = onIntent)
+                is RemoteFolderRow.Message -> Row(
+                    modifier = Modifier.padding(start = (row.depth * 20 + 12).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = row.text.displayText(),
+                        modifier = Modifier.weight(1f, fill = false),
+                        color = if (row.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (row.isError) {
+                        TextButton(onClick = { onIntent(ImportIntent.LoadRemoteFolder(row.parentPath)) }, enabled = enabled) {
+                            Text(uiString(Res.string.source_reload_folders))
+                        }
+                    }
+                }
+            }
+        }
+        if (tree.canAddManualShare && allowManualShare) {
+            ManualSambaShareField(enabled = enabled, fieldColors = fieldColors, onIntent = onIntent)
+        }
+    }
+}
+
+@Composable
+private fun RemoteFolderTreeFolderRow(
+    row: RemoteFolderRow.Folder,
+    enabled: Boolean,
+    onIntent: (ImportIntent) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (row.depth * 20).dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            if (row.isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = { onIntent(ImportIntent.ToggleRemoteFolderExpanded(row.path)) }, enabled = enabled) {
+                    Icon(
+                        imageVector = if (row.isExpanded) Icons.Rounded.KeyboardArrowDown else Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        contentDescription = null,
+                    )
+                }
+            }
+        }
+        Checkbox(
+            checked = row.isChecked,
+            onCheckedChange = { onIntent(ImportIntent.ToggleRemoteFolderSelected(row.path)) },
+            enabled = enabled && !row.isLockedByAncestor,
+        )
+        Text(
+            text = row.name,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Browse a share by typing its name: hidden shares the listing skips, or any share when listing fails. */
+@Composable
+private fun ManualSambaShareField(
+    enabled: Boolean,
+    fieldColors: androidx.compose.material3.TextFieldColors,
+    onIntent: (ImportIntent) -> Unit,
+) {
+    var shareName by remember { mutableStateOf("") }
+    Text(
+        uiString(Res.string.source_samba_manual_share_hint),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        ImeAwareOutlinedTextField(
+            value = shareName,
+            onValueChange = { shareName = it },
+            label = { Text(uiString(Res.string.source_samba_manual_share)) },
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(18.dp),
+            colors = fieldColors,
+        )
+        OutlinedButton(
+            onClick = {
+                onIntent(ImportIntent.AddManualSambaShare(shareName))
+                shareName = ""
+            },
+            enabled = enabled && shareName.isNotBlank(),
+        ) {
+            Text(uiString(Res.string.source_samba_manual_share_add))
+        }
     }
 }
 
@@ -3940,6 +4109,7 @@ private fun SourceFormDialog(
     isWorking: Boolean,
     primaryLabel: String,
     primaryLoading: Boolean,
+    primaryEnabled: Boolean = true,
     scanProgress: ImportScanProgress?,
     constrainWidth: Boolean,
     testMessage: String?,
@@ -4032,7 +4202,7 @@ private fun SourceFormDialog(
                             Spacer(Modifier.width(12.dp))
                             Button(
                                 onClick = onPrimary,
-                                enabled = !isWorking,
+                                enabled = !isWorking && primaryEnabled,
                             ) {
                                 if (primaryLoading) {
                                     ButtonLoadingIndicator()

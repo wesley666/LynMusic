@@ -13,6 +13,25 @@
     <string name="source_connected_list_title">Connected sources</string>
     <string name="source_add_action">Add source</string>
     <string name="source_add_named_type">Add %1$s source</string>
+    <string name="source_server_address_label">Server address</string>
+    <string name="source_browse_folders">Browse folders</string>
+    <string name="source_reload_folders">Reload</string>
+    <string name="source_folders_title">Folders to scan</string>
+    <string name="source_folders_hint">Browse the server and tick the folders to scan.</string>
+    <string name="source_folder_selection_required">Select at least one folder to scan.</string>
+    <string name="source_folder_tree_empty">No sub-folders</string>
+    <string name="source_folder_tree_load_failed">Couldn\'t load folders: %1$s</string>
+    <string name="source_samba_manual_share">Share name</string>
+    <string name="source_samba_manual_share_add">Add share</string>
+    <string name="source_samba_manual_share_hint">Shares not in the list, such as hidden ones, can be browsed by typing their name.</string>
+    <plurals name="source_selected_folder_count">
+        <item quantity="one">%1$s folder selected</item>
+        <item quantity="other">%1$s folders selected</item>
+    </plurals>
+    <plurals name="source_folder_count">
+        <item quantity="one">%1$s folder</item>
+        <item quantity="other">%1$s folders</item>
+    </plurals>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">“%1$s” contains %2$s remote song. Online mode hides and retains the old local index. You can also rescan the entire remote library into the local index.</item>
         <item quantity="other">“%1$s” contains %2$s remote songs. Online mode hides and retains the old local index. You can also rescan the entire remote library into the local index.</item>
@@ -72,7 +91,6 @@
     <string name="library_online_artist_detail_title">Online artist details</string>
     <string name="source_saved_password_placeholder">Password (blank to keep)</string>
     <string name="source_optional_password_placeholder">Password (optional)</string>
-    <string name="source_samba_path_label">Path (share/subfolder)</string>
     <string name="library_play_all_tracks">Play all songs</string>
     <string name="library_play_count_sort">Play count</string>
     <string name="library_play_loaded_tracks">Play loaded songs</string>

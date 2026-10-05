@@ -83,6 +83,7 @@ import top.iwesley.lyn.music.core.model.normalizePlaybackVolume
 import top.iwesley.lyn.music.core.model.playerArtworkStyleOrDefault
 import top.iwesley.lyn.music.core.model.withThemePalette
 import top.iwesley.lyn.music.core.model.SambaSourceDraft
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.core.model.SecureCredentialStore
 import top.iwesley.lyn.music.core.model.SubsonicSourceDraft
 import top.iwesley.lyn.music.core.model.UnsupportedAudioTagEditorPlatformService
@@ -745,6 +746,10 @@ private class IosImportSourceGateway(
         throw UiTextException(uiText(Res.string.ios_samba_files_recommended))
     }
 
+    override suspend fun listSambaDirectories(draft: SambaSourceDraft, relativePath: String): List<RemoteDirectoryEntry> {
+        throw UiTextException(uiText(Res.string.ios_samba_files_recommended))
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         return ImportScanReport(
             emptyList(),
@@ -758,6 +763,10 @@ private class IosImportSourceGateway(
     }
 
     override suspend fun testWebDav(draft: WebDavSourceDraft) {
+        throw UiTextException(uiText(Res.string.ios_webdav_not_supported))
+    }
+
+    override suspend fun listWebDavDirectories(draft: WebDavSourceDraft, relativePath: String): List<RemoteDirectoryEntry> {
         throw UiTextException(uiText(Res.string.ios_webdav_not_supported))
     }
 

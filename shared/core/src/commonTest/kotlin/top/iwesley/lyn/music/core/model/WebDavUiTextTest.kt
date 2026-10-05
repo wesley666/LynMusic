@@ -33,7 +33,7 @@ class WebDavUiTextTest {
     }
 
     @Test fun operationNamesResolveAtDisplayTime() = runTest {
-        val names = listOf("connection test", "scan", "lyrics file read", "metadata probe", "playback")
+        val names = listOf("connection test", "scan", "lyrics file read", "metadata probe", "playback", "list folders")
         WebDavOperation.entries.zip(names).forEach { (operation, name) ->
             val text = webDavHttpFailureText(operation, 500, true, " ")
             assertEquals("WebDAV $name failed, HTTP 500.", resolveUiText(text, AppLanguage.English))

@@ -52,6 +52,8 @@ data class ImportSourceEntity(
     val authMode: String = "PASSWORD",
     val wanRootReference: String? = null,
     val indexMode: String = "LOCAL_INDEX",
+    /** JSON array of folders relative to the root; blank keeps the whole root (rows from before folder selection). */
+    val selectedDirectories: String = "",
 )
 
 @Entity(tableName = "import_index_state")
@@ -841,7 +843,7 @@ interface OfflineDownloadDao {
         OfflineDownloadEntity::class,
         ImportTrackStageEntity::class,
     ],
-    version = 19,
+    version = 20,
 )
 @ConstructedBy(LynMusicDatabaseConstructor::class)
 abstract class LynMusicDatabase : RoomDatabase() {
@@ -892,6 +894,7 @@ fun buildLynMusicDatabase(builder: Builder<LynMusicDatabase>): LynMusicDatabase 
         .addMigrations(MIGRATION_16_17)
         .addMigrations(MIGRATION_17_18)
         .addMigrations(MIGRATION_18_19)
+        .addMigrations(MIGRATION_19_20)
         .build()
 }
 
@@ -1201,6 +1204,17 @@ val MIGRATION_18_19: Migration = object : Migration(18, 19) {
             """
             ALTER TABLE playback_queue_snapshot
             ADD COLUMN orderedQueueTracksJson TEXT NOT NULL DEFAULT ''
+            """.trimIndent(),
+        )
+    }
+}
+
+val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSql(
+            """
+            ALTER TABLE import_source
+            ADD COLUMN selectedDirectories TEXT NOT NULL DEFAULT ''
             """.trimIndent(),
         )
     }

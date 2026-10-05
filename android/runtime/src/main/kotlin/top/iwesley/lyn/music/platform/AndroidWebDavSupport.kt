@@ -45,6 +45,10 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildBasicAuthorizationHeader
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
+import top.iwesley.lyn.music.core.model.buildWebDavDirectoryUrl
+import top.iwesley.lyn.music.core.model.effectiveSelectedDirectories
+import top.iwesley.lyn.music.core.model.scanSelectedFolders
 import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.UiText
 import top.iwesley.lyn.music.core.model.UiTextException
@@ -100,19 +104,26 @@ internal suspend fun scanAndroidWebDav(
         "scan-start source=$sourceId rootUrl=${session.rootUrl} auth=${session.authEnabled} insecureTls=${session.allowInsecureTls} client=sardine-android"
     }
     return runCatching {
-        val discoveredAudioFileCount = collectAndroidWebDavTracks(
-            session = session,
-            relativeDirectory = "",
-            sourceId = sourceId,
-            artworkDirectory = artworkDirectory,
-            logger = logger,
-            sink = tracks,
+        val folderScan = scanSelectedFolders(
+            folders = effectiveSelectedDirectories(draft.selectedDirectories),
             failures = failures,
-            progressSink = progressSink,
-        )
+            folderPath = { it },
+        ) { directory ->
+            collectAndroidWebDavTracks(
+                session = session,
+                relativeDirectory = directory,
+                sourceId = sourceId,
+                artworkDirectory = artworkDirectory,
+                logger = logger,
+                sink = tracks,
+                failures = failures,
+                progressSink = progressSink,
+            )
+        }
         ImportScanReport(
             tracks = tracks,
-            discoveredAudioFileCount = discoveredAudioFileCount,
+            discoveredAudioFileCount = folderScan.discoveredAudioFileCount,
+            unreadableFolders = folderScan.unreadableFolders,
             failures = failures,
         )
     }.onSuccess { report ->
@@ -149,6 +160,35 @@ internal fun testAndroidWebDavConnection(
         }
     } catch (throwable: Throwable) {
         throw throwable.asAndroidWebDavIOException(WebDavOperation.TestConnection, session.authEnabled)
+    }
+}
+
+internal fun listAndroidWebDavDirectories(
+    draft: WebDavSourceDraft,
+    relativePath: String,
+    logger: DiagnosticLogger,
+): List<RemoteDirectoryEntry> {
+    val session = createAndroidWebDavSession(
+        rootUrl = draft.rootUrl,
+        username = draft.username,
+        password = draft.password,
+        allowInsecureTls = draft.allowInsecureTls,
+    )
+    val directory = relativePath.trim('/')
+    logger.debug(WEBDAV_LOG_TAG) { "list-folders rootUrl=${session.rootUrl} path=$directory client=sardine-android" }
+    return try {
+        session.sardine.list(buildWebDavDirectoryUrl(session.rootUrl, directory), 1)
+            .filterIsInstance<DavResource>()
+            .mapNotNull { resource ->
+                resolveWebDavListedResource(
+                    rootUrl = session.rootUrl,
+                    currentDirectory = directory,
+                    resource = resource.toWebDavListedResource(),
+                )
+            }
+            .toRemoteDirectoryEntries()
+    } catch (throwable: Throwable) {
+        throw throwable.asAndroidWebDavIOException(WebDavOperation.ListFolders, session.authEnabled)
     }
 }
 

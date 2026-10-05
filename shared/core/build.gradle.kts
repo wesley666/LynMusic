@@ -103,6 +103,11 @@ kotlin {
     sourceSets {
         val jvmAndAndroidMain by creating {
             dependsOn(commonMain.get())
+            dependencies {
+                implementation(libs.smbj)
+                // Samba share enumeration (srvsvc); Gradle resolves its smbj to the version above.
+                implementation(libs.smbjRpc)
+            }
         }
         androidMain.get().dependsOn(jvmAndAndroidMain)
         jvmMain.get().dependsOn(jvmAndAndroidMain)

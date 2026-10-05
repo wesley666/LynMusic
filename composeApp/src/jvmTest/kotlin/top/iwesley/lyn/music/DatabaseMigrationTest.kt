@@ -19,6 +19,7 @@ import top.iwesley.lyn.music.data.db.MIGRATION_12_13
 import top.iwesley.lyn.music.data.db.MIGRATION_13_14
 import top.iwesley.lyn.music.data.db.MIGRATION_14_15
 import top.iwesley.lyn.music.data.db.MIGRATION_15_16
+import top.iwesley.lyn.music.data.db.MIGRATION_19_20
 
 class DatabaseMigrationTest {
 
@@ -461,6 +462,56 @@ class DatabaseMigrationTest {
             assertTrue(connection.hasColumn("import_source", "wanRootReference"))
             assertEquals("https://nav.example.com", connection.singleText("SELECT rootReference FROM import_source WHERE id = 'nav-1'"))
             assertNull(connection.singleNullableText("SELECT wanRootReference FROM import_source WHERE id = 'nav-1'"))
+        }
+    }
+
+    @Test
+    fun `migration 19 to 20 adds blank selected directories so existing sources keep scanning their whole root`() {
+        val databasePath = Files.createTempFile("lynmusic-migration", ".db")
+        val driver = BundledSQLiteDriver()
+
+        driver.open(databasePath.absolutePathString()).use { connection ->
+            connection.execSql(
+                """
+                CREATE TABLE import_source (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    rootReference TEXT NOT NULL,
+                    server TEXT,
+                    shareName TEXT,
+                    directoryPath TEXT,
+                    username TEXT,
+                    credentialKey TEXT,
+                    allowInsecureTls INTEGER NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    lastScannedAt INTEGER,
+                    createdAt INTEGER NOT NULL,
+                    authMode TEXT NOT NULL,
+                    wanRootReference TEXT,
+                    indexMode TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            connection.execSql(
+                """
+                INSERT INTO import_source (
+                    id, type, label, rootReference, server, shareName, directoryPath, username,
+                    credentialKey, allowInsecureTls, enabled, lastScannedAt, createdAt, authMode,
+                    wanRootReference, indexMode
+                ) VALUES (
+                    'smb-1', 'SAMBA', 'NAS', 'Media/Music', 'nas.local', '445', 'Media/Music', 'demo',
+                    'cred-1', 0, 1, NULL, 1, 'PASSWORD', NULL, 'LOCAL_INDEX'
+                )
+                """.trimIndent(),
+            )
+
+            MIGRATION_19_20.migrate(connection)
+
+            assertTrue(connection.hasColumn("import_source", "selectedDirectories"))
+            assertEquals("", connection.singleText("SELECT selectedDirectories FROM import_source WHERE id = 'smb-1'"))
+            assertEquals("Media/Music", connection.singleText("SELECT directoryPath FROM import_source WHERE id = 'smb-1'"))
+            assertEquals("445", connection.singleText("SELECT shareName FROM import_source WHERE id = 'smb-1'"))
         }
     }
 

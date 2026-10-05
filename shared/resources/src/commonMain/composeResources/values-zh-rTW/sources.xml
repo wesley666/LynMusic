@@ -13,6 +13,25 @@
     <string name="source_connected_list_title">已連接來源</string>
     <string name="source_add_action">新增來源</string>
     <string name="source_add_named_type">新增 %1$s 來源</string>
+    <string name="source_server_address_label">伺服器位址</string>
+    <string name="source_browse_folders">瀏覽資料夾</string>
+    <string name="source_reload_folders">重新載入</string>
+    <string name="source_folders_title">掃描的資料夾</string>
+    <string name="source_folders_hint">瀏覽伺服器並勾選要掃描的資料夾。</string>
+    <string name="source_folder_selection_required">請至少選擇一個要掃描的資料夾。</string>
+    <string name="source_folder_tree_empty">沒有子資料夾</string>
+    <string name="source_folder_tree_load_failed">載入資料夾失敗：%1$s</string>
+    <string name="source_samba_manual_share">共用名稱</string>
+    <string name="source_samba_manual_share_add">新增共用</string>
+    <string name="source_samba_manual_share_hint">清單中沒有的共用（例如隱藏共用）可以手動輸入名稱後瀏覽。</string>
+    <plurals name="source_selected_folder_count">
+        <item quantity="one">已選擇 %1$s 個資料夾</item>
+        <item quantity="other">已選擇 %1$s 個資料夾</item>
+    </plurals>
+    <plurals name="source_folder_count">
+        <item quantity="one">%1$s 個資料夾</item>
+        <item quantity="other">%1$s 個資料夾</item>
+    </plurals>
     <plurals name="source_online_rescan_confirmation">
         <item quantity="one">檢測到“%1$s”遠端共有 %2$s 首歌曲。建議切換為在線模式，舊本機索引會隱藏並保留；也可以繼續全量重掃，把遠端歌曲重新寫入本機索引。</item>
         <item quantity="other">檢測到“%1$s”遠端共有 %2$s 首歌曲。建議切換為在線模式，舊本機索引會隱藏並保留；也可以繼續全量重掃，把遠端歌曲重新寫入本機索引。</item>
@@ -72,7 +91,6 @@
     <string name="library_online_artist_detail_title">在線藝人詳情</string>
     <string name="source_saved_password_placeholder">密碼（留空沿用）</string>
     <string name="source_optional_password_placeholder">密碼（選填）</string>
-    <string name="source_samba_path_label">路徑（Share/子目錄）</string>
     <string name="library_play_all_tracks">播放全部歌曲</string>
     <string name="library_play_count_sort">播放次數</string>
     <string name="library_play_loaded_tracks">播放已加載</string>

@@ -160,27 +160,16 @@ private suspend fun resolveJvmSambaSourceContext(
 ): JvmSambaSourceContext {
     val source = database.importSourceDao().getById(locator.first)?.takeIf { it.enabled }
         ?: throw UiTextException(uiText(Res.string.samba_source_unavailable))
-    val shareName = source.shareName
-    val storedPort = shareName?.toIntOrNull()
-    val storedPath = when {
-        storedPort != null -> normalizeSambaPath(source.directoryPath)
-        shareName.isNullOrBlank() -> normalizeSambaPath(source.directoryPath)
-        else -> normalizeSambaPath(joinSambaPath(shareName, source.directoryPath.orEmpty()))
-    }
-    val sambaPath = parseSambaPath(storedPath)
-        ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
-    val endpoint = formatSambaEndpoint(source.server.orEmpty(), storedPort, storedPath)
+    val spec = resolveSambaSourceSpec(source, locator.second)
     val password = source.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
-    val username = source.username.orEmpty()
-    val remotePath = joinSambaPath(sambaPath.directoryPath, locator.second)
     return JvmSambaSourceContext(
         sourceId = locator.first,
-        endpoint = endpoint,
-        server = source.server.orEmpty(),
-        port = storedPort ?: DEFAULT_SAMBA_PORT,
-        shareName = sambaPath.shareName,
-        remotePath = remotePath,
-        username = username,
+        endpoint = spec.endpoint,
+        server = spec.server,
+        port = spec.port,
+        shareName = spec.shareName,
+        remotePath = spec.remotePath,
+        username = spec.username,
         password = password,
     )
 }

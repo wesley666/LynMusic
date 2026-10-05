@@ -113,7 +113,13 @@ import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.error
 import top.iwesley.lyn.music.core.model.formatSambaEndpoint
 import top.iwesley.lyn.music.core.model.info
+import top.iwesley.lyn.music.core.model.DEFAULT_SAMBA_PORT
 import top.iwesley.lyn.music.core.model.joinSambaPath
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
+import top.iwesley.lyn.music.core.model.buildWebDavDirectoryUrl
+import top.iwesley.lyn.music.core.model.displayWebDavRootUrl
+import top.iwesley.lyn.music.core.model.isSameOrAncestorDirectory
+import top.iwesley.lyn.music.core.model.normalizeSelectedDirectories
 import top.iwesley.lyn.music.core.model.localFolderPersistentIdentity
 import top.iwesley.lyn.music.core.model.normalizeSambaPath
 import top.iwesley.lyn.music.core.model.normalizeArtworkLocator
@@ -127,6 +133,10 @@ import top.iwesley.lyn.music.data.db.AlbumEntity
 import top.iwesley.lyn.music.data.db.ArtistEntity
 import top.iwesley.lyn.music.data.db.ImportIndexStateEntity
 import top.iwesley.lyn.music.data.db.ImportSourceEntity
+import top.iwesley.lyn.music.platform.sambaPort
+import top.iwesley.lyn.music.platform.sambaRootPath
+import top.iwesley.lyn.music.data.db.decodeSelectedDirectories
+import top.iwesley.lyn.music.data.db.encodeSelectedDirectories
 import top.iwesley.lyn.music.data.db.ImportTrackStageEntity
 import top.iwesley.lyn.music.data.db.LyricsCacheEntity
 import top.iwesley.lyn.music.data.db.LyricsSourceConfigEntity
@@ -240,6 +250,15 @@ interface ImportSourceRepository {
         return reauthorizeLocalFolder(sourceId)
     }
     suspend fun testSambaSource(draft: SambaSourceDraft): Result<Unit>
+    suspend fun listSambaDirectories(draft: SambaSourceDraft, relativePath: String): Result<List<RemoteDirectoryEntry>> =
+        Result.failure(UnsupportedOperationException("Folder browsing is not supported."))
+    /** Lists folders of an existing source, reusing its stored password when [draft] leaves it blank. */
+    suspend fun listUpdatedSambaDirectories(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> = Result.failure(UnsupportedOperationException("Folder browsing is not supported."))
     suspend fun testUpdatedSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
@@ -266,6 +285,15 @@ interface ImportSourceRepository {
         return updateSambaSource(sourceId, draft, keepExistingCredentialWhenBlankPassword)
     }
     suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit>
+    suspend fun listWebDavDirectories(draft: WebDavSourceDraft, relativePath: String): Result<List<RemoteDirectoryEntry>> =
+        Result.failure(UnsupportedOperationException("Folder browsing is not supported."))
+    /** Lists folders of an existing source, reusing its stored password when [draft] leaves it blank. */
+    suspend fun listUpdatedWebDavDirectories(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> = Result.failure(UnsupportedOperationException("Folder browsing is not supported."))
     suspend fun testUpdatedWebDavSource(
         sourceId: String,
         draft: WebDavSourceDraft,
@@ -709,6 +737,33 @@ class RoomImportSourceRepository(
         }
     }
 
+    override suspend fun listSambaDirectories(
+        draft: SambaSourceDraft,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        return runCatching {
+            gateway.listSambaDirectories(prepareSambaDraft(draft), relativePath)
+        }
+    }
+
+    override suspend fun listUpdatedSambaDirectories(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.SAMBA)
+            val preparedDraft = prepareSambaDraft(draft)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            gateway.listSambaDirectories(preparedDraft.copy(password = password), relativePath)
+        }
+    }
+
     override suspend fun testUpdatedSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
@@ -798,6 +853,33 @@ class RoomImportSourceRepository(
     override suspend fun testWebDavSource(draft: WebDavSourceDraft): Result<Unit> {
         return runCatching {
             gateway.testWebDav(prepareWebDavDraft(draft))
+        }
+    }
+
+    override suspend fun listWebDavDirectories(
+        draft: WebDavSourceDraft,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        return runCatching {
+            gateway.listWebDavDirectories(prepareWebDavDraft(draft), relativePath)
+        }
+    }
+
+    override suspend fun listUpdatedWebDavDirectories(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        return runCatching {
+            val existing = requireRemoteSource(sourceId, ImportSourceType.WEBDAV)
+            val preparedDraft = prepareWebDavDraft(draft)
+            val password = resolveUpdatedPassword(
+                existingCredentialKey = existing.credentialKey,
+                password = preparedDraft.password,
+                keepExistingCredentialWhenBlankPassword = keepExistingCredentialWhenBlankPassword,
+            )
+            gateway.listWebDavDirectories(preparedDraft.copy(password = password), relativePath)
         }
     }
 
@@ -1495,6 +1577,7 @@ class RoomImportSourceRepository(
                                 path = source.path.orEmpty(),
                                 username = source.username.orEmpty(),
                                 password = password,
+                                selectedDirectories = source.selectedDirectories,
                             ),
                             sourceId = source.id,
                             progressSink = progressSink,
@@ -1510,6 +1593,7 @@ class RoomImportSourceRepository(
                                 username = source.username.orEmpty(),
                                 password = password,
                                 allowInsecureTls = source.allowInsecureTls,
+                                selectedDirectories = source.selectedDirectories,
                             ),
                             sourceId = source.id,
                             progressSink = progressSink,
@@ -1635,6 +1719,7 @@ class RoomImportSourceRepository(
             server = draft.server.trim(),
             path = normalizedPath,
             username = draft.username.trim(),
+            selectedDirectories = normalizeSelectedDirectories(draft.selectedDirectories),
         )
     }
 
@@ -1643,6 +1728,7 @@ class RoomImportSourceRepository(
             label = draft.label.trim(),
             rootUrl = normalizeWebDavRootUrl(draft.rootUrl),
             username = draft.username.trim(),
+            selectedDirectories = normalizeSelectedDirectories(draft.selectedDirectories),
         )
     }
 
@@ -1708,7 +1794,7 @@ class RoomImportSourceRepository(
             formatSambaEndpoint(
                 server = draft.server,
                 port = draft.port,
-                path = draft.path,
+                path = joinSambaPath(draft.path, draft.selectedDirectories.singleOrNull().orEmpty()),
             )
         }
         return ImportSource(
@@ -1722,6 +1808,7 @@ class RoomImportSourceRepository(
             username = draft.username,
             createdAt = createdAt,
             enabled = enabled,
+            selectedDirectories = draft.selectedDirectories,
         )
     }
 
@@ -1731,7 +1818,7 @@ class RoomImportSourceRepository(
         createdAt: Long = now(),
         enabled: Boolean = true,
     ): ImportSource {
-        val label = draft.label.ifBlank { draft.rootUrl }
+        val label = draft.label.ifBlank { displayWebDavRootUrl(buildWebDavDirectoryUrl(draft.rootUrl, draft.selectedDirectories.singleOrNull().orEmpty())) }
         return ImportSource(
             id = sourceId,
             type = ImportSourceType.WEBDAV,
@@ -1741,6 +1828,7 @@ class RoomImportSourceRepository(
             allowInsecureTls = draft.allowInsecureTls,
             createdAt = createdAt,
             enabled = enabled,
+            selectedDirectories = draft.selectedDirectories,
         )
     }
 
@@ -1993,19 +2081,26 @@ class RoomImportSourceRepository(
             val existingAddedAtByTrackId = database.trackDao()
                 .getAddedAtBySourceId(source.id)
                 .associate { it.id to it.addedAt }
+            val scannedTrackEntities = report.tracks.map { candidate ->
+                candidate.toTrackEntity(source.id, scannedAt, existingAddedAtByTrackId)
+            }
+            // Folders that couldn't be read this time keep their tracks (and so their favorites and embedded lyrics).
+            val keptTracks = tracksInUnreadableFolders(source, report.unreadableFolders, scannedTrackEntities)
+            val keptEmbeddedLyrics = keptTracks.map { it.id }.chunked(SQLITE_IN_CLAUSE_CHUNK_SIZE).flatMap { trackIds ->
+                database.lyricsCacheDao().getByTrackIdsAndSourceId(trackIds, EMBEDDED_LYRICS_SOURCE_ID)
+            }
             database.trackDao().deleteBySourceId(source.id)
             database.lyricsCacheDao().deleteByTrackIdPrefixAndSourceId(
                 trackIdPrefix(source.id),
                 EMBEDDED_LYRICS_SOURCE_ID,
             )
-            val trackEntities = report.tracks.map { candidate ->
-                candidate.toTrackEntity(source.id, scannedAt, existingAddedAtByTrackId)
-            }
+            val trackEntities = scannedTrackEntities + keptTracks
 
             if (trackEntities.isNotEmpty()) {
                 database.trackDao().upsertAll(trackEntities)
             }
-            report.tracks.zip(trackEntities).forEach { (candidate, entity) ->
+            keptEmbeddedLyrics.forEach { database.lyricsCacheDao().upsert(it) }
+            report.tracks.zip(scannedTrackEntities).forEach { (candidate, entity) ->
                 candidate.embeddedLyrics
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
@@ -2038,9 +2133,36 @@ class RoomImportSourceRepository(
             ImportScanSummary(
                 sourceId = source.id,
                 discoveredAudioFileCount = report.discoveredAudioFileCount,
-                importedTrackCount = trackEntities.size,
+                importedTrackCount = scannedTrackEntities.size,
                 failures = report.failures,
             )
+        }
+    }
+
+    /**
+     * Tracks already stored under [unreadableFolders] that this scan did not reach again. None are kept when the save moved
+     * the source (another root URL, server, port or Samba root): the old paths would point somewhere else now.
+     */
+    private suspend fun tracksInUnreadableFolders(
+        source: ImportSource,
+        unreadableFolders: List<String>,
+        scannedTracks: List<TrackEntity>,
+    ): List<TrackEntity> {
+        if (unreadableFolders.isEmpty()) return emptyList()
+        val stored = database.importSourceDao().getById(source.id) ?: return emptyList()
+        val updated = source.toEntity()
+        // Compare what locates the files: Samba keeps its root in server/port/path columns, WebDAV in the root URL.
+        val sameLocation = when (source.type) {
+            // A blank port means the default one, so filling in 445 does not move the source.
+            ImportSourceType.SAMBA -> stored.server == updated.server &&
+                (stored.sambaPort() ?: DEFAULT_SAMBA_PORT) == (updated.sambaPort() ?: DEFAULT_SAMBA_PORT) &&
+                stored.sambaRootPath() == updated.sambaRootPath()
+            else -> stored.rootReference == updated.rootReference
+        }
+        if (!sameLocation) return emptyList()
+        val scannedIds = scannedTracks.mapTo(mutableSetOf()) { it.id }
+        return database.trackDao().getBySourceId(source.id).filter { track ->
+            track.id !in scannedIds && unreadableFolders.any { folder -> isSameOrAncestorDirectory(folder, track.relativePath) }
         }
     }
 
@@ -4276,12 +4398,8 @@ private fun LyricsLookupMetadata.toNetworkLyricsLookupTrack(): Track? {
 }
 
 private fun ImportSourceEntity.toDomain(): ImportSource {
-    val parsedPort = shareName?.toIntOrNull()
-    val migratedPath = when {
-        parsedPort != null -> normalizeSambaPath(directoryPath)
-        shareName.isNullOrBlank() -> normalizeSambaPath(directoryPath)
-        else -> normalizeSambaPath(joinSambaPath(shareName, directoryPath.orEmpty()))
-    }
+    val parsedPort = sambaPort()
+    val migratedPath = sambaRootPath()
     return ImportSource(
         id = id,
         type = type.toImportSourceType(),
@@ -4299,6 +4417,7 @@ private fun ImportSourceEntity.toDomain(): ImportSource {
         lastScannedAt = lastScannedAt,
         createdAt = createdAt,
         indexMode = indexMode.toImportSourceIndexMode(),
+        selectedDirectories = decodeSelectedDirectories(selectedDirectories),
     )
 }
 
@@ -4320,6 +4439,7 @@ private fun ImportSource.toEntity(): ImportSourceEntity {
         createdAt = createdAt,
         authMode = subsonicAuthMode.name,
         indexMode = indexMode.name,
+        selectedDirectories = encodeSelectedDirectories(selectedDirectories),
     )
 }
 
@@ -4496,3 +4616,6 @@ private const val LRCLIB_SOURCE_NAME = "LRCLIB"
 private val LEGACY_BUILT_IN_LRCLIB_SOURCE_IDS = setOf("lrclib-synced", "lrclib-plain")
 const val LRCLIB_JSON_MAP_EXTRACTOR = "json-map:lyrics=syncedLyrics|plainLyrics,title=trackName,artist=artistName,album=albumName,durationSeconds=duration,id=id"
 private val LRCLIB_REMOVED_QUERY_KEYS = setOf("album_name", "duration")
+
+/** Keeps `IN (...)` queries under SQLite's bound-parameter limit. */
+private const val SQLITE_IN_CLAUSE_CHUNK_SIZE = 500

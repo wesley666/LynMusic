@@ -790,7 +790,7 @@ class JvmDataLocationManagerTest {
             manager.scheduleChange(target, AppDataLocationChangeMode.Migrate)
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(19L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
     }
@@ -813,7 +813,7 @@ class JvmDataLocationManagerTest {
 
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(19L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
             assertFalse(source.exists())
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
@@ -836,7 +836,7 @@ class JvmDataLocationManagerTest {
 
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(19L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
             assertFalse(source.exists())
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
@@ -1386,6 +1386,7 @@ private fun downgradeDatabaseToVersion18(file: File) {
             """.trimIndent(),
         )
         connection.execTestSql("DROP TABLE playback_queue_snapshot_v19")
+        connection.execTestSql("ALTER TABLE import_source DROP COLUMN selectedDirectories")
         connection.execTestSql("PRAGMA user_version = 18")
     }
 }

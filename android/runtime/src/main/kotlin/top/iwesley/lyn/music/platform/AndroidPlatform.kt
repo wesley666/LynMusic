@@ -176,6 +176,10 @@ import top.iwesley.lyn.music.core.model.parseEmbySongLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.parseSambaLocator
 import top.iwesley.lyn.music.core.model.parseSambaPath
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
+import top.iwesley.lyn.music.core.model.planSambaScanTargets
+import top.iwesley.lyn.music.core.model.scanSelectedFolders
+import top.iwesley.lyn.music.core.model.resolveSambaRemoteFile
 import top.iwesley.lyn.music.core.model.sameNameLyricsRelativePath
 import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
@@ -1740,8 +1744,8 @@ private class AndroidImportSourceGateway(
     }
 
     override suspend fun testSamba(draft: SambaSourceDraft) {
+        // Sources rooted at the server only need to reach and log in; folders are checked when browsed or scanned.
         val sambaPath = parseSambaPath(draft.path)
-            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -1754,11 +1758,13 @@ private class AndroidImportSourceGateway(
                 }
                 val session = connection.authenticate(AuthenticationContext(draft.username, draft.password.toCharArray(), ""))
                 logger.debug(SAMBA_LOG_TAG) {
-                    "test-auth-ok endpoint=$endpoint share=${sambaPath.shareName}"
+                    "test-auth-ok endpoint=$endpoint share=${sambaPath?.shareName.orEmpty()}"
                 }
-                val share = session.connectShare(sambaPath.shareName) as DiskShare
-                if (sambaPath.directoryPath.isNotBlank() && !share.folderExists(sambaPath.directoryPath)) {
-                    throw UiTextException(uiText(Res.string.samba_path_unavailable))
+                if (sambaPath != null) {
+                    val share = session.connectShare(sambaPath.shareName) as DiskShare
+                    if (sambaPath.directoryPath.isNotBlank() && !share.folderExists(sambaPath.directoryPath)) {
+                        throw UiTextException(uiText(Res.string.samba_path_unavailable))
+                    }
                 }
             }
         }.onSuccess {
@@ -1772,6 +1778,31 @@ private class AndroidImportSourceGateway(
         }.getOrThrow()
     }
 
+    override suspend fun listSambaDirectories(
+        draft: SambaSourceDraft,
+        relativePath: String,
+    ): List<RemoteDirectoryEntry> {
+        val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
+        return runCatching {
+            SMBClient().connect(draft.server, draft.port ?: DEFAULT_SAMBA_PORT).use { connection ->
+                val session = connection.authenticate(AuthenticationContext(draft.username, draft.password.toCharArray(), ""))
+                val location = resolveSambaRemoteFile(draft.path, relativePath)
+                val names = if (location == null) {
+                    listSambaDiskShares(session)
+                } else {
+                    (session.connectShare(location.shareName) as DiskShare).use { share ->
+                        listSambaChildDirectories(share, location.directoryPath)
+                    }
+                }
+                names.map { name -> RemoteDirectoryEntry(name = name, relativePath = joinSambaPath(relativePath, name)) }
+            }
+        }.onFailure { throwable ->
+            logger.warn(SAMBA_LOG_TAG) {
+                "list-folders-failed endpoint=$endpoint path=$relativePath reason=${throwable.message.orEmpty()}"
+            }
+        }.getOrThrow()
+    }
+
     override suspend fun scanSamba(draft: SambaSourceDraft, sourceId: String): ImportScanReport {
         return scanSamba(draft, sourceId, ImportScanProgressSink.NoOp)
     }
@@ -1781,8 +1812,8 @@ private class AndroidImportSourceGateway(
         sourceId: String,
         progressSink: ImportScanProgressSink,
     ): ImportScanReport {
-        val sambaPath = parseSambaPath(draft.path)
-            ?: throw UiTextException(uiText(Res.string.samba_path_missing_share))
+        val targets = planSambaScanTargets(draft.path, draft.selectedDirectories)
+        if (targets.isEmpty()) throw UiTextException(uiText(Res.string.samba_path_missing_share))
         val endpoint = formatSambaEndpoint(draft.server, draft.port, draft.path)
         val startedAt = System.currentTimeMillis()
         logger.info(SAMBA_LOG_TAG) {
@@ -1796,23 +1827,32 @@ private class AndroidImportSourceGateway(
                 }
                 val session = connection.authenticate(AuthenticationContext(draft.username, draft.password.toCharArray(), ""))
                 logger.debug(SAMBA_LOG_TAG) {
-                    "auth-ok source=$sourceId endpoint=$endpoint share=${sambaPath.shareName}"
+                    "auth-ok source=$sourceId endpoint=$endpoint folders=${targets.size}"
                 }
-                val share = session.connectShare(sambaPath.shareName) as DiskShare
                 val tracks = mutableListOf<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>()
                 val failures = mutableListOf<ImportScanFailure>()
-                val discoveredAudioFileCount = collectSambaTracks(
-                    share = share,
-                    baseDirectory = sambaPath.directoryPath,
-                    relativeDirectory = "",
-                    sourceId = sourceId,
-                    sink = tracks,
+                val shares = mutableMapOf<String, DiskShare>()
+                val folderScan = scanSelectedFolders(
+                    folders = targets,
                     failures = failures,
-                    progressSink = progressSink,
-                )
+                    folderPath = { it.relativePrefix },
+                ) { target ->
+                    val share = shares.getOrPut(target.shareName) { session.connectShare(target.shareName) as DiskShare }
+                    collectSambaTracks(
+                        share = share,
+                        baseDirectory = target.directoryPath,
+                        relativeDirectory = "",
+                        sourceId = sourceId,
+                        sink = tracks,
+                        failures = failures,
+                        progressSink = progressSink,
+                        relativePrefix = target.relativePrefix,
+                    )
+                }
                 ImportScanReport(
                     tracks = tracks,
-                    discoveredAudioFileCount = discoveredAudioFileCount,
+                    discoveredAudioFileCount = folderScan.discoveredAudioFileCount,
+                    unreadableFolders = folderScan.unreadableFolders,
                     failures = failures,
                 )
             }
@@ -1830,6 +1870,11 @@ private class AndroidImportSourceGateway(
     override suspend fun testWebDav(draft: WebDavSourceDraft) {
         testAndroidWebDavConnection(draft, logger)
     }
+
+    override suspend fun listWebDavDirectories(
+        draft: WebDavSourceDraft,
+        relativePath: String,
+    ): List<RemoteDirectoryEntry> = listAndroidWebDavDirectories(draft, relativePath, logger)
 
     override suspend fun scanWebDav(draft: WebDavSourceDraft, sourceId: String): ImportScanReport {
         return scanWebDav(draft, sourceId, ImportScanProgressSink.NoOp)
@@ -2242,24 +2287,28 @@ private class AndroidImportSourceGateway(
         sink: MutableList<top.iwesley.lyn.music.core.model.ImportedTrackCandidate>,
         failures: MutableList<ImportScanFailure>,
         progressSink: ImportScanProgressSink,
+        relativePrefix: String = "",
     ): Int {
         var discoveredAudioFileCount = 0
         val listPath = joinSegments(baseDirectory, relativeDirectory)
         share.list(listPath).forEach { info ->
             val name = info.fileName
             if (name == "." || name == "..") return@forEach
-            val childRelative = joinSegments(relativeDirectory, name)
-            val childPath = joinSegments(baseDirectory, childRelative)
+            val childDirectory = joinSegments(relativeDirectory, name)
+            // Track paths are relative to the source root, which sits [relativePrefix] above the scanned folder.
+            val childRelative = joinSegments(relativePrefix, childDirectory)
+            val childPath = joinSegments(baseDirectory, childDirectory)
             val isDirectory = share.folderExists(childPath)
             if (isDirectory) {
                 discoveredAudioFileCount += collectSambaTracks(
                     share = share,
                     baseDirectory = baseDirectory,
-                    relativeDirectory = childRelative,
+                    relativeDirectory = childDirectory,
                     sourceId = sourceId,
                     sink = sink,
                     failures = failures,
                     progressSink = progressSink,
+                    relativePrefix = relativePrefix,
                 )
             } else {
                 when (classifyAndroidScannedAudioFile(name)) {
@@ -3022,7 +3071,7 @@ internal class AndroidPlaybackGateway(
             locatorRelativePath = samba.second,
         )
         val password = spec.credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
-        val cacheFile = File(context.cacheDir, "${samba.first}-${samba.second.substringAfterLast('/')}").apply {
+        val cacheFile = File(context.cacheDir, buildSambaCacheFileName(samba.first, spec.cacheKeyPath)).apply {
             parentFile?.mkdirs()
         }
         val remotePath = spec.remotePath

@@ -19,6 +19,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -41,6 +43,7 @@ import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.SubsonicAuthMode
 import top.iwesley.lyn.music.core.model.SubsonicSourceDraft
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -53,14 +56,13 @@ class ImportStoreTest {
         try {
             val store = harness.store
             store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-            store.dispatch(ImportIntent.SambaPathChanged("Media/用户目录"))
             advanceUntilIdle()
             store.dispatch(ImportIntent.TestSambaSource)
             advanceUntilIdle()
             val message = kotlin.test.assertNotNull(store.state.value.testMessage)
             kotlin.test.assertEquals("Samba connection failed: Use Files to connect to SMB in this iOS build.", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.English))
             kotlin.test.assertEquals("Samba 連接測試失敗: 目前 iOS 版本建議透過 Files 連線至 SMB。", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese))
-            kotlin.test.assertEquals("Media/用户目录", repository.lastTestSambaDraft?.path)
+            kotlin.test.assertEquals("nas.local", repository.lastTestSambaDraft?.server)
             assertNull(store.state.value.message)
         } finally { harness.close() }
     }
@@ -73,13 +75,14 @@ class ImportStoreTest {
         val harness = createStore(repository)
         val store = harness.store
 
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
         store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-        store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media/Music"))
         advanceUntilIdle()
         store.dispatch(ImportIntent.AddSambaSource)
         advanceUntilIdle()
 
-        assertLocalizedEquals("Samba 导入失败: 音乐源名称已存在。", store.state.value.message)
+        assertLocalizedEquals("Samba 导入失败: 音乐源名称已存在。", store.state.value.testMessage)
         harness.close()
     }
 
@@ -272,7 +275,6 @@ class ImportStoreTest {
         val store = harness.store
 
         store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-        store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
         advanceUntilIdle()
         store.dispatch(ImportIntent.TestSambaSource)
         advanceUntilIdle()
@@ -282,7 +284,6 @@ class ImportStoreTest {
                 label = "",
                 server = "nas.local",
                 port = null,
-                path = "Media/Music",
                 username = "",
                 password = "",
             ),
@@ -535,14 +536,17 @@ class ImportStoreTest {
             expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.SAMBA),
             intent = ImportIntent.AddSambaSource,
         ) { store ->
+            store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
             store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-            store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+            store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media/Music"))
         }
         assertRemoteCreateScanOperation(
             expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.WEBDAV),
             intent = ImportIntent.AddWebDavSource,
         ) { store ->
+            store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.WEBDAV))
             store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav.example.com/music"))
+            store.dispatch(ImportIntent.ToggleRemoteFolderSelected(""))
         }
         assertRemoteCreateScanOperation(
             expectedOperation = ImportScanOperation.CreateRemote(ImportSourceType.NAVIDROME),
@@ -596,8 +600,9 @@ class ImportStoreTest {
         val harness = createStore(repository)
         val store = harness.store
 
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
         store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-        store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media/Music"))
         advanceUntilIdle()
         store.dispatch(ImportIntent.AddSambaSource)
         advanceUntilIdle()
@@ -880,7 +885,6 @@ class ImportStoreTest {
     fun `testing sources does not mark scan operation while running`() = runTest {
         assertTestIntentHasNoScanOperation(ImportIntent.TestSambaSource) { store ->
             store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
-            store.dispatch(ImportIntent.SambaPathChanged("Media/Music"))
         }
         assertTestIntentHasNoScanOperation(ImportIntent.TestWebDavSource) { store ->
             store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav.example.com/music"))
@@ -890,6 +894,353 @@ class ImportStoreTest {
             store.dispatch(ImportIntent.NavidromeUsernameChanged("demo"))
             store.dispatch(ImportIntent.NavidromePasswordChanged("secret"))
         }
+    }
+
+    @Test
+    fun `browsing samba shares and ticking folders sends them with the new source`() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            folderListings[""] = Result.success(listOf(RemoteDirectoryEntry("Media", "Media"), RemoteDirectoryEntry("Backup", "Backup")))
+            folderListings["Media"] = Result.success(listOf(RemoteDirectoryEntry("Music", "Media/Music")))
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.ToggleRemoteFolderExpanded("Media"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media/Music"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Backup"))
+        advanceUntilIdle()
+
+        val rows = store.state.value.remoteFolderTree!!.visibleRows(rootName = "nas.local")
+        assertEquals(listOf("Media", "Media/Music", "Backup"), rows.filterIsInstance<RemoteFolderRow.Folder>().map { it.path })
+        assertEquals(listOf("", "Media"), repository.listedFolders)
+
+        store.dispatch(ImportIntent.AddSambaSource)
+        advanceUntilIdle()
+
+        assertEquals("", repository.lastAddedSambaDraft?.path)
+        assertEquals(listOf("Backup", "Media/Music"), repository.lastAddedSambaDraft?.selectedDirectories)
+        assertNull(store.state.value.creatingSourceType)
+        assertNull(store.state.value.remoteFolderTree)
+        harness.close()
+    }
+
+    @Test
+    fun `adding a samba source without a ticked folder is refused in the dialog`() = runTest {
+        val repository = FakeImportSourceRepository()
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.AddSambaSource)
+        advanceUntilIdle()
+
+        assertNull(repository.lastAddedSambaDraft)
+        assertLocalizedEquals("请至少选择一个要扫描的文件夹。", store.state.value.testMessage)
+        harness.close()
+    }
+
+    @Test
+    fun `ticking a folder locks its sub-folders and changing the server clears the selection`() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            folderListings[""] = Result.success(listOf(RemoteDirectoryEntry("Media", "Media")))
+            folderListings["Media"] = Result.success(listOf(RemoteDirectoryEntry("Music", "Media/Music")))
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.ToggleRemoteFolderExpanded("Media"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media/Music"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Media"))
+        advanceUntilIdle()
+
+        val tree = store.state.value.remoteFolderTree!!
+        assertEquals(setOf("Media"), tree.selected)
+        val child = tree.visibleRows("nas.local").filterIsInstance<RemoteFolderRow.Folder>().single { it.path == "Media/Music" }
+        assertTrue(child.isChecked)
+        assertTrue(child.isLockedByAncestor)
+
+        store.dispatch(ImportIntent.SambaServerChanged("nas2.local"))
+        advanceUntilIdle()
+
+        val reset = store.state.value.remoteFolderTree!!
+        assertTrue(reset.selected.isEmpty())
+        assertFalse(reset.isBrowsed)
+        harness.close()
+    }
+
+    @Test
+    fun `editing a legacy samba source keeps its root and starts with the whole root ticked`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "smb-legacy",
+                    type = ImportSourceType.SAMBA,
+                    label = "NAS",
+                    rootReference = "Media/Music",
+                    server = "nas.local",
+                    path = "Media/Music",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+        advanceUntilIdle()
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("smb-legacy"))
+        advanceUntilIdle()
+
+        val tree = store.state.value.remoteFolderTree!!
+        assertTrue(tree.rootSelectable)
+        assertEquals(setOf(""), tree.selected)
+
+        store.dispatch(ImportIntent.SaveRemoteSource)
+        advanceUntilIdle()
+
+        assertEquals("Media/Music", repository.lastUpdatedSambaDraft?.path)
+        assertEquals(listOf(""), repository.lastUpdatedSambaDraft?.selectedDirectories)
+        harness.close()
+    }
+
+    @Test
+    fun `listing results for an outdated tree are dropped`() = runTest {
+        val pending = CompletableDeferred<Result<List<RemoteDirectoryEntry>>>()
+        val repository = object : FakeImportSourceRepository() {
+            override suspend fun listWebDavDirectories(
+                draft: WebDavSourceDraft,
+                relativePath: String,
+            ): Result<List<RemoteDirectoryEntry>> = pending.await()
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.WEBDAV))
+        store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav.example.com/"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.WebDavRootUrlChanged("https://dav2.example.com/"))
+        advanceUntilIdle()
+        pending.complete(Result.success(listOf(RemoteDirectoryEntry("Music", "Music"))))
+        advanceUntilIdle()
+
+        assertFalse(store.state.value.remoteFolderTree!!.isBrowsed)
+        harness.close()
+    }
+
+    @Test
+    fun `listing of a closed dialog does not land in the next dialog`() = runTest {
+        val pending = CompletableDeferred<Result<List<RemoteDirectoryEntry>>>()
+        var calls = 0
+        val repository = object : FakeImportSourceRepository() {
+            override suspend fun listWebDavDirectories(
+                draft: WebDavSourceDraft,
+                relativePath: String,
+            ): Result<List<RemoteDirectoryEntry>> {
+                calls += 1
+                return if (calls == 1) pending.await() else CompletableDeferred<Result<List<RemoteDirectoryEntry>>>().await()
+            }
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.WEBDAV))
+        store.dispatch(ImportIntent.WebDavRootUrlChanged("https://a.example.com/"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.DismissRemoteSourceCreator)
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.WEBDAV))
+        store.dispatch(ImportIntent.WebDavRootUrlChanged("https://b.example.com/"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        // Both trees now sit at the same generation; only the dialog id tells them apart.
+        pending.complete(Result.success(listOf(RemoteDirectoryEntry("FromA", "FromA"))))
+        advanceUntilIdle()
+
+        val tree = store.state.value.remoteFolderTree!!
+        assertTrue(tree.nodes[""]?.isLoading == true)
+        assertNull(tree.nodes[""]?.children)
+        harness.close()
+    }
+
+    @Test
+    fun `hidden shares can be typed in even when the share list loaded`() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            folderListings[""] = Result.success(listOf(RemoteDirectoryEntry("Media", "Media")))
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        assertTrue(store.state.value.remoteFolderTree!!.canAddManualShare)
+
+        store.dispatch(ImportIntent.AddManualSambaShare("Music$"))
+        store.dispatch(ImportIntent.AddManualSambaShare("Media"))
+        store.dispatch(ImportIntent.AddManualSambaShare("media"))
+        store.dispatch(ImportIntent.AddManualSambaShare("MUSIC$"))
+        advanceUntilIdle()
+
+        val paths = store.state.value.remoteFolderTree!!.visibleRows("nas.local")
+            .filterIsInstance<RemoteFolderRow.Folder>()
+            .map { it.path }
+        assertEquals(listOf("Media", "Music$"), paths)
+        harness.close()
+    }
+
+    @Test
+    fun `several shares can be typed in after listing fails and the error stays visible`() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            folderListings[""] = Result.failure(IllegalStateException("IPC$ denied"))
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.AddManualSambaShare("Media"))
+        advanceUntilIdle()
+
+        val tree = store.state.value.remoteFolderTree!!
+        assertTrue(tree.canAddManualShare)
+        store.dispatch(ImportIntent.AddManualSambaShare("Backup"))
+        advanceUntilIdle()
+
+        val rows = store.state.value.remoteFolderTree!!.visibleRows("nas.local")
+        assertTrue((rows.first() as RemoteFolderRow.Message).isError)
+        assertEquals(listOf("Media", "Backup"), rows.filterIsInstance<RemoteFolderRow.Folder>().map { it.path })
+        harness.close()
+    }
+
+    @Test
+    fun `typed shares survive reloading the share list but not a server change`() = runTest {
+        val repository = FakeImportSourceRepository().apply {
+            folderListings[""] = Result.success(listOf(RemoteDirectoryEntry("Media", "Media")))
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.SAMBA))
+        store.dispatch(ImportIntent.SambaServerChanged("nas.local"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.AddManualSambaShare("Music$"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected("Music$"))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+
+        val reloaded = store.state.value.remoteFolderTree!!
+        assertEquals(listOf("Media", "Music$"), reloaded.visibleRows("nas.local").filterIsInstance<RemoteFolderRow.Folder>().map { it.path })
+        assertTrue(reloaded.isChecked("Music$"))
+
+        store.dispatch(ImportIntent.SambaServerChanged("nas2.local"))
+        advanceUntilIdle()
+        assertTrue(store.state.value.remoteFolderTree!!.manualShares.isEmpty())
+        harness.close()
+    }
+
+    @Test
+    fun `saving an edited source with no ticked folder is refused in the dialog`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "smb-legacy",
+                    type = ImportSourceType.SAMBA,
+                    label = "NAS",
+                    rootReference = "Media/Music",
+                    server = "nas.local",
+                    path = "Media/Music",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+        advanceUntilIdle()
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("smb-legacy"))
+        store.dispatch(ImportIntent.ToggleRemoteFolderSelected(""))
+        advanceUntilIdle()
+        store.dispatch(ImportIntent.SaveRemoteSource)
+        advanceUntilIdle()
+
+        assertNull(repository.lastUpdatedSambaDraft)
+        assertLocalizedEquals("请至少选择一个要扫描的文件夹。", store.state.value.testMessage)
+        assertNull(store.state.value.message)
+        harness.close()
+    }
+
+    @Test
+    fun `browsing from the edit dialog reports missing server inside the dialog`() = runTest {
+        val repository = FakeImportSourceRepository(
+            sources = listOf(
+                source(
+                    sourceId = "smb-1",
+                    type = ImportSourceType.SAMBA,
+                    label = "NAS",
+                    rootReference = "",
+                    server = "nas.local",
+                ),
+            ),
+        )
+        val harness = createStore(repository)
+        val store = harness.store
+        advanceUntilIdle()
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("smb-1"))
+        store.dispatch(ImportIntent.RemoteSourceServerChanged(""))
+        store.dispatch(ImportIntent.LoadRemoteFolder())
+        advanceUntilIdle()
+
+        assertTrue(repository.listedFolders.isEmpty())
+        assertTrue(store.state.value.testMessage != null)
+        assertNull(store.state.value.message)
+        harness.close()
+    }
+
+    @Test
+    fun `deleting the edited source drops its folder tree but not the add dialog tree`() = runTest {
+        val sources = MutableStateFlow(
+            listOf(
+                source(sourceId = "dav-1", type = ImportSourceType.WEBDAV, label = "Cloud", rootReference = "https://dav.example.com/"),
+            ),
+        )
+        val repository = object : FakeImportSourceRepository() {
+            override fun observeSources(): Flow<List<SourceWithStatus>> = sources
+        }
+        val harness = createStore(repository)
+        val store = harness.store
+        advanceUntilIdle()
+
+        store.dispatch(ImportIntent.OpenRemoteSourceEditor("dav-1"))
+        advanceUntilIdle()
+        assertNotNull(store.state.value.remoteFolderTree)
+        sources.value = emptyList()
+        advanceUntilIdle()
+        assertNull(store.state.value.editingSource)
+        assertNull(store.state.value.remoteFolderTree)
+
+        sources.value = listOf(
+            source(sourceId = "dav-2", type = ImportSourceType.WEBDAV, label = "Other", rootReference = "https://dav2.example.com/"),
+        )
+        store.dispatch(ImportIntent.OpenRemoteSourceCreator(ImportSourceType.WEBDAV))
+        advanceUntilIdle()
+        sources.value = emptyList()
+        advanceUntilIdle()
+        assertNotNull(store.state.value.remoteFolderTree)
+        harness.close()
     }
 
     private fun TestScope.createStore(repository: FakeImportSourceRepository): TestStoreHarness {
@@ -1007,7 +1358,7 @@ private fun source(
     )
 }
 
-private class FakeImportSourceRepository(
+private open class FakeImportSourceRepository(
     localFolderResult: Result<ImportScanSummary?> = Result.success(testScanSummary("local-1")),
     sambaResult: Result<ImportScanSummary> = Result.success(testScanSummary("smb-1")),
     private val webDavResult: Result<ImportScanSummary> = Result.success(testScanSummary("dav-1")),
@@ -1022,6 +1373,10 @@ private class FakeImportSourceRepository(
     var pendingResult: CompletableDeferred<Result<Unit>>? = null
 
     var lastTestSambaDraft: SambaSourceDraft? = null
+    var lastAddedSambaDraft: SambaSourceDraft? = null
+    var lastUpdatedSambaDraft: SambaSourceDraft? = null
+    val folderListings = mutableMapOf<String, Result<List<RemoteDirectoryEntry>>>()
+    val listedFolders = mutableListOf<String>()
     var lastUpdatedWebDavSourceId: String? = null
     var lastUpdatedWebDavDraft: WebDavSourceDraft? = null
     var lastUpdatedWebDavKeepExisting: Boolean = false
@@ -1085,6 +1440,36 @@ private class FakeImportSourceRepository(
         return pendingResult?.await() ?: Result.success(Unit)
     }
 
+    override suspend fun listSambaDirectories(
+        draft: SambaSourceDraft,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        listedFolders += relativePath
+        return folderListings[relativePath] ?: Result.success(emptyList())
+    }
+
+    override suspend fun listUpdatedSambaDirectories(
+        sourceId: String,
+        draft: SambaSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> = listSambaDirectories(draft, relativePath)
+
+    override suspend fun listWebDavDirectories(
+        draft: WebDavSourceDraft,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> {
+        listedFolders += relativePath
+        return folderListings[relativePath] ?: Result.success(emptyList())
+    }
+
+    override suspend fun listUpdatedWebDavDirectories(
+        sourceId: String,
+        draft: WebDavSourceDraft,
+        keepExistingCredentialWhenBlankPassword: Boolean,
+        relativePath: String,
+    ): Result<List<RemoteDirectoryEntry>> = listWebDavDirectories(draft, relativePath)
+
     override suspend fun testUpdatedSambaSource(
         sourceId: String,
         draft: SambaSourceDraft,
@@ -1092,6 +1477,7 @@ private class FakeImportSourceRepository(
     ): Result<Unit> = pendingResult?.await() ?: Result.success(Unit)
 
     override suspend fun addSambaSource(draft: SambaSourceDraft): Result<ImportScanSummary> {
+        lastAddedSambaDraft = draft
         return pendingResult?.await()?.map { testScanSummary("smb-1") } ?: sambaResult
     }
 
@@ -1100,6 +1486,7 @@ private class FakeImportSourceRepository(
         draft: SambaSourceDraft,
         keepExistingCredentialWhenBlankPassword: Boolean,
     ): Result<ImportScanSummary> {
+        lastUpdatedSambaDraft = draft
         return pendingResult?.await()?.map { testScanSummary(sourceId) } ?: Result.success(testScanSummary(sourceId))
     }
 

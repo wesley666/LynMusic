@@ -40,6 +40,10 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
 import top.iwesley.lyn.music.core.model.buildWebDavLocator
 import top.iwesley.lyn.music.core.model.buildWebDavTrackUrl
+import top.iwesley.lyn.music.core.model.buildWebDavDirectoryUrl
+import top.iwesley.lyn.music.core.model.effectiveSelectedDirectories
+import top.iwesley.lyn.music.core.model.scanSelectedFolders
+import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.core.model.debug
 import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.UiText
@@ -91,23 +95,30 @@ internal suspend fun scanJvmWebDav(
             allowInsecureTls = draft.allowInsecureTls,
         )
         try {
-            val discoveredAudioFileCount = collectJvmWebDavTracks(
-                sardine = sardine,
-                rootUrl = rootUrl,
-                relativeDirectory = "",
-                sourceId = sourceId,
-                username = draft.username,
-                password = draft.password,
-                allowInsecureTls = draft.allowInsecureTls,
-                authEnabled = authEnabled,
-                logger = logger,
-                sink = tracks,
+            val folderScan = scanSelectedFolders(
+                folders = effectiveSelectedDirectories(draft.selectedDirectories),
                 failures = failures,
-                progressSink = progressSink,
-            )
+                folderPath = { it },
+            ) { directory ->
+                collectJvmWebDavTracks(
+                    sardine = sardine,
+                    rootUrl = rootUrl,
+                    relativeDirectory = directory,
+                    sourceId = sourceId,
+                    username = draft.username,
+                    password = draft.password,
+                    allowInsecureTls = draft.allowInsecureTls,
+                    authEnabled = authEnabled,
+                    logger = logger,
+                    sink = tracks,
+                    failures = failures,
+                    progressSink = progressSink,
+                )
+            }
             ImportScanReport(
                 tracks = tracks,
-                discoveredAudioFileCount = discoveredAudioFileCount,
+                discoveredAudioFileCount = folderScan.discoveredAudioFileCount,
+                unreadableFolders = folderScan.unreadableFolders,
                 failures = failures,
             )
         } finally {
@@ -148,6 +159,44 @@ internal fun testJvmWebDavConnection(
         }
     } catch (throwable: Throwable) {
         throw throwable.asJvmWebDavIOException(WebDavOperation.TestConnection, authEnabled)
+    } finally {
+        sardine.shutdownQuietly()
+    }
+}
+
+internal fun listJvmWebDavDirectories(
+    draft: WebDavSourceDraft,
+    relativePath: String,
+    logger: DiagnosticLogger,
+): List<RemoteDirectoryEntry> {
+    val rootUrl = normalizeWebDavRootUrl(draft.rootUrl)
+    val authEnabled = draft.username.isNotBlank()
+    val directory = relativePath.trim('/')
+    val sardine = buildJvmSardine(
+        rootUrl = rootUrl,
+        username = draft.username,
+        password = draft.password,
+        allowInsecureTls = draft.allowInsecureTls,
+    )
+    try {
+        logger.debug(WEBDAV_LOG_TAG) { "list-folders rootUrl=$rootUrl path=$directory client=sardine" }
+        return sardine.list(buildWebDavDirectoryUrl(rootUrl, directory), 1)
+            .mapNotNull { resource ->
+                resolveWebDavListedResource(
+                    rootUrl = rootUrl,
+                    currentDirectory = directory,
+                    resource = WebDavListedResource(
+                        href = resource.href.toString(),
+                        isDirectory = resource.isDirectory,
+                        name = resource.name,
+                        contentLength = resource.contentLength ?: 0L,
+                        modifiedAt = resource.modified?.time ?: 0L,
+                    ),
+                )
+            }
+            .toRemoteDirectoryEntries()
+    } catch (throwable: Throwable) {
+        throw throwable.asJvmWebDavIOException(WebDavOperation.ListFolders, authEnabled)
     } finally {
         sardine.shutdownQuietly()
     }

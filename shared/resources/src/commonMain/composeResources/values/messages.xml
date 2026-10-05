@@ -31,7 +31,6 @@
     <string name="source_emby_connection_succeeded">Emby connection successful.</string>
     <string name="source_emby_import_failed">Emby import failed: %1$s</string>
     <string name="source_emby_imported">Emby music source imported.</string>
-    <string name="source_samba_share_path_required">Enter a path containing at least a share name, such as Media or Media/Music.</string>
     <string name="lyrics_source_name_and_url_required">Enter at least a lyrics source name and URL.</string>
     <string name="source_server_address_missing">Enter at least one server address.</string>
     <string name="source_emby_password_required">Enter the Emby password.</string>

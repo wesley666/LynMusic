@@ -2,6 +2,7 @@
 <resources>
     <string name="webdav_operation_test_connection">connection test</string>
     <string name="webdav_operation_scan">scan</string>
+    <string name="webdav_operation_list_folders">list folders</string>
     <string name="webdav_operation_read_lyrics">lyrics file read</string>
     <string name="webdav_operation_probe_metadata">metadata probe</string>
     <string name="webdav_operation_playback">playback</string>
