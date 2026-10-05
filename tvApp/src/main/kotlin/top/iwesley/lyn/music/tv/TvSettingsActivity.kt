@@ -107,6 +107,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -131,7 +132,6 @@ import androidx.tv.material3.OutlinedButton as TvOutlinedButton
 import androidx.tv.material3.OutlinedButtonDefaults as TvOutlinedButtonDefaults
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -3273,7 +3273,8 @@ private fun sourceStatusText(
 @Composable
 private fun formatTimestamp(value: Long?): String {
     if (value == null || value <= 0L) return uiString(Res.string.tv_source_not_scanned_status)
-    return SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+    val locale = LocalLocale.current.platformLocale
+    return SimpleDateFormat("yyyy-MM-dd HH:mm", locale).format(Date(value))
 }
 
 private val storageCategoryOrder = listOf(
