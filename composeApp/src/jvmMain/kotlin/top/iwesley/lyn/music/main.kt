@@ -21,8 +21,11 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import java.awt.Desktop
 import java.awt.Dimension
+import java.awt.desktop.AppReopenedListener
 import javax.swing.JOptionPane
+import javax.swing.SwingUtilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -168,6 +171,31 @@ suspend fun main() {
                         applyDesktopWindowChrome(composeWindow, desktopWindowChrome)
                     },
                 ) {
+                    if (isJvmMacOs(osName) && Desktop.isDesktopSupported()) {
+                        DisposableEffect(window, windowState) {
+                            val desktop = Desktop.getDesktop()
+                            val reopenListener = if (desktop.isSupported(Desktop.Action.APP_EVENT_REOPENED)) {
+                                AppReopenedListener {
+                                    SwingUtilities.invokeLater {
+                                        if (window.isDisplayable) {
+                                            windowState.isMinimized = false
+                                            window.isMinimized = false
+                                            window.isVisible = true
+                                            window.toFront()
+                                            window.requestFocus()
+                                        }
+                                    }
+                                }.also { desktop.addAppEventListener(it) }
+                            } else {
+                                null
+                            }
+                            onDispose {
+                                if (reopenListener != null) {
+                                    desktop.removeAppEventListener(reopenListener)
+                                }
+                            }
+                        }
+                    }
                     when (val current = startupState) {
                         JvmDesktopStartupState.Starting ->
                             JvmDesktopStartingScreen()
