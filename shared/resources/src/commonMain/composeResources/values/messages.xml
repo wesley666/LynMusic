@@ -221,4 +221,5 @@
     <string name="tags_platform_write_unsupported">Writing local tags is not supported on this platform yet.</string>
     <string name="update_already_latest">You are using the latest version.</string>
     <string name="favorites_source_error_detail">%1$s: %2$s</string>
+    <string name="lyrics_apply_completed">Selection applied.</string>
 </resources>

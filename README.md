@@ -1,10 +1,8 @@
-LynMusic is a cross-platform local music player for Windows, Linux, macOS, Android and iOS , built with Kotlin Multiplatform.
+LynMusic is a cross-platform local music player for Android, Android TV, Android Automotive, and JVM desktops (Windows, Linux, and macOS), built with Kotlin Multiplatform.
 
-LynMusic是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，目标平台包括 Android、iOS 和桌面端（JVM），支持 Windows 、 macOS 和 Linux。
+LynMusic 是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，维护的平台包括 Android 手机／平板、Android TV、Android Automotive 和桌面端（JVM），桌面端支持 Windows、macOS 和 Linux。
 
-LynMusic 现已上架苹果商店，包括 iPhone、iPad、Mac：[‎LynMusic App - App Store](https://apps.apple.com/us/app/lynmusic/id6797922509)
-
-参考：[LynMusic 终于来到 Apple 平台了](https://mp.weixin.qq.com/s/qMaVVd0ZJFal5G48F8m-7g)
+iOS 和 macOS 原生版本已停止维护，对应工程及构建目标已移除；macOS 的 JVM 桌面版继续维护。历史原生端代码可从 Git 历史中查阅。
 
 ![LynMusic](./doc/LynMusic.png)
 ## 为什么做这个播放器
@@ -53,11 +51,34 @@ LynMusic 现已上架苹果商店，包括 iPhone、iPad、Mac：[‎LynMusic Ap
 
 ## 介绍
 
-LynMusic 是一款面向个人音乐收藏场景打造的跨平台本地音乐播放器，基于 Kotlin Multiplatform 开发，可运行在 Android、iOS、Windows、macOS 和 Linux。
+LynMusic 是一款面向个人音乐收藏场景打造的跨平台本地音乐播放器，基于 Kotlin Multiplatform 开发，可运行在 Android 手机／平板、Android TV、Android Automotive，以及 Windows、macOS 和 Linux 的 JVM 桌面环境。
 
 在功能上，LynMusic 支持本地文件夹导入，也可接入 Samba、WebDAV、Navidrome 等私有音乐来源，帮助用户把分散在硬盘、NAS 和自建音乐服务中的内容汇总到同一套曲库中。应用提供歌曲、专辑、艺人等多维度浏览方式，并支持喜欢、歌单、播放队列等常用管理能力，方便日常收听与整理。当然，为了多端统一数据，推荐使用Navidrome。
 
 除了基础播放控制外，LynMusic 还提供歌词搜索、歌词分享、在线结果回填等增强功能。对于注重资料维护的用户，应用还支持音乐标签编辑，可修改标题、歌手、专辑、歌词和封面等信息，让曲库更加整洁统一。另外，还支持自定义界面主题等。
+
+## 模块职责
+
+- `shared:*`、`player:core`：共享数据、曲库、播放、下载、收藏和歌词业务。
+- `app:runtime`：组装 `LynMusicAppComponent`，管理后台歌词同步、启动恢复门控和资源释放；不依赖页面模块。
+- `ui:common`：主题、颜色选择器、徽标、封面／唱片绘制、字体加载、逐字歌词绘制、玻璃背景、启动错误展示和本地化辅助；不依赖应用组件或业务 Store。共用图片和文本资源位于 `shared:resources`。
+- `ui:mobile`：Android 手机／平板的独立入口、主导航、迷你／完整播放器和队列，以及曲库、来源、收藏、歌单、“我的”、设置、导入、标签编辑、歌词搜索和分享页面；平板宽屏布局由本模块维护。JVM 目标仅用于页面和绘制回归测试。
+- `ui:desktop`：Windows、Linux、macOS JVM 共用的独立入口、侧栏导航、窗口边距、迷你／完整播放器和队列，以及曲库、来源、收藏、歌单、“我的”、设置、导入、标签编辑、歌词搜索和分享页面；仅包含 JVM 目标。
+- `tvApp`：独立的 TV 页面、导航和焦点管理，直接使用运行时和基础组件，不依赖 `player:app`。
+- `ui:automotive`：车机独立入口、横竖屏导航、曲库／来源、收藏／歌单、设置、播放器、队列和歌词页面；只依赖共享业务、运行时与基础组件。JVM 目标用于运行页面和绘制回归测试。
+- `composeApp`、`automotiveApp`：对应平台的启动、系统集成和打包入口。
+
+运行时和基础组件迁移后保留原 Kotlin 包名与调用接口，平台入口继续持有应用组件，页面使用已有实例。曲库目录树与歌单添加目标计算位于 `shared:core`，在线来源选项和收藏绑定规则位于 `shared:features`；手机、桌面与车机复用同一份业务计算。
+
+车机页面位于 `top.iwesley.lyn.music.automotive.ui`，由 `automotiveApp` 加载 `AutomotiveApp`。横竖屏布局根据可用尺寸决定，修改车机页面无需改动手机或桌面页面。
+
+`composeApp` 的 Android source set 加载 `top.iwesley.lyn.music.mobile.ui.MobileApp`，JVM source set 加载 `top.iwesley.lyn.music.desktop.ui.DesktopApp`。两端页面模块互不依赖，通过 `ui:common` 复用基础组件。播放器展开、队列、歌词设置窗口等展示状态由各端 `PlayerPresentation` 管理，`PlayerState`／`PlayerIntent` 不再包含这些显示字段和操作。各端拥有自己的设置导航、标签编辑布局、来源表单和歌词弹窗；搜索、分享、导入等异步业务仍由共享 Store 执行。
+
+各端通过 `BeginManualLyricsSearch`／`EndManualLyricsSearch`、`BeginLyricsShare`／`EndLyricsShare`、`BeginCastDiscovery`／`EndCastDiscovery` 管理共享异步会话。会话标识负责隔离旧结果；结束会话会取消对应工作，切歌会清理歌词搜索和分享。关闭投屏设备列表只停止发现，不停止已建立的投屏。UI 销毁时只结束自己持有的会话。
+
+`PlayerStore.restorePlayback()` 返回恢复结果与快照，保留仓库的幂等恢复和过期恢复令牌校验。`StartupAutoOpenGate.restore()` 在同一宿主生命周期内只交付一次自动展开请求；各端消费结果决定是否展开，不会因页面重入重复自动打开。
+
+旧 `player:app` 已删除。`./gradlew verifyUiModuleBoundaries` 检查直接及间接依赖，禁止页面模块互相依赖，禁止运行时／基础层反向依赖 UI；该检查自动挂到 Kotlin 编译、Android `preBuild` 和 `check`。
 
 ## 编译
 
@@ -96,10 +117,6 @@ LynMusic 是一款面向个人音乐收藏场景打造的跨平台本地音乐�
 *或者简写为*：`./gradlew :composeApp:package`
 
 *产物路径*：`composeApp/build/compose/binaries/main/`
-
-### 运行IOS应用
-
-要构建并运行 iOS 应用的开发版，可以使用 IDE 工具栏运行控件中的运行配置；或者直接在 Xcode 中打开 [/iosApp](./iosApp)  目录并从那里启动。
 
 ## 许可证
 

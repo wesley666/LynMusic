@@ -51,6 +51,199 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStoreLyricsShareTest {
     @Test
+    fun `share only accepts selections after its imported font and default selection are ready`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val fontReady = CompletableDeferred<Result<String?>>()
+            val service = FakeLyricsSharePlatformService()
+            val store = delayedFontShareStore(scope, service, resolvePath = { fontReady.await() })
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.BeginLyricsShare)
+            runCurrent()
+            assertTrue(store.state.value.lyricsShareSession != null)
+            assertTrue(store.state.value.isLyricsShareInitializing)
+
+            // A stale callback cannot edit or export the session while initialization owns its defaults.
+            val template = store.state.value.selectedLyricsShareTemplate
+            store.dispatch(PlayerIntent.ToggleLyricsLineSelection(2))
+            store.dispatch(PlayerIntent.ClearLyricsSelection)
+            store.dispatch(PlayerIntent.LyricsShareTemplateChanged(LyricsShareTemplate.ARTWORK_TINT))
+            store.dispatch(PlayerIntent.CopyLyricsShareText)
+            store.dispatch(PlayerIntent.CopyLyricsShareImage)
+            store.dispatch(PlayerIntent.SaveLyricsShareImage)
+            store.dispatch(PlayerIntent.RequestLyricsShareFonts)
+            runCurrent()
+            assertTrue(store.state.value.selectedLyricsLineIndices.isEmpty())
+            assertEquals(template, store.state.value.selectedLyricsShareTemplate)
+            assertEquals(0, service.buildPreviewCalls)
+            assertEquals(0, service.copyTextCalls)
+            assertEquals(0, service.copyImageCalls)
+            assertEquals(0, service.saveImageCalls)
+            assertEquals(0, service.listAvailableFontFamiliesCalls)
+
+            fontReady.complete(Result.success("/tmp/abcdef123456__Font.ttf"))
+            advanceUntilIdle()
+            assertFalse(store.state.value.isLyricsShareInitializing)
+            assertEquals(setOf(0), store.state.value.selectedLyricsLineIndices)
+            assertTrue(store.state.value.hasFreshSharePreview)
+
+            store.dispatch(PlayerIntent.ClearLyricsSelection)
+            store.dispatch(PlayerIntent.ToggleLyricsLineSelection(2))
+            advanceUntilIdle()
+            assertEquals(setOf(2), store.state.value.selectedLyricsLineIndices)
+            assertEquals(listOf("第三句"), service.lastPreviewModel?.lyricsLines)
+            assertTrue(store.state.value.hasFreshSharePreview)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `closing share during font initialization rejects late state and preference writes`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val fontReady = CompletableDeferred<Result<String?>>()
+            val preferences = FakeLyricsShareFontPreferencesStore("imported:abcdef123456")
+            val service = FakeLyricsSharePlatformService()
+            val store = delayedFontShareStore(scope, service, preferences) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { fontReady.await() }
+            }
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.BeginLyricsShare)
+            runCurrent()
+            store.dispatch(PlayerIntent.EndLyricsShare)
+            assertNull(store.state.value.lyricsShareSession)
+            assertFalse(store.state.value.isLyricsShareInitializing)
+
+            preferences.setSelectedLyricsShareFontKey("serif")
+            fontReady.complete(Result.success(null))
+            advanceUntilIdle()
+            assertNull(store.state.value.lyricsShareSession)
+            assertFalse(store.state.value.isLyricsShareInitializing)
+            assertTrue(store.state.value.selectedLyricsLineIndices.isEmpty())
+            assertEquals("serif", preferences.selectedLyricsShareFontKey.value)
+            assertEquals(0, service.buildPreviewCalls)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `reopened share keeps its selection when the previous initialization finishes late`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val oldFontReady = CompletableDeferred<Result<String?>>()
+            val preferences = FakeLyricsShareFontPreferencesStore("imported:abcdef123456")
+            val service = FakeLyricsSharePlatformService()
+            var requests = 0
+            val store = delayedFontShareStore(scope, service, preferences) {
+                if (++requests == 1) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { oldFontReady.await() }
+                } else {
+                    Result.success("/tmp/abcdef123456__Font.ttf")
+                }
+            }
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.BeginLyricsShare)
+            runCurrent()
+            val previous = store.state.value.lyricsShareSession
+            store.dispatch(PlayerIntent.EndLyricsShare)
+            store.dispatch(PlayerIntent.BeginLyricsShare)
+            runCurrent()
+            val current = store.state.value.lyricsShareSession
+            assertTrue(current != null && current != previous)
+            assertFalse(store.state.value.isLyricsShareInitializing)
+            store.dispatch(PlayerIntent.ClearLyricsSelection)
+            store.dispatch(PlayerIntent.ToggleLyricsLineSelection(2))
+            runCurrent()
+
+            oldFontReady.complete(Result.success(null))
+            advanceUntilIdle()
+            assertEquals(current, store.state.value.lyricsShareSession)
+            assertEquals(setOf(2), store.state.value.selectedLyricsLineIndices)
+            assertEquals("imported:abcdef123456", preferences.selectedLyricsShareFontKey.value)
+            assertEquals(listOf("第三句"), service.lastPreviewModel?.lyricsLines)
+            assertTrue(store.state.value.hasFreshSharePreview)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `opening search while share initializes cancels the pending share`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val fontReady = CompletableDeferred<Result<String?>>()
+            val store = delayedFontShareStore(scope) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { fontReady.await() }
+            }
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.BeginLyricsShare)
+            runCurrent()
+            store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+            val searchSession = store.state.value.manualLyricsSearchSession
+            assertTrue(searchSession != null)
+            assertNull(store.state.value.lyricsShareSession)
+            assertFalse(store.state.value.isLyricsShareInitializing)
+
+            fontReady.complete(Result.success("/tmp/abcdef123456__Font.ttf"))
+            advanceUntilIdle()
+            assertEquals(searchSession, store.state.value.manualLyricsSearchSession)
+            assertNull(store.state.value.lyricsShareSession)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    private fun delayedFontShareStore(
+        scope: CoroutineScope,
+        service: FakeLyricsSharePlatformService = FakeLyricsSharePlatformService(),
+        preferences: FakeLyricsShareFontPreferencesStore = FakeLyricsShareFontPreferencesStore("imported:abcdef123456"),
+        resolvePath: suspend (String) -> Result<String?>,
+    ): PlayerStore {
+        val track = sampleTrack("song", "Song")
+        return PlayerStore(
+            playbackRepository = FakeLyricsSharePlaybackRepository(
+                PlaybackSnapshot(queue = listOf(track), currentIndex = 0, positionMs = 1_500L),
+            ),
+            lyricsRepository = FakeLyricsShareRepository(syncedLyrics()),
+            storeScope = scope,
+            lyricsSharePlatformService = service,
+            lyricsShareFontLibraryPlatformService = FakeLyricsShareFontLibraryPlatformService(resolvePath = resolvePath),
+            lyricsShareFontPreferencesStore = preferences,
+        )
+    }
+
+    @Test
+    fun `closing and reopening share rejects a previous sessions late preview`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val delayed = CompletableDeferred<Result<ByteArray>>()
+        val service = FakeLyricsSharePlatformService(previewResults = ArrayDeque(listOf(
+            PreviewResponse.NonCooperative(delayed),
+            PreviewResponse.Immediate(Result.success(byteArrayOf(7, 8, 9))),
+        )))
+        val track = sampleTrack("song", "Song")
+        val store = PlayerStore(FakeLyricsSharePlaybackRepository(PlaybackSnapshot(queue = listOf(track), currentIndex = 0, positionMs = 1_500L)),
+            FakeLyricsShareRepository(syncedLyrics()), scope, lyricsSharePlatformService = service)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.BeginLyricsShare)
+        val previous = store.state.value.lyricsShareSession
+        runCurrent()
+        assertTrue(store.state.value.isShareRendering)
+        store.dispatch(PlayerIntent.EndLyricsShare)
+        assertNull(store.state.value.lyricsShareSession)
+        assertFalse(store.state.value.isShareRendering)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
+        runCurrent()
+        assertTrue(previous != store.state.value.lyricsShareSession)
+        delayed.complete(Result.success(byteArrayOf(1, 2, 3)))
+        advanceUntilIdle()
+        assertLocalizedEquals(listOf<Byte>(7, 8, 9), store.state.value.sharePreviewBytes?.toList())
+        assertTrue(store.state.value.hasFreshSharePreview)
+        scope.cancel()
+    }
+
+    @Test
     fun builtinFontLanguageChangesBeforeLazyLoadKeepSelectionAndPreviewRequests() = runTest {
         val previousLanguage = AppLanguageRuntime.appLanguage.value
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
@@ -65,7 +258,7 @@ class PlayerStoreLyricsShareTest {
                 storeScope = scope, lyricsSharePlatformService = service, lyricsShareFontPreferencesStore = preferences,
             )
             advanceUntilIdle()
-            store.dispatch(PlayerIntent.OpenLyricsShare)
+            store.dispatch(PlayerIntent.BeginLyricsShare)
             advanceUntilIdle()
             val state = store.state.value
             assertTrue(state.availableLyricsShareFonts.isEmpty())
@@ -112,7 +305,7 @@ class PlayerStoreLyricsShareTest {
                 storeScope = scope, lyricsSharePlatformService = service, lyricsShareFontPreferencesStore = preferences,
             )
             advanceUntilIdle()
-            store.dispatch(PlayerIntent.OpenLyricsShare)
+            store.dispatch(PlayerIntent.BeginLyricsShare)
             advanceUntilIdle()
             store.dispatch(PlayerIntent.RequestLyricsShareFonts)
             advanceUntilIdle()
@@ -168,11 +361,11 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
-        assertTrue(state.isLyricsShareVisible)
+        assertTrue((state.lyricsShareSession != null))
         assertFalse(state.supportsLyricsShareFontSelection)
         assertLocalizedEquals(setOf(0), state.selectedLyricsLineIndices)
         assertLocalizedEquals(listOf("第一句"), state.shareCardModel?.lyricsLines)
@@ -204,7 +397,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
@@ -233,7 +426,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.ToggleLyricsLineSelection(0))
         advanceUntilIdle()
@@ -265,7 +458,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.ToggleLyricsLineSelection(1))
         advanceUntilIdle()
@@ -306,7 +499,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val previousPreview = store.state.value.sharePreviewBytes
@@ -353,7 +546,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.LyricsShareTemplateChanged(LyricsShareTemplate.ARTWORK_TINT))
         advanceUntilIdle()
@@ -405,7 +598,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
@@ -455,7 +648,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
@@ -494,7 +687,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
@@ -536,7 +729,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         val state = store.state.value
@@ -587,7 +780,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -626,7 +819,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         runCurrent()
@@ -678,7 +871,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -724,7 +917,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        serifStore.dispatch(PlayerIntent.OpenLyricsShare)
+        serifStore.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         serifStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -755,7 +948,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        firstAvailableStore.dispatch(PlayerIntent.OpenLyricsShare)
+        firstAvailableStore.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         firstAvailableStore.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -791,7 +984,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -842,7 +1035,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         runCurrent()
@@ -894,7 +1087,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -931,7 +1124,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -977,7 +1170,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.RequestLyricsShareFonts)
         advanceUntilIdle()
@@ -1021,7 +1214,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.LyricsShareTemplateChanged(LyricsShareTemplate.ARTWORK_TINT))
         advanceUntilIdle()
@@ -1036,7 +1229,7 @@ class PlayerStoreLyricsShareTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertFalse(state.isLyricsShareVisible)
+        assertFalse((state.lyricsShareSession != null))
         assertTrue(state.selectedLyricsLineIndices.isEmpty())
         assertLocalizedEquals(LyricsShareTemplate.ARTWORK_TINT, state.selectedLyricsShareTemplate)
         assertNull(state.shareCardModel)
@@ -1063,7 +1256,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.SaveLyricsShareImage)
         advanceUntilIdle()
@@ -1104,7 +1297,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.ToggleLyricsLineSelection(0))
         store.dispatch(PlayerIntent.ToggleLyricsLineSelection(3))
@@ -1140,7 +1333,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.CopyLyricsShareText)
         advanceUntilIdle()
@@ -1171,7 +1364,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
 
         assertTrue(store.state.value.sharePreviewError?.let { top.iwesley.lyn.music.core.model.resolveUiText(it, top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese) }?.contains("boom") == true)
@@ -1198,7 +1391,7 @@ class PlayerStoreLyricsShareTest {
         )
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenLyricsShare)
+        store.dispatch(PlayerIntent.BeginLyricsShare)
         advanceUntilIdle()
         store.dispatch(PlayerIntent.CopyLyricsShareImage)
         advanceUntilIdle()
@@ -1467,6 +1660,7 @@ private class FakeLyricsShareFontPreferencesStore(
 private class FakeLyricsShareFontLibraryPlatformService(
     private val resolvedPaths: Map<String, String?> = emptyMap(),
     private val listResult: Result<List<LyricsShareFontOption>> = Result.success(emptyList()),
+    private val resolvePath: (suspend (String) -> Result<String?>)? = null,
 ) : LyricsShareFontLibraryPlatformService {
     var listImportedFontsCalls: Int = 0
         private set
@@ -1488,11 +1682,15 @@ private class FakeLyricsShareFontLibraryPlatformService(
 
     override suspend fun resolveImportedFontPath(fontKey: String): Result<String?> {
         resolveImportedFontPathCalls += 1
-        return Result.success(resolvedPaths[fontKey])
+        return resolvePath?.invoke(fontKey) ?: Result.success(resolvedPaths[fontKey])
     }
 }
 
 private sealed interface PreviewResponse {
+    data class NonCooperative(val deferred: CompletableDeferred<Result<ByteArray>>) : PreviewResponse {
+        override suspend fun await(): Result<ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { deferred.await() }
+    }
+
     suspend fun await(): Result<ByteArray>
 
     data class Immediate(

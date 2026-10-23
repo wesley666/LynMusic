@@ -36,25 +36,6 @@ kotlin {
         }
     }
 
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "ComposeApp"
-            isStatic = true
-        }
-    }
-
-    listOf(
-        macosArm64(),
-    ).forEach { macTarget ->
-        macTarget.binaries.framework {
-            baseName = "ComposeApp"
-            isStatic = false
-        }
-    }
-    
     jvm {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
@@ -62,34 +43,9 @@ kotlin {
     }
 
     sourceSets {
-        val applePlaybackMain by creating {
-            dependsOn(commonMain.get())
-        }
-        val skiaLyricsShareMain by creating {
-            dependsOn(commonMain.get())
-        }
-        val iosMain by creating {
-            dependsOn(applePlaybackMain)
-            dependsOn(skiaLyricsShareMain)
-            dependencies {
-                implementation(libs.ktor.client.darwin)
-            }
-        }
-        val macosMain by creating {
-            dependsOn(applePlaybackMain)
-        }
-        val iosArm64Main by getting {
-            dependsOn(iosMain)
-        }
-        val iosSimulatorArm64Main by getting {
-            dependsOn(iosMain)
-        }
-        val macosArm64Main by getting {
-            dependsOn(macosMain)
-        }
         val jvmMain by getting {
-            dependsOn(skiaLyricsShareMain)
             dependencies {
+                implementation(project(":ui:desktop"))
                 implementation(compose.desktop.currentOs)
                 implementation(libs.compose.material3)
                 implementation(libs.kotlinx.coroutinesSwing)
@@ -102,6 +58,7 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(project(":android:runtime"))
+            implementation(project(":ui:mobile"))
             implementation(libs.androidx.activity.compose)
         }
         commonMain.dependencies {
@@ -110,7 +67,8 @@ kotlin {
             implementation(project(":shared:data"))
             implementation(project(":shared:features"))
             implementation(project(":player:core"))
-            implementation(project(":player:app"))
+            implementation(project(":app:runtime"))
+            implementation(project(":ui:common"))
             implementation(libs.androidx.room.runtime)
         }
         commonTest.dependencies {

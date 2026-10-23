@@ -3,7 +3,6 @@
     <string name="mac_no_file">No file selected</string>
     <string name="mac_open_file">Open local file</string>
     <string name="mac_seek_unsupported">This song may be transcoding. Seeking is unavailable.</string>
-    <string name="mac_select_file">Select a local file to play.</string>
     <string name="mac_volume">Volume</string>
     <string name="about_named_app">About %1$s</string>
     <string name="about_app_title">About LynMusic</string>

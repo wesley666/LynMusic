@@ -3,7 +3,6 @@
     <string name="mac_no_file">未选择文件</string>
     <string name="mac_open_file">打开本地文件</string>
     <string name="mac_seek_unsupported">歌曲可能正在转码，不支持快进。</string>
-    <string name="mac_select_file">请选择要播放的本地文件。</string>
     <string name="mac_volume">音量</string>
     <string name="about_named_app">约 %1$s</string>
     <string name="about_app_title">关于应用</string>

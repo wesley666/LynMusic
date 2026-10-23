@@ -50,9 +50,9 @@ import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ImportStoreTest {
-    @Test fun iosSambaRecommendationFlowsThroughTestToastAndKeepsEnteredDraft() = runTest {
+    @Test fun localizedSambaFailureFlowsThroughTestToastAndKeepsEnteredDraft() = runTest {
         val repository = FakeImportSourceRepository().apply {
-            pendingResult = CompletableDeferred(Result.failure(top.iwesley.lyn.music.core.model.UiTextException(top.iwesley.lyn.music.core.model.uiText(Res.string.ios_samba_files_recommended))))
+            pendingResult = CompletableDeferred(Result.failure(top.iwesley.lyn.music.core.model.UiTextException(top.iwesley.lyn.music.core.model.uiText(Res.string.samba_source_unavailable))))
         }
         val harness = createStore(repository)
         try {
@@ -62,8 +62,8 @@ class ImportStoreTest {
             store.dispatch(ImportIntent.TestSambaSource)
             advanceUntilIdle()
             val message = kotlin.test.assertNotNull(store.state.value.testMessage)
-            kotlin.test.assertEquals("Samba connection failed: Use Files to connect to SMB in this iOS build.", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.English))
-            kotlin.test.assertEquals("Samba 連接測試失敗: 目前 iOS 版本建議透過 Files 連線至 SMB。", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese))
+            kotlin.test.assertEquals("Samba connection failed: The Samba source is unavailable.", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.English))
+            kotlin.test.assertEquals("Samba 連接測試失敗: Samba 來源無法使用。", top.iwesley.lyn.music.core.model.resolveUiText(message, top.iwesley.lyn.music.core.model.AppLanguage.TraditionalChinese))
             kotlin.test.assertEquals("nas.local", repository.lastTestSambaDraft?.server)
             assertNull(store.state.value.message)
         } finally { harness.close() }

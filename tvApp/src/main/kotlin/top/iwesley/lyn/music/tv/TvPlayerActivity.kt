@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.tv
 
+import kotlinx.coroutines.launch
+
 import top.iwesley.lyn.music.core.model.ProvideUiLanguage
 
 import top.iwesley.lyn.music.resources.*
@@ -202,6 +204,14 @@ private fun TvPlayerApp(
     ConfigureTvImageLoader()
 
     val playerState by component.playerStore.state.collectAsState()
+    val presentation = rememberPlayerPresentation(component.playerStore)
+    val operationNotice = playerState.operationNotices.firstOrNull().takeIf { !presentation.isManualLyricsSearchVisible }
+    LaunchedEffect(operationNotice?.id, playerState.message) {
+        if (operationNotice != null && playerState.message == null) {
+            kotlinx.coroutines.delay(TV_PLAYER_TOAST_DURATION_MS)
+            component.playerStore.dispatch(PlayerIntent.DismissOperationNotice(operationNotice.id))
+        }
+    }
     val favoritesState by component.favoritesStore.state.collectAsState()
     val playbackToastRawMessage = playerState.message
     val playbackToastTrackId = playerState.snapshot.currentTrack?.id
@@ -229,22 +239,24 @@ private fun TvPlayerApp(
     }
 
     LaunchedEffect(component) {
-        component.playerStore.startHydration()
+        launch { component.playerStore.restorePlayback() }
         component.favoritesStore.ensureContentStarted()
     }
 
-    TvMainTheme {
-        TvPlayerScreen(
-            state = playerState,
-            favoriteTrackIds = favoritesState.favoriteTrackIds,
-            artworkCacheStore = component.artworkCacheStore,
-            onPlayerIntent = component.playerStore::dispatch,
-            onToggleFavorite = { track ->
-                component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
-            },
-            toastMessage = playbackToastMessage?.displayText(),
-            onBack = onBack,
-        )
+    androidx.compose.runtime.CompositionLocalProvider(LocalPlayerPresentation provides presentation) {
+        TvMainTheme {
+            TvPlayerScreen(
+                state = playerState,
+                favoriteTrackIds = favoritesState.favoriteTrackIds,
+                artworkCacheStore = component.artworkCacheStore,
+                onPlayerIntent = { presentation.onPlaybackIntent(it); component.playerStore.dispatch(it) },
+                onToggleFavorite = { track ->
+                    component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
+                },
+                toastMessage = (playbackToastMessage ?: operationNotice?.message)?.displayText(),
+                onBack = onBack,
+            )
+        }
     }
 }
 
@@ -258,6 +270,7 @@ private fun TvPlayerScreen(
     toastMessage: String?,
     onBack: () -> Unit,
 ) {
+    val presentation = currentPlayerPresentation()
     BackHandler(onBack = onBack)
     val snapshot = state.snapshot
     val track = snapshot.currentTrack
@@ -291,15 +304,15 @@ private fun TvPlayerScreen(
     val queueButtonFocusRequester = remember { FocusRequester() }
     var initialPlayPauseFocusRequested by remember { mutableStateOf(false) }
     var lyricsSearchWasVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(state.isQueueVisible, state.isManualLyricsSearchVisible) {
-        if (!initialPlayPauseFocusRequested && !state.isQueueVisible && !state.isManualLyricsSearchVisible) {
+    LaunchedEffect(presentation.isQueueVisible, presentation.isManualLyricsSearchVisible) {
+        if (!initialPlayPauseFocusRequested && !presentation.isQueueVisible && !presentation.isManualLyricsSearchVisible) {
             withFrameNanos { }
             playPauseFocusRequester.requestFocus()
             initialPlayPauseFocusRequested = true
         }
     }
-    LaunchedEffect(state.isManualLyricsSearchVisible) {
-        if (state.isManualLyricsSearchVisible) {
+    LaunchedEffect(presentation.isManualLyricsSearchVisible) {
+        if (presentation.isManualLyricsSearchVisible) {
             lyricsSearchWasVisible = true
         } else if (lyricsSearchWasVisible) {
             withFrameNanos { }
@@ -362,7 +375,7 @@ private fun TvPlayerScreen(
             onPlayerIntent = onPlayerIntent,
             modifier = Modifier.fillMaxSize(),
         )
-        if (state.isManualLyricsSearchVisible) {
+        if (presentation.isManualLyricsSearchVisible) {
             TvLyricsSearchOverlay(
                 state = state,
                 artworkCacheStore = artworkCacheStore,
@@ -522,6 +535,7 @@ private fun TvPlayerBottomControls(
     onPlayerIntent: (PlayerIntent) -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
+    val presentation = currentPlayerPresentation()
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -537,7 +551,7 @@ private fun TvPlayerBottomControls(
             contentAlignment = Alignment.Center,
         ) {
             IconButton(
-                onClick = { onPlayerIntent(PlayerIntent.OpenManualLyricsSearch) },
+                onClick = { presentation.openSearch() },
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .focusRequester(lyricsSearchButtonFocusRequester)
@@ -589,7 +603,7 @@ private fun TvPlayerBottomControls(
                     )
                 }
                 IconButton(
-                    onClick = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(true)) },
+                    onClick = { presentation.showQueue(true) },
                     modifier = Modifier.focusRequester(queueButtonFocusRequester),
                 ) {
                     Icon(
@@ -764,20 +778,21 @@ private fun TvPlayerQueueDrawer(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val presentation = currentPlayerPresentation()
     val snapshot = state.snapshot
     val listState = rememberLazyListState()
     val closeFocusRequester = remember { FocusRequester() }
     val queueItemFocusRequester = remember { FocusRequester() }
     var queueWasVisible by remember { mutableStateOf(false) }
-    val focusTargetIndex = remember(state.isQueueVisible, snapshot.currentIndex, snapshot.queue.size) {
+    val focusTargetIndex = remember(presentation.isQueueVisible, snapshot.currentIndex, snapshot.queue.size) {
         when {
-            !state.isQueueVisible || snapshot.queue.isEmpty() -> -1
+            !presentation.isQueueVisible || snapshot.queue.isEmpty() -> -1
             snapshot.currentIndex in snapshot.queue.indices -> snapshot.currentIndex
             else -> 0
         }
     }
-    LaunchedEffect(state.isQueueVisible, focusTargetIndex, snapshot.queue.size) {
-        if (!state.isQueueVisible) return@LaunchedEffect
+    LaunchedEffect(presentation.isQueueVisible, focusTargetIndex, snapshot.queue.size) {
+        if (!presentation.isQueueVisible) return@LaunchedEffect
         if (focusTargetIndex >= 0) {
             listState.scrollToItem((focusTargetIndex - 2).coerceAtLeast(0))
             withFrameNanos { }
@@ -787,8 +802,8 @@ private fun TvPlayerQueueDrawer(
             closeFocusRequester.requestFocus()
         }
     }
-    LaunchedEffect(state.isQueueVisible) {
-        if (state.isQueueVisible) {
+    LaunchedEffect(presentation.isQueueVisible) {
+        if (presentation.isQueueVisible) {
             queueWasVisible = true
         } else if (queueWasVisible) {
             withFrameNanos { }
@@ -796,13 +811,13 @@ private fun TvPlayerQueueDrawer(
             queueWasVisible = false
         }
     }
-    if (state.isQueueVisible) {
-        BackHandler(onBack = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) })
+    if (presentation.isQueueVisible) {
+        BackHandler(onBack = { presentation.showQueue(false) })
     }
 
     Box(modifier = modifier) {
         AnimatedVisibility(
-            visible = state.isQueueVisible,
+            visible = presentation.isQueueVisible,
             enter = fadeIn(animationSpec = tween(durationMillis = 180)),
             exit = fadeOut(animationSpec = tween(durationMillis = 140)),
         ) {
@@ -810,11 +825,11 @@ private fun TvPlayerQueueDrawer(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.44f))
-                    .clickable { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+                    .clickable { presentation.showQueue(false) },
             )
         }
         AnimatedVisibility(
-            visible = state.isQueueVisible,
+            visible = presentation.isQueueVisible,
             modifier = Modifier.align(Alignment.CenterEnd),
             enter = slideInHorizontally(
                 initialOffsetX = { fullWidth -> fullWidth },
@@ -831,7 +846,7 @@ private fun TvPlayerQueueDrawer(
                 focusTargetIndex = focusTargetIndex,
                 queueItemFocusRequester = queueItemFocusRequester,
                 closeFocusRequester = closeFocusRequester,
-                onClose = { onPlayerIntent(PlayerIntent.QueueVisibilityChanged(false)) },
+                onClose = { presentation.showQueue(false) },
                 onPlayQueueIndex = { index -> onPlayerIntent(PlayerIntent.PlayQueueIndex(index)) },
             )
         }

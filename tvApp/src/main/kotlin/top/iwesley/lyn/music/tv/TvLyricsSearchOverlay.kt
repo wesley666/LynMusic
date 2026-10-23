@@ -101,6 +101,7 @@ internal fun TvLyricsSearchOverlay(
     artworkCacheStore: ArtworkCacheStore,
     onPlayerIntent: (PlayerIntent) -> Unit,
 ) {
+    val presentation = currentPlayerPresentation()
     var confirmation by remember(state.snapshot.currentTrack?.id) {
         mutableStateOf<TvLyricsSearchConfirmation?>(null)
     }
@@ -148,7 +149,7 @@ internal fun TvLyricsSearchOverlay(
             if (confirmation != null) {
                 confirmation = null
             } else {
-                onPlayerIntent(PlayerIntent.DismissManualLyricsSearch)
+                presentation.closeSearch()
             }
         },
         properties = DialogProperties(
@@ -160,7 +161,7 @@ internal fun TvLyricsSearchOverlay(
             if (confirmation != null) {
                 confirmation = null
             } else {
-                onPlayerIntent(PlayerIntent.DismissManualLyricsSearch)
+                presentation.closeSearch()
             }
         }
         Box(

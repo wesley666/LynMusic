@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.tv.ui
 
+import kotlinx.coroutines.launch
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,7 +34,7 @@ internal fun TvMainApp(
     val context = LocalContext.current
 
     LaunchedEffect(component, tvStore) {
-        component.playerStore.startHydration()
+        launch { component.playerStore.restorePlayback() }
         component.settingsStore.dispatch(SettingsIntent.CheckAppUpdateSilently)
         tvStore.dispatch(TvMainIntent.ActivateDestination(TvMainDestination.Library))
     }

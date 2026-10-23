@@ -3,7 +3,6 @@
     <string name="mac_no_file">未選擇檔案</string>
     <string name="mac_open_file">開啟本機檔案</string>
     <string name="mac_seek_unsupported">歌曲可能正在轉碼，不支援快轉。</string>
-    <string name="mac_select_file">請選擇要播放的本機檔案。</string>
     <string name="mac_volume">音量</string>
     <string name="about_named_app">約 %1$s</string>
     <string name="about_app_title">關於應用</string>

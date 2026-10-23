@@ -1845,8 +1845,8 @@ class SettingsStoreTest {
         val repository = FakeSettingsRepository()
         val deviceInfoGateway = FakeDeviceInfoGateway(
             initialSnapshot = sampleDeviceInfoSnapshot(
-                systemName = "iOS",
-                systemVersion = "18.0",
+                systemName = "Android",
+                systemVersion = "16",
             ),
         )
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())

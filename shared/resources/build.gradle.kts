@@ -11,9 +11,6 @@ kotlin {
     jvmToolchain(21)
     androidTarget { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
     jvm { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
-    iosArm64()
-    iosSimulatorArm64()
-    macosArm64()
     sourceSets {
         commonMain.dependencies {
             api(libs.compose.components.resources)

@@ -221,4 +221,5 @@
     <string name="tags_platform_write_unsupported">当前平台暂不支持本地标签写回。</string>
     <string name="update_already_latest">当前已是最新版本。</string>
     <string name="favorites_source_error_detail">%1$s：%2$s</string>
+    <string name="lyrics_apply_completed">已应用所选内容。</string>
 </resources>

@@ -64,11 +64,7 @@
     <string name="desktop_vlc_selection">請選擇包含 libvlc 和 libvlccore 的 VLC 安裝目錄。</string>
     <string name="source_folder_missing">目錄不存在：%1$s</string>
     <string name="playback_vlc_media_load_failed">無法載入媒體：%1$s</string>
-    <string name="ios_samba_files_recommended">目前 iOS 版本建議透過 Files 連線至 SMB。</string>
     <string name="audio_import_unsupported">目前平台尚不支援匯入此音訊格式。</string>
-    <string name="ios_audio_file_unavailable">檔案已不存在或檔案提供方目前離線。</string>
-    <string name="ios_audio_file_read_failed">檔案無法讀取或檔案提供方離線。</string>
-    <string name="ios_webdav_not_supported">目前 iOS 版本尚未實作應用程式內的 WebDAV。</string>
     <string name="online_track_remote_id_missing">線上歌曲缺少遠端 song id。</string>
     <string name="source_account_no_syncable_tracks">目前 %1$s 帳號下沒有可同步的歌曲。</string>
 </resources>

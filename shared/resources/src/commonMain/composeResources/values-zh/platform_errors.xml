@@ -64,11 +64,7 @@
     <string name="desktop_vlc_selection">请选择包含 libvlc 和 libvlccore 的 VLC 安装目录。</string>
     <string name="source_folder_missing">目录不存在：%1$s</string>
     <string name="playback_vlc_media_load_failed">无法加载媒体：%1$s</string>
-    <string name="ios_samba_files_recommended">当前 iOS 构建建议通过 Files 连接 SMB。</string>
     <string name="audio_import_unsupported">当前平台暂不支持导入该音频格式。</string>
-    <string name="ios_audio_file_unavailable">文件已不存在或文件提供方当前离线。</string>
-    <string name="ios_audio_file_read_failed">文件无法读取或文件提供方离线。</string>
-    <string name="ios_webdav_not_supported">当前 iOS 构建暂未实现应用内 WebDAV。</string>
     <string name="online_track_remote_id_missing">在线歌曲缺少远端 song id。</string>
     <string name="source_account_no_syncable_tracks">当前 %1$s 账号下没有可同步的歌曲。</string>
 </resources>

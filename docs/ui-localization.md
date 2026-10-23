@@ -5,7 +5,7 @@
 ## 文案入口
 
 - 共享文案维护在 `shared/resources/src/commonMain/composeResources/values`、`values-zh`、`values-zh-rTW`，按功能分文件。
-- 独立 `:shared:resources` 提供官方 `Res.string`、`Res.plurals` 和资源资产，包名为 `top.iwesley.lyn.music.resources`；引用资源的模块显式依赖它。图片继续保存在 `player/app`，混用时导入图片 `Res as PlayerRes`。
+- 独立 `:shared:resources` 提供官方 `Res.string`、`Res.plurals` 和资源资产，包名为 `top.iwesley.lyn.music.resources`；引用资源的模块显式依赖它。图片也统一保存在 `shared:resources`。本地化检查覆盖四个 `ui:*` 模块和 TV 页面。
 - Android 共享文案由官方任务打包为资源资产，不另生成 Android XML。原生控件在生命周期协程中调用官方资源读取 API，Compose 页面使用官方 composable 读取 API。
 - 原生 macOS 小播放器使用三套 `Localizable.strings`；SwiftUI 通过指定 Bundle 解析文案，Kotlin 桥接复用系统语言匹配规则。
 - `ProvideUiLanguage` 订阅现有语言版本流；仅 `UiResourceEnvironment.kt` 隔离 Compose 1.11.1 的内部资源环境接口，保留主题与密度，只替换语言和地区。切换不修改进程 Locale，不使用 `key(language)`，不重建业务组件或页面树。升级资源库时需专项验证该文件。

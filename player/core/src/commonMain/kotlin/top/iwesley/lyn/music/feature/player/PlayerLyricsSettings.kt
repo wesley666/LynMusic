@@ -83,10 +83,11 @@ internal class PlayerLyricsSettings(
         writes.trySend(write)
     }
 
-    suspend fun accept(track: Track, result: ResolvedLyricsResult, isCurrent: () -> Boolean): Boolean {
+    suspend fun accept(track: Track, result: ResolvedLyricsResult, isCurrent: (PlayerState) -> Boolean): Boolean {
         val offset = readOffsetAfterWrites(track, result.version) ?: return false
-        if (!isCurrent()) return false
+        if (!isCurrent(state())) return false
         update { current ->
+            if (!isCurrent(current) || current.effectiveSnapshot.currentTrack?.id != track.id) return@update current
             current.copy(
                 originalLyrics = result.document,
                 lyricsVersion = result.version,

@@ -1,5 +1,9 @@
 package top.iwesley.lyn.music
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +38,76 @@ import top.iwesley.lyn.music.feature.player.PlayerStore
 class PlayerStoreManualLyricsSearchTest {
 
     @Test
+    fun `failed application from an ended session cannot overwrite the next session`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val track = sampleTrack()
+        val completion = CompletableDeferred<Unit>()
+        val candidate = LyricsSearchCandidate("late", "Fixture", LyricsDocument(
+            listOf(LyricsLine(0, "Late")), sourceId = "fixture", rawPayload = ""))
+        val repository = object : LyricsRepository by FakeLyricsRepository() {
+            override suspend fun applyLyricsCandidate(trackId: String, candidate: LyricsSearchCandidate, mode: LyricsSearchApplyMode): AppliedLyricsResult {
+                withContext(NonCancellable) { completion.await() }
+                error("late application failure")
+            }
+        }
+        val store = PlayerStore(FakePlaybackRepository(PlaybackSnapshot(queue = listOf(track), currentIndex = 0)), repository, scope)
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+        store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(candidate))
+        runCurrent()
+        store.dispatch(PlayerIntent.EndManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+        val activeSession = store.state.value.manualLyricsSearchSession
+        completion.complete(Unit)
+        advanceUntilIdle()
+        assertLocalizedEquals(activeSession, store.state.value.manualLyricsSearchSession)
+        assertNull(store.state.value.message)
+        scope.cancel()
+    }
+
+    @Test
+    fun `ended or replaced searches reject late non cooperative results`() = runTest {
+        for (replaceTrack in listOf(false, true)) {
+            val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+            val track = sampleTrack()
+            val snapshot = MutableStateFlow(PlaybackSnapshot(queue = listOf(track), currentIndex = 0))
+            val playback = object : PlaybackRepository by FakePlaybackRepository(snapshot.value) {
+                override val snapshot: StateFlow<PlaybackSnapshot> = snapshot
+            }
+            val completion = CompletableDeferred<Unit>()
+            val candidate = LyricsSearchCandidate("late", "Fixture", LyricsDocument(listOf(LyricsLine(0, "Late")), sourceId = "fixture", rawPayload = ""))
+            val lyrics = object : LyricsRepository by FakeLyricsRepository() {
+                override suspend fun searchLyricsCandidates(track: Track, includeTrackProvidedCandidate: Boolean): List<LyricsSearchCandidate> {
+                    withContext(NonCancellable) { completion.await() }
+                    return listOf(candidate)
+                }
+            }
+            val store = PlayerStore(playback, lyrics, scope)
+            advanceUntilIdle()
+            store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+            val previous = store.state.value.manualLyricsSearchSession
+            store.dispatch(PlayerIntent.SearchManualLyrics)
+            runCurrent()
+            assertTrue(store.state.value.isManualLyricsSearchLoading)
+            if (replaceTrack) {
+                snapshot.value = PlaybackSnapshot(queue = listOf(track.copy(id = "next")), currentIndex = 0)
+                runCurrent()
+            } else {
+                store.dispatch(PlayerIntent.EndManualLyricsSearch)
+            }
+            assertNull(store.state.value.manualLyricsSearchSession)
+            store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+            assertTrue(previous != store.state.value.manualLyricsSearchSession)
+            completion.complete(Unit)
+            advanceUntilIdle()
+            assertTrue(store.state.value.manualLyricsResults.isEmpty())
+            assertFalse(store.state.value.hasManualLyricsSearchResult)
+            assertFalse(store.state.value.isManualLyricsSearchLoading)
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `opening manual lyrics search prefills current display values`() = runTest {
         val track = sampleTrack()
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
@@ -50,11 +124,11 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         advanceUntilIdle()
 
         val state = store.state.value
-        assertTrue(state.isManualLyricsSearchVisible)
+        assertTrue((state.manualLyricsSearchSession != null))
         assertLocalizedEquals("显示标题", state.manualLyricsTitle)
         assertLocalizedEquals("显示歌手", state.manualLyricsArtistName)
         assertLocalizedEquals("显示专辑", state.manualLyricsAlbumTitle)
@@ -92,7 +166,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.ManualLyricsTitleChanged("手动标题"))
         store.dispatch(PlayerIntent.ManualLyricsArtistChanged("手动歌手"))
         store.dispatch(PlayerIntent.ManualLyricsAlbumChanged("手动专辑"))
@@ -115,7 +189,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(candidate, lyricsRepository.appliedCandidate)
         assertLocalizedEquals(candidate.document, state.lyrics)
         assertLocalizedEquals(0, state.highlightedLineIndex)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         assertTrue(state.manualLyricsResults.isEmpty())
         assertLocalizedEquals("/tmp/manual-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         scope.cancel()
@@ -147,7 +221,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -155,7 +229,7 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertTrue(state.isManualLyricsSearchVisible)
+        assertTrue((state.manualLyricsSearchSession != null))
         assertLocalizedEquals("歌词应用失败。\n歌词应用失败", state.message)
         assertLocalizedEquals(null, state.lyrics)
         scope.cancel()
@@ -186,7 +260,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -202,7 +276,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedMode)
         assertLocalizedEquals(candidate.document, state.lyrics)
         assertLocalizedEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         scope.cancel()
     }
 
@@ -251,7 +325,7 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
         assertLocalizedEquals(currentLyrics, store.state.value.lyrics)
 
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -268,7 +342,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(currentLyrics, state.lyrics)
         assertLocalizedEquals(0, state.highlightedLineIndex)
         assertLocalizedEquals("/tmp/artwork-only-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         scope.cancel()
     }
 
@@ -307,7 +381,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.ManualLyricsTitleChanged("另一首歌"))
         advanceUntilIdle()
 
@@ -345,7 +419,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         advanceUntilIdle()
 
         store.dispatch(PlayerIntent.SearchManualLyrics)
@@ -389,7 +463,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -404,7 +478,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(workflowCandidate, lyricsRepository.appliedWorkflowCandidate)
         assertLocalizedEquals(appliedDocument, state.lyrics)
         assertLocalizedEquals(0, state.highlightedLineIndex)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         assertTrue(state.manualWorkflowSongResults.isEmpty())
         assertLocalizedEquals("https://img.example.com/cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
         scope.cancel()
@@ -434,7 +508,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -442,7 +516,7 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
 
         val state = store.state.value
-        assertTrue(state.isManualLyricsSearchVisible)
+        assertTrue((state.manualLyricsSearchSession != null))
         assertLocalizedEquals("歌词应用失败。\n工作流歌词应用失败", state.message)
         assertLocalizedEquals(null, state.lyrics)
         scope.cancel()
@@ -480,7 +554,7 @@ class PlayerStoreManualLyricsSearchTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -496,7 +570,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(LyricsSearchApplyMode.LYRICS_ONLY, lyricsRepository.appliedWorkflowMode)
         assertLocalizedEquals(appliedDocument, state.lyrics)
         assertLocalizedEquals("/tmp/original-cover.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         scope.cancel()
     }
 
@@ -543,7 +617,7 @@ class PlayerStoreManualLyricsSearchTest {
         advanceUntilIdle()
         assertLocalizedEquals(currentLyrics, store.state.value.lyrics)
 
-        store.dispatch(PlayerIntent.OpenManualLyricsSearch)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.SearchManualLyrics)
         advanceUntilIdle()
 
@@ -560,7 +634,7 @@ class PlayerStoreManualLyricsSearchTest {
         assertLocalizedEquals(currentLyrics, state.lyrics)
         assertLocalizedEquals(0, state.highlightedLineIndex)
         assertLocalizedEquals("/tmp/workflow-artwork-only.jpg", playbackRepository.snapshot.value.currentDisplayArtworkLocator)
-        assertFalse(state.isManualLyricsSearchVisible)
+        assertFalse((state.manualLyricsSearchSession != null))
         scope.cancel()
     }
 

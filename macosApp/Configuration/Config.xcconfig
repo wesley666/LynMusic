@@ -1,8 +1,0 @@
-#include "../../app-version.xcconfig"
-
-TEAM_ID=
-
-PRODUCT_NAME=LynMusicMac
-PRODUCT_BUNDLE_IDENTIFIER=top.iwesley.lyn.music.LynMusicMac
-
-#include? "Config.local.xcconfig"

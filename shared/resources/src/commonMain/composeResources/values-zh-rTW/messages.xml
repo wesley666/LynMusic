@@ -221,4 +221,5 @@
     <string name="tags_platform_write_unsupported">當前平台暫不支持本機標籤寫回。</string>
     <string name="update_already_latest">當前已是最新版本。</string>
     <string name="favorites_source_error_detail">%1$s：%2$s</string>
+    <string name="lyrics_apply_completed">已套用所選內容。</string>
 </resources>

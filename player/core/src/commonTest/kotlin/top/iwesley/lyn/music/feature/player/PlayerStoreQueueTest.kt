@@ -10,6 +10,7 @@ import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.resolveUiText
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +25,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import top.iwesley.lyn.music.testing.assertLocalizedEquals
+import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import top.iwesley.lyn.music.cast.CastDevice
 import top.iwesley.lyn.music.cast.CastGateway
@@ -55,6 +57,61 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerStoreQueueTest {
+
+    @Test
+    fun `leaving a host does not cancel service owned playback restoration`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = FakeQueuePlaybackRepository(
+            initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
+            hydratedSnapshot = sampleSnapshot().copy(isHydratingPlayback = false),
+            deferHydratedSnapshotPublication = true,
+        )
+        val store = PlayerStore(repository, NoopQueueLyricsRepository(), scope)
+        val firstHost = async { store.restorePlayback() }
+        runCurrent()
+        assertFalse(firstHost.isCompleted)
+        firstHost.cancel()
+        val secondHost = async { store.restorePlayback() }
+        runCurrent()
+        repository.publishHydratedSnapshot()
+        advanceUntilIdle()
+        assertTrue(secondHost.await().hasCurrentPlayback)
+        assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
+        scope.cancel()
+    }
+
+    @Test
+    fun `ending discovery preserves active casting and allows a new discovery session`() = runTest {
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val gateway = FakePlayerCastGateway()
+        val store = PlayerStore(FakeQueuePlaybackRepository(sampleSnapshot()), NoopQueueLyricsRepository(), scope, castGateway = gateway, castMediaUrlResolver = FakeCastMediaUrlResolver())
+        advanceUntilIdle()
+        store.dispatch(PlayerIntent.BeginCastDiscovery)
+        advanceUntilIdle()
+        val initialSession = store.state.value.castDiscoverySession
+        store.dispatch(PlayerIntent.CastToDevice("device-1"))
+        advanceUntilIdle()
+        assertLocalizedEquals(CastSessionStatus.Casting, store.state.value.castState.status)
+        store.dispatch(PlayerIntent.EndCastDiscovery)
+        advanceUntilIdle()
+        assertLocalizedEquals(1, gateway.stopDiscoveryCallCount)
+        assertLocalizedEquals(0, gateway.stopCastCallCount)
+        assertLocalizedEquals(CastSessionStatus.Casting, store.state.value.castState.status)
+        assertLocalizedEquals(null, store.state.value.castDiscoverySession)
+        store.dispatch(PlayerIntent.BeginCastDiscovery)
+        advanceUntilIdle()
+        assertTrue(initialSession != store.state.value.castDiscoverySession)
+        assertLocalizedEquals(2, gateway.startDiscoveryCallCount)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+        assertLocalizedEquals("track-1", store.state.value.manualLyricsSearchSession?.trackId)
+        store.dispatch(PlayerIntent.PlayQueueIndex(1))
+        advanceUntilIdle()
+        assertLocalizedEquals(null, store.state.value.manualLyricsSearchSession)
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
+        assertLocalizedEquals("track-2", store.state.value.manualLyricsSearchSession?.trackId)
+        assertLocalizedEquals("Second Song", store.state.value.manualLyricsTitle)
+        scope.cancel()
+    }
 
     @Test
     fun `hanging artwork does not delay lyrics or next track cached lyrics`() = runTest {
@@ -128,6 +185,7 @@ class PlayerStoreQueueTest {
         }
         val store = PlayerStore(playback, lyrics, scope, artworkCacheStore = cache)
         runCurrent()
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(PlayerIntent.ApplyManualLyricsCandidate(
             LyricsSearchCandidate(sourceId = "manual", sourceName = "Manual", document = resolvedLyricsResult("manual", "line").document, artworkLocator = "manual"),
             mode = LyricsSearchApplyMode.ARTWORK_ONLY,
@@ -210,7 +268,7 @@ class PlayerStoreQueueTest {
     }
 
     @Test
-    fun `startup hydration expands restored paused playback when enabled`() = runTest {
+    fun `restoration reports restored paused playback when enabled`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val restoredSnapshot = sampleSnapshot().copy(isPlaying = false, isHydratingPlayback = false)
         val playbackRepository = FakeQueuePlaybackRepository(
@@ -219,17 +277,17 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertTrue(restoration.await().hasCurrentPlayback)
         assertLocalizedEquals(false, store.state.value.snapshot.isPlaying)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
     @Test
-    fun `startup hydration expands playback that existed before the activity lifecycle`() = runTest {
+    fun `restoration reports playback that existed before the activity lifecycle`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val existingSnapshot = sampleSnapshot().copy(
             isPlaying = true,
@@ -241,16 +299,16 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertTrue(restoration.await().hasCurrentPlayback)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
     @Test
-    fun `startup hydration waits for delayed repository snapshot before expanding`() = runTest {
+    fun `startup hydration waits for delayed repository snapshot before reporting completion`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -259,21 +317,21 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         runCurrent()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertFalse(restoration.isCompleted)
 
         playbackRepository.publishHydratedSnapshot()
         advanceUntilIdle()
 
-        assertLocalizedEquals(true, store.state.value.isExpanded)
+        assertTrue(restoration.await().hasCurrentPlayback)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
     @Test
-    fun `startup hydration stays collapsed when auto expansion is disabled`() = runTest {
+    fun `restoration reports playable content without any presentation preference`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -281,15 +339,15 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = false)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertTrue(restoration.await().hasCurrentPlayback)
         scope.cancel()
     }
 
     @Test
-    fun `startup hydration stays collapsed when no track is restored`() = runTest {
+    fun `startup hydration reports no restored playback when no track is restored`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -297,15 +355,15 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertFalse(restoration.await().hasCurrentPlayback)
         scope.cancel()
     }
 
     @Test
-    fun `manual playback after startup hydration does not auto expand player`() = runTest {
+    fun `manual playback after startup hydration does not report restored playback`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -313,18 +371,18 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
         store.dispatch(PlayerIntent.PlayTracks(sampleSnapshot().queue, 0))
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertFalse(restoration.await().hasCurrentPlayback)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
     @Test
-    fun `playback that supersedes startup hydration does not auto expand player`() = runTest {
+    fun `playback that supersedes startup hydration does not report restored playback`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -333,16 +391,16 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertFalse(restoration.await().hasCurrentPlayback)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
         scope.cancel()
     }
 
     @Test
-    fun `failed startup hydration does not auto expand player`() = runTest {
+    fun `failed startup hydration does not report restored playback`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val playbackRepository = FakeQueuePlaybackRepository(
             initialSnapshot = PlaybackSnapshot(isHydratingPlayback = true),
@@ -351,15 +409,15 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
+        assertFalse(restoration.await().hasCurrentPlayback)
         scope.cancel()
     }
 
     @Test
-    fun `stale restored token does not expand after delayed snapshot publication`() = runTest {
+    fun `stale restored token is rejected after delayed snapshot publication`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         var restoreIsCurrent = true
         val playbackRepository = FakeQueuePlaybackRepository(
@@ -372,28 +430,14 @@ class PlayerStoreQueueTest {
         )
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
-        store.startHydration(expandPlayerAfterHydration = true)
+        val restoration = async { store.restorePlayback() }
         runCurrent()
 
         restoreIsCurrent = false
         playbackRepository.publishHydratedSnapshot()
         advanceUntilIdle()
 
-        assertLocalizedEquals(false, store.state.value.isExpanded)
-        scope.cancel()
-    }
-
-    @Test
-    fun `queue visibility intent updates state`() = runTest {
-        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
-        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
-
-        advanceUntilIdle()
-        store.dispatch(PlayerIntent.QueueVisibilityChanged(true))
-        advanceUntilIdle()
-
-        assertLocalizedEquals(true, store.state.value.isQueueVisible)
+        assertFalse(restoration.await().hasCurrentPlayback)
         scope.cancel()
     }
 
@@ -404,7 +448,6 @@ class PlayerStoreQueueTest {
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.QueueVisibilityChanged(true))
         advanceUntilIdle()
         store.dispatch(PlayerIntent.PlayQueueIndex(1))
         advanceUntilIdle()
@@ -412,23 +455,6 @@ class PlayerStoreQueueTest {
         assertLocalizedEquals(1, playbackRepository.lastPlayQueueIndex)
         assertLocalizedEquals(null, playbackRepository.lastPlayTracks)
         assertLocalizedEquals("track-2", store.state.value.snapshot.currentTrack?.id)
-        assertFalse(store.state.value.isQueueVisible)
-        scope.cancel()
-    }
-
-    @Test
-    fun `null current track closes queue drawer automatically`() = runTest {
-        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
-        val playbackRepository = FakeQueuePlaybackRepository(sampleSnapshot())
-        val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
-
-        advanceUntilIdle()
-        store.dispatch(PlayerIntent.QueueVisibilityChanged(true))
-        advanceUntilIdle()
-        playbackRepository.updateSnapshot(PlaybackSnapshot(mode = PlaybackMode.ORDER))
-        advanceUntilIdle()
-
-        assertFalse(store.state.value.isQueueVisible)
         scope.cancel()
     }
 
@@ -541,7 +567,6 @@ class PlayerStoreQueueTest {
         val store = PlayerStore(playbackRepository, NoopQueueLyricsRepository(), scope)
 
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.QueueVisibilityChanged(true))
         advanceUntilIdle()
         store.dispatch(PlayerIntent.PlayQueueIndex(99))
         advanceUntilIdle()
@@ -549,7 +574,6 @@ class PlayerStoreQueueTest {
         assertLocalizedEquals(null, playbackRepository.lastPlayTracks)
         assertLocalizedEquals(null, playbackRepository.lastPlayQueueIndex)
         assertLocalizedEquals("track-1", store.state.value.snapshot.currentTrack?.id)
-        assertLocalizedEquals(true, store.state.value.isQueueVisible)
         scope.cancel()
     }
 
@@ -637,6 +661,7 @@ class PlayerStoreQueueTest {
         val store = PlayerStore(playbackRepository, lyricsRepository, scope)
 
         advanceUntilIdle()
+        store.dispatch(PlayerIntent.BeginManualLyricsSearch)
         store.dispatch(
             PlayerIntent.ApplyManualLyricsCandidate(
                 LyricsSearchCandidate(
@@ -997,7 +1022,7 @@ class PlayerStoreQueueTest {
         advanceUntilIdle()
         store.dispatch(PlayerIntent.CastToDevice("device-1"))
         advanceUntilIdle()
-        store.dispatch(PlayerIntent.OpenCastSheet)
+        store.dispatch(PlayerIntent.BeginCastDiscovery)
         advanceUntilIdle()
         castGateway.updatePlayback(
             CastPlaybackState(
@@ -1011,7 +1036,7 @@ class PlayerStoreQueueTest {
 
         assertLocalizedEquals(1, castGateway.startDiscoveryCallCount)
         assertLocalizedEquals(CastSessionStatus.Casting, store.state.value.castState.status)
-        assertLocalizedEquals(true, store.state.value.isCastSheetVisible)
+        assertLocalizedEquals(true, (store.state.value.castDiscoverySession != null))
         assertLocalizedEquals(24_000L, store.state.value.effectiveSnapshot.positionMs)
         scope.cancel()
     }
@@ -1464,7 +1489,8 @@ private class FakePlayerCastGateway : CastGateway {
     override suspend fun startDiscovery() {
         startDiscoveryCallCount += 1
     }
-    override suspend fun stopDiscovery() = Unit
+    var stopDiscoveryCallCount = 0
+    override suspend fun stopDiscovery() { stopDiscoveryCallCount++ }
 
     override suspend fun cast(deviceId: String, request: CastMediaRequest) {
         lastRequest = request
@@ -1509,7 +1535,9 @@ private class FakePlayerCastGateway : CastGateway {
         )
     }
 
+    var stopCastCallCount = 0
     override suspend fun stopCast() {
+        stopCastCallCount++
         mutableState.value = mutableState.value.copy(status = CastSessionStatus.Idle, playback = null)
     }
 

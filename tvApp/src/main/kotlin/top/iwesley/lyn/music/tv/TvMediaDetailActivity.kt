@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.tv
 
+import kotlinx.coroutines.launch
+
 import top.iwesley.lyn.music.core.model.ProvideUiLanguage
 
 import top.iwesley.lyn.music.resources.*
@@ -173,7 +175,7 @@ private fun TvMediaDetailApp(
     val favoritesState by component.favoritesStore.state.collectAsState()
 
     LaunchedEffect(component, args.source) {
-        component.playerStore.startHydration()
+        launch { component.playerStore.restorePlayback() }
         component.favoritesStore.ensureContentStarted()
         when (args.source) {
             TvMediaDetailSource.Library -> component.libraryStore.ensureStarted()

@@ -64,11 +64,7 @@
     <string name="desktop_vlc_selection">Select the VLC installation folder containing libvlc and libvlccore.</string>
     <string name="source_folder_missing">Folder does not exist: %1$s</string>
     <string name="playback_vlc_media_load_failed">Unable to load media: %1$s</string>
-    <string name="ios_samba_files_recommended">Use Files to connect to SMB in this iOS build.</string>
     <string name="audio_import_unsupported">This platform does not support importing this audio format yet.</string>
-    <string name="ios_audio_file_unavailable">The file no longer exists or its provider is currently offline.</string>
-    <string name="ios_audio_file_read_failed">The file cannot be read or its provider is offline.</string>
-    <string name="ios_webdav_not_supported">In-app WebDAV is not implemented in this iOS build.</string>
     <string name="online_track_remote_id_missing">The online song has no remote song ID.</string>
     <string name="source_account_no_syncable_tracks">This %1$s account has no songs available to sync.</string>
 </resources>

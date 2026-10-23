@@ -2,11 +2,11 @@
 """Validate UI localization without launching any application or UI test.
 
 The shared Compose XML resources are authoritative. Official Compose resource
-accessors and assets are generated from them; SwiftUI owns native .strings.
+accessors and assets are generated from them for Android and JVM desktops.
 Only application UI literals are checked, never music, lyrics, logs, or protocols.
 """
 from pathlib import Path
-import re,json
+import re
 from ui_resource_keys import resource_key_errors
 HAN=re.compile('[\u3400-\u4dbf\u4e00-\u9fff]')
 # Parse Kotlin interpolation expressions as code, including nested strings/comments.
@@ -110,7 +110,7 @@ for locale in LOCALES[1:]:
                 errors.append(f"{locale}: {key}/{quantity} argument number/type differs")
 
 # Static key references, including non-Compose business messages.
-for module in ("player", "shared", "composeApp", "android", "tvApp", "automotiveApp", "cast"):
+for module in ("player", "shared", "app", "ui", "composeApp", "android", "tvApp", "automotiveApp", "cast"):
     for path in (ROOT / module).rglob("*.kt"):
         if "build" in path.parts or any(part.endswith("Test") for part in path.parts):
             continue
@@ -127,7 +127,7 @@ for module in ("player", "shared", "composeApp", "android", "tvApp", "automotive
 
 # Explicit UI-only scan. These remaining Chinese literals are diagnostic invariants.
 allowed_diagnostics = {
-    "App.kt": {"应用资源释放未完全成功。", "关闭资源失败：%1$s"},
+    "ArtworkBitmap.jvm.kt": {"远端封面读取失败。"},
     "LibraryNavigation.kt": {"在线导航目标应在本地导航解析前处理。"},
     "AndroidOfflineDownloadGateway.kt": {"离线文件不存在。"},
     "JvmOfflineDownloadGateway.kt": {"离线文件不存在。"},
@@ -136,7 +136,9 @@ allowed_diagnostics = {
     "JvmWebDavSupport.kt": {"读取失败。"},
     "AndroidDesktopLyricsOverlayService.kt": {"保存桌面歌词位置失败。"},
 }
-ui_paths = list((ROOT / "player/app/src/commonMain").rglob("*.kt"))
+ui_paths = []
+ui_paths += [p for p in (ROOT / "ui").rglob("*.kt")
+             if "build" not in p.parts and any(part.endswith("Main") for part in p.parts)]
 ui_paths += [p for p in (ROOT / "tvApp/src/main").rglob("*.kt")
              if p.name.endswith(("Activity.kt", "Screen.kt", "Overlay.kt", "List.kt"))]
 ui_paths += [ROOT / "android/runtime/src/main/kotlin/top/iwesley/lyn/music/platform" / name
@@ -147,16 +149,11 @@ ui_paths += [ROOT / "cast/api/src/commonMain/kotlin/top/iwesley/lyn/music/cast/C
 ui_paths += [ROOT / "cast/upnp/android/src/main/kotlin/top/iwesley/lyn/music/cast/upnp/android" / name
              for name in ("AndroidUpnpCastGateway.kt", "NativeCastErrorText.kt", "AndroidUpnpMediaRenderer.kt", "NativeRendererErrorText.kt")]
 ui_paths += [ROOT / path for path in (
-    "shared/core/src/commonMain/kotlin/top/iwesley/lyn/music/core/model/AppleMediaLocatorResolver.kt",
     "shared/core/src/commonMain/kotlin/top/iwesley/lyn/music/core/model/OfflineDownloadFailureText.kt",
     "shared/core/src/commonMain/kotlin/top/iwesley/lyn/music/core/model/WebDav.kt",
     "shared/core/src/commonMain/kotlin/top/iwesley/lyn/music/core/model/SambaUiText.kt",
     "shared/data/src/commonMain/kotlin/top/iwesley/lyn/music/platform/SambaPlaybackSupport.kt",
     "shared/data/src/commonMain/kotlin/top/iwesley/lyn/music/data/repository/OfflineDownloadRepositories.kt",
-    "composeApp/src/commonMain/kotlin/top/iwesley/lyn/music/platform/ApplePlaybackErrorText.kt",
-    "composeApp/src/applePlaybackMain/kotlin/top/iwesley/lyn/music/platform/ApplePlaybackGateway.kt",
-    "composeApp/src/iosMain/kotlin/top/iwesley/lyn/music/platform/AppleNativePlayer.ios.kt",
-    "composeApp/src/macosMain/kotlin/top/iwesley/lyn/music/platform/AppleNativePlayer.macos.kt",
     "composeApp/src/jvmMain/kotlin/top/iwesley/lyn/music/platform/JvmOfflineDownloadGateway.kt",
     "composeApp/src/jvmMain/kotlin/top/iwesley/lyn/music/platform/JvmWebDavSupport.kt",
     "composeApp/src/jvmMain/kotlin/top/iwesley/lyn/music/platform/JvmSambaSupport.kt",
@@ -240,25 +237,9 @@ for message in re.findall(r'(?:return\s+|Error\(env,\s*)"([^"\n]+)"', renderer_n
     if HAN.search(message):
         errors.append("renderer: native source still contains hardcoded Chinese errors")
 
-native = {}
-for locale in ("en", "zh-Hans", "zh-Hant"):
-    path = ROOT / f"macosApp/macosApp/{locale}.lproj/Localizable.strings"
-    pairs = re.findall(r'^"([^"\n]+)"\s*=\s*("(?:\\.|[^"\\])*");', path.read_text(), re.M)
-    native[locale] = {key: json.loads(value) for key, value in pairs}
-    for key in native[locale]:
-        validate_resource_key(key, f"macOS/{locale}")
-    if len(pairs) != len(native[locale]):
-        errors.append(f"macOS/{locale}: duplicate keys")
-if any(native[locale].keys() != native["en"].keys() for locale in native):
-    errors.append("macOS: native keys differ")
-for path in (ROOT / "macosApp/macosApp").glob("*.swift"):
-    for key in re.findall(r'\.text\("([^"\n]+)"\)', path.read_text()):
-        if key not in native["en"]:
-            errors.append(f"macOS: missing native resource {key}")
-
 if errors:
     print("\n".join(errors))
     sys.exit(1)
 print(f"UI localization checks passed: {len(base)} shared keys, "
       f"{sum(kind == 'plurals' for kind, _ in base.values())} plurals, "
-      f"{len(native['en'])} macOS native keys, 3 complete languages.")
+      "3 complete languages.")

@@ -72,7 +72,8 @@ kotlin {
 dependencies {
     implementation(project(":shared:resources"))
     implementation(project(":android:runtime"))
-    implementation(project(":player:app"))
+    implementation(project(":ui:automotive"))
+    implementation(project(":app:runtime"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.runtime)
     implementation(libs.compose.ui)

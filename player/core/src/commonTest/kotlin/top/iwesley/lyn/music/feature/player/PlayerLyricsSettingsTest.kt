@@ -23,7 +23,6 @@ class PlayerLyricsSettingsTest {
         harness.settings.changeOffset("a", "v1", 0)
         assertEquals(200L, harness.state.lyrics?.offsetMs)
         assertEquals(200L, harness.state.originalLyrics?.offsetMs)
-        assertTrue(harness.state.isLyricsStyleVisible)
         runCurrent()
         assertEquals(0L, harness.repository.offsets["a"])
     }
@@ -58,7 +57,6 @@ class PlayerLyricsSettingsTest {
         runCurrent()
         assertEquals(PlayerLyricsStyle(), preferences.playerLyricsStyle.value)
         assertEquals(2, preferences.writes.size)
-        assertTrue(harness.state.isLyricsStyleVisible)
     }
 
     @Test fun `calibration follows the effective cast song rather than paused local song`() = runTest {
@@ -92,7 +90,6 @@ class PlayerLyricsSettingsTest {
         assertEquals(mapOf("a" to 800L, "b" to -100L), harness.repository.offsets)
         assertEquals(-100L, harness.state.lyricsUserOffsetMs)
         assertEquals("b", harness.state.lyricsTrackId)
-        assertTrue(harness.state.isLyricsStyleVisible)
     }
 
     @Test fun `reloading the same version does not undo an unsaved visible adjustment`() = runTest {
@@ -170,7 +167,7 @@ class PlayerLyricsSettingsTest {
     ) {
         val a = track("a")
         val b = track("b")
-        var state = PlayerState(snapshot = PlaybackSnapshot(queue = listOf(a, b), currentIndex = 0, positionMs = 750), isLyricsStyleVisible = true, lyricsStyle = preferences.playerLyricsStyle.value)
+        var state = PlayerState(snapshot = PlaybackSnapshot(queue = listOf(a, b), currentIndex = 0, positionMs = 750), lyricsStyle = preferences.playerLyricsStyle.value)
         val repository = Repository()
         val settings = PlayerLyricsSettings(scope, repository, preferences, fonts, { state }, { state = it(state) })
         suspend fun show(track: Track) {

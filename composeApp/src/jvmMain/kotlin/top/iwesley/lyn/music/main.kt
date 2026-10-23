@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.desktop.ui.DesktopApp
+import top.iwesley.lyn.music.desktop.ui.DesktopWindowChrome
+
 import androidx.compose.runtime.Composable
 
 import top.iwesley.lyn.music.resources.*
@@ -239,7 +242,7 @@ suspend fun main() {
                             )
 
                         is JvmDesktopStartupState.Ready ->
-                            App(
+                            DesktopApp(
                                 component = current.component,
                                 startupAutoOpenGate = startupAutoOpenGate,
                                 desktopWindowChrome = desktopWindowChrome,

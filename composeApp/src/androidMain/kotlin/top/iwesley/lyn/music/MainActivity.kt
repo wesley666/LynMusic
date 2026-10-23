@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.mobile.ui.MobileApp
+
 import top.iwesley.lyn.music.core.model.ProvideUiLanguage
 
 import top.iwesley.lyn.music.resources.*
@@ -20,6 +22,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -89,10 +93,12 @@ class MainActivity : ComponentActivity() {
                 if (appComponent != null) {
                     val appDisplayScalePreset by appComponent.appDisplayScalePreset.collectAsState()
                     ProvideFixedAndroidComposeDensity(appDisplayScalePreset = appDisplayScalePreset) {
-                        AndroidMainShellSystemBars(appComponent)
-                        App(
+                        var playerExpanded by remember { mutableStateOf(false) }
+                        AndroidMainShellSystemBars(appComponent, playerExpanded)
+                        MobileApp(
                             component = appComponent,
                             startupAutoOpenGate = startupAutoOpenViewModel.gate,
+                            onPlayerExpandedChanged = { playerExpanded = it },
                         )
                     }
                 } else {
@@ -157,16 +163,16 @@ internal class StartupAutoOpenViewModel : ViewModel() {
 @Composable
 private fun MainActivity.AndroidMainShellSystemBars(
     appComponent: LynMusicAppComponent,
+    playerExpanded: Boolean,
 ) {
     val settingsState by appComponent.settingsStore.state.collectAsState()
-    val playerState by appComponent.playerStore.state.collectAsState()
     val textPalette = remember(settingsState.selectedTheme, settingsState.textPalettePreferences) {
         resolveAppThemeTextPalette(
             themeId = settingsState.selectedTheme,
             preferences = settingsState.textPalettePreferences,
         )
     }
-    val useDarkSystemBarIcons = !playerState.isExpanded && textPalette == AppThemeTextPalette.Black
+    val useDarkSystemBarIcons = !playerExpanded && textPalette == AppThemeTextPalette.Black
 
     SideEffect {
         val transparent = Color.TRANSPARENT
