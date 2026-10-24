@@ -88,7 +88,7 @@ for locale in LOCALES:
     catalogs[locale] = catalog
 
 # Handwritten Android resources follow the same naming rule as the shared XML.
-for relative in ("composeApp/src/androidMain/res", "android/runtime/src/main/res",
+for relative in ("androidApp/src/main/res", "android/runtime/src/main/res",
                  "tvApp/src/main/res", "automotiveApp/src/main/res"):
     for path in (ROOT / relative).glob("values*/*.xml"):
         for element in ET.parse(path).getroot():
@@ -110,7 +110,7 @@ for locale in LOCALES[1:]:
                 errors.append(f"{locale}: {key}/{quantity} argument number/type differs")
 
 # Static key references, including non-Compose business messages.
-for module in ("player", "shared", "app", "ui", "composeApp", "android", "tvApp", "automotiveApp", "cast"):
+for module in ("player", "shared", "app", "ui", "composeApp", "androidApp", "android", "tvApp", "automotiveApp", "cast"):
     for path in (ROOT / module).rglob("*.kt"):
         if "build" in path.parts or any(part.endswith("Test") for part in path.parts):
             continue

@@ -7,3 +7,7 @@ repositories {
     mavenCentral()
     gradlePluginPortal()
 }
+
+dependencies {
+    compileOnly(libs.android.gradleApi)
+}

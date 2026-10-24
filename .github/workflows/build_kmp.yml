@@ -19,7 +19,7 @@ jobs:
           java-version: '21'
           distribution: 'zulu'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Configure Gradle memory for CI
         shell: bash
@@ -32,13 +32,13 @@ jobs:
           EOF
 
       - name: Clean & Build Android Release APK (unsigned)
-        run: ./gradlew clean :composeApp:assembleRelease
+        run: ./gradlew clean :androidApp:assembleRelease
 
       - name: Upload Android Release APK (unsigned)
         uses: actions/upload-artifact@v4
         with:
           name: Android-APK-Release-Unsigned
-          path: composeApp/build/outputs/apk/release/**/*.apk
+          path: androidApp/build/outputs/apk/release/**/*.apk
           if-no-files-found: error
 
   build-automotive-release-unsigned:
@@ -51,7 +51,7 @@ jobs:
           java-version: '21'
           distribution: 'zulu'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Configure Gradle memory for CI
         shell: bash
@@ -83,7 +83,7 @@ jobs:
           java-version: '21'
           distribution: 'zulu'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Configure Gradle memory for CI
         shell: bash
@@ -131,7 +131,7 @@ jobs:
           java-version: '21'
           distribution: 'zulu'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Clean & Build Desktop App (Windows)
         if: runner.os == 'Windows'

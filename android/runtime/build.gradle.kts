@@ -2,12 +2,14 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.androidLibrary)
-    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.composeCompiler)
 }
 
 android {
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        targetSdk { version = release(libs.versions.android.minSdk.get().toInt()) }
+    }
     namespace = "top.iwesley.lyn.music.android.runtime"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 

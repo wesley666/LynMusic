@@ -79,7 +79,7 @@ python3 tools/check_ui_localization.py
 python3 -m unittest discover -s tools -p 'test_ui_resource_keys.py'
 ./gradlew :shared:resources:jvmTest --tests top.iwesley.lyn.music.resources.OfficialResourceCatalogTest
 # 其他本地测试使用 --tests 限定直接受影响的类，避免运行全量测试。
-./gradlew :composeApp:assembleDebug :tvApp:assembleDebug :automotiveApp:assembleDebug
+./gradlew :androidApp:assembleDebug :tvApp:assembleDebug :automotiveApp:assembleDebug
 ```
 
 静态脚本检查三种语言的键、资源类型、位置参数及复数项，并检查指定 UI 文件中的残留中文硬编码。明确保留的诊断不计入 UI 文案。官方生成器负责类型化访问器；静态检查与参数测试负责格式参数签名。

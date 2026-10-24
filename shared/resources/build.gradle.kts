@@ -2,14 +2,26 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
 kotlin {
     jvmToolchain(21)
-    androidTarget { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
+    android {
+        namespace = "top.iwesley.lyn.music.shared.resources"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources.enable = true
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_21)
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+            targetSdk { version = release(libs.versions.android.minSdk.get().toInt()) }
+        }
+    }
     jvm { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
     sourceSets {
         commonMain.dependencies {
@@ -31,14 +43,4 @@ compose.resources {
     publicResClass = true
     packageOfResClass = "top.iwesley.lyn.music.resources"
     generateResClass = always
-}
-
-android {
-    namespace = "top.iwesley.lyn.music.shared.resources"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
 }

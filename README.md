@@ -68,13 +68,15 @@ LynMusic 是一款面向个人音乐收藏场景打造的跨平台本地音乐�
 - `ui:desktop`：Windows、Linux、macOS JVM 共用的独立入口、侧栏导航、窗口边距、迷你／完整播放器和队列，以及曲库、来源、收藏、歌单、“我的”、设置、导入、标签编辑、歌词搜索和分享页面；仅包含 JVM 目标。
 - `tvApp`：独立的 TV 页面、导航和焦点管理，直接使用运行时和基础组件，不依赖 `player:app`。
 - `ui:automotive`：车机独立入口、横竖屏导航、曲库／来源、收藏／歌单、设置、播放器、队列和歌词页面；只依赖共享业务、运行时与基础组件。JVM 目标用于运行页面和绘制回归测试。
-- `composeApp`、`automotiveApp`：对应平台的启动、系统集成和打包入口。
+- `androidApp`：手机／平板的 Android 启动、系统集成和 APK 打包入口。
+- `composeApp`：保留 Android/JVM 共享适配与 PC 启动、系统集成和打包入口。
+- `automotiveApp`：车机启动、系统集成和打包入口。
 
 运行时和基础组件迁移后保留原 Kotlin 包名与调用接口，平台入口继续持有应用组件，页面使用已有实例。曲库目录树与歌单添加目标计算位于 `shared:core`，在线来源选项和收藏绑定规则位于 `shared:features`；手机、桌面与车机复用同一份业务计算。
 
 车机页面位于 `top.iwesley.lyn.music.automotive.ui`，由 `automotiveApp` 加载 `AutomotiveApp`。横竖屏布局根据可用尺寸决定，修改车机页面无需改动手机或桌面页面。
 
-`composeApp` 的 Android source set 加载 `top.iwesley.lyn.music.mobile.ui.MobileApp`，JVM source set 加载 `top.iwesley.lyn.music.desktop.ui.DesktopApp`。两端页面模块互不依赖，通过 `ui:common` 复用基础组件。播放器展开、队列、歌词设置窗口等展示状态由各端 `PlayerPresentation` 管理，`PlayerState`／`PlayerIntent` 不再包含这些显示字段和操作。各端拥有自己的设置导航、标签编辑布局、来源表单和歌词弹窗；搜索、分享、导入等异步业务仍由共享 Store 执行。
+`androidApp` 加载 `top.iwesley.lyn.music.mobile.ui.MobileApp`，`composeApp` 的 JVM source set 加载 `top.iwesley.lyn.music.desktop.ui.DesktopApp`。两端页面模块互不依赖，通过 `ui:common` 复用基础组件。播放器展开、队列、歌词设置窗口等展示状态由各端 `PlayerPresentation` 管理，`PlayerState`／`PlayerIntent` 不再包含这些显示字段和操作。各端拥有自己的设置导航、标签编辑布局、来源表单和歌词弹窗；搜索、分享、导入等异步业务仍由共享 Store 执行。
 
 各端通过 `BeginManualLyricsSearch`／`EndManualLyricsSearch`、`BeginLyricsShare`／`EndLyricsShare`、`BeginCastDiscovery`／`EndCastDiscovery` 管理共享异步会话。会话标识负责隔离旧结果；结束会话会取消对应工作，切歌会清理歌词搜索和分享。关闭投屏设备列表只停止发现，不停止已建立的投屏。UI 销毁时只结束自己持有的会话。
 
@@ -84,19 +86,27 @@ LynMusic 是一款面向个人音乐收藏场景打造的跨平台本地音乐�
 
 ## 编译
 
+使用 Gradle Wrapper 9.6.0、AGP 9.4.1、Kotlin／Compose Compiler 2.4.21、KSP 2.3.12 和 JDK 21。
+Android 使用新 DSL、内置 Kotlin及 Android-KMP 库插件；手机／平板应用入口为 `androidApp`。
+SDK 配置仍为 compileSdk 37、targetSdk 36、minSdk 23。
+
+完整单元测试运行 `./gradlew fullTest`（Windows 使用 `.\gradlew.bat fullTest`）。
+该任务覆盖 JVM、Android-KMP host 和普通 Android Debug／Release 测试，并检查用例数量与跳过情况；
+结果位于 `build/reports/fullTest/`。迁移说明见 [Gradle 9 构建说明](docs/gradle9-migration.md)。
+
 ### 编译安卓 APP
 
 - macOS/Linux
   ```shell
   #编译debug版本
-  ./gradlew :composeApp:assembleDebug
+  ./gradlew :androidApp:assembleDebug
   #编译release版本
-  ./gradlew :composeApp:assembleRelease
+  ./gradlew :androidApp:assembleRelease
   ```
 - Windows
   ```shell
-  .\gradlew.bat :composeApp:assembleDebug
-  .\gradlew.bat :composeApp:assembleRelease
+  .\gradlew.bat :androidApp:assembleDebug
+  .\gradlew.bat :androidApp:assembleRelease
   ```
 
 ### 直接运行Desktop (JVM)应用

@@ -1,0 +1,70 @@
+name: Verify Gradle migration and tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'zulu'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Configure Gradle memory for CI
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.gradle"
+          cat > "$HOME/.gradle/gradle.properties" <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx1536M
+          org.gradle.workers.max=2
+          EOF
+      - name: Run all unit tests and localization checks
+        run: |
+          python3 tools/check_ui_localization.py
+          ./gradlew clean fullTest --no-build-cache --continue --warning-mode all
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Full-Test-Reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+            build/reports/fullTest/**
+          if-no-files-found: warn
+
+  desktop-jvm-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'zulu'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Run JVM tests on Windows
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat jvmTest --continue --warning-mode all
+      - name: Run JVM tests on macOS
+        if: runner.os != 'Windows'
+        run: ./gradlew jvmTest --continue --warning-mode all
+      - name: Upload JVM reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JVM-Test-Reports-${{ matrix.os }}
+          path: |
+            **/build/test-results/jvmTest/**
+            **/build/reports/tests/jvmTest/**
+          if-no-files-found: warn

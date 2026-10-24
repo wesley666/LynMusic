@@ -4,12 +4,12 @@ plugins {
     // in each subproject's classloader
     alias(libs.plugins.androidApplication) apply false
     alias(libs.plugins.androidLibrary) apply false
+    alias(libs.plugins.androidKmpLibrary) apply false
     alias(libs.plugins.androidx.room) apply false
     alias(libs.plugins.composeHotReload) apply false
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.ksp) apply false
-    alias(libs.plugins.kotlinAndroid) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
 }
 
@@ -52,6 +52,47 @@ abstract class VerifyUiModuleBoundaries : DefaultTask() {
 val verifyUiModuleBoundaries = tasks.register<VerifyUiModuleBoundaries>("verifyUiModuleBoundaries") {
     group = "verification"
     description = "Reject cross-platform page dependencies and reverse dependencies from shared modules."
+}
+
+val fullTest = tasks.register<FullTest>("fullTest") {
+    group = "verification"
+    description = "Run every JVM, Android-KMP host, and Android Debug/Release unit test and verify coverage."
+    reportDirectory.set(layout.buildDirectory.dir("reports/fullTest"))
+    expectedMinimumCounts.putAll(mapOf(
+        ":app:runtime:jvmTest" to 17,
+        ":cast:api:jvmTest" to 9,
+        ":composeApp:jvmTest" to 380,
+        ":player:core:jvmTest" to 407,
+        ":shared:core:jvmTest" to 161,
+        ":shared:data:jvmTest" to 520,
+        ":shared:features:jvmTest" to 271,
+        ":shared:resources:jvmTest" to 4,
+        ":ui:automotive:jvmTest" to 301,
+        ":ui:common:jvmTest" to 57,
+        ":ui:desktop:jvmTest" to 283,
+        ":ui:mobile:jvmTest" to 285,
+        ":cast:api:testAndroidHostTest" to 9,
+        ":composeApp:testAndroidHostTest" to 67,
+        ":player:core:testAndroidHostTest" to 265,
+        ":shared:core:testAndroidHostTest" to 95,
+        ":shared:data:testAndroidHostTest" to 100,
+        ":shared:features:testAndroidHostTest" to 271,
+        ":android:runtime:testDebugUnitTest" to 67,
+        ":android:runtime:testReleaseUnitTest" to 67,
+        ":cast:upnp:android:testDebugUnitTest" to 15,
+        ":cast:upnp:android:testReleaseUnitTest" to 15,
+        ":tvApp:testDebugUnitTest" to 37,
+        ":tvApp:testReleaseUnitTest" to 37,
+    ))
+    val unitTests = subprojects.flatMap { it.tasks.withType<Test>().toList() }
+    dependsOn(unitTests)
+    unitTests.forEach { test ->
+        // Dependencies are explicit above; snapshot report paths rather than inferring
+        // task ownership from Gradle's nested Report.outputLocation property.
+        val directory = test.reports.junitXml.outputLocation.get().asFile
+        resultDirectories.put(test.path, directory.absolutePath)
+        junitReports.from(fileTree(directory) { include("TEST-*.xml") })
+    }
 }
 
 // Capture plain strings after all source sets have been configured; the task remains configuration-cache safe.

@@ -16,7 +16,7 @@ val sharedAppVersionName = sharedVersionConfig.getValue("APP_VERSION_NAME")
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeCompiler)
 }
 
@@ -74,7 +74,7 @@ abstract class GenerateBuildMetadataTask : DefaultTask() {
     }
 }
 
-val generateBuildMetadata by tasks.registering(GenerateBuildMetadataTask::class) {
+val generateBuildMetadata = tasks.register<GenerateBuildMetadataTask>("generateBuildMetadata") {
     appVersionName.set(sharedAppVersionName)
     appVersionCode.set(sharedAppVersionCode)
     outputDirectory.set(layout.buildDirectory.dir("generated/source/buildMetadata/commonMain/kotlin"))
@@ -84,9 +84,17 @@ val generateBuildMetadata by tasks.registering(GenerateBuildMetadataTask::class)
 kotlin {
     jvmToolchain(21)
 
-    androidTarget {
+    android {
+        namespace = "top.iwesley.lyn.music.shared.core"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources.enable = true
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+            targetSdk { version = release(libs.versions.android.minSdk.get().toInt()) }
         }
     }
 
@@ -98,17 +106,17 @@ kotlin {
 
     sourceSets {
         // These shared fixtures are compiled only into test source sets.
-        listOf("commonTest", "jvmTest", "androidUnitTest").forEach { sourceSetName ->
+        listOf("commonTest", "jvmTest", "androidHostTest").forEach { sourceSetName ->
             named(sourceSetName) {
                 kotlin.srcDir(rootProject.file("tools/test-fixtures/src/$sourceSetName/kotlin"))
             }
         }
-        named("androidUnitTest") {
+        named("androidHostTest") {
             dependencies {
                 implementation(libs.robolectric)
             }
         }
-        val jvmAndAndroidMain by creating {
+        val jvmAndAndroidMain = create("jvmAndAndroidMain") {
             dependsOn(commonMain.get())
             dependencies {
                 implementation(libs.smbj)
@@ -134,21 +142,6 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
-    }
-}
-
-android {
-    testOptions { unitTests.isIncludeAndroidResources = true }
-    namespace = "top.iwesley.lyn.music.shared.core"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
-    defaultConfig {
-        minSdk = libs.versions.android.minSdk.get().toInt()
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
     }
 }
 

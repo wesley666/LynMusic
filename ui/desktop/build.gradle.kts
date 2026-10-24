@@ -34,7 +34,7 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.runtimeCompose)
-            implementation(compose.materialIconsExtended)
+            implementation(libs.compose.materialIconsExtended)
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)

@@ -1,6 +1,6 @@
 [versions]
 robolectric = "4.16.1"
-agp = "8.13.2"
+agp = "9.4.1"
 android-compileSdk = "37"
 android-minSdk = "23"
 android-ndk = "28.2.13676358"
@@ -19,8 +19,8 @@ composeHotReload = "1.1.1"
 composeMultiplatform = "1.11.1"
 coil = "3.4.0"
 junit = "4.13.2"
-ksp = "2.3.4"
-kotlin = "2.3.21"
+ksp = "2.3.12"
+kotlin = "2.4.21"
 kotlinx-coroutines = "1.10.2"
 kotlinx-serialization = "1.11.0"
 xmlutil = "0.91.3"
@@ -36,6 +36,7 @@ sqlite = "2.6.2"
 vlcj = "4.12.1"
 
 [libraries]
+android-gradleApi = { module = "com.android.tools.build:gradle-api", version.ref = "agp" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 kyant-backdrop = { module = "io.github.kyant0:backdrop", version = "2.0.0" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -58,6 +59,7 @@ androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "andr
 androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "androidx-media3" }
 androidx-media = { module = "androidx.media:media", version.ref = "androidx-media" }
 androidx-tv-material = { module = "androidx.tv:tv-material", version.ref = "androidx-tv" }
+compose-materialIconsExtended = { module = "org.jetbrains.compose.material:material-icons-extended", version = "1.7.3" }
 compose-uiTooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "composeMultiplatform" }
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
@@ -92,10 +94,10 @@ vlcj = { module = "uk.co.caprica:vlcj", version.ref = "vlcj" }
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidLibrary = { id = "com.android.library", version.ref = "agp" }
+androidKmpLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 androidx-room = { id = "androidx.room", version.ref = "room" }
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

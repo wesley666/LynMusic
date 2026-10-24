@@ -18,7 +18,7 @@ jobs:
           java-version: '21.0.9'
           distribution: 'oracle'
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Clean & Build Desktop App (macOS)
         run: ./gradlew clean :composeApp:packageDistributionForCurrentOS

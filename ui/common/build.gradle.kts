@@ -2,14 +2,26 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
 kotlin {
     jvmToolchain(21)
-    androidTarget { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
+    android {
+        namespace = "top.iwesley.lyn.music.ui.common"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources.enable = true
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_21)
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+            targetSdk { version = release(libs.versions.android.minSdk.get().toInt()) }
+        }
+    }
     jvm { compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } }
 
     sourceSets {
@@ -22,7 +34,7 @@ kotlin {
             api(libs.compose.ui)
             api(libs.compose.foundation)
             api(libs.compose.material3)
-            implementation(compose.materialIconsExtended)
+            implementation(libs.compose.materialIconsExtended)
             api(libs.kyant.backdrop)
             implementation(libs.coil.core)
             implementation(libs.coil.compose)
@@ -44,15 +56,5 @@ kotlin {
             implementation(libs.kotlin.testJunit)
             implementation(libs.androidx.navigationevent)
         }
-    }
-}
-
-android {
-    namespace = "top.iwesley.lyn.music.ui.common"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
     }
 }

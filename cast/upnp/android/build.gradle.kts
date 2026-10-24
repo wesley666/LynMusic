@@ -2,11 +2,13 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.androidLibrary)
-    alias(libs.plugins.kotlinAndroid)
 }
 
 android {
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        targetSdk { version = release(libs.versions.android.minSdk.get().toInt()) }
+    }
     namespace = "top.iwesley.lyn.music.cast.upnp.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     ndkVersion = libs.versions.android.ndk.get()

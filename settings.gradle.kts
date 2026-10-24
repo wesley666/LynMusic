@@ -34,6 +34,7 @@ plugins {
 }
 
 include(":composeApp")
+include(":androidApp")
 include(":android:runtime")
 include(":app:runtime")
 include(":ui:common")

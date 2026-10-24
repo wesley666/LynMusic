@@ -1,4 +1,4 @@
-import org.gradle.api.NamedDomainObjectContainer
+import com.android.build.api.dsl.ApplicationExtension
 import org.gradle.api.Project
 import java.util.Properties
 
@@ -36,31 +36,29 @@ fun Project.isAndroidLintOnAssembleEnabled(): Boolean {
         ?: true
 }
 
-fun Any.configureLynReleaseSigning(project: Project) {
+// Inline into the application script: buildSrc must not load AGP's plugin implementation.
+@Suppress("NOTHING_TO_INLINE")
+inline fun ApplicationExtension.configureLynReleaseSigning(project: Project) {
     val signingConfig = project.readAndroidReleaseSigningConfig() ?: return
-    val releaseSigningConfig = namedContainer("signingConfigs").let { signingConfigs ->
-        signingConfigs.findByName("release")
-            ?: signingConfigs.create("release")
+    val releaseSigningConfig = signingConfigs.maybeCreate("release").apply {
+        storeFile = project.rootProject.file(signingConfig.storeFile)
+        storePassword = signingConfig.storePassword
+        keyAlias = signingConfig.keyAlias
+        keyPassword = signingConfig.keyPassword
     }
-
-    releaseSigningConfig.invokeSetter("setStoreFile", project.rootProject.file(signingConfig.storeFile))
-    releaseSigningConfig.invokeSetter("setStorePassword", signingConfig.storePassword)
-    releaseSigningConfig.invokeSetter("setKeyAlias", signingConfig.keyAlias)
-    releaseSigningConfig.invokeSetter("setKeyPassword", signingConfig.keyPassword)
-
-    namedContainer("buildTypes")
-        .getByName("release")
-        .invokeSetter("setSigningConfig", releaseSigningConfig)
+    buildTypes.getByName("release").signingConfig = releaseSigningConfig
 }
 
-private data class AndroidReleaseSigningConfig(
+@PublishedApi
+internal data class AndroidReleaseSigningConfig(
     val storeFile: String,
     val storePassword: String,
     val keyAlias: String,
     val keyPassword: String,
 )
 
-private fun Project.readAndroidReleaseSigningConfig(): AndroidReleaseSigningConfig? {
+@PublishedApi
+internal fun Project.readAndroidReleaseSigningConfig(): AndroidReleaseSigningConfig? {
     val entries = mapOf(
         ANDROID_SIGNING_STORE_FILE to secret(ANDROID_SIGNING_STORE_FILE),
         ANDROID_SIGNING_STORE_PASSWORD to secret(ANDROID_SIGNING_STORE_PASSWORD),
@@ -100,27 +98,3 @@ private fun Project.readLocalProperties(): Properties =
             file.inputStream().use(::load)
         }
     }
-
-@Suppress("UNCHECKED_CAST")
-private fun Any.namedContainer(name: String): NamedDomainObjectContainer<Any> =
-    invokeGetter(name) as? NamedDomainObjectContainer<Any>
-        ?: error("Android DSL property '$name' is not a named domain object container.")
-
-private fun Any.invokeGetter(name: String): Any {
-    val methodName = "get" + name.replaceFirstChar(Char::uppercase)
-    val method = javaClass.methods.firstOrNull { method ->
-        method.name == methodName && method.parameterCount == 0
-    } ?: error("Android DSL getter '$methodName' was not found.")
-
-    return method.invoke(this)
-}
-
-private fun Any.invokeSetter(name: String, value: Any) {
-    val method = javaClass.methods.firstOrNull { method ->
-        method.name == name &&
-            method.parameterCount == 1 &&
-            method.parameterTypes[0].isAssignableFrom(value.javaClass)
-    } ?: error("Android DSL setter '$name' was not found.")
-
-    method.invoke(this, value)
-}

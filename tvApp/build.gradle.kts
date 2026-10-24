@@ -1,4 +1,4 @@
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import com.android.build.api.variant.FilterConfiguration
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val sharedVersionConfig = rootProject.readSharedVersionConfig()
@@ -7,7 +7,6 @@ val androidArtifactBaseName = "LynMusic-TV-$appVersionName"
 
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
@@ -27,7 +26,7 @@ android {
     }
 
     sourceSets.getByName("main") {
-        res.srcDir(rootProject.file("composeApp/src/androidMain/res"))
+        res.directories.add(rootProject.file("androidApp/src/main/res").path)
     }
 
     buildFeatures {
@@ -44,6 +43,13 @@ android {
         }
     }
     configureLynReleaseSigning(rootProject)
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
 
     splits {
         abi {
@@ -90,7 +96,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.ktor3)
-    implementation(compose.materialIconsExtended)
+    implementation(libs.compose.materialIconsExtended)
 
     debugImplementation(libs.compose.uiTooling)
 
@@ -109,12 +115,12 @@ if (rootProject.isAndroidLintOnAssembleEnabled()) {
     }
 }
 
-android.applicationVariants.configureEach {
-    val hasMultipleOutputs = outputs.size > 1
-    outputs.configureEach {
-        val abiFilter = filters.find { it.filterType == "ABI" }?.identifier
+androidComponents.onVariants { variant ->
+    val hasMultipleOutputs = variant.outputs.size > 1
+    variant.outputs.forEach { output ->
+        val abiFilter = output.filters.find { it.filterType == FilterConfiguration.FilterType.ABI }?.identifier
         val outputLabel = abiFilter ?: if (hasMultipleOutputs) "universal" else null
-        val outputSuffix = listOfNotNull(buildType.name, outputLabel).joinToString("-")
-        (this as BaseVariantOutputImpl).outputFileName = "$androidArtifactBaseName-$outputSuffix.apk"
+        val outputSuffix = listOfNotNull(variant.buildType, outputLabel).joinToString("-")
+        output.outputFileName.set("$androidArtifactBaseName-$outputSuffix.apk")
     }
 }
