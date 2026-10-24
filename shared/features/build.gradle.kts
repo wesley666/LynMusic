@@ -23,6 +23,17 @@ kotlin {
     }
 
     sourceSets {
+        // These shared fixtures are compiled only into test source sets.
+        listOf("commonTest", "jvmTest", "androidUnitTest").forEach { sourceSetName ->
+            named(sourceSetName) {
+                kotlin.srcDir(rootProject.file("tools/test-fixtures/src/$sourceSetName/kotlin"))
+            }
+        }
+        named("androidUnitTest") {
+            dependencies {
+                implementation(libs.robolectric)
+            }
+        }
         commonMain.dependencies {
             implementation(project(":shared:resources"))
             implementation(project(":shared:core"))
@@ -40,6 +51,7 @@ kotlin {
 }
 
 android {
+    testOptions { unitTests.isIncludeAndroidResources = true }
     namespace = "top.iwesley.lyn.music.shared.features"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 

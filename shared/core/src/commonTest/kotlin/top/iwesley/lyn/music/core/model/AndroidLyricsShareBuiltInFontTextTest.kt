@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -11,7 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
-class AndroidLyricsShareBuiltInFontTextTest {
+class AndroidLyricsShareBuiltInFontTextTest : UiResourceTest() {
     @Test fun allTenAndroidAliasesHaveLabelsInEveryLanguage() = runTest {
         val fixtures = listOf(
             listOf("sans-serif", "Sans serif", "无衬线", "無襯線"),

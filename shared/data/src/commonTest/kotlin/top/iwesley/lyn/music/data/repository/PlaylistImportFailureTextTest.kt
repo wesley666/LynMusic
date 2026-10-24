@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.data.repository
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -13,7 +15,7 @@ import top.iwesley.lyn.music.core.model.UiTextException
 import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.uiText
 
-class PlaylistImportFailureTextTest {
+class PlaylistImportFailureTextTest : UiResourceTest() {
     @Test fun wrappedDescriptionRemainsResolvableWithoutChangingReport() = runTest {
         val description = uiText(Res.string.server_http_failed, "Navidrome", "updatePlaylist", 403)
         val issue = playlistImportFailure(7, "用户歌曲 - 用户歌手", IllegalStateException("wrapper detail", UiTextException(description)))

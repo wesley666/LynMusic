@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music
 
 import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
+import top.iwesley.lyn.music.core.model.JvmAppDataDirectory
 
 import com.sun.net.httpserver.HttpServer
 import java.io.File
@@ -23,9 +24,11 @@ class JvmArtworkCacheStoreTest {
     fun `local file URI spaces are accepted without allowing remote authorities`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val directory = kotlin.io.path.createTempDirectory("lynmusic-file-uri").toFile()
             try {
                 System.setProperty("user.home", directory.absolutePath)
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 runBlocking {
                     val source = File(directory, "cover art file.png").apply { writeBytes(completePngPayload(0x01)) }
                     val store = createJvmArtworkCacheStore()
@@ -48,6 +51,7 @@ class JvmArtworkCacheStoreTest {
                 }
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 directory.deleteRecursively()
             }
         }
@@ -57,6 +61,7 @@ class JvmArtworkCacheStoreTest {
     fun `cache reuses existing file for same locator and redownloads after deletion`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-home")
             val requestCount = AtomicInteger(0)
             val payload = completePngPayload(0x01)
@@ -70,6 +75,7 @@ class JvmArtworkCacheStoreTest {
             }
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
 
@@ -97,6 +103,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(2L, runBlocking { secondStore.observeVersion(locator).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 server.stop(0)
             }
         }
@@ -106,6 +113,7 @@ class JvmArtworkCacheStoreTest {
     fun `cache rejects incomplete remote payload without writing cache`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-invalid-home")
             val payload = truncatedPngPayload()
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -117,6 +125,7 @@ class JvmArtworkCacheStoreTest {
             }
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
 
@@ -129,6 +138,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(0L, runBlocking { store.observeVersion(locator).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 server.stop(0)
             }
         }
@@ -138,6 +148,7 @@ class JvmArtworkCacheStoreTest {
     fun `cache promotes old locator keyed file to album key without redownloading`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-album-home")
             val requestCount = AtomicInteger(0)
             val payload = completePngPayload(0x04)
@@ -151,6 +162,7 @@ class JvmArtworkCacheStoreTest {
             }
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
                 val albumKey = "album:source-1:album-1"
@@ -171,6 +183,7 @@ class JvmArtworkCacheStoreTest {
                 )
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 server.stop(0)
             }
         }
@@ -180,6 +193,7 @@ class JvmArtworkCacheStoreTest {
     fun `replace existing album cache swaps valid file after new payload succeeds`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-replace-home")
             val firstPayload = completePngPayload(0x05)
             val secondPayload = completePngPayload(0x06)
@@ -196,6 +210,7 @@ class JvmArtworkCacheStoreTest {
             }
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val firstLocator = "http://127.0.0.1:${server.address.port}/first"
                 val secondLocator = "http://127.0.0.1:${server.address.port}/second"
@@ -236,6 +251,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(2L, runBlocking { store.observeVersion(albumKey).first() })
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 server.stop(0)
             }
         }
@@ -245,9 +261,11 @@ class JvmArtworkCacheStoreTest {
     fun `replaceable navidrome placeholder check rejects unrelated small webp cache`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-placeholder-home")
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val albumKey = "album:nav-source:album-1"
                 val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache").apply { mkdirs() }
@@ -257,6 +275,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(false, runBlocking { store.hasReplaceableNavidromePlaceholderCached(albumKey) })
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
             }
         }
     }
@@ -265,6 +284,7 @@ class JvmArtworkCacheStoreTest {
     fun `cache ignores temporary and damaged files for same locator`() {
         synchronized(USER_HOME_LOCK) {
             val originalUserHome = System.getProperty("user.home")
+            val originalDataRoot = configuredDataRootField.get(null) as File?
             val temporaryUserHome = kotlin.io.path.createTempDirectory("lynmusic-artwork-cache-temp-home")
             val requestCount = AtomicInteger(0)
             val payload = completePngPayload(0x02)
@@ -278,6 +298,7 @@ class JvmArtworkCacheStoreTest {
             }
             try {
                 System.setProperty("user.home", temporaryUserHome.absolutePathString())
+                JvmAppDataDirectory.initialize(JvmAppDataDirectory.defaultRootDirectory())
                 val store = createJvmArtworkCacheStore()
                 val locator = "http://127.0.0.1:${server.address.port}/cover"
                 val cacheDirectory = File(temporaryUserHome.toFile(), ".lynmusic/artwork-cache")
@@ -296,6 +317,7 @@ class JvmArtworkCacheStoreTest {
                 assertEquals(result, finalFiles.single().absolutePath)
             } finally {
                 System.setProperty("user.home", originalUserHome)
+                configuredDataRootField.set(null, originalDataRoot)
                 server.stop(0)
             }
         }
@@ -303,6 +325,11 @@ class JvmArtworkCacheStoreTest {
 }
 
 private val USER_HOME_LOCK = Any()
+
+// Preserve the uninitialized (null) state as well as explicit roots without adding production APIs.
+private val configuredDataRootField = JvmAppDataDirectory::class.java
+    .getDeclaredField("configuredRootDirectory")
+    .apply { isAccessible = true }
 
 private fun completePngPayload(marker: Byte): ByteArray {
     return byteArrayOf(

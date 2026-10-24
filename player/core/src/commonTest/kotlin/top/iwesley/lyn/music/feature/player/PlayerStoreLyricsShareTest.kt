@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.resources.*
 
 import kotlinx.coroutines.CompletableDeferred
@@ -49,7 +51,7 @@ import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlayerStoreLyricsShareTest {
+class PlayerStoreLyricsShareTest : UiResourceTest() {
     @Test
     fun `share only accepts selections after its imported font and default selection are ready`() = runTest {
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())

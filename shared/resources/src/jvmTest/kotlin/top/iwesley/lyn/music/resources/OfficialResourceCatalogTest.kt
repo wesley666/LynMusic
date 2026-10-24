@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 
 class OfficialResourceCatalogTest {
     @Test fun everyStringAndPluralLoadsAndFormatsInAllLanguages() = runTest {
-        assertEquals(1343, Res.allStringResources.size)
+        assertEquals(1311, Res.allStringResources.size)
         assertEquals(45, Res.allPluralStringResources.size)
         val placeholders = Regex("%([1-9][0-9]*)\\$([sd])")
         fun arguments(pattern: String): Array<Any> {

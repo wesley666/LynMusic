@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.my
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.resources.*
 
 import kotlin.test.Test
@@ -22,7 +24,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.data.repository.MyRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MyStoreTest {
+class MyStoreTest : UiResourceTest() {
     @Test fun describedRecentSyncFailureDoesNotDuplicateHintOrRestartRefreshOnLanguageChange() = runTest {
         val text = top.iwesley.lyn.music.core.model.uiText(Res.string.recent_remote_sync_failed_fallback)
         val repository = FakeMyRepository(refreshResult = Result.failure(top.iwesley.lyn.music.core.model.UiTextException(text)))

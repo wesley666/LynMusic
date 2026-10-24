@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -11,7 +13,7 @@ import top.iwesley.lyn.music.resources.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class WebDavUiTextTest {
+class WebDavUiTextTest : UiResourceTest() {
     @Test fun authenticationAndHttpFailuresSelectTheCorrectExplanation() = runTest {
         data class Case(val status: Int, val auth: Boolean, val detail: String?, val resource: org.jetbrains.compose.resources.StringResource)
         listOf(

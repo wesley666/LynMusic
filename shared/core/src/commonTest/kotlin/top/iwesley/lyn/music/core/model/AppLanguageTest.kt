@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 import top.iwesley.lyn.music.core.model.resolveUiText
@@ -16,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
-class AppLanguageTest {
+class AppLanguageTest : UiResourceTest() {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun languageViewsEmitOnlyChangesAndReadCurrentStateImmediately() = runTest {
         val preferences = object : AppLanguagePreferencesStore {

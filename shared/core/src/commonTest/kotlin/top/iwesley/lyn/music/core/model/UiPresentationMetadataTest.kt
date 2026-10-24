@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -11,7 +13,7 @@ import top.iwesley.lyn.music.resources.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class UiPresentationMetadataTest {
+class UiPresentationMetadataTest : UiResourceTest() {
     @Test fun unsupportedScanFailureChangesLanguageWhileDiagnosticsAndResultsStayOriginal() = runTest {
         val failure = unsupportedAudioImportFailure("用户目录/song.ape")
         val summary = ImportScanReport(emptyList(), failures = listOf(failure), discoveredAudioFileCount = 1)

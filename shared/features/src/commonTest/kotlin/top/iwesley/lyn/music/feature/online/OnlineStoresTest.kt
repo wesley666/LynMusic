@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.online
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +17,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import top.iwesley.lyn.music.testing.assertLocalizedEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -32,6 +35,7 @@ import top.iwesley.lyn.music.core.model.SambaSourceDraft
 import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.WebDavSourceDraft
+import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 import top.iwesley.lyn.music.data.repository.NavidromeOnlineDataSource
 import top.iwesley.lyn.music.data.repository.OnlineAlbumItem
@@ -42,9 +46,13 @@ import top.iwesley.lyn.music.data.repository.PlaylistImportReport
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.TrackSortMode
+import top.iwesley.lyn.music.resources.Res
+import top.iwesley.lyn.music.resources.favorites_track_added
+import top.iwesley.lyn.music.resources.playlist_created
+import top.iwesley.lyn.music.resources.playlist_track_added
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class OnlineStoresTest {
+class OnlineStoresTest : UiResourceTest() {
     @Test
     fun `online library restore ignores cancellation`() = runTest {
         val repository = FakeNavidromeOnlineDataSource(
@@ -336,7 +344,7 @@ class OnlineStoresTest {
         store.dispatch(OnlinePlaylistsIntent.CreatePlaylist("New"))
         advanceUntilIdle()
 
-        assertLocalizedEquals("playlist_created", store.state.value.message)
+        assertEquals(uiText(Res.string.playlist_created), store.state.value.message)
         assertNull(store.state.value.errorMessage)
 
         repository.playlistsFailure = IllegalStateException("load failed")
@@ -371,7 +379,7 @@ class OnlineStoresTest {
         store.dispatch(OnlinePlaylistsIntent.CreatePlaylist("New"))
         advanceUntilIdle()
 
-        assertLocalizedEquals("playlist_created", store.state.value.message)
+        assertEquals(uiText(Res.string.playlist_created), store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }
@@ -402,7 +410,7 @@ class OnlineStoresTest {
 
         assertNull(store.state.value.sourceId)
         assertLocalizedEquals(listOf(ONLINE_SOURCE_ID to "playlist-1"), repository.addTrackCalls)
-        assertLocalizedEquals("playlist_track_added", store.state.value.message)
+        assertEquals(uiText(Res.string.playlist_track_added), store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }
@@ -986,7 +994,7 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertLocalizedEquals("favorites_track_added", store.state.value.message)
+        assertEquals(uiText(Res.string.favorites_track_added), store.state.value.message)
         assertNull(store.state.value.errorMessage)
 
         repository.setFavoriteFailure = IllegalStateException("favorite failed")
@@ -1041,7 +1049,7 @@ class OnlineStoresTest {
         )
         advanceUntilIdle()
 
-        assertLocalizedEquals("favorites_track_added", store.state.value.message)
+        assertEquals(uiText(Res.string.favorites_track_added), store.state.value.message)
         assertNull(store.state.value.errorMessage)
         scope.cancel()
     }

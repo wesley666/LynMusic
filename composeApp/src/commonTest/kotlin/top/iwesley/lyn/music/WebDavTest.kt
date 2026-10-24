@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +26,7 @@ import top.iwesley.lyn.music.core.model.parseWebDavLocator
 import top.iwesley.lyn.music.core.model.parseWebDavMultistatus
 import top.iwesley.lyn.music.core.model.resolveWebDavRelativePath
 
-class WebDavTest {
+class WebDavTest : UiResourceTest() {
 
     @Test
     fun `normalize webdav root url drops default port and keeps trailing slash`() {

@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -11,7 +13,7 @@ import top.iwesley.lyn.music.resources.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class OfflineDownloadFailureTextTest {
+class OfflineDownloadFailureTextTest : UiResourceTest() {
     @Test fun xmlFailuresLocalizeContextAndPreserveServerDetails() = runTest {
         val details = "原始服务器消息 %1\$s"
         val text = offlineDownloadResponseFailureText("Subsonic", errorMessage = details, status = "failed", errorCode = "70")

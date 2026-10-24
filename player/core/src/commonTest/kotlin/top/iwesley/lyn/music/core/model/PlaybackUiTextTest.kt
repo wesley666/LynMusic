@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -11,7 +13,7 @@ import top.iwesley.lyn.music.resources.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class PlaybackUiTextTest {
+class PlaybackUiTextTest : UiResourceTest() {
     @Test fun applicationErrorsKeepDescriptionsAndDiagnosticsSeparate() = runTest {
         val text = uiText(Res.string.playback_vlc_unavailable)
         val state = PlaybackGatewayState(errorMessage = "仅用于诊断", errorText = text)

@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.offline
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.resources.*
 
 import kotlin.test.Test
@@ -32,7 +34,7 @@ import top.iwesley.lyn.music.feature.TestOfflineDownloadRepository
 import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class OfflineDownloadStoreTest {
+class OfflineDownloadStoreTest : UiResourceTest() {
     @Test
     fun describedDownloadFailureReachesUiAndRetainsStateAcrossLanguages() = runTest {
         val track = sampleWebDavTrack(id = "described-failure")

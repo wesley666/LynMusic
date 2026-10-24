@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -35,7 +37,7 @@ import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerStore
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlayerStoreManualLyricsSearchTest {
+class PlayerStoreManualLyricsSearchTest : UiResourceTest() {
 
     @Test
     fun `failed application from an ended session cannot overwrite the next session`() = runTest {

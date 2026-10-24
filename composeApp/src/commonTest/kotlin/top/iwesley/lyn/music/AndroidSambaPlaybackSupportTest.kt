@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -19,7 +21,7 @@ import top.iwesley.lyn.music.platform.buildSambaCacheFileName
 import top.iwesley.lyn.music.platform.resolveSambaSourceSpec
 import top.iwesley.lyn.music.platform.shouldUseAndroidSambaDirectPlayback
 
-class AndroidSambaPlaybackSupportTest {
+class AndroidSambaPlaybackSupportTest : UiResourceTest() {
 
     @Test
     fun `android samba direct playback is enabled only when cache is disabled`() = runTest {

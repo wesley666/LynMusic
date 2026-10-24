@@ -1802,7 +1802,7 @@ class PlaylistImportRepositoryUiTextTest {
             val issue = report.failedLines.single()
             assertEquals(2, issue.lineNumber)
             assertEquals("失败歌曲 - 歌手", issue.rawText)
-            assertEquals("Navidrome updatePlaylist 失败，HTTP 403", issue.message)
+            assertEquals("Navidrome updatePlaylist 失败，HTTP 403", resolveUiText(issue.messageUiText(), AppLanguage.SimplifiedChinese))
             assertEquals("Navidrome updatePlaylist failed, HTTP 403", resolveUiText(issue.messageUiText(), AppLanguage.English))
             assertEquals("Navidrome updatePlaylist 失敗，HTTP 403", resolveUiText(issue.messageUiText(), AppLanguage.TraditionalChinese))
             assertEquals(listOf(listOf("song-good", "song-bad"), listOf("song-bad")), failedBatches)

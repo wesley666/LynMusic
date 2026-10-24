@@ -1,10 +1,12 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import top.iwesley.lyn.music.resources.*
 
-class ImportScanTextTest {
+class ImportScanTextTest : UiResourceTest() {
     private val languages = listOf(AppLanguage.English, AppLanguage.SimplifiedChinese, AppLanguage.TraditionalChinese, AppLanguage.English)
 
     @Test fun wrappedApplicationFailureKeepsDescriptionAndDiagnosticsSeparate() = runTest {

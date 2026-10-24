@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.importing
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 import top.iwesley.lyn.music.core.model.resolveUiText
@@ -49,7 +51,7 @@ import top.iwesley.lyn.music.core.model.RemoteDirectoryEntry
 import top.iwesley.lyn.music.data.repository.ImportSourceRepository
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ImportStoreTest {
+class ImportStoreTest : UiResourceTest() {
     @Test fun localizedSambaFailureFlowsThroughTestToastAndKeepsEnteredDraft() = runTest {
         val repository = FakeImportSourceRepository().apply {
             pendingResult = CompletableDeferred(Result.failure(top.iwesley.lyn.music.core.model.UiTextException(top.iwesley.lyn.music.core.model.uiText(Res.string.samba_source_unavailable))))

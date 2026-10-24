@@ -704,8 +704,7 @@ class JvmDataLocationManagerTest {
         withTemporaryHome { home ->
             val source = File(home, ".lynmusic").apply { mkdirs() }
             val sourceDatabaseFile = File(source, "lynmusic.db")
-            openTestDatabase(sourceDatabaseFile).close()
-            downgradeDatabaseToVersion18(sourceDatabaseFile)
+            createVersion18Database(sourceDatabaseFile)
             val target = File(File(home, "wrong-version").apply { mkdirs() }, "LynMusic")
             val manager = JvmDataLocationManager(home, "Windows 11") { _, _ -> false }
             manager.scheduleChange(target, AppDataLocationChangeMode.Migrate)
@@ -782,15 +781,15 @@ class JvmDataLocationManagerTest {
         withTemporaryHome { home ->
             val source = File(home, ".lynmusic").apply { mkdirs() }
             val sourceDatabaseFile = File(source, "lynmusic.db")
-            openTestDatabase(sourceDatabaseFile).close()
-            downgradeDatabaseToVersion18(sourceDatabaseFile)
+            createVersion18Database(sourceDatabaseFile)
             val target = File(File(home, "upgrade-before-copy").apply { mkdirs() }, "LynMusic")
             val manager = JvmDataLocationManager(home, "Windows 11") { _, _ -> false }
 
             manager.scheduleChange(target, AppDataLocationChangeMode.Migrate)
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(21L, readUserVersion(File(target, "lynmusic.db")))
+            assertHistoricalLyricsPreserved(File(target, "lynmusic.db"))
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
     }
@@ -800,8 +799,7 @@ class JvmDataLocationManagerTest {
         withTemporaryHome { home ->
             val source = File(home, ".lynmusic").apply { mkdirs() }
             val sourceDatabaseFile = File(source, "lynmusic.db")
-            openTestDatabase(sourceDatabaseFile).close()
-            downgradeDatabaseToVersion18(sourceDatabaseFile)
+            createVersion18Database(sourceDatabaseFile)
             File(source, ".lynmusic-data-root").writeText("owned")
             val target = File(File(home, "upgrade-data-ready").apply { mkdirs() }, "LynMusic")
             val manager = JvmDataLocationManager(home, "Windows 11") { _, _ -> false }
@@ -813,7 +811,8 @@ class JvmDataLocationManagerTest {
 
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(21L, readUserVersion(File(target, "lynmusic.db")))
+            assertHistoricalLyricsPreserved(File(target, "lynmusic.db"))
             assertFalse(source.exists())
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
@@ -824,8 +823,7 @@ class JvmDataLocationManagerTest {
         withTemporaryHome { home ->
             val source = File(home, ".lynmusic").apply { mkdirs() }
             val sourceDatabaseFile = File(source, "lynmusic.db")
-            openTestDatabase(sourceDatabaseFile).close()
-            downgradeDatabaseToVersion18(sourceDatabaseFile)
+            createVersion18Database(sourceDatabaseFile)
             File(source, ".lynmusic-data-root").writeText("owned")
             val target = File(File(home, "upgrade-both-data-ready").apply { mkdirs() }, "LynMusic")
             val manager = JvmDataLocationManager(home, "Windows 11") { _, _ -> false }
@@ -836,7 +834,8 @@ class JvmDataLocationManagerTest {
 
             manager.applyPendingChange().getOrThrow()
 
-            assertEquals(20L, readUserVersion(File(target, "lynmusic.db")))
+            assertEquals(21L, readUserVersion(File(target, "lynmusic.db")))
+            assertHistoricalLyricsPreserved(File(target, "lynmusic.db"))
             assertFalse(source.exists())
             assertEquals(target.canonicalFile, manager.currentRootDirectory().canonicalFile)
         }
@@ -1360,34 +1359,72 @@ private fun openTestDatabase(file: File): LynMusicDatabase {
     ).getOrThrow()
 }
 
-private fun downgradeDatabaseToVersion18(file: File) {
+private fun createVersion18Database(file: File) {
+    file.parentFile.mkdirs()
+    // Frozen from shared/data/schemas/top.iwesley.lyn.music.data.db.LynMusicDatabase/18.json.
+    // Build the historical schema directly so future database versions cannot change this fixture.
+    val schemaStatements = listOf(
+        "CREATE TABLE IF NOT EXISTS `artist` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `trackCount` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `album` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `artistName` TEXT, `trackCount` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `import_source` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `label` TEXT NOT NULL, `rootReference` TEXT NOT NULL, `server` TEXT, `shareName` TEXT, `directoryPath` TEXT, `username` TEXT, `credentialKey` TEXT, `allowInsecureTls` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `lastScannedAt` INTEGER, `createdAt` INTEGER NOT NULL, `authMode` TEXT NOT NULL, `wanRootReference` TEXT, `indexMode` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `import_index_state` (`sourceId` TEXT NOT NULL, `trackCount` INTEGER NOT NULL, `remoteTrackCount` INTEGER, `lastScannedAt` INTEGER, `lastError` TEXT, PRIMARY KEY(`sourceId`))",
+        "CREATE TABLE IF NOT EXISTS `track` (`id` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `title` TEXT NOT NULL, `artistId` TEXT, `artistName` TEXT, `albumId` TEXT, `albumTitle` TEXT, `durationMs` INTEGER NOT NULL, `trackNumber` INTEGER, `discNumber` INTEGER, `mediaLocator` TEXT NOT NULL, `relativePath` TEXT NOT NULL, `artworkLocator` TEXT, `sizeBytes` INTEGER NOT NULL, `modifiedAt` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `bitDepth` INTEGER, `samplingRate` INTEGER, `bitRate` INTEGER, `channelCount` INTEGER, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `track_playback_stats` (`trackId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayedAt` INTEGER NOT NULL, PRIMARY KEY(`trackId`))",
+        "CREATE TABLE IF NOT EXISTS `album_playback_stats` (`albumId` TEXT NOT NULL, `playCount` INTEGER NOT NULL, `lastPlayedAt` INTEGER NOT NULL, PRIMARY KEY(`albumId`))",
+        "CREATE TABLE IF NOT EXISTS `daily_recommendation` (`dateKey` TEXT NOT NULL, `generatedAt` INTEGER NOT NULL, `trackIds` TEXT NOT NULL, PRIMARY KEY(`dateKey`))",
+        "CREATE TABLE IF NOT EXISTS `playback_queue_snapshot` (`id` INTEGER NOT NULL, `queueTrackIds` TEXT NOT NULL, `orderedQueueTrackIds` TEXT NOT NULL, `currentIndex` INTEGER NOT NULL, `positionMs` INTEGER NOT NULL, `mode` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `favorite_track` (`trackId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `remoteSongId` TEXT, `favoritedAt` INTEGER NOT NULL, PRIMARY KEY(`trackId`))",
+        "CREATE TABLE IF NOT EXISTS `playlist` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `createdLocally` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_playlist_normalizedName` ON `playlist` (`normalizedName`)",
+        "CREATE TABLE IF NOT EXISTS `playlist_track` (`playlistId` TEXT NOT NULL, `trackId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, `localOrdinal` INTEGER, `remoteOrdinal` INTEGER, PRIMARY KEY(`playlistId`, `trackId`))",
+        "CREATE INDEX IF NOT EXISTS `index_playlist_track_playlistId` ON `playlist_track` (`playlistId`)",
+        "CREATE INDEX IF NOT EXISTS `index_playlist_track_sourceId` ON `playlist_track` (`sourceId`)",
+        "CREATE TABLE IF NOT EXISTS `playlist_remote_binding` (`playlistId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `remotePlaylistId` TEXT NOT NULL, `remoteName` TEXT NOT NULL, `lastSyncedAt` INTEGER, PRIMARY KEY(`playlistId`, `sourceId`))",
+        "CREATE INDEX IF NOT EXISTS `index_playlist_remote_binding_sourceId` ON `playlist_remote_binding` (`sourceId`)",
+        "CREATE TABLE IF NOT EXISTS `lyrics_source_config` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `method` TEXT NOT NULL, `urlTemplate` TEXT NOT NULL, `headersTemplate` TEXT NOT NULL, `queryTemplate` TEXT NOT NULL, `bodyTemplate` TEXT NOT NULL, `responseFormat` TEXT NOT NULL, `extractor` TEXT NOT NULL, `priority` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `workflow_lyrics_source_config` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `priority` INTEGER NOT NULL, `enabled` INTEGER NOT NULL, `rawJson` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "CREATE TABLE IF NOT EXISTS `lyrics_cache` (`trackId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `rawPayload` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `artworkLocator` TEXT, PRIMARY KEY(`trackId`, `sourceId`))",
+        "CREATE TABLE IF NOT EXISTS `offline_download` (`trackId` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `originalMediaLocator` TEXT NOT NULL, `localMediaLocator` TEXT, `quality` TEXT NOT NULL, `status` TEXT NOT NULL, `downloadedBytes` INTEGER NOT NULL, `totalBytes` INTEGER, `updatedAt` INTEGER NOT NULL, `errorMessage` TEXT, PRIMARY KEY(`trackId`))",
+        "CREATE INDEX IF NOT EXISTS `index_offline_download_sourceId` ON `offline_download` (`sourceId`)",
+        "CREATE TABLE IF NOT EXISTS `import_track_stage` (`scanId` TEXT NOT NULL, `id` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `title` TEXT NOT NULL, `artistId` TEXT, `artistName` TEXT, `albumId` TEXT, `albumTitle` TEXT, `durationMs` INTEGER NOT NULL, `trackNumber` INTEGER, `discNumber` INTEGER, `mediaLocator` TEXT NOT NULL, `relativePath` TEXT NOT NULL, `artworkLocator` TEXT, `sizeBytes` INTEGER NOT NULL, `modifiedAt` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, `bitDepth` INTEGER, `samplingRate` INTEGER, `bitRate` INTEGER, `channelCount` INTEGER, PRIMARY KEY(`scanId`, `id`))",
+        "CREATE INDEX IF NOT EXISTS `index_import_track_stage_sourceId` ON `import_track_stage` (`sourceId`)",
+        "CREATE INDEX IF NOT EXISTS `index_import_track_stage_scanId` ON `import_track_stage` (`scanId`)",
+        "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+        "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '64651a204975dd58b8d93e6b075f62dc')",
+    )
     BundledSQLiteDriver().open(file.absolutePath).use { connection ->
-        connection.execTestSql("ALTER TABLE playback_queue_snapshot RENAME TO playback_queue_snapshot_v19")
+        schemaStatements.forEach { connection.execTestSql(it) }
         connection.execTestSql(
             """
-            CREATE TABLE playback_queue_snapshot (
-                id INTEGER NOT NULL PRIMARY KEY,
-                queueTrackIds TEXT NOT NULL,
-                orderedQueueTrackIds TEXT NOT NULL,
-                currentIndex INTEGER NOT NULL,
-                positionMs INTEGER NOT NULL,
-                mode TEXT NOT NULL,
-                updatedAt INTEGER NOT NULL
-            )
+            INSERT INTO lyrics_cache (trackId, sourceId, rawPayload, updatedAt, artworkLocator)
+            VALUES ('migration-track', 'migration-source', '[00:01.00]historical lyrics', 123, '/historical-cover.png')
             """.trimIndent(),
         )
-        connection.execTestSql(
-            """
-            INSERT INTO playback_queue_snapshot (
-                id, queueTrackIds, orderedQueueTrackIds, currentIndex, positionMs, mode, updatedAt
-            )
-            SELECT id, queueTrackIds, orderedQueueTrackIds, currentIndex, positionMs, mode, updatedAt
-            FROM playback_queue_snapshot_v19
-            """.trimIndent(),
-        )
-        connection.execTestSql("DROP TABLE playback_queue_snapshot_v19")
-        connection.execTestSql("ALTER TABLE import_source DROP COLUMN selectedDirectories")
         connection.execTestSql("PRAGMA user_version = 18")
+    }
+}
+
+private fun assertHistoricalLyricsPreserved(file: File) {
+    BundledSQLiteDriver().open(file.absolutePath).use { connection ->
+        connection.prepare(
+            """
+            SELECT sourceId, rawPayload, updatedAt, artworkLocator, originalSourceId, selectedForPlayback
+            FROM lyrics_cache WHERE trackId = 'migration-track'
+            """.trimIndent(),
+        ).use { statement ->
+            assertTrue(statement.step())
+            assertEquals("migration-source", statement.getText(0))
+            assertEquals("[00:01.00]historical lyrics", statement.getText(1))
+            assertEquals(123L, statement.getLong(2))
+            assertEquals("/historical-cover.png", statement.getText(3))
+            assertTrue(statement.isNull(4))
+            assertEquals(0L, statement.getLong(5))
+            assertFalse(statement.step())
+        }
+        connection.prepare("PRAGMA quick_check").use { statement ->
+            assertTrue(statement.step())
+            assertEquals("ok", statement.getText(0))
+        }
     }
 }
 

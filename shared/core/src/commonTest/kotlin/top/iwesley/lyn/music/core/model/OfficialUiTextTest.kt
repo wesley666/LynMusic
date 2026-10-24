@@ -1,10 +1,12 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 import top.iwesley.lyn.music.resources.*
 import kotlin.test.*
 
-class OfficialUiTextTest {
+class OfficialUiTextTest : UiResourceTest() {
     @Test fun nestedParametersAndSeparatorsUseOneEnvironment() = runTest {
         val raw = "provider 原文 %1\$s\n100% "
         val text = uiText(Res.string.ui_error_with_context, uiText(Res.string.common_close), UiText.Raw(raw))

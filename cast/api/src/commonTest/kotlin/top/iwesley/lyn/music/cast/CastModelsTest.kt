@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.cast
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 import top.iwesley.lyn.music.resources.*
@@ -15,7 +17,7 @@ import top.iwesley.lyn.music.core.model.AppLanguage
 import top.iwesley.lyn.music.core.model.resolveUiText
 import top.iwesley.lyn.music.core.model.uiText
 
-class CastModelsTest {
+class CastModelsTest : UiResourceTest() {
     @Test fun statusDescriptionsFollowTheDisplayLanguageAndPreserveDeviceNames() = runTest {
         val expected = mapOf(
             CastSessionStatus.Idle to listOf("Search for nearby devices", "搜索附近设备", "搜尋附近裝置"),

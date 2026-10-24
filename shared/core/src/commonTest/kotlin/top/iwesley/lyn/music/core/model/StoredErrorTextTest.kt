@@ -1,11 +1,13 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import top.iwesley.lyn.music.resources.*
 
-class StoredErrorTextTest {
+class StoredErrorTextTest : UiResourceTest() {
     @Test fun oneSnapshotUsesCapturedLanguageEvenWhenSelectionChangesDuringResolution() = runTest {
         val previous = AppLanguageRuntime.appLanguage.value
         try {

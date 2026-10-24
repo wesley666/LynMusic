@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.playlists
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +39,7 @@ import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlaylistsStoreTest {
+class PlaylistsStoreTest : UiResourceTest() {
 
     @Test
     fun `create playlist selects newly created playlist`() = runTest {

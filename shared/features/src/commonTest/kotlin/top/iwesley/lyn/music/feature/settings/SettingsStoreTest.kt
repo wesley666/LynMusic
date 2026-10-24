@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.settings
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 import top.iwesley.lyn.music.core.model.resolveUiText
@@ -78,7 +80,7 @@ import top.iwesley.lyn.music.domain.buildManagedMusicmatchWorkflowJson
 import top.iwesley.lyn.music.domain.parseWorkflowLyricsSourceConfig
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class SettingsStoreTest {
+class SettingsStoreTest : UiResourceTest() {
     @Test
     fun languageSaveFailureIsReportedWithoutChangingSelectionOrForm() = runTest {
         val preferences = FakeSettingsRepository()

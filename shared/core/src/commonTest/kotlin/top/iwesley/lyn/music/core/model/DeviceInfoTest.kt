@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -10,7 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-class DeviceInfoTest {
+class DeviceInfoTest : UiResourceTest() {
     @Test fun hardwareDescriptionKeepsRawModelAndUsesPluralResource() = runTest {
         val snapshot = DeviceInfoSnapshot("Android", "14", cpuDescription = "型号 甲 · arm64", logicalCoreCount = 1)
         val text = checkNotNull(snapshot.cpuDescriptionText)

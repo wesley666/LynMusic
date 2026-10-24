@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.tags
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.resources.*
 
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +44,7 @@ import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 import top.iwesley.lyn.music.domain.serializeLyricsDocument
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MusicTagsStoreTest {
+class MusicTagsStoreTest : UiResourceTest() {
     @Test
     fun describedTagFormatFollowsLanguageWithoutResettingDraft() = runTest {
         val originalLanguage = AppLanguageRuntime.appLanguage.value

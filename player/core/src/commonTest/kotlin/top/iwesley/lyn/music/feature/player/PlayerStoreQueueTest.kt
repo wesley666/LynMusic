@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.feature.player
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import top.iwesley.lyn.music.core.model.ArtworkWritePolicy
 import top.iwesley.lyn.music.core.model.ArtworkCacheResult
 
@@ -56,7 +58,7 @@ import top.iwesley.lyn.music.data.repository.PlaybackRepository
 import top.iwesley.lyn.music.data.repository.ResolvedLyricsResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class PlayerStoreQueueTest {
+class PlayerStoreQueueTest : UiResourceTest() {
 
     @Test
     fun `leaving a host does not cancel service owned playback restoration`() = runTest {

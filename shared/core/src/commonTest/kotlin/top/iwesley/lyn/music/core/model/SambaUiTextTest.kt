@@ -1,5 +1,7 @@
 package top.iwesley.lyn.music.core.model
 
+import top.iwesley.lyn.music.testing.UiResourceTest
+
 import kotlinx.coroutines.test.runTest
 
 import top.iwesley.lyn.music.core.model.AppLanguageRuntime
@@ -12,7 +14,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class SambaUiTextTest {
+class SambaUiTextTest : UiResourceTest() {
     @Test fun operationsUseTheSelectedLanguageAndPreserveProviderDetails() = runTest {
         val details = "provider 原文 %1\$s"
         val error = IllegalStateException(details)
