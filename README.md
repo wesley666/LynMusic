@@ -2,7 +2,9 @@ LynMusic is a cross-platform local music player for Android, Android TV, Android
 
 LynMusic 是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，维护的平台包括 Android 手机／平板、Android TV、Android Automotive 和桌面端（JVM），桌面端支持 Windows、macOS 和 Linux。
 
-iOS 和 macOS 原生版本已停止维护，对应工程及构建目标已移除；macOS 的 JVM 桌面版继续维护。历史原生端代码可从 Git 历史中查阅。
+原生语言 Swift 开发的 LynMusic 现已上架苹果商店，包括 iPhone、iPad、Mac：[LynMusic App - App Store](https://apps.apple.com/cn/app/lynmusic/id6797922509)
+
+参考：[LynMusic 终于来到 Apple 平台了](https://mp.weixin.qq.com/s/qMaVVd0ZJFal5G48F8m-7g)
 
 ![LynMusic](./doc/LynMusic.png)
 ## 为什么做这个播放器
