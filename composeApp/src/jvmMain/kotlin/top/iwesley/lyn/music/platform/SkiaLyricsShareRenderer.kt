@@ -3,10 +3,13 @@ package top.iwesley.lyn.music.platform
 import kotlin.math.max
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Canvas
+import org.jetbrains.skia.Color4f
 import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.FilterTileMode
 import org.jetbrains.skia.Font
 import org.jetbrains.skia.FontMgr
 import org.jetbrains.skia.FontStyle
+import org.jetbrains.skia.Gradient
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Paint
 import org.jetbrains.skia.Point
@@ -757,6 +760,19 @@ private fun preferredSkiaLyricsShareCodePoint(text: String): Int? {
     return nonAscii?.code ?: trimmed.firstOrNull { !it.isWhitespace() }?.code
 }
 
+private fun makeSkiaLyricsShareGradient(
+    colors: IntArray,
+    positions: FloatArray? = null,
+): Gradient = Gradient(
+    colors = Gradient.Colors(
+        colors = Array(colors.size) { Color4f(colors[it]) },
+        positions = positions,
+        tileMode = FilterTileMode.CLAMP,
+    ),
+    // Preserve the premultiplied interpolation of the previous GradientStyle.DEFAULT.
+    interpolation = Gradient.Interpolation(inPremul = Gradient.Interpolation.InPremul.YES),
+)
+
 private fun drawSkiaPlaybackPaletteBackground(
     canvas: Canvas,
     width: Float,
@@ -772,9 +788,11 @@ private fun drawSkiaPlaybackPaletteBackground(
             shader = Shader.makeRadialGradient(
                 Point(width * 0.06f, height * 0.72f),
                 radius * 0.82f,
-                intArrayOf(
-                    palette?.primaryColorArgb?.let { argbWithAlpha(it, 0.58f) } ?: 0x00000000,
-                    0x00000000,
+                makeSkiaLyricsShareGradient(
+                    colors = intArrayOf(
+                        palette?.primaryColorArgb?.let { argbWithAlpha(it, 0.58f) } ?: 0x00000000,
+                        0x00000000,
+                    ),
                 ),
             )
         },
@@ -786,9 +804,11 @@ private fun drawSkiaPlaybackPaletteBackground(
             shader = Shader.makeRadialGradient(
                 Point(width * 0.98f, height * 0.16f),
                 radius * 0.76f,
-                intArrayOf(
-                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.48f) } ?: 0x00000000,
-                    0x00000000,
+                makeSkiaLyricsShareGradient(
+                    colors = intArrayOf(
+                        palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.48f) } ?: 0x00000000,
+                        0x00000000,
+                    ),
                 ),
             )
         },
@@ -800,9 +820,11 @@ private fun drawSkiaPlaybackPaletteBackground(
             shader = Shader.makeRadialGradient(
                 Point(width * 0.52f, height * 0.48f),
                 radius * 0.64f,
-                intArrayOf(
-                    palette?.tertiaryColorArgb?.let { argbWithAlpha(it, 0.36f) } ?: 0x00000000,
-                    0x00000000,
+                makeSkiaLyricsShareGradient(
+                    colors = intArrayOf(
+                        palette?.tertiaryColorArgb?.let { argbWithAlpha(it, 0.36f) } ?: 0x00000000,
+                        0x00000000,
+                    ),
                 ),
             )
         },
@@ -814,12 +836,14 @@ private fun drawSkiaPlaybackPaletteBackground(
             shader = Shader.makeLinearGradient(
                 Point(0f, 0f),
                 Point(width, height),
-                intArrayOf(
-                    0x00000000,
-                    palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.24f) } ?: 0x00000000,
-                    0x00000000,
+                makeSkiaLyricsShareGradient(
+                    colors = intArrayOf(
+                        0x00000000,
+                        palette?.secondaryColorArgb?.let { argbWithAlpha(it, 0.24f) } ?: 0x00000000,
+                        0x00000000,
+                    ),
+                    positions = floatArrayOf(0f, 0.5f, 1f),
                 ),
-                floatArrayOf(0f, 0.5f, 1f),
             )
         },
     )

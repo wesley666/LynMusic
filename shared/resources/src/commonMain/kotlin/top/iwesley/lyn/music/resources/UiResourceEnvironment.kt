@@ -11,12 +11,13 @@ import org.jetbrains.compose.resources.LanguageQualifier
 import org.jetbrains.compose.resources.LocalComposeEnvironment
 import org.jetbrains.compose.resources.RegionQualifier
 import org.jetbrains.compose.resources.ResourceEnvironment
+import org.jetbrains.compose.resources.ScriptQualifier
 import org.jetbrains.compose.resources.getSystemResourceEnvironment
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 
 /**
- * Compose resources 1.11.1 has no public locale override. All access to its internal
- * environment API stays in this file; recheck it when upgrading the library.
+ * Locale overrides use Compose resources' internal environment API only in this file.
+ * Recheck this integration when upgrading the library.
  * No default Locale or platform language preference is changed.
  */
 fun uiResourceEnvironment(
@@ -31,7 +32,11 @@ fun uiResourceEnvironment(
     }
     val environment = base ?: getSystemResourceEnvironment()
     return ResourceEnvironment(
-        LanguageQualifier(language), RegionQualifier(region), environment.theme, environment.density,
+        language = LanguageQualifier(language),
+        script = ScriptQualifier(""),
+        region = RegionQualifier(region),
+        theme = environment.theme,
+        density = environment.density,
     )
 }
 
