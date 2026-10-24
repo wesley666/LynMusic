@@ -60,6 +60,9 @@ import top.iwesley.lyn.music.ui.mainShellColors
 
 internal val defaultSelectedAppTab: AppTab = AppTab.Library
 
+// Preserve Coil 3.4's JVM default: 15% of 512 MiB, independent of the JVM heap limit.
+private const val DESKTOP_ARTWORK_MEMORY_CACHE_MAX_BYTES = 512L * 1024 * 1024 * 15 / 100
+
 @Composable
 fun DesktopApp(
     component: LynMusicAppComponent,
@@ -69,7 +72,7 @@ fun DesktopApp(
     startupWarning: UiText? = null,
 ) {
     ProvideUiLanguage {
-        ConfigureLynArtworkImageLoader()
+        ConfigureLynArtworkImageLoader(memoryCacheMaxBytes = DESKTOP_ARTWORK_MEMORY_CACHE_MAX_BYTES)
 
         DisposableEffect(component) {
             onDispose { component.dispose() }
