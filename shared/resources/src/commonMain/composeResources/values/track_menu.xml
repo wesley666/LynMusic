@@ -1,0 +1,4 @@
+<resources>
+    <string name="track_more_actions">More actions for %1$s</string>
+    <string name="track_favorite_indicator">Liked</string>
+</resources>

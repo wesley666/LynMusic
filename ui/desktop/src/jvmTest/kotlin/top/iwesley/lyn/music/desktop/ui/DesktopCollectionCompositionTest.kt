@@ -55,6 +55,7 @@ class DesktopCollectionCompositionTest {
         Fixture(AppTab.Favorites).use { ui ->
             ui.click("First track")
             ui.assertPlayback(listOf("one"), 0)
+            ui.click("More actions for First track")
             ui.click("Remove from favorites")
             assertEquals("one", (ui.favoriteIntents.last() as FavoritesIntent.ToggleFavorite).track.id)
             ui.capture("favorites")

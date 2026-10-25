@@ -69,6 +69,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -166,7 +167,7 @@ internal fun LibraryTab(
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onOnlineIntent: (OnlineLibraryIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
-    showFavoriteButton: Boolean = true,
+    showFavoriteIndicator: Boolean = true,
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
     navigationTarget: LibraryNavigationTarget? = null,
@@ -273,7 +274,7 @@ internal fun LibraryTab(
             artistLabel = uiString(Res.string.library_artists_title),
             folderLabel = uiString(Res.string.library_folders_title),
         ),
-        showFavoriteButton = showFavoriteButton && !isOnlineMode,
+        showFavoriteIndicator = showFavoriteIndicator,
         showDuration = showDuration,
         showSearchField = showSearchField,
         showTrackSortActionButton = showSearchField && !isOnlineMode,
@@ -299,7 +300,6 @@ internal fun FavoritesTab(
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onOnlineIntent: (OnlineFavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
-    showFavoriteButton: Boolean = true,
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
     showRefreshActionButton: Boolean = true,
@@ -354,54 +354,66 @@ internal fun FavoritesTab(
         onLoadMoreTracks = { onOnlineIntent(OnlineFavoritesIntent.LoadMore) },
         onPlayTracks = { tracks, index -> onPlayerIntent(PlayerIntent.PlayTracks(tracks, index)) },
     )
-    LibraryBrowserTab(
-        state = browserState,
-        actions = browserActions,
-        onlineSourceOptions = onlineSourceOptions,
-        strings = LibraryBrowserStrings(
-            searchLabel = uiString(Res.string.library_search_placeholder),
-            sectionTitle = "",
-            sectionSubtitle = "",
-            songsIcon = Icons.Rounded.Favorite,
-            emptyCollectionTitle = uiString(Res.string.favorites_empty_title),
-            emptyCollectionBody = uiString(Res.string.favorites_empty_hint),
-            emptyFilterBody = uiString(Res.string.favorites_source_filter_empty_hint),
-            emptySearchBody = uiString(Res.string.library_search_filter_empty_hint),
-            trackLabel = uiString(Res.string.favorites_tracks_title),
-            albumLabel = uiString(Res.string.favorites_albums_title),
-            artistLabel = uiString(Res.string.favorites_artists_title),
-            folderLabel = uiString(Res.string.favorites_folders_title),
-        ),
-        actionButton = if (showRefreshActionButton && (state.canRefreshRemote || isOnlineMode)) {
-            {
-                IconButton(
-                    onClick = {
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlineFavoritesIntent.Refresh)
-                        } else {
-                            onFavoritesIntent(FavoritesIntent.Refresh)
-                        }
-                    },
-                    enabled = if (isOnlineMode) !onlineState.isLoading else !state.isRefreshing,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Sync,
-                        contentDescription = if (state.isRefreshing || onlineState.isLoading) uiString(Res.string.common_refreshing) else uiString(Res.string.common_refresh),
-                    )
+    val listBindings = LocalTrackListActionBindings.current
+    val favoritesBindings = if (isOnlineMode) {
+        // Online favorites retain the page's removal action, independent of player state overrides.
+        listBindings.copy(
+            favoriteState = { TrackFavoriteUiState(isFavorite = true) },
+            onSetFavorite = { track, _ -> browserActions.onToggleFavorite(track) },
+        )
+    } else {
+        listBindings
+    }
+    CompositionLocalProvider(LocalTrackListActionBindings provides favoritesBindings) {
+        LibraryBrowserTab(
+            state = browserState,
+            actions = browserActions,
+            onlineSourceOptions = onlineSourceOptions,
+            strings = LibraryBrowserStrings(
+                searchLabel = uiString(Res.string.library_search_placeholder),
+                sectionTitle = "",
+                sectionSubtitle = "",
+                songsIcon = Icons.Rounded.Favorite,
+                emptyCollectionTitle = uiString(Res.string.favorites_empty_title),
+                emptyCollectionBody = uiString(Res.string.favorites_empty_hint),
+                emptyFilterBody = uiString(Res.string.favorites_source_filter_empty_hint),
+                emptySearchBody = uiString(Res.string.library_search_filter_empty_hint),
+                trackLabel = uiString(Res.string.favorites_tracks_title),
+                albumLabel = uiString(Res.string.favorites_albums_title),
+                artistLabel = uiString(Res.string.favorites_artists_title),
+                folderLabel = uiString(Res.string.favorites_folders_title),
+            ),
+            actionButton = if (showRefreshActionButton && (state.canRefreshRemote || isOnlineMode)) {
+                {
+                    IconButton(
+                        onClick = {
+                            if (isOnlineMode) {
+                                onOnlineIntent(OnlineFavoritesIntent.Refresh)
+                            } else {
+                                onFavoritesIntent(FavoritesIntent.Refresh)
+                            }
+                        },
+                        enabled = if (isOnlineMode) !onlineState.isLoading else !state.isRefreshing,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Sync,
+                            contentDescription = if (state.isRefreshing || onlineState.isLoading) uiString(Res.string.common_refreshing) else uiString(Res.string.common_refresh),
+                        )
+                    }
                 }
-            }
-        } else {
-            null
-        },
-        showFavoriteButton = showFavoriteButton,
-        showDuration = showDuration,
-        showSearchField = showSearchField,
-        showTrackSortActionButton = showSearchField && !isOnlineMode,
-        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-        batchSelectionRequestKey = batchSelectionRequestKey,
-        showInlineBatchOperationButton = showInlineBatchOperationButton && !isOnlineMode,
-        modifier = modifier,
-    )
+            } else {
+                null
+            },
+            showFavoriteIndicator = false,
+            showDuration = showDuration,
+            showSearchField = showSearchField,
+            showTrackSortActionButton = showSearchField && !isOnlineMode,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+            batchSelectionRequestKey = batchSelectionRequestKey,
+            showInlineBatchOperationButton = showInlineBatchOperationButton && !isOnlineMode,
+            modifier = modifier,
+        )
+    }
 }
 
 private data class LibraryBrowserStrings(
@@ -597,7 +609,7 @@ private fun LibraryBrowserTab(
     actions: LibraryBrowserActions,
     onlineSourceOptions: List<OnlineSourceOption> = emptyList(),
     strings: LibraryBrowserStrings,
-    showFavoriteButton: Boolean = true,
+    showFavoriteIndicator: Boolean = true,
     showDuration: Boolean = true,
     showSearchField: Boolean = true,
     showTrackSortActionButton: Boolean = true,
@@ -639,6 +651,8 @@ private fun LibraryBrowserTab(
     var selectedFolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFolderPath by rememberSaveable { mutableStateOf<String?>(null) }
     var lastAppliedOnlineContextTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
+    val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter,
+        rootView, selectedArtistId, selectedAlbumId, selectedFolderSourceId, selectedFolderPath)
     fun selectedFolderStableId(): String? {
         val sourceId = selectedFolderSourceId ?: return null
         return LibraryFolderKey(sourceId = sourceId, path = selectedFolderPath.orEmpty()).stableId
@@ -1382,7 +1396,8 @@ private fun LibraryBrowserTab(
                                     index = index,
                                     isFavorite = track.id in state.favoriteTrackIds,
                                     onToggleFavorite = { actions.onToggleFavorite(track) },
-                                    showFavoriteButton = showFavoriteButton,
+                                    menuContextKey = trackMenuContext,
+                                    showFavoriteIndicator = showFavoriteIndicator,
                                     showDuration = showDuration,
                                     onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                     onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
@@ -1489,7 +1504,8 @@ private fun LibraryBrowserTab(
                                         index = index,
                                         isFavorite = track.id in state.favoriteTrackIds,
                                         onToggleFavorite = { actions.onToggleFavorite(track) },
-                                        showFavoriteButton = showFavoriteButton,
+                                        menuContextKey = trackMenuContext,
+                                        showFavoriteIndicator = showFavoriteIndicator,
                                         showDuration = showDuration,
                                         onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                         onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
@@ -1550,7 +1566,8 @@ private fun LibraryBrowserTab(
                                     index = index,
                                     isFavorite = track.id in state.favoriteTrackIds,
                                     onToggleFavorite = { actions.onToggleFavorite(track) },
-                                    showFavoriteButton = showFavoriteButton,
+                                    menuContextKey = trackMenuContext,
+                                    showFavoriteIndicator = showFavoriteIndicator,
                                     showDuration = showDuration,
                                     onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                     onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
@@ -1635,7 +1652,8 @@ private fun LibraryBrowserTab(
                                             index = index,
                                             isFavorite = trackItem.isFavorite,
                                             onToggleFavorite = { actions.onToggleFavorite(track) },
-                                            showFavoriteButton = showFavoriteButton,
+                                            menuContextKey = trackMenuContext,
+                                            showFavoriteIndicator = showFavoriteIndicator,
                                             showDuration = showDuration,
                                             onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                             onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),

@@ -226,7 +226,7 @@ private fun PlayerTrackInfoButton(
 }
 
 @Composable
-private fun PlayerTrackInfoDialog(
+internal fun PlayerTrackInfoDialog(
     track: Track,
     onDismiss: () -> Unit,
 ) {

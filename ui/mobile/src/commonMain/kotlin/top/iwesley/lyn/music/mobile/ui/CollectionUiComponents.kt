@@ -77,6 +77,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -605,7 +606,8 @@ internal fun TrackRow(
     index: Int,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
-    showFavoriteButton: Boolean = true,
+    showFavoriteIndicator: Boolean = true,
+    menuContextKey: Any? = null,
     showDuration: Boolean = true,
     onArtistClick: (() -> Unit)? = null,
     onAlbumClick: (() -> Unit)? = null,
@@ -625,12 +627,30 @@ internal fun TrackRow(
     } else {
         onClick
     }
-    val effectiveShowFavoriteButton = showFavoriteButton && !selectionMode
+    val bindings = LocalTrackListActionBindings.current
+    val favorite = bindings.favoriteState?.invoke(track) ?: TrackFavoriteUiState(isFavorite)
+    var menuVisible by remember(track.sourceId, track.id, menuContextKey, selectionMode) { mutableStateOf(false) }
+    var infoVisible by remember(track.sourceId, track.id, menuContextKey, selectionMode) { mutableStateOf(false) }
+    var offlineVisible by remember(track.sourceId, track.id, menuContextKey, selectionMode) { mutableStateOf(false) }
+    val canDownload = LocalOfflineDownloadUiState.current.onIntent != null && supportsOfflineDownload(track)
+    val menuActions = trackListMenuActions(
+        favorite = favorite,
+        onSetFavorite = { value ->
+            val action = bindings.onSetFavorite
+            if (action != null) action(track, value) else onToggleFavorite()
+        },
+        onAddToPlaylist = bindings.onAddToPlaylist?.let { action -> { action(track) } },
+        onTrackInfo = { infoVisible = true },
+        onOfflineDownload = if (canDownload) ({ offlineVisible = true }) else null,
+    )
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
             track = track,
             onClick = rowClick,
             enableOfflineActions = !selectionMode,
+            onOpenActions = if (selectionMode) null else ({ menuVisible = true }),
+            offlineActionsRequested = offlineVisible,
+            onOfflineActionsDismiss = { offlineVisible = false },
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
@@ -670,11 +690,12 @@ internal fun TrackRow(
                         track.artistName ?: uiString(Res.string.common_unknown_artist),
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            .then(artistClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
+                            .then(artistClick?.let { Modifier.combinedClickable(onClick = it, onLongClick = { menuVisible = true }) } ?: Modifier),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (showFavoriteIndicator && favorite.isKnown && favorite.isFavorite) TrackFavoriteIndicator()
                     offlineRowIndicatorState?.let { OfflineDownloadRowIndicator(it) }
                 }
             }
@@ -682,7 +703,7 @@ internal fun TrackRow(
                 Box(modifier = Modifier.weight(1f)) {
                     Text(
                         text = track.albumTitle?.trim()?.takeIf { it.isNotEmpty() } ?: uiString(Res.string.common_unknown_album),
-                        modifier = albumClick?.let { Modifier.clickable(onClick = it) } ?: Modifier,
+                        modifier = albumClick?.let { Modifier.combinedClickable(onClick = it, onLongClick = { menuVisible = true }) } ?: Modifier,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -690,22 +711,9 @@ internal fun TrackRow(
                 }
             }
             Row(
-                modifier = Modifier.width(
-                    when {
-                        effectiveShowFavoriteButton && showDuration -> 112.dp
-                        effectiveShowFavoriteButton || showDuration -> 56.dp
-                        else -> 0.dp
-                    },
-                ),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (effectiveShowFavoriteButton) {
-                    FavoriteToggleButton(
-                        isFavorite = isFavorite,
-                        onClick = onToggleFavorite,
-                    )
-                }
                 if (showDuration) {
                     Text(
                         formatDuration(track.durationMs),
@@ -714,6 +722,18 @@ internal fun TrackRow(
                         textAlign = TextAlign.End,
                         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                     )
+                }
+                if (!selectionMode) {
+                    Box {
+                        ListItemMoreButton(uiString(Res.string.track_more_actions, track.title)) { menuVisible = true }
+                        ListItemActionMenu(
+                            title = track.title,
+                            actions = menuActions,
+                            presentation = ListItemMenuPresentation.BottomSheet,
+                            expanded = menuVisible,
+                            onDismiss = { menuVisible = false },
+                        )
+                    }
                 }
             }
         }
@@ -725,6 +745,7 @@ internal fun TrackRow(
                 .background(shellColors.cardBorder),
         )
     }
+    if (infoVisible) PlayerTrackInfoDialog(track = track, onDismiss = { infoVisible = false })
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
@@ -734,6 +755,9 @@ fun TrackActionContainer(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enableOfflineActions: Boolean = true,
+    onOpenActions: (() -> Unit)? = null,
+    offlineActionsRequested: Boolean = false,
+    onOfflineActionsDismiss: () -> Unit = {},
     verticalAlignment: Alignment.Vertical = Alignment.CenterVertically,
     horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
     content: @Composable RowScope.() -> Unit,
@@ -741,28 +765,30 @@ fun TrackActionContainer(
     val offlineUiState = LocalOfflineDownloadUiState.current
     val onOfflineIntent = offlineUiState.onIntent
     val supportsOfflinePlatform = true
-    val supportsActions = enableOfflineActions && supportsOfflinePlatform && onOfflineIntent != null &&
+    val supportsOfflineActions = enableOfflineActions && supportsOfflinePlatform && onOfflineIntent != null &&
         supportsOfflineDownload(track)
+    val supportsActions = supportsOfflineActions || onOpenActions != null
     val download = offlineUiState.downloadsByTrackId[track.id]
     val touchOfflineUi = true
-    var desktopMenuExpanded by remember(track.id) { mutableStateOf(false) }
-    var mobileSheetVisible by remember(track.id) { mutableStateOf(false) }
+    val currentOpenActions by rememberUpdatedState(onOpenActions)
+    var desktopMenuExpanded by remember(track.sourceId, track.id) { mutableStateOf(false) }
+    var mobileSheetVisible by remember(track.sourceId, track.id) { mutableStateOf(false) }
     val interactionModifier = if (!supportsActions) {
         Modifier.clickable(onClick = onClick)
     } else if (touchOfflineUi) {
         Modifier.combinedClickable(
             onClick = onClick,
-            onLongClick = { mobileSheetVisible = true },
+            onLongClick = { if (onOpenActions != null) onOpenActions() else mobileSheetVisible = true },
         )
     } else {
         Modifier
-            .pointerInput(track.id) {
+            .pointerInput(track.sourceId, track.id) {
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
                         if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
                             event.changes.forEach { it.consume() }
-                            desktopMenuExpanded = true
+                            currentOpenActions?.invoke() ?: run { desktopMenuExpanded = true }
                         }
                     }
                 }
@@ -776,26 +802,26 @@ fun TrackActionContainer(
             horizontalArrangement = horizontalArrangement,
             content = content,
         )
-        if (supportsActions && !touchOfflineUi && desktopMenuExpanded) {
+        if (supportsOfflineActions && !touchOfflineUi && (desktopMenuExpanded || offlineActionsRequested)) {
             DropdownMenu(
                 expanded = true,
-                onDismissRequest = { desktopMenuExpanded = false },
+                onDismissRequest = { desktopMenuExpanded = false; onOfflineActionsDismiss() },
                 containerColor = mainShellColors.navContainer,
             ) {
                 TrackOfflineActionMenuItems(
                     track = track,
                     download = download,
                     onIntent = onOfflineIntent,
-                    onDismiss = { desktopMenuExpanded = false },
+                    onDismiss = { desktopMenuExpanded = false; onOfflineActionsDismiss() },
                 )
             }
         }
     }
-    if (supportsActions && touchOfflineUi && mobileSheetVisible) {
+    if (supportsOfflineActions && touchOfflineUi && (mobileSheetVisible || offlineActionsRequested)) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val appDensity = LocalDensity.current
         ModalBottomSheet(
-            onDismissRequest = { mobileSheetVisible = false },
+            onDismissRequest = { mobileSheetVisible = false; onOfflineActionsDismiss() },
             sheetState = sheetState,
             containerColor = mainShellColors.navContainer,
         ) {
@@ -812,7 +838,7 @@ fun TrackActionContainer(
                         track = track,
                         download = download,
                         onIntent = onOfflineIntent,
-                        onDismiss = { mobileSheetVisible = false },
+                        onDismiss = { mobileSheetVisible = false; onOfflineActionsDismiss() },
                     )
                 }
             }

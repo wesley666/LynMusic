@@ -31,6 +31,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -266,8 +267,29 @@ fun MobileApp(
                     preferences = settingsState.textPalettePreferences,
                 )
             }
+        val latestAddToPlaylist by rememberUpdatedState<(Track) -> Unit> { openAddToPlaylist(it) }
+        val trackListBindings = remember(component, favoritesState.favoriteTrackIds,
+            onlineFavoritesState, importState) {
+            TrackListActionBindings(
+                favoriteState = { track ->
+                    val binding = playerFavoriteBinding(track, favoritesState.favoriteTrackIds, onlineFavoritesState, importState)
+                    TrackFavoriteUiState(binding.isFavorite, binding.isFavoriteKnown,
+                        binding.canToggleFavorite)
+                },
+                onSetFavorite = { track, favorite ->
+                    val sourceId = track.onlineNavidromeSourceIdOrNull(importState)
+                    if (sourceId != null) {
+                        onOnlineFavoritesIntent(OnlineFavoritesIntent.SetFavorite(sourceId, track, favorite))
+                    } else {
+                        component.favoritesStore.dispatch(FavoritesIntent.ToggleFavorite(track))
+                    }
+                },
+                onAddToPlaylist = { latestAddToPlaylist(it) },
+            )
+        }
         CompositionLocalProvider(
             LocalPlayerPresentation provides presentation,
+            LocalTrackListActionBindings provides trackListBindings,
             LocalPlatformDescriptor provides component.platform,
             LocalArtworkCacheStore provides component.artworkCacheStore,
             LocalOfflineDownloadUiState provides OfflineDownloadUiState(

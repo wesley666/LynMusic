@@ -1,0 +1,4 @@
+<resources>
+    <string name="track_more_actions">%1$s 的更多操作</string>
+    <string name="track_favorite_indicator">已喜歡</string>
+</resources>
