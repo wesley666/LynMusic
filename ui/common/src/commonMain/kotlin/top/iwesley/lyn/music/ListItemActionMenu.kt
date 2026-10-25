@@ -8,7 +8,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -58,12 +57,18 @@ fun ListItemActionMenu(
             onDismissRequest = onDismiss,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = colors.navContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(color = colors.cardBorder.copy(alpha = 0.75f))
+            },
         ) {
             CompositionLocalProvider(LocalDensity provides density) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 20.dp)) {
                     Text(title, Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                         maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-                    ListItemActionMenuItems(actions, onDismiss)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+                        ListItemActionMenuItems(actions, onDismiss)
+                    }
                 }
             }
         }
@@ -72,12 +77,18 @@ fun ListItemActionMenu(
 
 @Composable
 private fun ListItemActionMenuItems(actions: List<ListItemMenuAction>, onDismiss: () -> Unit) {
+    val colorScheme = MaterialTheme.colorScheme
     actions.forEach { action ->
         key(action.id) {
-            val color = if (action.destructive && action.enabled) MaterialTheme.colorScheme.error else Color.Unspecified
+            val contentColor = when {
+                !action.enabled -> colorScheme.onSurfaceVariant.copy(alpha = 0.46f)
+                action.destructive -> colorScheme.error
+                else -> colorScheme.onSurface
+            }
+            val iconColor = if (action.enabled && !action.destructive) colorScheme.primary else contentColor
             DropdownMenuItem(
-                text = { Text(action.label.displayText(), color = color) },
-                leadingIcon = { Icon(action.icon, null, tint = if (action.destructive && action.enabled) color else LocalContentColor.current) },
+                text = { Text(action.label.displayText(), color = contentColor) },
+                leadingIcon = { Icon(action.icon, null, tint = iconColor) },
                 enabled = action.enabled,
                 onClick = {
                     onDismiss()
