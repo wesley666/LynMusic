@@ -40,6 +40,7 @@ kotlin {
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.androidx.lifecycle.runtimeCompose)
         }
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)

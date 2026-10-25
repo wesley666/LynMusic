@@ -1,6 +1,4 @@
-package top.iwesley.lyn.music.automotive.ui
-
-import top.iwesley.lyn.music.*
+package top.iwesley.lyn.music
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,35 +1,33 @@
-package top.iwesley.lyn.music.desktop.ui
-
-import top.iwesley.lyn.music.*
+package top.iwesley.lyn.music
 
 import kotlin.math.abs
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsPresentation
-import top.iwesley.lyn.music.feature.player.isPlayerLyricsStructureTagLine
+import top.iwesley.lyn.music.core.model.isLyricsStructureTagLine
 
-internal const val PLAYER_LYRICS_SCROLL_ANIMATION_DURATION_MS = 420
+const val PLAYER_LYRICS_SCROLL_ANIMATION_DURATION_MS = 420
 private const val PLAYER_LYRICS_SMOOTH_SCROLL_MAX_INDEX_DISTANCE = 2
 
-internal data class VisiblePlayerLyricsLine(
+data class VisiblePlayerLyricsLine(
     val rawIndex: Int,
     val line: LyricsLine,
     val enhancedLine: EnhancedLyricsDisplayLine? = null,
 )
 
-internal data class PlayerLyricsVisibleItemInfo(
+data class PlayerLyricsVisibleItemInfo(
     val index: Int,
     val offset: Int,
     val size: Int,
 )
 
-internal fun buildVisiblePlayerLyricsLines(
+fun buildVisiblePlayerLyricsLines(
     lyrics: LyricsDocument,
     enhancedLyricsPresentation: EnhancedLyricsPresentation? = null,
 ): List<VisiblePlayerLyricsLine> {
     return lyrics.lines.mapIndexedNotNull { rawIndex, line ->
-        if (isPlayerLyricsStructureTagLine(line.text)) {
+        if (isLyricsStructureTagLine(line.text)) {
             return@mapIndexedNotNull null
         }
         VisiblePlayerLyricsLine(
@@ -40,7 +38,7 @@ internal fun buildVisiblePlayerLyricsLines(
     }
 }
 
-internal fun shouldShowPlayerLyricsEmptyState(
+fun shouldShowPlayerLyricsEmptyState(
     isLyricsLoading: Boolean,
     hasLyricsLookupCompleted: Boolean,
     lyrics: LyricsDocument?,
@@ -51,7 +49,7 @@ internal fun shouldShowPlayerLyricsEmptyState(
         (lyrics == null || visibleLines.isEmpty())
 }
 
-internal fun resolveVisiblePlayerLyricsHighlightedIndex(
+fun resolveVisiblePlayerLyricsHighlightedIndex(
     visibleLines: List<VisiblePlayerLyricsLine>,
     highlightedRawIndex: Int,
 ): Int {
@@ -65,7 +63,7 @@ internal fun resolveVisiblePlayerLyricsHighlightedIndex(
     return visibleLines.indexOfLast { it.rawIndex < highlightedRawIndex }
 }
 
-internal fun resolveVisiblePlayerLyricsScrollTarget(
+fun resolveVisiblePlayerLyricsScrollTarget(
     lyrics: LyricsDocument?,
     visibleLines: List<VisiblePlayerLyricsLine>,
     highlightedRawIndex: Int,
@@ -77,7 +75,7 @@ internal fun resolveVisiblePlayerLyricsScrollTarget(
     }
 }
 
-internal fun shouldAnimatePlayerLyricsScroll(
+fun shouldAnimatePlayerLyricsScroll(
     previousTargetIndex: Int?,
     targetIndex: Int,
     isTargetVisible: Boolean,
@@ -87,7 +85,7 @@ internal fun shouldAnimatePlayerLyricsScroll(
         abs(targetIndex - previousTargetIndex) <= PLAYER_LYRICS_SMOOTH_SCROLL_MAX_INDEX_DISTANCE
 }
 
-internal fun resolvePlayerLyricsBrowseTargetIndex(
+fun resolvePlayerLyricsBrowseTargetIndex(
     visibleLines: List<VisiblePlayerLyricsLine>,
     visibleItems: List<PlayerLyricsVisibleItemInfo>,
     viewportStartOffset: Int,
@@ -104,7 +102,7 @@ internal fun resolvePlayerLyricsBrowseTargetIndex(
         ?.index
 }
 
-internal fun resolvePlayerLyricsSeekPositionMs(
+fun resolvePlayerLyricsSeekPositionMs(
     line: VisiblePlayerLyricsLine?,
     lyricsOffsetMs: Long,
     durationMs: Long,
@@ -113,7 +111,7 @@ internal fun resolvePlayerLyricsSeekPositionMs(
     return (timestampMs - lyricsOffsetMs).coerceIn(0L, durationMs.coerceAtLeast(0L))
 }
 
-internal fun resolvePlayerLyricsActiveHighlightedIndex(
+fun resolvePlayerLyricsActiveHighlightedIndex(
     visibleLines: List<VisiblePlayerLyricsLine>,
     playbackHighlightedIndex: Int,
     browseTargetIndex: Int?,
@@ -128,7 +126,7 @@ internal fun resolvePlayerLyricsActiveHighlightedIndex(
     }
 }
 
-internal fun resolveVisiblePlayerLyricsSelectedIndices(
+fun resolveVisiblePlayerLyricsSelectedIndices(
     visibleLines: List<VisiblePlayerLyricsLine>,
     selectedRawIndices: Set<Int>,
 ): Set<Int> {
@@ -136,4 +134,17 @@ internal fun resolveVisiblePlayerLyricsSelectedIndices(
     return visibleLines.mapIndexedNotNull { visibleIndex, line ->
         visibleIndex.takeIf { line.rawIndex in selectedRawIndices }
     }.toSet()
+}
+
+fun resolveLyricsScrollTarget(
+    lyrics: LyricsDocument?,
+    highlightedLineIndex: Int,
+): Int? {
+    val lines = lyrics?.lines ?: return null
+    if (lines.isEmpty()) return null
+    return when {
+        highlightedLineIndex in lines.indices -> highlightedLineIndex
+        lyrics.isSynced -> 0
+        else -> null
+    }
 }

@@ -1,6 +1,4 @@
-package top.iwesley.lyn.music.automotive.ui
-
-import top.iwesley.lyn.music.*
+package top.iwesley.lyn.music
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.geometry.Offset
@@ -9,7 +7,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.test.*
 import java.nio.file.Files
 import top.iwesley.lyn.music.core.model.*
-import top.iwesley.lyn.music.automotive.ui.platform.lyricsSharePreviewFontFamily
+import top.iwesley.lyn.music.platform.lyricsSharePreviewFontFamily
 
 class PlayerLyricsSettingsUiTest {
     @Test fun `corrupt imported font falls back before text layout`() {

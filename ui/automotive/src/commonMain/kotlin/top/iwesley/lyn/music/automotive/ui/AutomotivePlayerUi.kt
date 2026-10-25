@@ -75,7 +75,7 @@ import kotlin.math.roundToLong
 import top.iwesley.lyn.music.ArtworkDecodeSize
 import top.iwesley.lyn.music.automotive.ui.LibraryNavigationTarget
 import top.iwesley.lyn.music.automotive.ui.PlayerArtworkDisplay
-import top.iwesley.lyn.music.automotive.ui.LyricsStyleButton
+import top.iwesley.lyn.music.LyricsStyleButton
 import top.iwesley.lyn.music.automotive.ui.PlayerLyricsPane
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot

@@ -1,6 +1,4 @@
-package top.iwesley.lyn.music.automotive.ui
-
-import top.iwesley.lyn.music.*
+package top.iwesley.lyn.music
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -13,10 +11,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
-import top.iwesley.lyn.music.cast.CastSessionStatus
-import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
-import top.iwesley.lyn.music.feature.player.PlayerState
 import kotlin.time.TimeSource
 
 private const val LYRICS_EXTRAPOLATION_LIMIT_MS = 500L
@@ -88,41 +83,37 @@ internal fun shouldAnimateLyricsFill(
 
 @Composable
 internal fun rememberLyricsPlaybackClock(
-    state: PlayerState,
-    track: Track,
+    state: PlayerLyricsUiState,
     line: EnhancedLyricsDisplayLine?,
     isLineVisible: Boolean,
     isBrowsing: Boolean,
     timeSource: TimeSource = TimeSource.Monotonic,
 ): LyricsPlaybackClock {
-    val snapshot = state.effectiveSnapshot
     val lyrics = state.lyrics
     val offsetMs = lyrics?.offsetMs ?: 0L
-    val usingCast = state.castState.status == CastSessionStatus.Casting ||
-        (state.castState.status == CastSessionStatus.Connecting &&
-            state.castQueueIndex?.let { it in state.snapshot.queue.indices } == true)
-    val sourceKey = if (usingCast) state.castState.selectedDeviceId else null
+    val usingCast = state.playbackSource.isCast
+    val sourceKey = state.playbackSource.deviceId
     val origin = remember(timeSource) { timeSource.markNow() }
     val clock = remember(
-        track.id, track.sourceId, usingCast, sourceKey,
+        state.trackId, state.trackSourceId, usingCast, sourceKey,
         state.lyricsVersion, lyrics?.rawPayload, lyrics?.lines, offsetMs, state.lyricsUserOffsetMs, origin,
     ) {
-        LyricsPlaybackClock(snapshot.positionMs, snapshot.isPlaying, origin.elapsedNow().inWholeMilliseconds)
+        LyricsPlaybackClock(state.positionMs, state.isPlaying, origin.elapsedNow().inWholeMilliseconds)
     }
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val presentationActive = isLineVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED) && !isBrowsing
     val enabled = shouldAnimateLyricsFill(
         line = line,
-        positionMs = snapshot.positionMs + offsetMs,
-        isPlaying = snapshot.isPlaying,
+        positionMs = state.positionMs + offsetMs,
+        isPlaying = state.isPlaying,
         isVisible = isLineVisible,
         isLifecycleVisible = lifecycleState.isAtLeast(Lifecycle.State.STARTED),
         isBrowsing = isBrowsing,
     )
-    LaunchedEffect(clock, snapshot.positionMs, snapshot.isPlaying, enabled, presentationActive, line) {
+    LaunchedEffect(clock, state.positionMs, state.isPlaying, enabled, presentationActive, line) {
         val nowMs = origin.elapsedNow().inWholeMilliseconds
         // Apply the report before checking the old anchor's limit. This also restarts a stalled clock.
-        clock.report(snapshot.positionMs, snapshot.isPlaying, nowMs)
+        clock.report(state.positionMs, state.isPlaying, nowMs)
         clock.setPresentationActive(presentationActive, nowMs)
         if (!enabled) return@LaunchedEffect
         clock.tick(origin.elapsedNow().inWholeMilliseconds)

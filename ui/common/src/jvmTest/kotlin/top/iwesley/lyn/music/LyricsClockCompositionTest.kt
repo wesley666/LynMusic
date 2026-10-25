@@ -1,8 +1,6 @@
 @file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, kotlin.time.ExperimentalTime::class)
 
-package top.iwesley.lyn.music.mobile.ui
-
-import top.iwesley.lyn.music.*
+package top.iwesley.lyn.music
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.CompositionLocalProvider
@@ -24,16 +22,10 @@ import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.time.TestTimeSource
 import kotlin.time.Duration.Companion.milliseconds
-import top.iwesley.lyn.music.cast.CastPlaybackState
-import top.iwesley.lyn.music.cast.CastSessionState
-import top.iwesley.lyn.music.cast.CastSessionStatus
 import top.iwesley.lyn.music.core.model.LyricsDocument
 import top.iwesley.lyn.music.core.model.LyricsLine
-import top.iwesley.lyn.music.core.model.PlaybackSnapshot
-import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.domain.EnhancedLyricsDisplayLine
 import top.iwesley.lyn.music.domain.EnhancedLyricsSegment
-import top.iwesley.lyn.music.feature.player.PlayerState
 
 class LyricsClockCompositionTest {
     @Test
@@ -42,7 +34,7 @@ class LyricsClockCompositionTest {
             val clock = ui.clock
             ui.advance(120)
             assertEquals(1_120L, clock.positionMs)
-            ui.state = ui.state.copy(isLyricsFontsLoading = true)
+            ui.state = ui.state.copy(hasLyricsLookupCompleted = true)
             ui.color = Color.Blue
             ui.advance(180)
             assertSame(clock, ui.clock)
@@ -52,7 +44,7 @@ class LyricsClockCompositionTest {
             assertFalse(ui.hasPendingFrames())
             ui.advance(500)
             assertEquals(1_500L, clock.positionMs)
-            ui.state = ui.state.copy(snapshot = ui.state.snapshot.copy(positionMs = 2_000L))
+            ui.state = ui.state.copy(positionMs = 2_000L)
             ui.render()
             ui.advance(100)
             assertEquals(2_100L, clock.positionMs)
@@ -85,7 +77,7 @@ class LyricsClockCompositionTest {
             ui.owner.registry.currentState = Lifecycle.State.RESUMED
             ui.render()
             assertEquals(1_400L, ui.clock.positionMs)
-            ui.state = ui.state.copy(snapshot = ui.state.snapshot.copy(isPlaying = false, positionMs = 1_350L))
+            ui.state = ui.state.copy(isPlaying = false, positionMs = 1_350L)
             ui.render()
             ui.advance(1_000)
             assertEquals(1_350L, ui.clock.positionMs)
@@ -107,20 +99,17 @@ class LyricsClockCompositionTest {
     @Test
     fun `track lyrics offset and playback source changes each realign the clock`() = onUiThread {
         Fixture().use { ui ->
-            fun assertReset(update: (PlayerState) -> PlayerState) {
+            fun assertReset(update: (PlayerLyricsUiState) -> PlayerLyricsUiState) {
                 val before = ui.clock
                 ui.state = update(ui.state)
                 ui.render()
                 assertNotSame(before, ui.clock)
-                assertEquals(ui.state.effectiveSnapshot.positionMs, ui.clock.positionMs)
+                assertEquals(ui.state.positionMs, ui.clock.positionMs)
             }
             assertReset { it.copy(lyricsVersion = "v2") }
             assertReset { it.copy(lyrics = it.lyrics!!.copy(offsetMs = 200L)) }
-            assertReset { it.copy(snapshot = it.snapshot.copy(queue = listOf(it.snapshot.currentTrack!!.copy(id = "other")))) }
-            assertReset { it.copy(castState = CastSessionState(
-                status = CastSessionStatus.Casting, selectedDeviceId = "remote",
-                playback = CastPlaybackState(positionMs = 4_000L, isPlaying = true),
-            )) }
+            assertReset { it.copy(trackId = "other") }
+            assertReset { it.copy(playbackSource = LyricsPlaybackSource(true, "remote"), positionMs = 4_000L, isPlaying = true) }
         }
     }
 
@@ -138,11 +127,8 @@ class LyricsClockCompositionTest {
     private class Fixture : AutoCloseable {
         val owner = Owner()
         private val time = TestTimeSource()
-        var state by mutableStateOf(PlayerState(
-            snapshot = PlaybackSnapshot(
-                queue = listOf(Track("song", "local", "Song", mediaLocator = "", relativePath = "")),
-                currentIndex = 0, positionMs = 1_000L, isPlaying = true,
-            ),
+        var state by mutableStateOf(PlayerLyricsUiState(
+            trackId = "song", trackSourceId = "local", positionMs = 1_000L, isPlaying = true,
             lyrics = LyricsDocument(listOf(LyricsLine(0L, "word")), sourceId = "local", rawPayload = ""),
             lyricsVersion = "v1",
         ))
@@ -154,7 +140,7 @@ class LyricsClockCompositionTest {
         private var frame = 0L
         private val scene = ImageComposeScene(100, 100) {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                val playbackClock = rememberLyricsPlaybackClock(state, state.snapshot.currentTrack!!, line, visible, browsing, time)
+                val playbackClock = rememberLyricsPlaybackClock(state, line, visible, browsing, time)
                 clock = playbackClock
                 Canvas(androidx.compose.ui.Modifier) {
                     drawRect(color, alpha = (playbackClock.positionMs % 1_000L).toFloat() / 1_000f)

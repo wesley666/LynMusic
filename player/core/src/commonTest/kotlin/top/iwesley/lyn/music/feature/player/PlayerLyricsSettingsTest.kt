@@ -161,6 +161,42 @@ class PlayerLyricsSettingsTest {
         assertNull(preferences.playerLyricsStyle.value.fontKey)
     }
 
+    @Test fun `stale calibration callbacks cannot change a new version or another song`() = runTest {
+        val harness = Harness(backgroundScope)
+        harness.show(harness.a)
+        harness.settings.changeOffset("a", "v1", 350L)
+        runCurrent()
+        harness.state = harness.state.copy(lyricsVersion = "v2")
+        harness.settings.changeOffset("a", "v1", 900L)
+        assertEquals(350L, harness.state.lyricsUserOffsetMs)
+        harness.state = harness.state.copy(snapshot = harness.state.snapshot.copy(currentIndex = 1))
+        harness.show(harness.b)
+        harness.settings.changeOffset("a", "v1", 225L)
+        runCurrent()
+        assertEquals(0L, harness.state.lyricsUserOffsetMs)
+        assertEquals(mapOf("a" to 350L), harness.repository.offsets)
+    }
+
+    @Test fun `style changes and style reset preserve calibration while an offset write is pending`() = runTest {
+        val harness = Harness(backgroundScope)
+        harness.show(harness.a)
+        val gate = CompletableDeferred<Unit>()
+        harness.repository.writeGate = gate
+        harness.settings.changeOffset("a", "v1", -450L)
+        runCurrent()
+        val adjusted = harness.state.lyrics
+        harness.settings.changeStyle(PlayerLyricsStyle(showTranslation = false, fontScale = 1.25f))
+        harness.settings.changeStyle(PlayerLyricsStyle())
+        assertSame(adjusted, harness.state.lyrics)
+        assertEquals(-450L, harness.state.lyricsUserOffsetMs)
+        assertEquals(-250L, harness.state.lyrics?.offsetMs)
+        gate.complete(Unit)
+        runCurrent()
+        harness.show(harness.a)
+        assertEquals(-450L, harness.repository.offsets["a"])
+        assertEquals(-250L, harness.state.lyrics?.offsetMs)
+    }
+
     private class Harness(
         scope: CoroutineScope,
         preferences: PlayerLyricsStylePreferencesStore = InMemoryPlayerLyricsStylePreferencesStore(),

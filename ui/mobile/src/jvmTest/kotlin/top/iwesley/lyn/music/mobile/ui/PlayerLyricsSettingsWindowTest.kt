@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class, androidx.compose.runtime.InternalComposeApi::class)
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class, androidx.compose.ui.InternalComposeUiApi::class, androidx.compose.runtime.InternalComposeApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 
 package top.iwesley.lyn.music.mobile.ui
 
@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.NavigationEventInput
+import androidx.compose.ui.input.pointer.PointerType
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -205,6 +208,48 @@ class PlayerLyricsSettingsWindowTest {
         }
     }
 
+    @Test fun `calibration actions forward current track and version after song changes`() = onUiThread {
+        Fixture().use { ui ->
+            ui.click("Earlier by 0.1 s")
+            assertEquals(PlayerIntent.LyricsOffsetChanged("song", "v1", 225L), ui.intents.last())
+            ui.state = ui.state.copy(
+                snapshot = ui.state.snapshot.copy(queue = listOf(ui.state.snapshot.currentTrack!!.copy(id = "next"))),
+                lyricsTrackId = "next", lyricsVersion = "v2", lyricsUserOffsetMs = -250L,
+            )
+            ui.render()
+            ui.click("Earlier by 0.1 s")
+            assertEquals(PlayerIntent.LyricsOffsetChanged("next", "v2", -150L), ui.intents.last())
+        }
+    }
+
+    @Test fun `settings windows do not interrupt browsing or renew its return deadline`() = onUiThread {
+        Fixture(realLyrics = true).use { ui ->
+            ui.escape()
+            ui.dragLyrics()
+            fun isBrowsing() = ui.nodes().any { node ->
+                node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("Seek to ") }
+            }
+            assertTrue(isBrowsing())
+            ui.scheduler.advanceTimeBy(1_200L)
+            ui.presentation.isLyricsStyleVisible = true
+            ui.render()
+            ui.click("Font")
+            ui.escape()
+            ui.click("Show translation")
+            ui.state = ui.state.copy(highlightedLineIndex = 15, snapshot = ui.state.snapshot.copy(positionMs = 15_000L))
+            ui.escape()
+            ui.scheduler.advanceTimeBy(1_199L)
+            ui.render()
+            assertTrue(isBrowsing(), "Settings must not end manual browsing before its original deadline")
+            ui.scheduler.advanceTimeBy(2L)
+            ui.render(40)
+            assertFalse(isBrowsing(), "Settings must not restart the 2.4 second return timer")
+            val line = ui.node("Lyrics line 15").boundsInRoot
+            assertTrue(kotlin.math.abs(line.center.y - ui.lyricsBounds.center.y) <= 2f)
+            assertEquals(125L, ui.state.lyricsUserOffsetMs)
+        }
+    }
+
     private fun onUiThread(block: () -> Unit) {
         var failure: Throwable? = null
         SwingUtilities.invokeAndWait { try { block() } catch (error: Throwable) { failure = error } }
@@ -220,13 +265,15 @@ class PlayerLyricsSettingsWindowTest {
             lyricsTrackId = "song", lyricsVersion = "v1", lyricsUserOffsetMs = 125L,
             availableLyricsFonts = (1..20).map { LyricsShareFontOption("imported:$it", "Imported font $it", kind = LyricsShareFontKind.IMPORTED) },
         ))
+        val intents = mutableListOf<PlayerIntent>()
         var lyricsBounds = Rect.Zero
         var backgroundClicks = 0
         var backgroundColor by mutableStateOf(Color(0xFF49667F))
         var backdrop: PlayerLyricsBackdrop? = null
         private val backInput = object : NavigationEventInput() { fun complete() = dispatchOnBackCompleted() }
         val presentation = PlayerPresentation({ state }).apply { isLyricsStyleVisible = true }
-        val scene = ImageComposeScene(width, height) {
+        val scheduler = TestCoroutineScheduler()
+        val scene = ImageComposeScene(width, height, coroutineContext = UnconfinedTestDispatcher(scheduler)) {
             val dispatcher = LocalNavigationEventDispatcherOwner.current!!.navigationEventDispatcher
             DisposableEffect(dispatcher) {
                 dispatcher.addInput(backInput)
@@ -249,6 +296,7 @@ class PlayerLyricsSettingsWindowTest {
                             Text("Current lyrics line", Modifier.padding(start = 600.dp, top = 300.dp).onGloballyPositioned { lyricsBounds = it.boundsInRoot() })
                         }
                         if (presentation.isLyricsStyleVisible) PlayerLyricsSettingsOverlay(state, mobile, onIntent = { intent ->
+                            intents += intent
                             state = when (intent) {
                                 is PlayerIntent.LyricsStyleChanged -> state.copy(lyricsStyle = intent.style)
                                 is PlayerIntent.LyricsOffsetChanged -> state.copy(lyricsUserOffsetMs = intent.offsetMs)
@@ -262,11 +310,22 @@ class PlayerLyricsSettingsWindowTest {
         }
         private var frame = 0L
         init { render() }
-        fun render() {
-            repeat(4) {
+        fun render(count: Int = 4) {
+            repeat(count) {
+                scheduler.runCurrent()
                 Snapshot.sendApplyNotifications()
                 scene.render(++frame * 16_666_667L).close()
             }
+        }
+        fun dragLyrics() {
+            val start = lyricsBounds.center
+            scene.sendPointerEvent(PointerEventType.Press, start, type = PointerType.Touch, timeMillis = 1_000L)
+            scene.sendPointerEvent(PointerEventType.Move, start - Offset(0f, 40f), type = PointerType.Touch, timeMillis = 1_100L)
+            render()
+            scene.sendPointerEvent(PointerEventType.Move, start - Offset(0f, 130f), type = PointerType.Touch, timeMillis = 1_300L)
+            render()
+            scene.sendPointerEvent(PointerEventType.Release, start - Offset(0f, 130f), type = PointerType.Touch, timeMillis = 1_700L)
+            render(40)
         }
         fun nodes(): List<SemanticsNode> {
             fun walk(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::walk)
