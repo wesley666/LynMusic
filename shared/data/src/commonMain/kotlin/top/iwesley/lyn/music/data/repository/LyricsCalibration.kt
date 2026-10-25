@@ -65,9 +65,9 @@ internal suspend fun LynMusicDatabase.saveLyricsOffset(track: Track, version: St
     return saved
 }
 
-/** Cache-only refreshes preserve calibration; a real change invalidates it in the same transaction. */
+/** Display metadata can require a reload without invalidating the timing calibration. */
 internal suspend fun LynMusicDatabase.writeLyricsCache(item: LyricsCacheEntity) {
-    val changed = immediateWriteTransaction {
+    val needsReload = immediateWriteTransaction {
         val previous = lyricsCacheDao().getByTrackIdAndSourceId(item.trackId, item.sourceId)
         val oldVersion = previous?.versionOrNull()
         val newVersion = item.versionOrNull()
@@ -79,9 +79,13 @@ internal suspend fun LynMusicDatabase.writeLyricsCache(item: LyricsCacheEntity) 
                 lyricsOffsetDao().delete(item.trackId)
             }
         }
-        oldVersion != newVersion
+        oldVersion != newVersion || (
+            previous?.rawPayload != item.rawPayload &&
+                parseStructuredLyricsPayload(previous?.rawPayload.orEmpty())?.originalLanguage !=
+                parseStructuredLyricsPayload(item.rawPayload)?.originalLanguage
+            )
     }
-    if (changed) LyricsChanges.publish(item.trackId)
+    if (needsReload) LyricsChanges.publish(item.trackId)
 }
 
 /** Select the source itself so future tag/file updates remain visible, without pinning a copy. */

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="player_lyrics_show_translation">顯示翻譯</string>
     <string name="player_lyrics_style">歌詞樣式</string>
     <string name="player_lyrics_close">關閉</string>
     <string name="player_lyrics_highlight">目前行顏色</string>

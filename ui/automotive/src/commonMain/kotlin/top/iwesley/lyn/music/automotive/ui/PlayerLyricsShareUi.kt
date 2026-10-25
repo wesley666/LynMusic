@@ -219,8 +219,12 @@ internal fun PlayerLyricsPane(
             }
         }
     }
-    LaunchedEffect(track.id, lyrics, state.highlightedLineIndex, visibleLyricsLines, isLyricsBrowsing) {
+    LaunchedEffect(track.id, lyrics, state.highlightedLineIndex, visibleLyricsLines, isLyricsBrowsing, lyricsStyle.showTranslation) {
         if (isLyricsBrowsing) return@LaunchedEffect
+        // Translation visibility changes row heights without changing the lyric document.
+        // Read positions after remeasurement, and never take over an active user scroll.
+        withFrameNanos { }
+        if (listState.isScrollInProgress && !isAutoScrollingLyrics) return@LaunchedEffect
         val targetLyrics = lyrics ?: return@LaunchedEffect
         val targetIndex = resolveVisiblePlayerLyricsScrollTarget(
             lyrics = targetLyrics,
@@ -380,9 +384,9 @@ internal fun PlayerLyricsPane(
                         itemsIndexed(visibleLyricsLines) { index, visibleLine ->
                             val line = visibleLine.line
                             val enhancedLine = visibleLine.enhancedLine
-                            val translationText = enhancedLine?.translationText
-                                ?.trim()
-                                ?.takeIf { it.isNotEmpty() }
+                            val translationText = enhancedLyricsPresentation?.translationTextFor(
+                                enhancedLine, lyricsStyle.showTranslation,
+                            )
                             val isHighlighted = index == activeHighlightedVisibleIndex
                             val targetAlpha = when {
                                 pure && activeHighlightedVisibleIndex < 0 -> 0.48f

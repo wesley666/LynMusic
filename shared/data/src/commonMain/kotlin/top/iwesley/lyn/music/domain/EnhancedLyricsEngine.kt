@@ -26,13 +26,27 @@ data class EnhancedLyricsDisplayLine(
 data class EnhancedLyricsPresentation(
     val lines: List<EnhancedLyricsDisplayLine>,
     val offsetMs: Long = 0L,
-)
+    val originalLanguage: String? = null,
+) {
+    /** Only the original document's language controls translation visibility, never a line or translation tag. */
+    fun translationTextFor(line: EnhancedLyricsDisplayLine?, showTranslation: Boolean): String? {
+        if (!showTranslation || isChineseLyricsLanguage(originalLanguage)) return null
+        return line?.translationText?.trim()?.takeIf { it.isNotEmpty() }
+    }
+}
+
+private fun isChineseLyricsLanguage(language: String?): Boolean =
+    when (language?.trim()?.replace('_', '-')?.substringBefore('-')?.lowercase()) {
+        "zh", "zho", "chi", "cmn", "yue" -> true
+        else -> false
+    }
 
 internal data class ParsedStructuredLyricsPayload(
     val lines: List<LyricsLine>,
     val offsetMs: Long,
     val displayLines: List<EnhancedLyricsDisplayLine>,
     val hasEnhancedSegments: Boolean,
+    val originalLanguage: String? = null,
 )
 
 fun parseEnhancedLyricsPresentation(
@@ -50,6 +64,7 @@ fun parseEnhancedLyricsPresentation(
     return EnhancedLyricsPresentation(
         lines = parsed.displayLines,
         offsetMs = fallbackDocument.offsetMs,
+        originalLanguage = parsed.originalLanguage,
     )
 }
 
@@ -70,6 +85,7 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
     if (!hasStructuredSyntax) return null
 
     var offsetMs = 0L
+    var originalLanguage: String? = null
     val documentLines = mutableListOf<LyricsLine>()
     val displayLineDrafts = mutableListOf<ParsedDisplayLineDraft>()
 
@@ -83,6 +99,9 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
                 return@forEach
             }
             if (ENHANCED_LYRICS_METADATA_REGEX.matches(rawLine)) {
+                ENHANCED_LYRICS_LANGUAGE_REGEX.matchEntire(rawLine)?.let {
+                    originalLanguage = it.groupValues[1].trim().takeIf(String::isNotEmpty)
+                }
                 return@forEach
             }
 
@@ -162,6 +181,7 @@ internal fun parseStructuredLyricsPayload(rawPayload: String): ParsedStructuredL
         offsetMs = offsetMs,
         displayLines = displayLines,
         hasEnhancedSegments = displayLines.any { it.segments.isNotEmpty() },
+        originalLanguage = originalLanguage,
     )
 }
 
@@ -380,11 +400,13 @@ internal fun parseNavidromeStructuredLyricsPayload(rootPayload: JsonObject): Par
         offsetMs = chosen.offsetMs,
         displayLines = chosen.displayLines,
         hasEnhancedSegments = chosen.hasEnhancedSegments,
+        originalLanguage = chosen.originalLanguage,
     )
 }
 
 private data class ParsedNavidromeStructuredLyricsEntry(
     val kind: String?,
+    val originalLanguage: String?,
     val synced: Boolean,
     val offsetMs: Long,
     val lines: List<LyricsLine>,
@@ -479,6 +501,7 @@ private fun parseNavidromeStructuredLyricsEntry(entry: JsonObject): ParsedNavidr
     val displayLines = finalizeDisplayLines(mergedEntries.map { it.second })
     return ParsedNavidromeStructuredLyricsEntry(
         kind = kind,
+        originalLanguage = entry.string("lang"),
         synced = synced,
         offsetMs = offsetMs,
         lines = mergedEntries.map { it.first },
@@ -582,6 +605,7 @@ private data class ParsedTimestampPrefix(
 private val ENHANCED_LYRICS_LINE_TIMESTAMP_REGEX = Regex("""\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
 private val ENHANCED_LYRICS_INLINE_TIMESTAMP_REGEX = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""")
 private val ENHANCED_LYRICS_OFFSET_REGEX = Regex("""^\[offset:\s*([+-]?\d+)\s*]$""", RegexOption.IGNORE_CASE)
+private val ENHANCED_LYRICS_LANGUAGE_REGEX = Regex("""^\[(?:lang|language):(.*)]$""", RegexOption.IGNORE_CASE)
 private val ENHANCED_LYRICS_METADATA_REGEX = Regex(
     """^\[(ti|ar|al|by|re|ve|length|lang|language):.*]$""",
     RegexOption.IGNORE_CASE,

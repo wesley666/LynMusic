@@ -50,6 +50,7 @@ androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", vers
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-navigationevent = { module = "androidx.navigationevent:navigationevent", version = "1.2.0" }
+androidx-navigationevent-compose = { module = "androidx.navigationevent:navigationevent-compose", version = "1.2.0" }
 androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "androidx-media3" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "androidx-media3" }
 androidx-media3-decoder = { module = "androidx.media3:media3-decoder", version.ref = "androidx-media3" }

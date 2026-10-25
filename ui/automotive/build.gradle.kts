@@ -64,6 +64,7 @@ kotlin {
             implementation(libs.kotlin.testJunit)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.androidx.navigationevent)
+            implementation(libs.androidx.navigationevent.compose)
         }
     }
 }

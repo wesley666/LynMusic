@@ -7,6 +7,7 @@ data class PlayerLyricsStyle(
     val highlightArgb: Int = -1,
     val fontScale: Float = 1f,
     val fontKey: String? = null,
+    val showTranslation: Boolean = true,
 ) {
     fun normalized(): PlayerLyricsStyle = copy(
         highlightArgb = highlightArgb or 0xff000000.toInt(),
@@ -28,7 +29,7 @@ class InMemoryPlayerLyricsStylePreferencesStore : PlayerLyricsStylePreferencesSt
 }
 
 fun encodePlayerLyricsStyle(value: PlayerLyricsStyle): String = value.normalized().let {
-    "${it.highlightArgb}|${it.fontScale}|${it.fontKey.orEmpty()}"
+    "${it.highlightArgb}|${it.fontScale}|${it.fontKey.orEmpty()}|${it.showTranslation}"
 }
 
 fun decodePlayerLyricsStyle(value: String?): PlayerLyricsStyle {
@@ -37,6 +38,7 @@ fun decodePlayerLyricsStyle(value: String?): PlayerLyricsStyle {
         highlightArgb = parts.getOrNull(0)?.toIntOrNull() ?: -1,
         fontScale = parts.getOrNull(1)?.toFloatOrNull() ?: 1f,
         fontKey = parts.getOrNull(2),
+        showTranslation = parts.getOrNull(3)?.toBooleanStrictOrNull() ?: true,
     ).normalized()
 }
 

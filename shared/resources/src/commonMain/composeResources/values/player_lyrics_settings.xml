@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="player_lyrics_show_translation">Show translation</string>
     <string name="player_lyrics_style">Lyrics style</string>
     <string name="player_lyrics_close">Close</string>
     <string name="player_lyrics_highlight">Current line color</string>

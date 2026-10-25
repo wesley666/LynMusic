@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.setProgress
@@ -171,6 +173,31 @@ private fun ColumnScope.LyricsStyleControls(
     onOpenColor: () -> Unit,
 ) {
     val style = state.lyricsStyle
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .toggleable(value = style.showTranslation, role = Role.Switch) { showTranslation ->
+                onIntent(PlayerIntent.LyricsStyleChanged(style.copy(showTranslation = showTranslation)))
+            }.heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            uiString(Res.string.player_lyrics_show_translation), Modifier.weight(1f),
+            color = LyricsSettingsSecondaryColor, style = MaterialTheme.typography.bodyMedium,
+        )
+        Switch(
+            checked = style.showTranslation,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = Color.White.copy(alpha = 0.32f),
+                checkedBorderColor = Color.Transparent,
+                uncheckedThumbColor = Color.White.copy(alpha = 0.78f),
+                uncheckedTrackColor = Color.White.copy(alpha = 0.08f),
+                uncheckedBorderColor = Color.White.copy(alpha = 0.4f),
+            ),
+        )
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(uiString(Res.string.player_lyrics_size), color = LyricsSettingsSecondaryColor, style = MaterialTheme.typography.bodyMedium)
         LyricsSettingsPill("A−", uiString(Res.string.player_lyrics_size_decrease), enabled = style.fontScale > 0.75f, onClick = {

@@ -5,17 +5,101 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.nio.file.Files
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import top.iwesley.lyn.music.core.model.*
 import top.iwesley.lyn.music.data.db.*
 import top.iwesley.lyn.music.domain.*
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class LyricsCalibrationTest {
     private val track = Track("track:local:song", "local", "Song", mediaLocator = "file:///song.mp3", relativePath = "song.mp3")
     private val payload = "[offset:200]\n[00:01.00]First\n[00:03.00]Second"
     private val source = "provider"
+
+    @Test fun `language-only sidecar updates reload playback without resetting calibration or repeating notifications`() = runTest {
+        withDatabase { database ->
+            var livePayload = """<tt xmlns:m="urn:metadata" xml:lang="en"><body><p begin="1s">Original<span m:role="x-translation" xml:lang="zh-Hans">Translation</span></p></body></tt>"""
+            val sidecar = object : SameNameLyricsFileGateway {
+                override suspend fun readSameNameLyrics(track: Track) = Result.success(livePayload)
+            }
+            val repository = repository(database, sidecar)
+            val original = assertNotNull(repository.getLyrics(track))
+            assertTrue(repository.saveOffset(track, original.version, 350))
+            val savedCalibration = database.lyricsOffsetDao().get(track.id)
+            val changes = mutableListOf<LyricsChange>()
+            val observer = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                repository.changes.collect { if (it.trackId == track.id) changes += it }
+            }
+
+            for ((oldLanguage, newLanguage) in listOf("en" to "zh-Hant", "zh-Hant" to "en")) {
+                changes.clear()
+                livePayload = livePayload.replace("xml:lang=\"$oldLanguage\"", "xml:lang=\"$newLanguage\"")
+                repository.searchLyricsCandidates(track)
+                runCurrent()
+                assertEquals(listOf(LyricsChange(track.id, contentChanged = true)), changes)
+
+                // The consumer reloads the updated document, but keeps using the saved timing version.
+                val reloaded = assertNotNull(repository.loadPlaybackLyrics(track) as? LyricsLoadResult.Found).lyrics
+                val presentation = assertNotNull(parseEnhancedLyricsPresentation(reloaded.document.rawPayload, reloaded.document))
+                assertEquals(newLanguage, presentation.originalLanguage)
+                assertEquals(if (newLanguage == "en") "Translation" else null,
+                    presentation.translationTextFor(presentation.lines.single(), true))
+                assertEquals(original.version, reloaded.version)
+                assertEquals(350L, repository.readOffset(track, reloaded.version))
+                assertEquals(savedCalibration, database.lyricsOffsetDao().get(track.id))
+                runCurrent()
+                assertEquals(1, changes.size, "Reloading the same payload must not trigger a reload loop")
+            }
+
+            changes.clear()
+            livePayload = livePayload.replace("xml:lang=\"zh-Hans\"", "xml:lang=\"zh-Hant\"")
+            repository.searchLyricsCandidates(track)
+            livePayload = livePayload.replace("<body>", "\n<body>")
+            repository.searchLyricsCandidates(track)
+            runCurrent()
+            assertTrue(changes.isEmpty(), "Translation language and XML formatting do not change original-language visibility")
+            assertEquals(savedCalibration, database.lyricsOffsetDao().get(track.id))
+            observer.cancel()
+        }
+    }
+
+    @Test fun `LRC and Navidrome language metadata reloads preserve timing versions`() = runTest {
+        val payloads = listOf(
+            "[lang:en]\n[00:01.00]Hello [00:02.00]world[00:03.00]\n[00:01.00]你[00:01.00]好[00:01.00]" to "[lang:en]",
+            "[language:en]\n[00:01.00]Hello [00:02.00]world[00:03.00]\n[00:01.00]你[00:01.00]好[00:01.00]" to "[language:en]",
+            """{"lyricsList":{"structuredLyrics":[{"kind":"main","lang":"en","synced":true,"line":[{"start":1000,"value":"[00:01.00]Hello [00:02.00]world[00:03.00]"},{"start":1000,"value":"[00:01.00]你[00:01.00]好[00:01.00]"}]}]}}""" to "\"lang\":\"en\"",
+        )
+        for ((raw, languageMarker) in payloads) {
+            withDatabase { database ->
+                val row = LyricsCacheEntity(track.id, source, raw, 1)
+                database.writeLyricsCache(row)
+                val version = requireNotNull(row.versionOrNull())
+                assertTrue(database.saveLyricsOffset(track, version, -450))
+                val changes = mutableListOf<LyricsChange>()
+                val observer = backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    LyricsChanges.changes.collect { if (it.trackId == track.id) changes += it }
+                }
+                val replacement = row.copy(rawPayload = raw.replace(languageMarker, languageMarker.replace("en", "zh")), updatedAt = 2)
+                database.writeLyricsCache(replacement)
+                runCurrent()
+                assertEquals(listOf(LyricsChange(track.id, contentChanged = true)), changes)
+                assertEquals(version, replacement.versionOrNull())
+                assertEquals(-450L, database.readLyricsOffset(track, version))
+                val reloaded = assertNotNull(repository(database).getLyrics(track))
+                val presentation = assertNotNull(parseEnhancedLyricsPresentation(reloaded.document.rawPayload, reloaded.document))
+                assertEquals("zh", presentation.originalLanguage)
+                assertNull(presentation.translationTextFor(presentation.lines.single(), true))
+                database.writeLyricsCache(replacement.copy(updatedAt = 3))
+                runCurrent()
+                assertEquals(1, changes.size)
+                observer.cancel()
+            }
+        }
+    }
 
     @Test fun `manually reapplying the same automatic lyrics preserves calibration`() = runTest {
         for (mode in listOf(LyricsSearchApplyMode.FULL, LyricsSearchApplyMode.LYRICS_ONLY)) {

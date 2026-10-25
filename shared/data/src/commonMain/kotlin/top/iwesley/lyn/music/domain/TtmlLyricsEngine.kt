@@ -121,6 +121,7 @@ private class TtmlLyricsReader {
     private var rootSeen = false
     private var rootClosed = false
     private var lineTiming = false
+    private var originalLanguage: String? = null
 
     fun read(reader: XmlReader): ParsedStructuredLyricsPayload? {
         while (reader.hasNext()) {
@@ -150,6 +151,7 @@ private class TtmlLyricsReader {
             require(!rootSeen && element == "tt")
             rootSeen = true
             lineTiming = reader.attribute("timing")?.equals("line", ignoreCase = true) == true
+            originalLanguage = reader.attribute("lang", "http://www.w3.org/XML/1998/namespace")
         }
         if (ignoredDepth != null) return
         val role = reader.attribute("role")?.lowercase()
@@ -304,6 +306,7 @@ private class TtmlLyricsReader {
             offsetMs = 0L,
             displayLines = displayLines,
             hasEnhancedSegments = displayLines.any { it.segments.isNotEmpty() },
+            originalLanguage = originalLanguage,
         )
     }
 }
@@ -341,8 +344,8 @@ private class TtmlTranslationCapture(
     val text: StringBuilder = StringBuilder(),
 )
 
-private fun XmlReader.attribute(name: String): String? = (0 until attributeCount)
-    .firstOrNull { getAttributeLocalName(it) == name }
+private fun XmlReader.attribute(name: String, namespace: String? = null): String? = (0 until attributeCount)
+    .firstOrNull { getAttributeLocalName(it) == name && (namespace == null || getAttributeNamespace(it) == namespace) }
     ?.let(::getAttributeValue)
 
 private fun normalizeTtmlText(text: String): String = TTML_WHITESPACE.replace(text, " ").trim()

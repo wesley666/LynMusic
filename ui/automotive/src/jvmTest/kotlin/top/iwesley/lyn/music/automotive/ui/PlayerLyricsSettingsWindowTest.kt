@@ -17,7 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.platform.findDefaultNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.NavigationEventInput
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.boundsInRoot
@@ -34,6 +34,27 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class PlayerLyricsSettingsWindowTest {
+    @Test fun `translation switch is first and retains its state when settings reopen on desktop and small screens`() = onUiThread {
+        for (mobile in listOf(false, true)) {
+            Fixture(width = if (mobile) 360 else 1100, height = if (mobile) 640 else 760, mobile = mobile).use { ui ->
+                val toggle = ui.nodes().single { it.config.getOrNull(SemanticsProperties.Role) == Role.Switch }
+                assertEquals(androidx.compose.ui.state.ToggleableState.On, toggle.config[SemanticsProperties.ToggleableState])
+                assertTrue(toggle.boundsInRoot.bottom <= ui.node("A−").boundsInRoot.top)
+                ui.capture(if (mobile) "automotive-translation-small-phone" else "automotive-translation-first-row")
+                ui.click("Show translation")
+                assertFalse(ui.state.lyricsStyle.showTranslation)
+                assertTrue(ui.presentation.isLyricsStyleVisible)
+                ui.escape()
+                ui.presentation.isLyricsStyleVisible = true
+                ui.render()
+                assertEquals(androidx.compose.ui.state.ToggleableState.Off,
+                    ui.nodes().single { it.config.getOrNull(SemanticsProperties.Role) == Role.Switch }.config[SemanticsProperties.ToggleableState])
+                ui.click("Show translation")
+                assertTrue(ui.state.lyricsStyle.showTranslation)
+            }
+        }
+    }
+
     @Test fun `opening and closing windows preserves the actual lyrics viewport and scroll position`() = onUiThread {
         Fixture(realLyrics = true).use { ui ->
             ui.escape()
@@ -170,6 +191,8 @@ class PlayerLyricsSettingsWindowTest {
             ui.click("Later by 0.1 s")
             assertEquals(125L, ui.state.lyricsUserOffsetMs)
             ui.click("A+")
+            ui.click("Show translation")
+            assertFalse(ui.state.lyricsStyle.showTranslation)
             ui.click("Reset style")
             assertEquals(PlayerLyricsStyle(), ui.state.lyricsStyle)
             assertEquals(125L, ui.state.lyricsUserOffsetMs)
@@ -204,7 +227,7 @@ class PlayerLyricsSettingsWindowTest {
         private val backInput = object : NavigationEventInput() { fun complete() = dispatchOnBackCompleted() }
         val presentation = PlayerPresentation({ state }).apply { isLyricsStyleVisible = true }
         val scene = ImageComposeScene(width, height) {
-            val dispatcher = findDefaultNavigationEventDispatcherOwner()!!.navigationEventDispatcher
+            val dispatcher = LocalNavigationEventDispatcherOwner.current!!.navigationEventDispatcher
             DisposableEffect(dispatcher) {
                 dispatcher.addInput(backInput)
                 onDispose { dispatcher.removeInput(backInput) }

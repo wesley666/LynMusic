@@ -11,7 +11,7 @@ class JvmPlayerLyricsStylePreferencesTest {
         val file = Files.createTempDirectory("lyrics-style").resolve("settings.properties").toFile()
         val original = JvmAppPreferencesStore(file)
         original.setSelectedLyricsShareFontKey("Serif")
-        val style = PlayerLyricsStyle(0xfffa8072.toInt(), 1.5f, "imported:abc")
+        val style = PlayerLyricsStyle(0xfffa8072.toInt(), 1.5f, "imported:abc", showTranslation = false)
         original.setPlayerLyricsStyle(style)
         val reopened = JvmAppPreferencesStore(file)
         assertEquals(style, reopened.playerLyricsStyle.value)
