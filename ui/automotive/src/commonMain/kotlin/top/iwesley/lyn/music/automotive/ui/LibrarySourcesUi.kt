@@ -1270,7 +1270,7 @@ private fun LibraryBrowserTab(
             LazyColumn(
                 state = activeListState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 42.dp, bottom = 20.dp)),
+                contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 28.dp, bottom = 20.dp)),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (showSearchField || combinedActionButton != null) {

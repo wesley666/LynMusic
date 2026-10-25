@@ -654,7 +654,7 @@ internal fun TrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 14.dp, top = 12.dp, end = 0.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
