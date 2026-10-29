@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="navigation_expand">展开导航</string>
+    <string name="navigation_collapse">收起导航</string>
     <string name="navigation_close_search">关闭搜索</string>
     <string name="navigation_exit_search">退出搜索</string>
     <string name="favorites_search_placeholder">搜索喜欢的歌曲 / 艺人 / 专辑</string>

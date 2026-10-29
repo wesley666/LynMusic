@@ -22,6 +22,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -99,6 +100,7 @@ fun AutomotiveApp(
         val settingsState by component.settingsStore.state.collectAsState()
         var visibleStartupWarning by remember(startupWarning) { mutableStateOf(startupWarning) }
         var selectedTab by rememberSaveable { mutableStateOf(defaultSelectedAppTab) }
+        val navigationRailState = rememberWideNavigationRailState()
         var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
         var shouldRestoreOnlinePlaylistSource by remember { mutableStateOf(false) }
         var onlinePlaylistSourceRestoreTarget by remember { mutableStateOf<String?>(null) }
@@ -455,6 +457,7 @@ fun AutomotiveApp(
                             )
                         } else {
                             AutomotiveLandscapeShell(
+                                navigationRailState = navigationRailState,
                                 selectedTab = selectedTab,
                                 onTabSelected = { selectedTab = it },
                                 platform = component.platform,

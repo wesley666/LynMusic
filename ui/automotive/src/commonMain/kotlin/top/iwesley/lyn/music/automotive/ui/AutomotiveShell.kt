@@ -9,12 +9,14 @@ import top.iwesley.lyn.music.core.model.UiText
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.automirrored.rounded.MenuOpen
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
@@ -44,6 +48,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LocalOffer
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
@@ -56,6 +61,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -63,6 +69,12 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.WideNavigationRail
+import androidx.compose.material3.WideNavigationRailDefaults
+import androidx.compose.material3.WideNavigationRailItem
+import androidx.compose.material3.WideNavigationRailItemDefaults
+import androidx.compose.material3.WideNavigationRailState
+import androidx.compose.material3.WideNavigationRailValue
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -80,6 +92,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -87,6 +100,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -619,6 +634,7 @@ private fun AutomotiveMoreSheet(
 
 @Composable
 internal fun AutomotiveLandscapeShell(
+    navigationRailState: WideNavigationRailState,
     selectedTab: AppTab,
     onTabSelected: (AppTab) -> Unit,
     platform: PlatformDescriptor,
@@ -662,24 +678,15 @@ internal fun AutomotiveLandscapeShell(
     ) {
         Box(
             modifier = Modifier
-                .width(240.dp)
                 .fillMaxHeight()
                 .background(shellColors.navContainer),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize(),
-            ) {
-                HeroHeader()
-                Spacer(Modifier.height(40.dp))
-                AutomotiveSideNavigation(
-                    selectedTab = selectedTab,
-                    platform = platform,
-                    showSettingsUpdateBadge = settingsState.appUpdateHasNewVersion == true,
-                    onTabSelected = onTabSelected,
-                    modifier = Modifier.padding(horizontal = 18.dp),
-                )
-            }
+            AutomotiveSideNavigation(
+                state = navigationRailState,
+                selectedTab = selectedTab,
+                showSettingsUpdateBadge = settingsState.appUpdateHasNewVersion == true,
+                onTabSelected = onTabSelected,
+            )
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -765,9 +772,9 @@ internal fun AutomotiveLandscapeShell(
 }
 
 @Composable
-private fun AutomotiveSideNavigation(
+internal fun AutomotiveSideNavigation(
+    state: WideNavigationRailState,
     selectedTab: AppTab,
-    platform: PlatformDescriptor,
     showSettingsUpdateBadge: Boolean,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
@@ -775,69 +782,140 @@ private fun AutomotiveSideNavigation(
     val shellColors = mainShellColors
     val primary = MaterialTheme.colorScheme.primary
     val inactiveContent = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.86f)
-    val selectedBackground = shellColors.selectedContainer.copy(alpha = 0.64f)
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        automotiveLandscapeNavigationTabs.forEach { tab ->
-            val icon = when (tab) {
-                AppTab.My -> Icons.Rounded.Person
-                AppTab.Library -> Icons.Rounded.LibraryMusic
-                AppTab.Favorites -> Icons.Rounded.FavoriteBorder
-                AppTab.Playlists -> Icons.AutoMirrored.Rounded.List
-                AppTab.Tags -> Icons.Rounded.LocalOffer
-                AppTab.Sources -> Icons.Rounded.FolderOpen
-                AppTab.Settings -> Icons.Rounded.Settings
-            }
-            val label = mobileLibraryHubTabLabel(tab)
-            val selected = selectedTab == tab
-            Row(
+    val expanded = state.targetValue == WideNavigationRailValue.Expanded
+    val scope = rememberCoroutineScope()
+    val toggleLabel = uiString(
+        if (expanded) Res.string.navigation_collapse else Res.string.navigation_expand,
+    )
+    val defaultExpandedPadding = WideNavigationRailItemDefaults.IndicatorExpandedPadding
+    val itemIndicatorPadding = WideNavigationRailItemDefaults.indicatorPadding(
+        railExpanded = expanded,
+        expandedPadding = PaddingValues(
+            start = 14.dp,
+            end = 14.dp,
+            top = defaultExpandedPadding.calculateTopPadding(),
+            bottom = defaultExpandedPadding.calculateBottomPadding(),
+        ),
+    )
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 76.dp) {
+        WideNavigationRail(
+            state = state,
+            modifier = modifier.testTag("automotive-navigation-rail"),
+            colors = WideNavigationRailDefaults.colors(containerColor = shellColors.navContainer),
+            arrangement = Arrangement.Top,
+            contentPadding = PaddingValues(vertical = 12.dp),
+        ) {
+            // Keep a bounded, scrollable column inside the rail: the rail itself measures against
+            // a finite height. Intrinsic width lets expanded labels determine the native rail width.
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (selected) selectedBackground else Color.Transparent)
-                    .clickable { onTabSelected(tab) },
-                verticalAlignment = Alignment.CenterVertically,
+                    .width(IntrinsicSize.Max)
+                    .verticalScroll(rememberScrollState())
+                    .testTag("automotive-navigation-scroll"),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(
-                    modifier = Modifier
-                        .width(5.dp)
-                        .fillMaxHeight()
-                        .background(if (selected) primary else Color.Transparent),
-                )
-                Spacer(Modifier.width(17.dp))
-                BadgedIcon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    showBadge = tab == AppTab.Settings && showSettingsUpdateBadge,
-                    modifier = Modifier.size(24.dp),
-                    tint = if (selected) primary else inactiveContent,
-                )
-                Spacer(Modifier.width(18.dp))
-                Text(
-                    label,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    color = if (selected) primary else inactiveContent,
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = { scope.launch { state.toggle() } },
+                        modifier = Modifier.size(76.dp).testTag("automotive-navigation-toggle"),
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.AutoMirrored.Rounded.MenuOpen else Icons.Rounded.Menu,
+                            contentDescription = toggleLabel,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                    if (expanded) {
+                        Text(
+                            text = "LynMusic",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 8.dp, end = 10.dp),
+                        )
+                    }
+                }
+                automotiveLandscapeNavigationTabs.forEach { tab ->
+                    val icon = when (tab) {
+                        AppTab.My -> Icons.Rounded.Person
+                        AppTab.Library -> Icons.Rounded.LibraryMusic
+                        AppTab.Favorites -> Icons.Rounded.FavoriteBorder
+                        AppTab.Playlists -> Icons.AutoMirrored.Rounded.List
+                        AppTab.Tags -> Icons.Rounded.LocalOffer
+                        AppTab.Sources -> Icons.Rounded.FolderOpen
+                        AppTab.Settings -> Icons.Rounded.Settings
+                    }
+                    val label = mobileLibraryHubTabLabel(tab)
+                    val selected = selectedTab == tab
+                    Box(Modifier.fillMaxWidth()) {
+                        WideNavigationRailItem(
+                            selected = selected,
+                            onClick = { onTabSelected(tab) },
+                            railExpanded = expanded,
+                            indicatorPadding = itemIndicatorPadding,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 76.dp)
+                                .testTag("automotive-navigation-${tab.name}"),
+                            colors = WideNavigationRailItemDefaults.colors(
+                                selectedIconColor = primary,
+                                selectedTextColor = primary,
+                                selectedIndicatorColor = Color.Transparent,
+                                unselectedIconColor = inactiveContent,
+                                unselectedTextColor = inactiveContent,
+                            ),
+                            icon = {
+                                BadgedIcon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    showBadge = tab == AppTab.Settings && showSettingsUpdateBadge,
+                                    modifier = Modifier.size(28.dp).testTag("automotive-navigation-icon-${tab.name}"),
+                                    iconModifier = Modifier.size(28.dp),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = label,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    textAlign = if (expanded) TextAlign.Start else TextAlign.Center,
+                                    modifier = Modifier
+                                        .layout { measurable, constraints ->
+                                            // Fill the label's remaining space so Material's centered
+                                            // content spans the row. Reserve its 20dp outer space,
+                                            // 14dp indicator edges, 28dp icon and 8dp icon-label gap.
+                                            val labelConstraints = if (expanded && constraints.hasBoundedWidth) {
+                                                val width = (constraints.maxWidth - 84.dp.roundToPx()).coerceAtLeast(0)
+                                                constraints.copy(minWidth = width, maxWidth = width)
+                                            } else {
+                                                constraints
+                                            }
+                                            val placeable = measurable.measure(labelConstraints)
+                                            layout(placeable.width, placeable.height) {
+                                                placeable.placeRelative(0, 0)
+                                            }
+                                        }
+                                        .testTag("automotive-navigation-label-${tab.name}"),
+                                )
+                            },
+                        )
+                        if (selected) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.CenterStart)
+                                    .padding(start = 12.dp)
+                                    .size(width = 3.dp, height = 28.dp)
+                                    .background(primary, RoundedCornerShape(50))
+                                    .testTag("automotive-navigation-marker"),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
-}
-
-@Composable
-private fun HeroHeader() {
-    Text(
-        text = "LynMusic",
-        style = MaterialTheme.typography.headlineMedium,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 42.dp, top = 56.dp),
-    )
 }
 
 @Composable
