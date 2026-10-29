@@ -193,7 +193,9 @@ fun buildNavidromeStreamUrl(
     password: String,
     songId: String,
     audioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+    timeOffsetSeconds: Long? = null,
 ): String {
+    require(timeOffsetSeconds == null || timeOffsetSeconds >= 0L)
     return buildSubsonicRestUrl(
         baseUrl = baseUrl,
         username = username,
@@ -205,6 +207,7 @@ fun buildNavidromeStreamUrl(
             audioQuality.maxBitRateKbps?.let { maxBitRate ->
                 put("maxBitRate", maxBitRate.toString())
                 put("format", "mp3")
+                timeOffsetSeconds?.takeIf { it > 0L }?.let { put("timeOffset", it.toString()) }
             }
         },
         includeJsonFormat = false,
@@ -218,7 +221,9 @@ fun buildSubsonicStreamUrl(
     authMode: SubsonicAuthMode,
     songId: String,
     audioQuality: NavidromeAudioQuality = NavidromeAudioQuality.Original,
+    timeOffsetSeconds: Long? = null,
 ): String {
+    require(timeOffsetSeconds == null || timeOffsetSeconds >= 0L)
     return buildSubsonicRestUrl(
         baseUrl = baseUrl,
         username = username,
@@ -230,6 +235,7 @@ fun buildSubsonicStreamUrl(
             audioQuality.maxBitRateKbps?.let { maxBitRate ->
                 put("maxBitRate", maxBitRate.toString())
                 put("format", "mp3")
+                timeOffsetSeconds?.takeIf { it > 0L }?.let { put("timeOffset", it.toString()) }
             }
         },
         includeJsonFormat = false,
@@ -1243,7 +1249,7 @@ suspend fun resolveSubsonicCompatibleCoverArtUrlCandidates(
     }
 }
 
-private suspend fun resolveNavidromeSource(
+suspend fun resolveNavidromeSource(
     database: LynMusicDatabase,
     secureCredentialStore: SecureCredentialStore,
     locator: String,

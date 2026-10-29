@@ -118,6 +118,8 @@ class DefaultPlaybackRepository(
     hydrateImmediately: Boolean = true,
     private val playbackStatsReporter: PlaybackStatsReporter = NoopPlaybackStatsReporter,
     private val currentTimeMillis: () -> Long = ::now,
+    /** Native asynchronous players retain the requested position; offset streams can report an accepted position. */
+    private val seekPositionAfterCommand: (Long) -> Long = { it },
 ) : PlaybackRepository {
     private val initialPlaybackVolume = normalizePlaybackVolume(playbackPreferencesStore.playbackVolume.value)
     private val mutableSnapshot = MutableStateFlow(
@@ -496,7 +498,8 @@ class DefaultPlaybackRepository(
         playbackCommandMutex.withLock {
             if (!mutableSnapshot.value.canSeek) return@withLock
             gateway.seekTo(positionMs)
-            mutableSnapshot.update { it.copy(positionMs = positionMs.coerceAtLeast(0L)) }
+            val acceptedPositionMs = seekPositionAfterCommand(positionMs).coerceAtLeast(0L)
+            mutableSnapshot.update { it.copy(positionMs = acceptedPositionMs) }
             persistSnapshotCursorIfPersistent()
         }
     }

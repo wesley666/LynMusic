@@ -66,6 +66,37 @@ import top.iwesley.lyn.music.data.db.buildLynMusicDatabase
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackRepositoriesTest {
+    @Test
+    fun `accepted server seek position is kept in paused snapshot and persisted cursor`() = runTest {
+        val database = createTestDatabase()
+        val native = FakePlaybackGateway()
+        val gateway = object : PlaybackGateway by native {
+            override suspend fun seekTo(positionMs: Long) { native.seekTo(positionMs / 1_000L * 1_000L) }
+        }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val repository = DefaultPlaybackRepository(
+            database, gateway, FakePlaybackPreferencesStore(), scope,
+            hydrateImmediately = false,
+            seekPositionAfterCommand = { gateway.state.value.positionMs },
+        )
+        try {
+            repository.playTracks(listOf(sampleNavidromeTrack()), 0)
+            advanceUntilIdle()
+            repository.pause()
+            repository.seekTo(45_890L)
+            assertEquals(45_000L, repository.snapshot.value.positionMs)
+            assertEquals(45_000L, database.playbackQueueSnapshotDao().get()?.positionMs)
+            advanceUntilIdle()
+            assertEquals(45_000L, repository.snapshot.value.positionMs)
+            assertEquals(false, repository.snapshot.value.isPlaying)
+        } finally {
+            repository.close()
+            scope.cancel()
+            advanceUntilIdle()
+            database.close()
+        }
+    }
+
 
     @Test
     fun gatewayUiDescriptionsPropagateAndStaleDescriptionsAreClearedOnTrackSwitch() = runTest {

@@ -32,7 +32,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -102,6 +104,8 @@ private class LynPlaybackServiceRuntime private constructor(
         logger = logger,
         artworkCacheStore = artworkCacheStore,
         playFromMediaId = ::playFromMediaId,
+        navidromeBufferPositionMs = { gateway.navidromeBufferPositionMs },
+        navidromeAwaitingPosition = gateway.navidromeAwaitingPosition,
     )
 
     val session: MediaLibrarySession = MediaLibrarySession.Builder(
@@ -256,10 +260,12 @@ private class LynPlaybackServiceRuntime private constructor(
                 addressSelector = remoteSourceAddressSelector,
                 logger = logger,
                 fnMusicHttpClient = navidromeHttpClient,
+                navidromeHttpClient = navidromeHttpClient,
             )
             val repository = DefaultPlaybackRepository(
                 database = database,
                 gateway = gateway,
+                seekPositionAfterCommand = gateway::acceptedSeekPositionMs,
                 playbackPreferencesStore = preferencesStore,
                 scope = serviceScope,
                 systemPlaybackControlsPlatformService = createAndroidAudioFocusPlaybackControlsPlatformService(appContext),
@@ -405,24 +411,28 @@ private class LynMediaLibrarySessionCallback(
 }
 
 @OptIn(UnstableApi::class)
-private class LynMediaSessionPlayer(
+internal class LynMediaSessionPlayer(
     player: Player,
     private val serviceScope: CoroutineScope,
     private val repository: PlaybackRepository,
     private val logger: DiagnosticLogger,
     private val artworkCacheStore: ArtworkCacheStore,
     private val playFromMediaId: suspend (String) -> Unit,
+    private val navidromeBufferPositionMs: () -> Long?,
+    private val navidromeAwaitingPosition: StateFlow<Boolean>,
 ) : ForwardingSimpleBasePlayer(player) {
     private var observedArtworkCacheKey: String? = null
     private var artworkVersion = 0L
     private var artworkVersionJob: Job? = null
-    private var lastSessionStateKey: Media3SessionStateKey? = null
+    private var lastSessionStateKey: Pair<Media3SessionStateKey, Boolean>? = null
 
     init {
         serviceScope.launch {
-            repository.snapshot.collect { snapshot ->
+            combine(repository.snapshot, navidromeAwaitingPosition) { snapshot, awaitingPosition ->
+                snapshot to awaitingPosition
+            }.collect { (snapshot, awaitingPosition) ->
                 updateArtworkVersionObserver(snapshot)
-                val nextKey = snapshot.toMedia3SessionStateKey()
+                val nextKey = snapshot.toMedia3SessionStateKey() to awaitingPosition
                 if (nextKey != lastSessionStateKey) {
                     lastSessionStateKey = nextKey
                     invalidateState()
@@ -437,13 +447,13 @@ private class LynMediaSessionPlayer(
 
     override fun getState(): State {
         val state = super.getState()
+        val snapshot = repository.snapshot.value
         val commands = Player.Commands.Builder()
             .addAll(state.availableCommands)
             .remove(Player.COMMAND_STOP)
             .remove(Player.COMMAND_CHANGE_MEDIA_ITEMS)
             .add(Player.COMMAND_PLAY_PAUSE)
             .add(Player.COMMAND_PREPARE)
-            .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
             .add(Player.COMMAND_SEEK_TO_NEXT)
             .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             .add(Player.COMMAND_SEEK_TO_PREVIOUS)
@@ -451,8 +461,12 @@ private class LynMediaSessionPlayer(
             .add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
             .add(Player.COMMAND_SET_MEDIA_ITEM)
             .add(Player.COMMAND_SET_VOLUME)
+            .apply {
+                val seekCommands = intArrayOf(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                    Player.COMMAND_SEEK_TO_DEFAULT_POSITION, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
+                if (snapshot.canSeek) addAll(*seekCommands) else removeAll(*seekCommands)
+            }
             .build()
-        val snapshot = repository.snapshot.value
         val metadata = snapshot.toMedia3SessionMetadata(artworkVersion)
         val playlist = snapshot.toMedia3SessionPlaylist(artworkVersion)
         return state.buildUpon()
@@ -462,9 +476,23 @@ private class LynMediaSessionPlayer(
                 if (playlist.items.isNotEmpty()) {
                     setPlaylist(playlist.items)
                     setCurrentMediaItemIndex(playlist.currentMediaItemIndex)
-                    setContentPositionMs(snapshot.coercedSessionPositionMs())
+                    val contentPositionMs = snapshot.coercedSessionPositionMs()
+                    setContentPositionMs(contentPositionMs)
+                    // The underlying player's buffer belongs to a fragment after a server-side seek.
+                    navidromeBufferPositionMs()?.let { buffered ->
+                        // ForwardingSimpleBasePlayer also copies Exo's segment-relative jump event.
+                        // Keep its reason, but report the same whole-track position as our timeline.
+                        if (state.hasPositionDiscontinuity) {
+                            setPositionDiscontinuity(state.positionDiscontinuityReason, contentPositionMs)
+                        }
+                        setContentBufferedPositionMs { buffered }
+                        setTotalBufferedDurationMs { (buffered - contentPositionMs).coerceAtLeast(0L) }
+                    }
                     setPlaylistMetadata(metadata ?: MediaMetadata.EMPTY)
-                    if (snapshot.isPlaying && state.playbackState == Player.STATE_IDLE && state.playerError == null) {
+                    // READY can still mean a paused, unpositioned full stream while capability
+                    // detection runs. BUFFERING keeps the system clock fixed at the restore target.
+                    if (state.playerError == null && (navidromeAwaitingPosition.value ||
+                            (snapshot.isPlaying && state.playbackState == Player.STATE_IDLE))) {
                         setPlaybackState(Player.STATE_BUFFERING)
                         setIsLoading(true)
                     }
@@ -855,6 +883,7 @@ private data class Media3SessionStateKey(
     val currentIndex: Int,
     val currentTrackId: String?,
     val isPlaying: Boolean,
+    val positionMs: Long,
     val durationMs: Long,
     val canSeek: Boolean,
     val displayTitle: String,
@@ -906,7 +935,7 @@ private fun PlaybackSnapshot.toMedia3SessionPlaylist(
                 )
                 .setMediaMetadata(metadata)
                 .setDurationUs(durationMs.toMedia3DurationUs())
-                .setIsSeekable(if (isCurrent) canSeek || durationMs > 0L else durationMs > 0L)
+                .setIsSeekable(if (isCurrent) canSeek else durationMs > 0L)
                 .build(),
         )
     }
@@ -921,6 +950,7 @@ private fun PlaybackSnapshot.toMedia3SessionStateKey(): Media3SessionStateKey {
         currentIndex = currentIndex,
         currentTrackId = currentTrack?.id,
         isPlaying = isPlaying,
+        positionMs = positionMs,
         durationMs = durationMs,
         canSeek = canSeek,
         displayTitle = currentDisplayTitle,
