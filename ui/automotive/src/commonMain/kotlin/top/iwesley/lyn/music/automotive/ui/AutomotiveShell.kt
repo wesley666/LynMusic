@@ -7,6 +7,7 @@ import top.iwesley.lyn.music.core.model.uiPlural
 import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.UiText
 
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -88,6 +90,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -96,11 +100,13 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -140,6 +146,7 @@ import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
+import top.iwesley.lyn.music.automotive.ui.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import top.iwesley.lyn.music.ui.mainShellColors
 
@@ -531,7 +538,6 @@ internal fun AutomotivePortraitShell(
                         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                         compact = true,
                         mobileLibraryHub = true,
-                        portraitLibraryNavigation = portraitNavigation,
                         playerExpanded = presentation.isExpanded,
                         onTabSelected = ::selectMobileTab,
                         modifier = Modifier.weight(1f),
@@ -947,7 +953,6 @@ private fun TabContent(
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     compact: Boolean,
     mobileLibraryHub: Boolean,
-    portraitLibraryNavigation: Boolean = false,
     playerExpanded: Boolean = false,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
@@ -958,26 +963,40 @@ private fun TabContent(
             onTabSelected(resolvedSelectedTab)
         }
     }
+    val libraryEntry = LocalAutomotiveLibraryEntry.current ?: rememberAutomotiveLibraryEntry()
+    if (resolvedSelectedTab == AppTab.Library) {
+        libraryEntry {
+            AutomotiveLibraryContent(
+                libraryState = libraryState,
+                onlineLibraryState = onlineLibraryState,
+                favoritesState = favoritesState,
+                importState = importState,
+                onLibraryIntent = onLibraryIntent,
+                onOnlineLibraryIntent = onOnlineLibraryIntent,
+                onFavoritesIntent = onFavoritesIntent,
+                onPlayerIntent = onPlayerIntent,
+                libraryNavigationTarget = libraryNavigationTarget,
+                onLibraryNavigationHandled = onLibraryNavigationHandled,
+                onOpenLibraryNavigationTarget = if (compact) null else onOpenLibraryNavigationTarget,
+                compact = compact,
+                modifier = modifier,
+            )
+        }
+        return
+    }
     if (mobileLibraryHub && isMobileLibraryHubTab(resolvedSelectedTab)) {
         MobileLibraryHubTab(
             selectedTab = resolvedSelectedTab,
-            portraitNavigation = portraitLibraryNavigation,
-            libraryState = libraryState,
-            onlineLibraryState = onlineLibraryState,
             playlistsState = playlistsState,
             onlinePlaylistsState = onlinePlaylistsState,
             favoritesState = favoritesState,
             onlineFavoritesState = onlineFavoritesState,
             importState = importState,
-            onLibraryIntent = onLibraryIntent,
-            onOnlineLibraryIntent = onOnlineLibraryIntent,
             onPlaylistsIntent = onPlaylistsIntent,
             onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
             onFavoritesIntent = onFavoritesIntent,
             onOnlineFavoritesIntent = onOnlineFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
-            libraryNavigationTarget = libraryNavigationTarget,
-            onLibraryNavigationHandled = onLibraryNavigationHandled,
             playerExpanded = playerExpanded,
             onTabSelected = onTabSelected,
             modifier = modifier,
@@ -997,26 +1016,7 @@ private fun TabContent(
             modifier = modifier,
         )
 
-        AppTab.Library -> LibraryTab(
-            state = libraryState,
-            favoritesState = favoritesState,
-            importState = importState,
-            onlineState = onlineLibraryState,
-            onLibraryIntent = onLibraryIntent,
-            onFavoritesIntent = onFavoritesIntent,
-            onOnlineIntent = onOnlineLibraryIntent,
-            onPlayerIntent = onPlayerIntent,
-            showDuration = true,
-            navigationTarget = libraryNavigationTarget,
-            onNavigationHandled = onLibraryNavigationHandled,
-            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-            rootSelectorStyle = if (compact) {
-                LibraryRootSelectorStyle.CompactHero
-            } else {
-                LibraryRootSelectorStyle.Default
-            },
-            modifier = modifier,
-        )
+        AppTab.Library -> Unit // Handled by the shared, saveable library entry above.
 
         AppTab.Playlists -> PlaylistsTab(
             state = playlistsState,
@@ -1060,35 +1060,259 @@ private fun TabContent(
     }
 }
 
+// Owned above the responsive shell so orientation changes restore the same browser entry.
+internal val LocalAutomotiveLibraryEntry =
+    staticCompositionLocalOf<(@Composable (@Composable () -> Unit) -> Unit)?> { null }
+
+@Composable
+internal fun rememberAutomotiveLibraryEntry(): @Composable (@Composable () -> Unit) -> Unit {
+    val stateHolder = rememberSaveableStateHolder()
+    return remember(stateHolder) {
+        movableContentOf<@Composable () -> Unit> { content ->
+            stateHolder.SaveableStateProvider("library", content)
+        }
+    }
+}
+
+@Composable
+internal fun AutomotiveLibraryContent(
+    libraryState: LibraryState,
+    onlineLibraryState: OnlineLibraryState,
+    favoritesState: FavoritesState,
+    importState: ImportState,
+    onLibraryIntent: (LibraryIntent) -> Unit,
+    onOnlineLibraryIntent: (OnlineLibraryIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val rootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
+    var rootClickRequestKey by rememberSaveable { mutableStateOf(0) }
+    var searchExpanded by rememberSaveable { mutableStateOf(false) }
+    var searchAutoFocus by remember { mutableStateOf(false) }
+    var inlineSearchFocused by remember { mutableStateOf(false) }
+    val online = onlineLibraryState.sourceId != null
+    val query = if (online) onlineLibraryState.query else libraryState.query
+    val searchEnabled = !(online && rootState.value == LibraryBrowserRootView.Folders)
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val presentation = currentPlayerPresentation()
+    val updateQuery: (String) -> Unit = {
+        if (online) onOnlineLibraryIntent(OnlineLibraryIntent.SearchChanged(it))
+        else onLibraryIntent(LibraryIntent.SearchChanged(it))
+    }
+    fun exitSearch() {
+        updateQuery("")
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        searchAutoFocus = false
+        inlineSearchFocused = false
+        searchExpanded = false
+    }
+    LaunchedEffect(presentation.isExpanded) {
+        if (presentation.isExpanded) {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            searchAutoFocus = false
+        }
+    }
+    val sourceMenu = MobileLibraryHubSourceMenu(
+        selectedSourceFilter = libraryState.selectedSourceFilter,
+        availableSourceFilters = libraryState.availableSourceFilters,
+        onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
+        selectedOnlineSourceId = onlineLibraryState.sourceId,
+        onSourceFilterChanged = {
+            onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(null))
+            onLibraryIntent(LibraryIntent.SourceFilterChanged(it))
+        },
+        onOnlineSourceSelected = { onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(it)) },
+    )
+    LibraryTab(
+        state = libraryState,
+        favoritesState = favoritesState,
+        importState = importState,
+        onlineState = onlineLibraryState,
+        onLibraryIntent = onLibraryIntent,
+        onFavoritesIntent = onFavoritesIntent,
+        onOnlineIntent = onOnlineLibraryIntent,
+        onPlayerIntent = onPlayerIntent,
+        showDuration = !compact,
+        showSearchField = false,
+        showInlineBatchOperationButton = false,
+        navigationTarget = libraryNavigationTarget,
+        onNavigationHandled = onLibraryNavigationHandled,
+        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+        rootState = rootState,
+        rootClickRequestKey = rootClickRequestKey,
+        rootPagerScrollEnabled = !searchExpanded && (!searchEnabled || (!inlineSearchFocused && query.isBlank())),
+        header = { actions ->
+            // Register after browser detail/selection handlers: back first exits search.
+            PlatformBackHandler(enabled = searchExpanded || inlineSearchFocused || query.isNotBlank()) {
+                exitSearch()
+            }
+            val batchAction = actions.onBatchSelection?.let { MobileLibraryHubBatchAction(it) }
+            val sortMenu = if (actions.showTrackSort) MobileLibraryHubSortMenu(
+                selectedTrackSortMode = libraryState.selectedTrackSortMode,
+                onTrackSortChanged = { onLibraryIntent(LibraryIntent.TrackSortChanged(it)) },
+            ) else null
+            val onRootClick: (LibraryBrowserRootView) -> Unit = {
+                rootState.value = it
+                rootClickRequestKey += 1
+            }
+            val onSearchClick = {
+                searchAutoFocus = true
+                searchExpanded = true
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth().testTag("automotive-library-header")) {
+                val buttonSize = maxOf(48.dp, LocalMinimumInteractiveComponentSize.current)
+                val actionWidth = buttonSize * (1 + (if (sortMenu != null) 1 else 0) + (if (batchAction != null) 1 else 0))
+                val inlineSearchFits = maxWidth - 36.dp - 16.dp - actionWidth -
+                    desktopLibrarySearchFieldWidthDp().dp >= 192.dp
+                // Capture focus before removing the inline field; its disposal clears focus.
+                val wasEditingInline = inlineSearchFocused
+                LaunchedEffect(compact, inlineSearchFits, query) {
+                    if (!searchExpanded && (compact || !inlineSearchFits) &&
+                        (query.isNotBlank() || wasEditingInline) && searchEnabled
+                    ) {
+                        searchAutoFocus = wasEditingInline
+                        searchExpanded = true
+                    }
+                }
+                when {
+                    searchExpanded -> MobileLibraryHubSearchBar(
+                        query = query,
+                        placeholder = mobileLibraryHubSearchPlaceholder(AppTab.Library),
+                        autoFocus = searchAutoFocus,
+                        onQueryChanged = updateQuery,
+                        onBack = ::exitSearch,
+                        onClearOrClose = { if (query.isBlank()) exitSearch() else updateQuery("") },
+                    )
+                    compact -> MobileLibraryHubTabStrip(
+                        selectedPage = rootState.value.ordinal,
+                        rootTabs = LibraryBrowserRootView.entries,
+                        onRootTabClick = onRootClick,
+                        searchEnabled = searchEnabled,
+                        batchAction = batchAction,
+                        sourceMenu = sourceMenu,
+                        sortMenu = sortMenu,
+                        onSearchClick = onSearchClick,
+                        onTabClick = { _, _ -> },
+                    )
+                    else -> LandscapeLibraryTabStrip(
+                        root = rootState.value,
+                        onRootClick = onRootClick,
+                        query = query,
+                        onQueryChanged = updateQuery,
+                        inlineSearch = inlineSearchFits,
+                        searchEnabled = searchEnabled,
+                        onSearchClick = onSearchClick,
+                        onSearchFocusChanged = { inlineSearchFocused = it },
+                        sourceMenu = sourceMenu,
+                        sortMenu = sortMenu,
+                        batchAction = batchAction,
+                    )
+                }
+            }
+        },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun LandscapeLibraryTabStrip(
+    root: LibraryBrowserRootView,
+    onRootClick: (LibraryBrowserRootView) -> Unit,
+    query: String,
+    onQueryChanged: (String) -> Unit,
+    inlineSearch: Boolean,
+    searchEnabled: Boolean,
+    onSearchClick: () -> Unit,
+    onSearchFocusChanged: (Boolean) -> Unit,
+    sourceMenu: MobileLibraryHubSourceMenu,
+    sortMenu: MobileLibraryHubSortMenu?,
+    batchAction: MobileLibraryHubBatchAction?,
+) {
+    var sourceMenuExpanded by remember { mutableStateOf(false) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 20.dp, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.weight(1f).testTag("automotive-library-tabs").horizontalScroll(rememberScrollState())) {
+            LibraryBrowserRootView.entries.forEach { tab ->
+                MobileLibraryHubTabItem(
+                    label = automotiveLibraryRootLabel(tab),
+                    selected = tab == root,
+                    onClick = { onRootClick(tab) },
+                    compact = true,
+                    modifier = Modifier.testTag("automotive-library-tab-${tab.name}"),
+                )
+            }
+        }
+        if (inlineSearch) {
+            DesktopLibrarySearchField(
+                query = query,
+                onQueryChanged = onQueryChanged,
+                placeholder = mobileLibraryHubSearchPlaceholder(AppTab.Library),
+                containerColor = mainShellColors.cardBorder,
+                enabled = searchEnabled,
+                modifier = Modifier.testTag("automotive-library-inline-search")
+                    .onFocusChanged { onSearchFocusChanged(it.isFocused) },
+            )
+        } else {
+            IconButton(onClick = onSearchClick, enabled = searchEnabled) {
+                Icon(Icons.Rounded.Search, contentDescription = uiString(Res.string.common_search))
+            }
+        }
+        LibraryBrowserToolbarActions(
+            availableSourceFilters = sourceMenu.availableSourceFilters,
+            selectedSourceFilter = sourceMenu.selectedSourceFilter,
+            onlineSourceOptions = sourceMenu.onlineSourceOptions,
+            selectedOnlineSourceId = sourceMenu.selectedOnlineSourceId,
+            sourceFilterMenuExpanded = sourceMenuExpanded,
+            onSourceFilterMenuExpandedChange = { sourceMenuExpanded = it },
+            onSourceFilterChanged = sourceMenu.onSourceFilterChanged,
+            onOnlineSourceSelected = sourceMenu.onOnlineSourceSelected,
+            showTrackSortMenu = sortMenu != null,
+            selectedTrackSortMode = sortMenu?.selectedTrackSortMode ?: TrackSortMode.TITLE,
+            trackSortMenuExpanded = sortMenuExpanded,
+            onTrackSortMenuExpandedChange = { sortMenuExpanded = it },
+            onTrackSortChanged = { sortMenu?.onTrackSortChanged(it) },
+            actionButton = batchAction?.let { action ->
+                {
+                    IconButton(onClick = action.onClick) {
+                        Icon(Icons.Rounded.Checklist, contentDescription = uiString(Res.string.library_batch_actions))
+                    }
+                }
+            },
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MobileLibraryHubTab(
     selectedTab: AppTab,
-    portraitNavigation: Boolean,
-    libraryState: LibraryState,
-    onlineLibraryState: OnlineLibraryState,
     playlistsState: PlaylistsState,
     onlinePlaylistsState: OnlinePlaylistsState,
     favoritesState: FavoritesState,
     onlineFavoritesState: OnlineFavoritesState,
     importState: ImportState,
-    onLibraryIntent: (LibraryIntent) -> Unit,
-    onOnlineLibraryIntent: (OnlineLibraryIntent) -> Unit,
     onPlaylistsIntent: (PlaylistsIntent) -> Unit,
     onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit,
     onFavoritesIntent: (FavoritesIntent) -> Unit,
     onOnlineFavoritesIntent: (OnlineFavoritesIntent) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
-    libraryNavigationTarget: LibraryNavigationTarget?,
-    onLibraryNavigationHandled: () -> Unit,
     playerExpanded: Boolean,
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hubTabs = libraryHubTabs(selectedTab, portraitNavigation)
-    val phoneLibrary = portraitNavigation && selectedTab == AppTab.Library
-    val phoneRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
-    var phoneRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
+    val hubTabs = automotiveCollectionTabs
     val initialPage = hubTabs.indexOf(selectedTab).coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialPage) { hubTabs.size }
     val coroutineScope = rememberCoroutineScope()
@@ -1101,20 +1325,17 @@ private fun MobileLibraryHubTab(
     var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
     var playlistsRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
     var playlistsRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
-    var libraryBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var favoritesBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var playlistsBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     val favoritesPullRefreshState = rememberPullToRefreshState()
     val playlistsPullRefreshState = rememberPullToRefreshState()
     val activeSearchTab = hubTabs.getOrElse(pagerState.currentPage) { hubTabs.first() }
     val activeSearchQuery = when (activeSearchTab) {
-        AppTab.Library -> onlineLibraryState.sourceId?.let { onlineLibraryState.query } ?: libraryState.query
         AppTab.Favorites -> onlineFavoritesState.sourceId?.let { onlineFavoritesState.query } ?: favoritesState.query
         AppTab.Playlists -> playlistSearchQuery
         else -> ""
     }
     val selectedTabSearchQuery = when (selectedTab) {
-        AppTab.Library -> onlineLibraryState.sourceId?.let { onlineLibraryState.query } ?: libraryState.query
         AppTab.Favorites -> onlineFavoritesState.sourceId?.let { onlineFavoritesState.query } ?: favoritesState.query
         AppTab.Playlists -> playlistSearchQuery
         else -> ""
@@ -1140,14 +1361,13 @@ private fun MobileLibraryHubTab(
             }
     }
     val activeTabOnline = when (activeSearchTab) {
-        AppTab.Library -> onlineLibraryState.sourceId != null
         AppTab.Favorites -> onlineFavoritesState.sourceId != null
         AppTab.Playlists -> onlinePlaylistsState.sourceId != null
         else -> false
     }
-    val batchOperationAvailable = (!phoneLibrary || phoneRootState.value == LibraryBrowserRootView.Tracks) && !activeTabOnline && mobileLibraryHubCanBatchOperate(
+    val batchOperationAvailable = !activeTabOnline && mobileLibraryHubCanBatchOperate(
         tab = activeSearchTab,
-        libraryVisibleTrackCount = libraryState.filteredTracks.size,
+        libraryVisibleTrackCount = 0,
         favoritesVisibleTrackCount = favoritesState.filteredTracks.size,
         playlistDetailVisibleTrackCount = playlistDetailVisibleTrackCount,
         selectedPlaylistId = playlistsState.selectedPlaylistId,
@@ -1155,13 +1375,6 @@ private fun MobileLibraryHubTab(
 
     fun updateActiveSearchQuery(query: String) {
         when (activeSearchTab) {
-            AppTab.Library -> {
-                if (onlineLibraryState.sourceId != null) {
-                    onOnlineLibraryIntent(OnlineLibraryIntent.SearchChanged(query))
-                } else {
-                    onLibraryIntent(LibraryIntent.SearchChanged(query))
-                }
-            }
             AppTab.Favorites -> {
                 if (onlineFavoritesState.sourceId != null) {
                     onOnlineFavoritesIntent(OnlineFavoritesIntent.SearchChanged(query))
@@ -1201,7 +1414,6 @@ private fun MobileLibraryHubTab(
 
     fun requestBatchSelection() {
         when (activeSearchTab) {
-            AppTab.Library -> libraryBatchSelectionRequestKey += 1
             AppTab.Favorites -> favoritesBatchSelectionRequestKey += 1
             AppTab.Playlists -> playlistsBatchSelectionRequestKey += 1
             else -> Unit
@@ -1281,34 +1493,14 @@ private fun MobileLibraryHubTab(
             )
         } else {
             MobileLibraryHubTabStrip(
-                selectedPage = if (phoneLibrary) phoneRootState.value.ordinal else pagerState.currentPage,
+                selectedPage = pagerState.currentPage,
                 tabs = hubTabs,
-                rootTabs = if (phoneLibrary) LibraryBrowserRootView.entries else emptyList(),
-                onRootTabClick = {
-                    phoneRootState.value = it
-                    phoneRootClickRequestKey += 1
-                },
-                searchEnabled = !(phoneLibrary && phoneRootState.value == LibraryBrowserRootView.Folders && activeTabOnline),
                 batchAction = if (batchOperationAvailable) {
                     MobileLibraryHubBatchAction(onClick = ::requestBatchSelection)
                 } else {
                     null
                 },
                 sourceMenu = when (activeSearchTab) {
-                    AppTab.Library -> MobileLibraryHubSourceMenu(
-                        selectedSourceFilter = libraryState.selectedSourceFilter,
-                        availableSourceFilters = libraryState.availableSourceFilters,
-                        onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
-                        selectedOnlineSourceId = onlineLibraryState.sourceId,
-                        onSourceFilterChanged = { filter ->
-                            onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(sourceId = null))
-                            onLibraryIntent(LibraryIntent.SourceFilterChanged(filter))
-                        },
-                        onOnlineSourceSelected = { sourceId ->
-                            onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(sourceId))
-                        },
-                    )
-
                     AppTab.Favorites -> MobileLibraryHubSourceMenu(
                         selectedSourceFilter = favoritesState.selectedSourceFilter,
                         availableSourceFilters = favoritesState.availableSourceFilters,
@@ -1340,13 +1532,6 @@ private fun MobileLibraryHubTab(
                     else -> null
                 },
                 sortMenu = when (activeSearchTab) {
-                    AppTab.Library -> if (onlineLibraryState.sourceId == null && (!phoneLibrary || phoneRootState.value == LibraryBrowserRootView.Tracks)) MobileLibraryHubSortMenu(
-                        selectedTrackSortMode = libraryState.selectedTrackSortMode,
-                        onTrackSortChanged = { mode ->
-                            onLibraryIntent(LibraryIntent.TrackSortChanged(mode))
-                        },
-                    ) else null
-
                     AppTab.Favorites -> if (onlineFavoritesState.sourceId == null) MobileLibraryHubSortMenu(
                         selectedTrackSortMode = favoritesState.selectedTrackSortMode,
                         onTrackSortChanged = { mode ->
@@ -1376,28 +1561,6 @@ private fun MobileLibraryHubTab(
         }
         val pageContent: @Composable (Int) -> Unit = { page ->
             when (hubTabs.getOrElse(page) { hubTabs.first() }) {
-                AppTab.Library -> LibraryTab(
-                    state = libraryState,
-                    favoritesState = favoritesState,
-                    importState = importState,
-                    onlineState = onlineLibraryState,
-                    onLibraryIntent = onLibraryIntent,
-                    onFavoritesIntent = onFavoritesIntent,
-                    onOnlineIntent = onOnlineLibraryIntent,
-                    onPlayerIntent = onPlayerIntent,
-                    showDuration = false,
-                    showSearchField = false,
-                    batchSelectionRequestKey = libraryBatchSelectionRequestKey,
-                    showInlineBatchOperationButton = false,
-                    navigationTarget = libraryNavigationTarget,
-                    onNavigationHandled = onLibraryNavigationHandled,
-                    rootSelectorStyle = LibraryRootSelectorStyle.CompactHero,
-                    phoneRootState = if (phoneLibrary) phoneRootState else null,
-                    phoneRootClickRequestKey = if (phoneLibrary) phoneRootClickRequestKey else 0,
-                    rootPagerScrollEnabled = !isSearchMode,
-                    modifier = Modifier.fillMaxSize(),
-                )
-
                 AppTab.Favorites -> {
                     val isOnlineFavoritesMode = onlineFavoritesState.sourceId != null
                     val isFavoritesRefreshing = mobileLibraryHubRefreshIndicatorVisible(
@@ -1501,16 +1664,12 @@ private fun MobileLibraryHubTab(
                 else -> Unit
             }
         }
-        if (phoneLibrary) {
-            Box(Modifier.weight(1f)) { pageContent(0) }
-        } else {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f),
-                userScrollEnabled = !isSearchMode,
-                key = { page -> hubTabs[page].name },
-            ) { page -> pageContent(page) }
-        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            userScrollEnabled = !isSearchMode,
+            key = { page -> hubTabs[page].name },
+        ) { page -> pageContent(page) }
     }
 }
 
@@ -1563,12 +1722,14 @@ private fun MobileLibraryHubTabStrip(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            modifier = Modifier.weight(1f).then(if (rootTabs.isNotEmpty()) Modifier.testTag("automotive-library-tabs") else Modifier)
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(if (rootTabs.isEmpty()) 8.dp else 0.dp),
         ) {
             if (rootTabs.isNotEmpty()) rootTabs.forEachIndexed { index, root ->
                 MobileLibraryHubTabItem(
                     label = automotiveLibraryRootLabel(root),
+                    modifier = Modifier.testTag("automotive-library-tab-${root.name}"),
                     compact = true,
                     selected = selectedPage == index,
                     onClick = { onRootTabClick(root) },
@@ -1862,7 +2023,7 @@ private fun MobileLibraryHubTabItem(
         modifier = modifier
             .height(44.dp)
             .widthIn(min = if (compact) 48.dp else 56.dp)
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = if (compact) 8.dp else 12.dp),
     ) {
         Text(

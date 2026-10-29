@@ -828,6 +828,7 @@ internal fun TrackRow(
     showFavoriteIndicator: Boolean = true,
     menuContextKey: Any? = null,
     showDuration: Boolean = true,
+    durationColumnWidth: Dp = 56.dp,
     onArtistClick: (() -> Unit)? = null,
     onAlbumClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
@@ -936,7 +937,7 @@ internal fun TrackRow(
                 if (showDuration) {
                     Text(
                         formatDuration(track.durationMs),
-                        modifier = Modifier.width(56.dp),
+                        modifier = Modifier.width(durationColumnWidth),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.End,
                         style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),

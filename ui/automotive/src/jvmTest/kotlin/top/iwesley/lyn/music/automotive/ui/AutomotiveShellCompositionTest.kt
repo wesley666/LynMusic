@@ -9,6 +9,7 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.unit.Constraints
 import java.io.File
 import javax.swing.SwingUtilities
 import kotlin.test.*
@@ -77,13 +78,30 @@ class AutomotiveShellCompositionTest {
         }
     }
 
+    @Test
+    fun `orientation round trip preserves selected library category`() = onUiThread {
+        Fixture(1280, 800, playing = true).use { ui ->
+            ui.clickLabel("Album")
+            ui.resize(480, 900)
+            ui.assertHasLabel("Loading Album")
+            ui.resize(1280, 800)
+            ui.assertHasLabel("Loading Album")
+            ui.assertHasLabel("Sidebar playback test")
+            ui.clickTab(AppTab.My)
+            ui.clickTab(AppTab.Library)
+            ui.assertHasLabel("Loading Album")
+            assertTrue(ui.playerIntents.isEmpty())
+        }
+    }
+
     private fun onUiThread(block: () -> Unit) {
         var failure: Throwable? = null
         SwingUtilities.invokeAndWait { try { block() } catch (error: Throwable) { failure = error } }
         failure?.let { throw it }
     }
 
-    private class Fixture(private val width: Int, height: Int, playing: Boolean = false) : AutoCloseable {
+    private class Fixture(width: Int, height: Int, playing: Boolean = false) : AutoCloseable {
+        var portrait by mutableStateOf(width < height)
         var selectedTab by mutableStateOf(AppTab.Library)
         val libraryIntents = mutableListOf<LibraryIntent>()
         val playerIntents = mutableListOf<PlayerIntent>()
@@ -101,7 +119,9 @@ class AutomotiveShellCompositionTest {
                 CompositionLocalProvider(LocalPlatformDescriptor provides platform) {
                     LynMusicTheme {
                         val railState = rememberWideNavigationRailState()
-                        if (width > height) {
+                        val libraryEntry = rememberAutomotiveLibraryEntry()
+                        CompositionLocalProvider(LocalAutomotiveLibraryEntry provides libraryEntry) {
+                        if (!portrait) {
                             AutomotiveLandscapeShell(
                                 navigationRailState = railState,
                                 selectedTab = selectedTab,
@@ -164,6 +184,7 @@ class AutomotiveShellCompositionTest {
                                 onOpenAddToPlaylist = {},
                             )
                         }
+                        }
                     }
                 }
             }
@@ -209,6 +230,12 @@ class AutomotiveShellCompositionTest {
             assertTrue(nodes().any { node ->
                 node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == label } == true
             }, "Missing label: $label")
+        }
+
+        fun resize(width: Int, height: Int) {
+            portrait = width < height
+            scene.constraints = Constraints.fixed(width, height)
+            render()
         }
 
         fun capture(name: String) {

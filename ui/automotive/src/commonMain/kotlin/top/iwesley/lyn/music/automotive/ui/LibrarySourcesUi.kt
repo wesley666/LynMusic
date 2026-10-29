@@ -115,6 +115,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -200,6 +201,11 @@ internal fun libraryTabMessageDismissTarget(isOnlineMode: Boolean): LibraryTabMe
     }
 }
 
+internal data class LibraryBrowserHeaderActions(
+    val showTrackSort: Boolean,
+    val onBatchSelection: (() -> Unit)?,
+)
+
 @Composable
 internal fun LibraryTab(
     state: LibraryState,
@@ -219,9 +225,10 @@ internal fun LibraryTab(
     batchSelectionRequestKey: Int = 0,
     showInlineBatchOperationButton: Boolean = true,
     rootSelectorStyle: LibraryRootSelectorStyle = LibraryRootSelectorStyle.Default,
-    phoneRootState: MutableState<LibraryBrowserRootView>? = null,
-    phoneRootClickRequestKey: Int = 0,
+    rootState: MutableState<LibraryBrowserRootView>? = null,
+    rootClickRequestKey: Int = 0,
     rootPagerScrollEnabled: Boolean = true,
+    header: (@Composable (LibraryBrowserHeaderActions) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val onlineSourceOptions = remember(importState.sources) {
@@ -320,12 +327,13 @@ internal fun LibraryTab(
         showFavoriteIndicator = showFavoriteIndicator,
         showDuration = showDuration,
         showSearchField = showSearchField,
-        showTrackSortActionButton = showSearchField && !isOnlineMode,
+        showTrackSortActionButton = !isOnlineMode && (showSearchField || header != null),
         showFolderBrowser = !isOnlineMode,
         rootSelectorStyle = rootSelectorStyle,
-        phoneRootState = phoneRootState,
-        phoneRootClickRequestKey = phoneRootClickRequestKey,
+        rootState = rootState,
+        rootClickRequestKey = rootClickRequestKey,
         rootPagerScrollEnabled = rootPagerScrollEnabled,
+        header = header,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
@@ -664,11 +672,13 @@ private fun LibraryBrowserTab(
     onOpenLibraryNavigationTarget: ((LibraryNavigationTarget) -> Unit)? = null,
     batchSelectionRequestKey: Int = 0,
     showInlineBatchOperationButton: Boolean = true,
-    phoneRootState: MutableState<LibraryBrowserRootView>? = null,
-    phoneRootClickRequestKey: Int = 0,
+    rootState: MutableState<LibraryBrowserRootView>? = null,
+    rootClickRequestKey: Int = 0,
     rootPagerScrollEnabled: Boolean = true,
+    header: (@Composable (LibraryBrowserHeaderActions) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val durationColumnWidth = 56.dp * if (rootState != null) LocalDensity.current.fontScale.coerceAtLeast(1f) else 1f
     val tracksListState = rememberLazyListState()
     val albumsListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
@@ -686,7 +696,7 @@ private fun LibraryBrowserTab(
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     var trackSortMenuExpanded by remember { mutableStateOf(false) }
     val defaultRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
-    var rootView by (phoneRootState ?: defaultRootState)
+    var rootView by (rootState ?: defaultRootState)
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     var selectedArtistId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1055,9 +1065,9 @@ private fun LibraryBrowserTab(
         }
     }
 
-    LaunchedEffect(rootView, phoneRootClickRequestKey) {
-        if (phoneRootState != null &&
-            (previousRootView != rootView || phoneRootClickRequestKey != lastHandledRootClickRequestKey)
+    LaunchedEffect(rootView, rootClickRequestKey) {
+        if (rootState != null &&
+            (previousRootView != rootView || rootClickRequestKey != lastHandledRootClickRequestKey)
         ) {
             saveSelectedFolderScrollPosition()
             exitSelectionMode()
@@ -1067,7 +1077,7 @@ private fun LibraryBrowserTab(
             selectedFolderPath = null
         }
         previousRootView = rootView
-        lastHandledRootClickRequestKey = phoneRootClickRequestKey
+        lastHandledRootClickRequestKey = rootClickRequestKey
     }
 
     LaunchedEffect(
@@ -1122,7 +1132,7 @@ private fun LibraryBrowserTab(
             }
 
             LibraryBrowserRootView.Folders -> {
-                if (!showFolderBrowser && phoneRootState == null) {
+                if (!showFolderBrowser && rootState == null) {
                     rootView = LibraryBrowserRootView.Tracks
                     selectedFolderSourceId = null
                     selectedFolderPath = null
@@ -1243,8 +1253,8 @@ private fun LibraryBrowserTab(
         disabledBorderColor = searchFieldContainerColor,
     )
     val tracksStatFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(phoneRootState == null) {
-        if (phoneRootState == null) tracksStatFocusRequester.requestFocus()
+    LaunchedEffect(rootState == null) {
+        if (rootState == null) tracksStatFocusRequester.requestFocus()
     }
     val activeRootView = rootView
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
@@ -1269,7 +1279,7 @@ private fun LibraryBrowserTab(
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
                 state = activeListState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag("automotive-library-list-${pageRoot.name}"),
                 contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 28.dp, bottom = 20.dp)),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -1365,7 +1375,7 @@ private fun LibraryBrowserTab(
                         )
                     }
                 }
-                if (phoneRootState == null) item {
+                if (rootState == null) item {
                     LibraryRootSelector(
                         model = rootSelectorModel,
                         selectedRootView = rootView,
@@ -1388,7 +1398,7 @@ private fun LibraryBrowserTab(
                     }
                 }
                 when {
-                    phoneRootState != null && rootView == LibraryBrowserRootView.Folders && !showFolderBrowser -> {
+                    rootState != null && rootView == LibraryBrowserRootView.Folders && !showFolderBrowser -> {
                         item {
                             EmptyStateCard(
                                 title = uiString(Res.string.library_source_folder_browsing_unsupported),
@@ -1442,6 +1452,7 @@ private fun LibraryBrowserTab(
                                     menuContextKey = trackMenuContext,
                                     showFavoriteIndicator = showFavoriteIndicator,
                                     showDuration = showDuration,
+                                    durationColumnWidth = durationColumnWidth,
                                     onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                     onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                     onClick = {
@@ -1550,6 +1561,7 @@ private fun LibraryBrowserTab(
                                         menuContextKey = trackMenuContext,
                                         showFavoriteIndicator = showFavoriteIndicator,
                                         showDuration = showDuration,
+                                        durationColumnWidth = durationColumnWidth,
                                         onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                         onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                         onClick = {
@@ -1612,6 +1624,7 @@ private fun LibraryBrowserTab(
                                     menuContextKey = trackMenuContext,
                                     showFavoriteIndicator = showFavoriteIndicator,
                                     showDuration = showDuration,
+                                    durationColumnWidth = durationColumnWidth,
                                     onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                     onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                     onClick = {
@@ -1636,8 +1649,8 @@ private fun LibraryBrowserTab(
                             LibraryBrowserRootView.Folders -> strings.folderLabel
                         }
                         item {
-                            if (phoneRootState != null && rootView == LibraryBrowserRootView.Tracks) {
-                                PhoneLibraryTrackActions(
+                            if (rootState != null && rootView == LibraryBrowserRootView.Tracks) {
+                                LibraryTrackActions(
                                     loadedCount = visibleTracks.size,
                                     count = state.trackCount,
                                     isOnline = state.isOnline,
@@ -1698,6 +1711,7 @@ private fun LibraryBrowserTab(
                                             menuContextKey = trackMenuContext,
                                             showFavoriteIndicator = showFavoriteIndicator,
                                             showDuration = showDuration,
+                                            durationColumnWidth = durationColumnWidth,
                                             onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
                                             onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
                                             selectionMode = selectionMode,
@@ -1798,30 +1812,42 @@ private fun LibraryBrowserTab(
             )
         }
     }
-    if (phoneRootState != null) {
-        val roots = LibraryBrowserRootView.entries
-        val pagerState = rememberPagerState(initialPage = rootView.ordinal) { roots.size }
-        LaunchedEffect(rootView) {
-            if (pagerState.currentPage != rootView.ordinal) pagerState.scrollToPage(rootView.ordinal)
-        }
-        LaunchedEffect(pagerState) {
-            snapshotFlow { pagerState.currentPage }
-                .distinctUntilChanged()
-                .collect { page ->
-                    if (pagerState.isScrollInProgress && roots[page] != rootView) {
-                        selectRootView(roots[page])
-                    }
+    Column(modifier = modifier.fillMaxSize()) {
+        header?.invoke(
+            LibraryBrowserHeaderActions(
+                showTrackSort = showTrackSortMenu,
+                onBatchSelection = if (supportsBatchDownload && !selectionMode && batchVisibleTracks.isNotEmpty()) {
+                    { selectionMode = true }
+                } else null,
+            ),
+        )
+        Box(Modifier.weight(1f)) {
+            if (rootState != null) {
+                val roots = LibraryBrowserRootView.entries
+                val pagerState = rememberPagerState(initialPage = rootView.ordinal) { roots.size }
+                LaunchedEffect(rootView) {
+                    if (pagerState.currentPage != rootView.ordinal) pagerState.scrollToPage(rootView.ordinal)
                 }
+                LaunchedEffect(pagerState) {
+                    snapshotFlow { pagerState.currentPage }
+                        .distinctUntilChanged()
+                        .collect { page ->
+                            if (pagerState.isScrollInProgress && roots[page] != rootView) {
+                                selectRootView(roots[page])
+                            }
+                        }
+                }
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize().testTag("automotive-library-pager"),
+                    userScrollEnabled = rootPagerScrollEnabled && !selectionMode &&
+                        selectedAlbumId == null && selectedArtistId == null && selectedFolderSourceId == null,
+                    key = { roots[it].name },
+                ) { page -> pageContent(roots[page]) }
+            } else {
+                Box(modifier = Modifier.fillMaxSize()) { pageContent(rootView) }
+            }
         }
-        HorizontalPager(
-            state = pagerState,
-            modifier = modifier.fillMaxSize(),
-            userScrollEnabled = rootPagerScrollEnabled && !selectionMode &&
-                selectedAlbumId == null && selectedArtistId == null && selectedFolderSourceId == null,
-            key = { roots[it].name },
-        ) { page -> pageContent(roots[page]) }
-    } else {
-        Box(modifier = modifier.fillMaxSize()) { pageContent(rootView) }
     }
     if (batchQualitySheetVisible) {
         BatchDownloadQualityBottomSheet(
@@ -1840,7 +1866,7 @@ private fun LibraryBrowserTab(
 }
 
 @Composable
-private fun PhoneLibraryTrackActions(
+private fun LibraryTrackActions(
     loadedCount: Int,
     count: LibraryBrowserCount,
     isOnline: Boolean,
@@ -2361,12 +2387,13 @@ private fun LibraryBrowserSearchField(
 }
 
 @Composable
-private fun DesktopLibrarySearchField(
+internal fun DesktopLibrarySearchField(
     query: String,
     onQueryChanged: (String) -> Unit,
     placeholder: String,
     containerColor: Color,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var textFieldValueState by remember {
         mutableStateOf(librarySearchTextFieldValueFor(query))
@@ -2389,6 +2416,7 @@ private fun DesktopLibrarySearchField(
                 onQueryChanged(updatedValue.text)
             }
         },
+        enabled = enabled,
         singleLine = true,
         textStyle = textStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -2430,7 +2458,7 @@ private fun DesktopLibrarySearchField(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .clickable {
+                            .clickable(enabled = enabled) {
                                 textFieldValueState = librarySearchTextFieldValueFor("")
                                 onQueryChanged("")
                             },
@@ -2457,7 +2485,7 @@ private fun librarySearchTextFieldValueFor(value: String): TextFieldValue {
 }
 
 @Composable
-private fun LibraryBrowserToolbarActions(
+internal fun LibraryBrowserToolbarActions(
     availableSourceFilters: List<LibrarySourceFilter>,
     selectedSourceFilter: LibrarySourceFilter,
     onlineSourceOptions: List<OnlineSourceOption>,

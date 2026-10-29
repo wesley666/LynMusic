@@ -101,6 +101,7 @@ fun AutomotiveApp(
         var visibleStartupWarning by remember(startupWarning) { mutableStateOf(startupWarning) }
         var selectedTab by rememberSaveable { mutableStateOf(defaultSelectedAppTab) }
         val navigationRailState = rememberWideNavigationRailState()
+        val libraryEntry = rememberAutomotiveLibraryEntry()
         var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
         var shouldRestoreOnlinePlaylistSource by remember { mutableStateOf(false) }
         var onlinePlaylistSourceRestoreTarget by remember { mutableStateOf<String?>(null) }
@@ -286,6 +287,7 @@ fun AutomotiveApp(
         }
         CompositionLocalProvider(
             LocalPlayerPresentation provides presentation,
+            LocalAutomotiveLibraryEntry provides libraryEntry,
             LocalTrackListActionBindings provides trackListBindings,
             LocalPlatformDescriptor provides component.platform,
             LocalArtworkCacheStore provides component.artworkCacheStore,
