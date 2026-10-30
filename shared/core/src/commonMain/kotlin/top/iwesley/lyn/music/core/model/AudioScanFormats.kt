@@ -14,6 +14,7 @@ private val NON_NAVIDROME_SCANNABLE_AUDIO_EXTENSIONS = setOf(
     "wma",
     "aiff",
     "aif",
+    "strm",
 )
 
 const val UNSUPPORTED_AUDIO_IMPORT_REASON = "当前平台暂不支持导入该音频格式。"

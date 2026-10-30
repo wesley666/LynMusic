@@ -10,6 +10,7 @@ internal val ANDROID_SUPPORTED_IMPORT_AUDIO_EXTENSIONS = setOf(
     "wav",
     "flac",
     "ogg",
+    "strm",
 )
 
 internal fun classifyAndroidScannedAudioFile(fileName: String): NonNavidromeAudioScanResult {

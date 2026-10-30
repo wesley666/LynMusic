@@ -12,6 +12,7 @@ internal val JVM_SUPPORTED_IMPORT_AUDIO_EXTENSIONS = setOf(
     "ape",
     "ogg",
     "wma",
+    "strm",
 )
 
 internal fun classifyJvmScannedAudioFile(fileName: String): NonNavidromeAudioScanResult {
