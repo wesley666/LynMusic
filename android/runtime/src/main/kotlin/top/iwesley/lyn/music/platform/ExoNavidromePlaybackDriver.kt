@@ -20,8 +20,9 @@ internal class ExoNavidromePlaybackDriver(private val player: ExoPlayer) : Navid
     override val ended get() = player.playbackState == Player.STATE_ENDED
 
     override fun open(url: String, mediaId: String, playWhenReady: Boolean, onResponse: (NavidromeStreamResponse) -> Unit) {
+        val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
         val factory = DataSource.Factory {
-            AndroidNavidromeDataSource(DefaultHttpDataSource.Factory().createDataSource(), { response ->
+            AndroidNavidromeDataSource(httpFactory.createDataSource(), { response ->
                 // The session rejects responses after close or replacement, including already queued callbacks.
                 handler.post { onResponse(response) }
             })

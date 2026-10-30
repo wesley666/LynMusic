@@ -48,6 +48,7 @@ internal class AndroidNavidromeDataSource(
     private val upstream: HttpDataSource,
     private val onResponse: (NavidromeStreamResponse) -> Unit,
     private val probeFactory: HttpDataSource.Factory = DefaultHttpDataSource.Factory()
+        .setAllowCrossProtocolRedirects(true)
         .setConnectTimeoutMs(3_000).setReadTimeoutMs(3_000),
 ) : DataSource {
     private var observed = false

@@ -45,6 +45,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -3442,13 +3444,19 @@ internal class AndroidPlaybackGateway(
 
     @UnstableApi
     private fun createPlayer(useAndroidExtensionDecoder: Boolean): ExoPlayer {
+        val mediaSourceFactory = DefaultMediaSourceFactory(context).setDataSourceFactory(
+            DefaultDataSource.Factory(
+                context,
+                DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true),
+            ),
+        )
         return if (useAndroidExtensionDecoder) {
             ExoPlayer.Builder(
                 context,
                 DefaultRenderersFactory(context).setExtensionRendererMode(
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER,
                 ),
-            ).build()
+            ).setMediaSourceFactory(mediaSourceFactory).build()
             //如果引入LibflacAudioRenderer需要使用下面的方式，因为它会在 extractor 阶段就用 libFLAC 解码，输出的 sampleMimeType 直接是 audio/raw。
             //webdav 和 samba 也要改 ，这里对他们不生效，他们自定义了 media source
 //            val mediaSourceFactory = DefaultMediaSourceFactory(
@@ -3470,7 +3478,7 @@ internal class AndroidPlaybackGateway(
                 DefaultRenderersFactory(context).setExtensionRendererMode(
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON,
                 ),
-            ).build()
+            ).setMediaSourceFactory(mediaSourceFactory).build()
         }
     }
 }
