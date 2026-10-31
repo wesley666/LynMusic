@@ -33,6 +33,8 @@ import top.iwesley.lyn.music.data.db.LynMusicDatabase
 import top.iwesley.lyn.music.domain.NavidromeResolvedSource
 import top.iwesley.lyn.music.domain.RemoteSourceAddressSelector
 import top.iwesley.lyn.music.domain.isSubsonicCompatibleSourceType
+import top.iwesley.lyn.music.domain.normalizeNavidromeBaseUrl
+import top.iwesley.lyn.music.domain.normalizeRemoteSourceBaseUrls
 import top.iwesley.lyn.music.domain.normalizeSubsonicBaseUrl
 import top.iwesley.lyn.music.domain.requestNavidromeJson
 import top.iwesley.lyn.music.domain.requestNavidromeJsonWithRepeatedParameters
@@ -790,10 +792,15 @@ class NavidromeOnlineRepository(
         val credential = credentialKey?.let { secureCredentialStore.get(it) }.orEmpty()
         if (authMode == SubsonicAuthMode.PASSWORD && (username.isBlank() || credential.isBlank())) return null
         if (authMode == SubsonicAuthMode.API_KEY && credential.isBlank()) return null
-        val serverLabel = if (sourceType == ImportSourceType.NAVIDROME) "Navidrome" else "Subsonic"
+        val (lanBaseUrl, wanBaseUrl) = normalizeRemoteSourceBaseUrls(
+            sourceType = sourceType,
+            lanBaseUrl = rootReference,
+            wanBaseUrl = wanRootReference,
+            normalizeBaseUrl = if (sourceType == ImportSourceType.NAVIDROME) ::normalizeNavidromeBaseUrl else ::normalizeSubsonicBaseUrl,
+        )
         return NavidromeResolvedSource(
-            baseUrl = normalizeSubsonicBaseUrl(rootReference).takeIf { it.isNotBlank() } ?: rootReference,
-            wanBaseUrl = wanRootReference?.let { normalizeSubsonicBaseUrl(it) },
+            baseUrl = lanBaseUrl,
+            wanBaseUrl = wanBaseUrl,
             sourceId = id,
             addressSelector = addressSelector,
             username = username,

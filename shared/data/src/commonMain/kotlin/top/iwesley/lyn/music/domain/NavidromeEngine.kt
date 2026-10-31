@@ -475,6 +475,37 @@ suspend fun requestNavidromeSongPage(
     logger: DiagnosticLogger = NoopDiagnosticLogger,
     timeoutMillis: Long? = null,
 ): NavidromeSongPage {
+    val selector = source.addressSelector
+    val sourceId = source.sourceId
+    if (selector != null && sourceId != null) {
+        return selector.withAddressFallback(
+            sourceId = sourceId,
+            sourceType = source.sourceType,
+            lanBaseUrl = source.baseUrl,
+            wanBaseUrl = source.wanBaseUrl,
+            normalizeBaseUrl = ::normalizeNavidromeBaseUrl,
+        ) { candidate ->
+            requestNavidromeSongPageWithoutAddressFallback(
+                httpClient = httpClient,
+                source = source.copy(baseUrl = candidate.value, wanBaseUrl = null, addressSelector = null),
+                start = start,
+                pageSize = pageSize,
+                logger = logger,
+                timeoutMillis = timeoutMillis,
+            )
+        }
+    }
+    return requestNavidromeSongPageWithoutAddressFallback(httpClient, source, start, pageSize, logger, timeoutMillis)
+}
+
+private suspend fun requestNavidromeSongPageWithoutAddressFallback(
+    httpClient: LyricsHttpClient,
+    source: NavidromeResolvedSource,
+    start: Int,
+    pageSize: Int,
+    logger: DiagnosticLogger,
+    timeoutMillis: Long?,
+): NavidromeSongPage {
     val token = requestNavidromeNativeToken(
         httpClient = httpClient,
         source = source,
@@ -797,6 +828,7 @@ private suspend fun requestNavidromeNativeToken(
             timeoutMillis = timeoutMillis,
         ),
     ).getOrElse { throwable ->
+        if (throwable is CancellationException) throw throwable
         throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Navidrome", "/auth/login", throwable.uiErrorDetail()), throwable)
     }
     if (loginResponse.statusCode.isNavidromeNativeIncompatibleStatus()) {
@@ -851,6 +883,7 @@ private suspend fun requestNavidromeNativeSongPage(
             timeoutMillis = timeoutMillis,
         ),
     ).getOrElse { throwable ->
+        if (throwable is CancellationException) throw throwable
         throw RemoteSourceRequestException(uiText(Res.string.server_request_failed, "Navidrome", "/api/song", throwable.uiErrorDetail()), throwable)
     }
     if (response.statusCode.isNavidromeNativeIncompatibleStatus()) {
