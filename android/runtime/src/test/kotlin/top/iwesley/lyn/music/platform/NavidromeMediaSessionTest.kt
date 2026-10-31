@@ -3,6 +3,7 @@ package top.iwesley.lyn.music.platform
 import android.app.Application
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
@@ -145,6 +146,36 @@ class NavidromeMediaSessionTest {
         assertEquals(listOf(12_000L), positions)
     }
 
+    @Test fun handledReadFailureKeepsTheSystemSessionBufferingAtTheSavedPosition() = runTest {
+        val f = Fixture(backgroundScope, playing = true, awaitingPosition = true)
+        runCurrent()
+        val error = PlaybackException("read failed", null, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+        f.native.fail(error)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertNull(f.player.playerError)
+        assertEquals(Player.STATE_BUFFERING, f.player.playbackState)
+        assertTrue(f.player.playWhenReady)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+        assertEquals(45_000L, f.player.currentPosition)
+
+        f.awaitingPosition.value = false
+        f.snapshots.value = f.snapshots.value.copy(isPlaying = false, errorMessage = "recovery exhausted")
+        runCurrent()
+        assertSame(error, f.player.playerError)
+        assertEquals(Player.STATE_IDLE, f.player.playbackState)
+        assertEquals(45_000L, f.player.currentPosition)
+    }
+
+    @Test fun anOrdinaryNativeErrorRemainsVisibleToTheSystemSession() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        val error = PlaybackException("decoder failed", null, PlaybackException.ERROR_CODE_DECODING_FAILED)
+        f.native.fail(error)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertSame(error, f.player.playerError)
+        assertEquals(Player.STATE_IDLE, f.player.playbackState)
+    }
+
     private class Fixture(scope: CoroutineScope, playing: Boolean = false, awaitingPosition: Boolean = false,
                           navidrome: Boolean = true) {
         private val track = Track("song", "nav", "Song", durationMs = 120_000,
@@ -193,6 +224,10 @@ class NavidromeMediaSessionTest {
         fun setPlaying(playing: Boolean) {
             nativeState = nativeState.buildUpon()
                 .setPlayWhenReady(playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST).build()
+            invalidateState()
+        }
+        fun fail(error: PlaybackException) {
+            nativeState = nativeState.buildUpon().setPlaybackState(Player.STATE_IDLE).setPlayerError(error).build()
             invalidateState()
         }
     }

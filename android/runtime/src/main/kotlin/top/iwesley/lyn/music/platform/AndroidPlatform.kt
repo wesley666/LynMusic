@@ -2698,6 +2698,22 @@ internal class AndroidPlaybackGateway(
     private var fnMusicLoadedGeneration = 0
     private var pendingLoadPlayWhenReady = false
     private var lastPublishedPlaybackLogKey: String? = null
+    private val navidromeRecoveryFailureHandler = NavidromeRecoveryFailureHandler(
+        isCurrent = { failure -> !released && navidromeSession?.acceptsRecoveryFailure(failure) == true },
+        tryNextAddress = { error ->
+            pendingLoadPlayWhenReady = false
+            tryApplyRemoteAddressFallback(error)
+        },
+        publishFailure = { failure ->
+            pendingLoadPlayWhenReady = false
+            logger.error(PLAYBACK_LOG_TAG, failure.error) {
+                "play-failed locator=${currentRemoteLabel.orEmpty()}"
+            }
+            mutableState.update {
+                it.withAndroidPlaybackFailure(failure.error).copy(isPlaying = false, positionMs = failure.positionMs)
+            }
+        },
+    )
 
     internal val currentPlayer: ExoPlayer
         get() = player
@@ -2737,6 +2753,7 @@ internal class AndroidPlaybackGateway(
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (navidromeSession?.isCurrentRequest == false) return
             logger.info(PLAYBACK_LOG_TAG) {
                 "player-is-playing-changed isPlaying=$isPlaying ${playerDebugSummary()}"
             }
@@ -2788,15 +2805,28 @@ internal class AndroidPlaybackGateway(
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            navidromeSession?.onFailure()
+            val navidrome = navidromeSession
+            if (navidrome?.isCurrentRequest == false) return
+            val recovery = navidrome?.recoverReadFailure(error) ?: NavidromeReadRecoveryResult.NotApplicable
             pendingLoadPlayWhenReady = false
+            if (recovery == NavidromeReadRecoveryResult.Recovering) {
+                mutableState.update { it.copy(errorMessage = null, errorText = null) }
+                return
+            }
+            navidrome?.onFailure()
+            if (navidrome != null) {
+                navidromeRecoveryFailureHandler.handle(navidrome.recoveryFailure(error, recovery))
+                return
+            }
             logger.error(PLAYBACK_LOG_TAG, error) {
                 "play-failed locator=${currentRemoteLabel.orEmpty()}"
             }
             if (tryApplyRemoteAddressFallback(error)) {
                 return
             }
-            mutableState.update { it.withAndroidPlaybackFailure(error) }
+            mutableState.update {
+                it.withAndroidPlaybackFailure(error).copy(isPlaying = false)
+            }
         }
 
         override fun onPositionDiscontinuity(
@@ -2808,6 +2838,7 @@ internal class AndroidPlaybackGateway(
         }
 
         override fun onTracksChanged(tracks: Tracks) {
+            if (navidromeSession?.isCurrentRequest == false) return
             mutableState.update {
                 it.copy(currentPlaybackAudioFormat = tracks.selectedAudioFormat())
             }
@@ -2847,7 +2878,9 @@ internal class AndroidPlaybackGateway(
         currentFnMusicTarget?.let { target -> return tryRecoverFnMusicStream(target, error) }
         val fallback = currentRemotePlaybackFallback ?: return false
         if (!isRemoteSourceAddressFallbackAllowed(error)) return false
-        return switchRemoteCandidate(fallback, fallback.selectedIndex + 1, reason = "retry")
+        val nextIndex = (fallback.selectedIndex + 1 until fallback.candidates.size)
+            .firstOrNull { navidromeSession?.canReload(fallback.candidates[it].value) != false } ?: return false
+        return switchRemoteCandidate(fallback, nextIndex, reason = "retry")
     }
 
     /**
@@ -2910,7 +2943,8 @@ internal class AndroidPlaybackGateway(
             candidateKinds = fallback.candidates.map { it.kind },
             currentIndex = fallback.selectedIndex,
             networkState = networkState,
-            isPlaybackActive = player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE,
+            isPlaybackActive = navidromeSession?.isRecoveringRead == true ||
+                (player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE),
         ) ?: return
         switchRemoteCandidate(fallback, targetIndex, reason = "network-change")
     }
@@ -2921,6 +2955,7 @@ internal class AndroidPlaybackGateway(
         reason: String,
     ): Boolean {
         val nextCandidate = fallback.candidates.getOrNull(targetIndex) ?: return false
+        if (navidromeSession?.canReload(nextCandidate.value) == false) return false
         val retryPositionMs = player.currentPosition.takeIf { it >= 0L } ?: 0L
         val retryPlayWhenReady = player.playWhenReady || pendingLoadPlayWhenReady
         currentRemotePlaybackFallback = fallback.copy(selectedIndex = targetIndex)
@@ -3119,6 +3154,9 @@ internal class AndroidPlaybackGateway(
                                 publishPlayerState()
                                 if (shouldKeepTickerRunning()) ensureProgressTicker()
                             },
+                            recoveryFailed = navidromeRecoveryFailureHandler::handle,
+                            logger = logger,
+                            currentRequest = { !released && loadToken.isCurrent() },
                         )
                         navidromeSession = session
                         session.start()
@@ -3238,7 +3276,10 @@ internal class AndroidPlaybackGateway(
             logger.warn(PLAYBACK_LOG_TAG) {
                 "gateway-play-request ${playerDebugSummary()}"
             }
-            navidromeSession?.setPlaying(true) ?: player.play()
+            navidromeSession?.takeIf { it.isCurrentRequest }?.let { session ->
+                session.setPlaying(true)
+                if (session.isRecoveringRead) mutableState.update { it.copy(errorMessage = null, errorText = null) }
+            } ?: player.play()
         }
     }
 
@@ -3248,7 +3289,7 @@ internal class AndroidPlaybackGateway(
                 "gateway-pause-request ${playerDebugSummary()}"
             }
             pendingLoadPlayWhenReady = false
-            navidromeSession?.setPlaying(false) ?: player.pause()
+            navidromeSession?.takeIf { it.isCurrentRequest }?.setPlaying(false) ?: player.pause()
         }
     }
 
@@ -3414,6 +3455,7 @@ internal class AndroidPlaybackGateway(
 
     private fun publishPlayerState() {
         val navidrome = navidromeSession
+        if (navidrome?.isCurrentRequest == false) return
         if (navidrome?.replacing == true) return
         mutableNavidromeAwaitingPosition.value = navidrome?.awaitingPosition == true
         mutableState.update {

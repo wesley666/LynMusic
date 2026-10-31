@@ -1,6 +1,7 @@
 package top.iwesley.lyn.music.platform
 
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -8,6 +9,20 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import java.io.InterruptedIOException
+import java.io.IOException
+
+/** Unknown-length reads need the extractor duration checked before allowing a native retry. */
+internal class NavidromeSequentialReadException(cause: IOException) : IOException("Navidrome transcode read failed", cause)
+
+internal fun Throwable.isNavidromeSequentialReadFailure(): Boolean {
+    val visited = mutableSetOf<Throwable>()
+    var current: Throwable? = this
+    while (current != null && visited.add(current)) {
+        if (current is NavidromeSequentialReadException) return true
+        current = current.cause
+    }
+    return false
+}
 
 internal enum class NavidromeRangeSupport { Bytes, None, Unknown }
 
@@ -42,7 +57,7 @@ internal fun navidromeStreamResponse(
     return NavidromeStreamResponse(ranges, duration)
 }
 
-/** Observe only this Navidrome stream. Exo still owns HTTP, buffering, redirects and read retries. */
+/** Exo owns transport; sequential read failures are handed to whole-track recovery. */
 @UnstableApi
 internal class AndroidNavidromeDataSource(
     private val upstream: HttpDataSource,
@@ -50,11 +65,16 @@ internal class AndroidNavidromeDataSource(
     private val probeFactory: HttpDataSource.Factory = DefaultHttpDataSource.Factory()
         .setAllowCrossProtocolRedirects(true)
         .setConnectTimeoutMs(3_000).setReadTimeoutMs(3_000),
+    private val readRecovery: Boolean = false,
 ) : DataSource {
     private var observed = false
+    private var unknownLength = false
+    private var bytesRead = 0L
 
     override fun open(dataSpec: DataSpec): Long {
         val length = upstream.open(dataSpec)
+        unknownLength = length == C.LENGTH_UNSET.toLong()
+        bytesRead = 0L
         if (!observed) {
             observed = true
             var response = navidromeStreamResponse(upstream.responseCode, upstream.responseHeaders)
@@ -80,7 +100,15 @@ internal class AndroidNavidromeDataSource(
         return length
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = upstream.read(buffer, offset, length)
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = try {
+        upstream.read(buffer, offset, length).also { if (it > 0) bytesRead += it }
+    } catch (error: IOException) {
+        if (unknownLength && (bytesRead > 0L || readRecovery) &&
+            !Thread.currentThread().isInterrupted) {
+            throw NavidromeSequentialReadException(error)
+        }
+        throw error
+    }
     override fun getUri(): Uri? = upstream.uri
     override fun getResponseHeaders(): Map<String, List<String>> = upstream.responseHeaders
     override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)

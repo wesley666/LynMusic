@@ -491,8 +491,13 @@ internal class LynMediaSessionPlayer(
                     setPlaylistMetadata(metadata ?: MediaMetadata.EMPTY)
                     // READY can still mean a paused, unpositioned full stream while capability
                     // detection runs. BUFFERING keeps the system clock fixed at the restore target.
-                    if (state.playerError == null && (navidromeAwaitingPosition.value ||
-                            (snapshot.isPlaying && state.playbackState == Player.STATE_IDLE))) {
+                    if (navidromeAwaitingPosition.value && snapshot.errorMessage == null) {
+                        // Exo's source error is being handled by offset recovery, including its
+                        // backoff. The system session must keep a buffering clock at the target.
+                        setPlayerError(null)
+                        setPlaybackState(Player.STATE_BUFFERING)
+                        setIsLoading(true)
+                    } else if (state.playerError == null && snapshot.isPlaying && state.playbackState == Player.STATE_IDLE) {
                         setPlaybackState(Player.STATE_BUFFERING)
                         setIsLoading(true)
                     }

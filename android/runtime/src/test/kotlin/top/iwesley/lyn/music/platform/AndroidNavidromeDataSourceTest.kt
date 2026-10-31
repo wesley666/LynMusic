@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.sun.net.httpserver.HttpServer
 import java.lang.reflect.Proxy
 import java.net.InetSocketAddress
+import java.net.SocketException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.CopyOnWriteArrayList
@@ -40,6 +41,283 @@ import top.iwesley.lyn.music.domain.NavidromeTranscodeOffsetSupport
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class AndroidNavidromeDataSourceTest {
+    @Test fun unknownLengthMp3WithoutInterruptionKeepsAdvancing() {
+        NavidromeMp3RetryFixture().use { fixture ->
+            fixture.awaitReady()
+            val before = fixture.session.positionMs
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+
+            assertTrue(fixture.session.positionMs > before, fixture.diagnostics())
+            assertEquals(1, fixture.requests.size, fixture.diagnostics())
+            assertTrue(fixture.loadErrors.isEmpty(), fixture.diagnostics())
+            assertTrue(fixture.internalDiscontinuities.isEmpty(), fixture.diagnostics())
+            fixture.assertUnknownLengthMp3()
+        }
+    }
+
+    @Test fun unknownLengthMp3ReadRetryKeepsWholeTrackPosition() {
+        assertMp3ReadRetryKeepsPosition(offsetMs = 0L)
+    }
+
+    @Test fun offsetMp3ReadRetryKeepsWholeTrackPosition() {
+        assertMp3ReadRetryKeepsPosition(offsetMs = 45_000L)
+    }
+
+    @Test fun anExistingOffsetFragmentCanRecoverEvenWhenItsResponseDeclaresByteRanges() {
+        assertMp3ReadRetryKeepsPosition(offsetMs = 45_000L, offsetAcceptRanges = "bytes")
+    }
+
+    @Test fun anUnknownLengthRangeStreamStopsAtItsPositionInsteadOfRestartingFromZero() {
+        NavidromeMp3RetryFixture(acceptRanges = "bytes").use { fixture ->
+            fixture.awaitReady(requireCanSeek = false)
+            assertEquals(C.TIME_UNSET, fixture.player.duration, fixture.diagnostics())
+            assertFalse(fixture.player.isCurrentMediaItemSeekable, fixture.diagnostics())
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            val beforeReset = fixture.resetCurrentConnection()
+            fixture.awaitReadFailureOrRollback()
+
+            assertTrue(fixture.loadErrors.any { error ->
+                generateSequence<Throwable>(error) { it.cause }.any { it is SocketException }
+            }, fixture.diagnostics())
+            assertTrue(fixture.internalDiscontinuities.none { it.afterWholeMs < it.beforeWholeMs - 999L }, fixture.diagnostics())
+            assertTrue(assertNotNull(fixture.minimumWholePositionAfterReset, fixture.diagnostics()) >= beforeReset - 999L,
+                fixture.diagnostics())
+            assertEquals(1, fixture.recoveryFailures.size, fixture.diagnostics())
+            assertEquals(NavidromeReadRecoveryResult.AddressUnavailable, fixture.terminalFailures.single().result, fixture.diagnostics())
+            assertEquals(1, fixture.requests.size, fixture.diagnostics())
+            assertFalse(fixture.player.isPlaying, fixture.diagnostics())
+            assertEquals(0, fixture.completedStreams, fixture.diagnostics())
+            assertEquals(0, fixture.endedCount, fixture.diagnostics())
+            assertReadFailurePositionWasPreserved(fixture)
+        }
+    }
+
+    @Test fun anUnknownLengthRangeStreamCanUseACachedBackupAndPreservePauseIntent() {
+        for (pause in listOf(false, true)) {
+            NavidromeMp3RetryFixture(acceptRanges = "bytes", pauseDuringRecovery = pause,
+                backups = listOf(NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+                val beforeReset = startAndResetUnknownLengthStream(fixture)
+                assertCachedFallback(fixture, beforeReset)
+                assertEquals(!pause, fixture.session.wantsPlayback, fixture.diagnostics())
+                assertEquals(!pause, fixture.player.playWhenReady, fixture.diagnostics())
+                assertEquals(1, fixture.requests.count { it.path == "/rest/stream" }, fixture.diagnostics())
+            }
+        }
+    }
+
+    @Test fun unavailableOffsetCapabilitiesCanUseARealCachedBackup() {
+        for (support in listOf(NavidromeTranscodeOffsetSupport.Unknown, NavidromeTranscodeOffsetSupport.Unsupported)) {
+            NavidromeMp3RetryFixture(offsetSupport = support,
+                backups = listOf(NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+                val beforeReset = startAndResetUnknownLengthStream(fixture)
+                assertCachedFallback(fixture, beforeReset)
+            }
+        }
+    }
+
+    @Test fun aLateFailedCapabilityUsesTheSameRealHttpFallbackAndKeepsTheLatestPause() {
+        NavidromeMp3RetryFixture(deferCapability = true,
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+            val beforeReset = startAndResetUnknownLengthStream(fixture)
+            fixture.awaitCapabilityWait()
+            assertEquals(1, fixture.requests.size, fixture.diagnostics())
+            fixture.session.setPlaying(false)
+            fixture.session.updateSupport(NavidromeTranscodeOffsetSupport.Unknown)
+            assertCachedFallback(fixture, beforeReset)
+            assertFalse(fixture.player.playWhenReady, fixture.diagnostics())
+        }
+    }
+
+    @Test fun aFailedRangeProbeCanStillRecoverUsingACachedBackup() {
+        NavidromeMp3RetryFixture(acceptRanges = null, failRangeProbe = true,
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+            val beforeReset = startAndResetUnknownLengthStream(fixture)
+            assertCachedFallback(fixture, beforeReset)
+            assertEquals(2, fixture.requests.count { it.path == "/rest/stream" }, fixture.diagnostics())
+            assertTrue(fixture.requests.any { it.path == "/rest/stream" && it.range == "bytes=0-0" }, fixture.diagnostics())
+        }
+    }
+
+    @Test fun anUnrestorableBackupContinuesToTheNextRealHttpAddress() {
+        NavidromeMp3RetryFixture(offsetSupport = NavidromeTranscodeOffsetSupport.Unsupported,
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource(),
+                NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+            val beforeReset = startAndResetUnknownLengthStream(fixture)
+            assertCachedFallback(fixture, beforeReset, index = 1)
+            assertEquals(1, fixture.requests.count { it.path == "/backup/0/rest/stream" }, fixture.diagnostics())
+        }
+    }
+
+    @Test fun failedBackupOpensUseOneRecoveryBudgetBeforeTryingAnotherAddress() {
+        NavidromeMp3RetryFixture(acceptRanges = "bytes",
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource(failOpens = true),
+                NavidromeMp3RetryFixture.BackupResource(cached = true))).use { fixture ->
+            val beforeReset = startAndResetUnknownLengthStream(fixture)
+            assertCachedFallback(fixture, beforeReset, index = 1)
+            assertEquals(4, fixture.requests.count { it.path == "/backup/0/rest/stream" }, fixture.diagnostics())
+            assertEquals(3, fixture.recoveryTargets.size, fixture.diagnostics())
+        }
+    }
+
+    @Test fun allUnrestorableRealHttpAddressesFreezeThePositionAndReportOneFailure() {
+        NavidromeMp3RetryFixture(offsetSupport = NavidromeTranscodeOffsetSupport.Unknown,
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource())).use { fixture ->
+            val beforeReset = startAndResetUnknownLengthStream(fixture)
+            fixture.awaitTerminalReadFailure()
+            val position = fixture.session.positionMs
+            fixture.session.updateSupport(NavidromeTranscodeOffsetSupport.Unknown)
+            fixture.session.reconcile()
+            assertTrue(position >= beforeReset, fixture.diagnostics())
+            assertEquals(position, fixture.terminalFailures.single().positionMs, fixture.diagnostics())
+            assertEquals(position, fixture.session.positionMs, fixture.diagnostics())
+            assertEquals(1, fixture.recoveryFailures.size, fixture.diagnostics())
+            assertFalse(fixture.session.awaitingPosition, fixture.diagnostics())
+            assertFalse(fixture.player.playWhenReady, fixture.diagnostics())
+            assertTrue(fixture.loadErrors.any { it.isNavidromeSequentialReadFailure() }, fixture.diagnostics())
+            assertTrue(fixture.internalDiscontinuities.none { it.afterWholeMs < it.beforeWholeMs - 999L }, fixture.diagnostics())
+            assertEquals(0, fixture.endedCount, fixture.diagnostics())
+            assertReadFailurePositionWasPreserved(fixture)
+        }
+    }
+
+    private fun startAndResetUnknownLengthStream(fixture: NavidromeMp3RetryFixture): Long {
+        fixture.awaitReady(requireCanSeek = false)
+        assertEquals(C.TIME_UNSET, fixture.player.duration, fixture.diagnostics())
+        fixture.session.setPlaying(true)
+        fixture.awaitPlayingPast(2_000L)
+        return fixture.resetCurrentConnection()
+    }
+
+    private fun assertCachedFallback(fixture: NavidromeMp3RetryFixture, beforeReset: Long, index: Int = 0) {
+        fixture.awaitFallbackReady(index)
+        if (fixture.session.wantsPlayback) fixture.awaitPlayingPast(7_300L)
+        assertTrue(fixture.loadErrors.any { error ->
+            generateSequence<Throwable>(error) { it.cause }.any { it is SocketException }
+        }, fixture.diagnostics())
+        assertTrue(fixture.loadErrors.any { it.isNavidromeSequentialReadFailure() }, fixture.diagnostics())
+        assertTrue(fixture.requests.all { it.offsetSeconds == 0L }, fixture.diagnostics())
+        assertTrue(fixture.requests.any { it.path == "/backup/$index/rest/stream" }, fixture.diagnostics())
+        assertTrue(fixture.player.isCurrentMediaItemSeekable, fixture.diagnostics())
+        assertTrue(fixture.recoveryFailures.isEmpty(), fixture.diagnostics())
+        assertTrue(fixture.session.positionMs >= beforeReset - 999L, fixture.diagnostics())
+        assertTrue(assertNotNull(fixture.minimumWholePositionAfterReset, fixture.diagnostics()) >= beforeReset - 999L,
+            fixture.diagnostics())
+        assertEquals(0, fixture.endedCount, fixture.diagnostics())
+        assertReadFailurePositionWasPreserved(fixture)
+    }
+
+    private fun assertReadFailurePositionWasPreserved(fixture: NavidromeMp3RetryFixture) {
+        val target = assertNotNull(fixture.firstReadFailurePositionMs, fixture.diagnostics())
+        val minimum = assertNotNull(fixture.minimumWholePositionAfterReadFailure, fixture.diagnostics())
+        assertTrue(minimum >= target - 999L,
+            "Whole-track position moved from recovery checkpoint $target to $minimum.\n${fixture.diagnostics()}")
+    }
+
+    @Test fun xingMp3KeepsNativeReadRetriesWhenLengthAndRangeSupportAreUnknown() {
+        NavidromeMp3RetryFixture(nativeSeekableMp3 = true,
+            offsetSupport = NavidromeTranscodeOffsetSupport.Unknown).use { fixture ->
+            fixture.awaitReady()
+            assertTrue(fixture.player.isCurrentMediaItemSeekable, fixture.diagnostics())
+            assertTrue(fixture.player.duration > 0L, fixture.diagnostics())
+            assertTrue(fixture.player.duration != fixture.session.durationMs, fixture.diagnostics())
+            assertTrue(fixture.requests.any { it.range == "bytes=0-0" }, fixture.diagnostics())
+            val mediaId = fixture.player.currentMediaItem?.mediaId
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            val requestCount = fixture.requests.size
+            val beforeReset = fixture.resetCurrentConnection()
+            fixture.awaitReadRetry(requestCount)
+
+            assertTrue(fixture.loadErrors.any { it.isNavidromeSequentialReadFailure() }, fixture.diagnostics())
+            assertTrue(fixture.loadErrors.any { error ->
+                generateSequence<Throwable>(error) { it.cause }.any { it is SocketException }
+            }, fixture.diagnostics())
+            assertTrue(fixture.loadErrorEndTimesMs.all { it > 0L }, fixture.diagnostics())
+            assertTrue(fixture.requests.drop(requestCount).all { request ->
+                request.offsetSeconds == 0L && request.range?.let {
+                    Regex("bytes=([1-9]\\d*)-").matches(it)
+                } == true
+            }, fixture.diagnostics())
+            assertEquals(mediaId, fixture.player.currentMediaItem?.mediaId, fixture.diagnostics())
+            assertEquals(0L, fixture.session.originMs, fixture.diagnostics())
+            assertTrue(fixture.recoveryTargets.isEmpty(), fixture.diagnostics())
+            assertTrue(fixture.recoveryFailures.isEmpty(), fixture.diagnostics())
+            assertTrue(fixture.internalDiscontinuities.isEmpty(), fixture.diagnostics())
+            val minimumPosition = assertNotNull(fixture.minimumWholePositionAfterReset, fixture.diagnostics())
+            assertTrue(minimumPosition >= beforeReset - 999L, fixture.diagnostics())
+        }
+    }
+
+    @Test fun recoveryOpenFailuresStopAfterThreeActualHttpRequests() {
+        NavidromeMp3RetryFixture(failRecoveryOpens = true).use { fixture ->
+            fixture.awaitReady()
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            val position = fixture.resetCurrentConnection()
+            fixture.awaitTerminalReadFailure()
+
+            assertEquals(4, fixture.requests.size, fixture.diagnostics())
+            assertEquals(3, fixture.recoveryTargets.size, fixture.diagnostics())
+            assertEquals(1, fixture.recoveryFailures.size, fixture.diagnostics())
+            assertEquals(fixture.recoveryTargets.first(), fixture.session.positionMs, fixture.diagnostics())
+            assertTrue(fixture.session.positionMs >= position, fixture.diagnostics())
+            assertFalse(fixture.player.isPlaying, fixture.diagnostics())
+            assertFalse(fixture.session.awaitingPosition, fixture.diagnostics())
+            assertTrue(fixture.requests.drop(1).all { it.offsetSeconds == fixture.recoveryTargets.first() / 1_000L }, fixture.diagnostics())
+        }
+    }
+
+    @Test fun aUserPauseDuringActualMp3RecoveryDoesNotResumePlayback() {
+        NavidromeMp3RetryFixture(pauseDuringRecovery = true).use { fixture ->
+            fixture.awaitReady()
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            val requestCount = fixture.requests.size
+            val before = fixture.resetCurrentConnection()
+            fixture.awaitPausedReadRecovery(requestCount)
+
+            assertFalse(fixture.session.wantsPlayback, fixture.diagnostics())
+            assertFalse(fixture.player.playWhenReady, fixture.diagnostics())
+            assertTrue(fixture.session.positionMs >= before - 999L, fixture.diagnostics())
+            assertEquals(fixture.recoveryTargets.single() / 1_000L, fixture.requests.last().offsetSeconds, fixture.diagnostics())
+            assertTrue(fixture.recoveryFailures.isEmpty(), fixture.diagnostics())
+            assertReadFailurePositionWasPreserved(fixture)
+        }
+    }
+
+    private fun assertMp3ReadRetryKeepsPosition(offsetMs: Long, offsetAcceptRanges: String = "none") {
+        NavidromeMp3RetryFixture(offsetAcceptRanges = offsetAcceptRanges).use { fixture ->
+            fixture.awaitReady()
+            if (offsetMs > 0L) {
+                fixture.session.seek(offsetMs)
+                fixture.awaitReady(originMs = offsetMs)
+            }
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            fixture.assertUnknownLengthMp3()
+            val requestCount = fixture.requests.size
+            val beforeReset = fixture.resetCurrentConnection()
+            fixture.awaitReadRetry(requestCount)
+
+            assertTrue(fixture.loadErrors.any { error ->
+                generateSequence<Throwable>(error) { it.cause }.any { it is SocketException }
+            }, fixture.diagnostics())
+            assertTrue(fixture.session.wantsPlayback, fixture.diagnostics())
+            assertEquals(fixture.recoveryTargets.single() / 1_000L, fixture.requests.last().offsetSeconds, fixture.diagnostics())
+            assertEquals(0, fixture.completedStreams, fixture.diagnostics())
+            assertEquals(0, fixture.endedCount, fixture.diagnostics())
+            val minimumPosition = assertNotNull(fixture.minimumWholePositionAfterReset, fixture.diagnostics())
+            assertTrue(
+                minimumPosition >= beforeReset - 999L,
+                "Whole-track progress moved backwards by at least ${beforeReset - minimumPosition} ms " +
+                    "without a user seek during read recovery.\n${fixture.diagnostics()}",
+            )
+            assertReadFailurePositionWasPreserved(fixture)
+        }
+    }
+
     @Test fun actualExoFragmentReplacementReportsAbsoluteSystemPositions() = runTest {
         withServer(acceptRanges = "none", offsetAware = true) { fixture ->
             val player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
