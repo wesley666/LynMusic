@@ -4,6 +4,8 @@ import top.iwesley.lyn.music.*
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -12,6 +14,7 @@ import kotlinx.coroutines.withContext
 import top.iwesley.lyn.music.core.model.*
 import top.iwesley.lyn.music.resources.*
 import kotlin.test.*
+import kotlin.time.Duration.Companion.seconds
 
 /** Coroutine and text logic only; no composition, renderer, window or device. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -43,21 +46,30 @@ class UiLanguageStateTest {
         } finally { observer.cancel(); AppLanguageRuntime.update(original) }
     }
 
-    @Test fun repeatedLanguageRoundTripsRefreshAnExistingDescription() = runTest {
+    @Test fun repeatedLanguageRoundTripsRefreshAnExistingDescription() = runTest(timeout = 10.seconds) {
         val original = AppLanguageRuntime.appLanguage.value
         val descriptions = MutableStateFlow<UiText?>(uiText(Res.string.common_close))
-        val displayed = mutableListOf<String?>()
-        val observer = backgroundScope.launch { observeResolvedUiText(descriptions) { value, _ -> displayed += value } }
+        // Resource loading uses an external dispatcher, so await each resolved value.
+        val displayed = Channel<String?>(Channel.UNLIMITED)
+        val observer = backgroundScope.launch {
+            observeResolvedUiText(descriptions) { value, _ -> displayed.send(value) }
+        }
         try {
             repeat(3) {
-                AppLanguageRuntime.update(AppLanguage.English); runCurrent()
-                assertEquals("Close", displayed.last())
-                AppLanguageRuntime.update(AppLanguage.TraditionalChinese); runCurrent()
-                assertEquals("關閉", displayed.last())
-                AppLanguageRuntime.update(AppLanguage.SimplifiedChinese); runCurrent()
-                assertEquals("关闭", displayed.last())
+                AppLanguageRuntime.update(AppLanguage.English)
+                assertEquals("Close", displayed.receive())
+                AppLanguageRuntime.update(AppLanguage.TraditionalChinese)
+                assertEquals("關閉", displayed.receive())
+                AppLanguageRuntime.update(AppLanguage.SimplifiedChinese)
+                assertEquals("关闭", displayed.receive())
             }
-        } finally { observer.cancel(); AppLanguageRuntime.update(original) }
+        } finally {
+            withContext(NonCancellable) {
+                observer.cancelAndJoin()
+                displayed.close()
+                AppLanguageRuntime.update(original)
+            }
+        }
     }
 
     @Test fun queuedNativeUpdatesRecheckBothLanguageAndDescription() = runTest {
