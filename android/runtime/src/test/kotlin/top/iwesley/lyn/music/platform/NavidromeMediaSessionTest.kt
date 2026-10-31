@@ -176,6 +176,102 @@ class NavidromeMediaSessionTest {
         assertEquals(Player.STATE_IDLE, f.player.playbackState)
     }
 
+    @Test fun anApplicationRestoreFailureIsVisibleEvenWhenTheNativePlayerIsReady() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        val errors = mutableListOf<PlaybackException>()
+        f.player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) { errors += error }
+        })
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = "cannot restore position")
+        runCurrent()
+        val error = assertNotNull(f.player.playerError)
+        assertEquals(PlaybackException.ERROR_CODE_UNSPECIFIED, error.errorCode)
+        assertEquals("cannot restore position", error.message)
+        assertEquals(Player.STATE_IDLE, f.player.playbackState)
+        assertFalse(f.player.isLoading)
+        assertFalse(f.player.playWhenReady)
+        assertEquals(45_000L, f.player.currentPosition)
+        assertEquals(120_000L, f.player.duration)
+        repeat(3) { assertSame(error, f.player.playerError) }
+        f.snapshots.value = f.snapshots.value.copy(positionMs = 46_000L)
+        runCurrent()
+        assertSame(error, f.player.playerError)
+        assertEquals(46_000L, f.player.currentPosition)
+        assertEquals(listOf(error), errors)
+    }
+
+    @Test fun applicationErrorChangesAndClearingInvalidateTheSystemState() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = "first failure")
+        runCurrent()
+        val first = assertNotNull(f.player.playerError)
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = "second failure")
+        runCurrent()
+        val second = assertNotNull(f.player.playerError)
+        assertNotSame(first, second)
+        assertEquals("second failure", second.message)
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = null)
+        runCurrent()
+        assertNull(f.player.playerError)
+        assertEquals(Player.STATE_READY, f.player.playbackState)
+    }
+
+    @Test fun retryingAnApplicationFailureReturnsToBufferingAtTheSavedPosition() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = "cannot restore position")
+        runCurrent()
+        assertNotNull(f.player.playerError)
+        f.awaitingPosition.value = true
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = null, isPlaying = true)
+        runCurrent()
+        assertNull(f.player.playerError)
+        assertEquals(Player.STATE_BUFFERING, f.player.playbackState)
+        assertTrue(f.player.isLoading)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+        assertEquals(45_000L, f.player.currentPosition)
+    }
+
+    @Test fun errorTextChangesAndTrackReplacementRefreshTheCachedApplicationError() = runTest {
+        val f = Fixture(backgroundScope)
+        runCurrent()
+        f.snapshots.value = f.snapshots.value.copy(errorText = UiText.Raw("first failure"))
+        runCurrent()
+        val first = assertNotNull(f.player.playerError)
+        assertEquals("first failure", first.message)
+        f.snapshots.value = f.snapshots.value.copy(errorText = UiText.Raw("second failure"))
+        runCurrent()
+        val second = assertNotNull(f.player.playerError)
+        assertNotSame(first, second)
+        assertEquals("second failure", second.message)
+
+        val replacement = f.snapshots.value.currentTrack!!.copy(id = "another song")
+        f.snapshots.value = f.snapshots.value.copy(queue = listOf(replacement))
+        runCurrent()
+        assertNotSame(second, f.player.playerError)
+        f.snapshots.value = f.snapshots.value.copy(errorText = null)
+        runCurrent()
+        assertNull(f.player.playerError)
+        assertEquals(Player.STATE_READY, f.player.playbackState)
+    }
+
+    @Test fun nativeErrorsTakePrecedenceAndOtherSourcesDoNotSynthesizeErrors() = runTest {
+        val f = Fixture(backgroundScope)
+        val nativeError = PlaybackException("decoder failed", null, PlaybackException.ERROR_CODE_DECODING_FAILED)
+        f.native.fail(nativeError)
+        f.snapshots.value = f.snapshots.value.copy(errorMessage = "application failure")
+        runCurrent()
+        assertSame(nativeError, f.player.playerError)
+
+        val ordinary = Fixture(backgroundScope, navidrome = false)
+        ordinary.snapshots.value = ordinary.snapshots.value.copy(errorMessage = "application failure")
+        runCurrent()
+        assertNull(ordinary.player.playerError)
+        assertEquals(Player.STATE_READY, ordinary.player.playbackState)
+    }
+
     private class Fixture(scope: CoroutineScope, playing: Boolean = false, awaitingPosition: Boolean = false,
                           navidrome: Boolean = true) {
         private val track = Track("song", "nav", "Song", durationMs = 120_000,

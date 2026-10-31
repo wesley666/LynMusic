@@ -38,7 +38,10 @@ internal class AndroidNavidromePlaybackSession(
     private val recoveryFailed: (NavidromeRecoveryFailure) -> Unit = {},
     private val logger: DiagnosticLogger = NoopDiagnosticLogger,
     private val currentRequest: () -> Boolean = { true },
+    private val recoveryStarted: () -> Unit = {},
+    private val refreshSupport: (((NavidromeTranscodeOffsetSupport) -> Unit) -> Unit)? = null,
 ) {
+    private data class RestoreFailure(val error: Throwable, val result: NavidromeReadRecoveryResult, val positionMs: Long)
     private val id = UUID.randomUUID().toString()
     private var generation = 0L
     private var expectedMediaId = ""
@@ -58,7 +61,8 @@ internal class AndroidNavidromePlaybackSession(
     private var waitingForRecoveryCapability = false
     private var cancelScheduledRecovery: (() -> Unit)? = null
     private var recoveryVersion = 0L
-    private var readRecoveryError: Throwable? = null
+    private var recoveryError: Throwable? = null
+    private var restoreFailure: RestoreFailure? = null
     private var readRecoveryAttempts = 0
     private var readRecoveryCheckpointMs: Long? = null
     private var recoveryFailureReported = false
@@ -79,7 +83,7 @@ internal class AndroidNavidromePlaybackSession(
     val isCurrentRequest: Boolean get() = !closed && currentRequest()
     val canSeek: Boolean get() = isCurrentRequest && (serverSeek || (!offsetStream && ownsPlayer && driver.seekable))
     val awaitingPosition: Boolean get() = !failed && pendingPositionMs != null
-    val isRecoveringRead: Boolean get() = isCurrentRequest && readRecoveryError != null && awaitingPosition
+    val isRecoveringPosition: Boolean get() = isCurrentRequest && recoveryError != null && awaitingPosition
     val positionMs: Long get() {
         val position = pendingPositionMs ?: if (replacing || !ownsPlayer) originMs else originMs + driver.positionMs.coerceAtLeast(0L)
         return if (durationMs > 0L) position.coerceIn(0L, durationMs) else position.coerceAtLeast(0L)
@@ -104,7 +108,7 @@ internal class AndroidNavidromePlaybackSession(
                 waitingForRecoveryCapability = false
                 val result = scheduleReadRecovery()
                 if (result != NavidromeReadRecoveryResult.Recovering) {
-                    failReadRecovery(checkNotNull(readRecoveryError), result, notify = true)
+                    failReadRecovery(checkNotNull(recoveryError), result, notify = true)
                 }
                 return
             }
@@ -135,7 +139,7 @@ internal class AndroidNavidromePlaybackSession(
                 !capabilityResolved -> return
                 !offsetStream && driver.seekable -> nativeSeek(pending)
                 strictPositionRestore -> failReadRecovery(
-                    readRecoveryError ?: IOException("Navidrome cannot restore the playback position"),
+                    recoveryError ?: IOException("Navidrome cannot restore the playback position"),
                     NavidromeReadRecoveryResult.AddressUnavailable, notify = true,
                 )
                 else -> {
@@ -190,14 +194,14 @@ internal class AndroidNavidromePlaybackSession(
         val position = positionMs
         cancelRecovery()
         readRecoveryAttempts = 0
-        readRecoveryCheckpointMs = position.takeIf { readRecoveryError != null }
+        readRecoveryCheckpointMs = position.takeIf { recoveryError != null }
         recoveryFailureReported = false
         this.url = url
         // A new address can return a cached full resource. Classify it before applying an offset.
         originMs = 0L
         offsetStream = false
         ranges = NavidromeRangeSupport.Unknown
-        classifyingRecoveryAddress = readRecoveryError != null
+        classifyingRecoveryAddress = recoveryError != null
         pendingPositionMs = position.takeIf { it > 0L || classifyingRecoveryAddress }
         strictPositionRestore = position > 0L
         openingRecoveryOffset = false
@@ -213,7 +217,7 @@ internal class AndroidNavidromePlaybackSession(
         if (!offsetStream && driver.durationMs > 0L) return NavidromeReadRecoveryResult.NotApplicable
         val position = positionMs
         val readFailure = error.isNavidromeSequentialReadFailure() ||
-            (readRecoveryError != null && isRemoteSourceAddressFallbackAllowed(error))
+            (recoveryError != null && isRemoteSourceAddressFallbackAllowed(error))
         val checkpoint = readRecoveryCheckpointMs
         if (pendingPositionMs == null && checkpoint != null && position >= checkpoint + 1_000L) {
             resetReadRecoveryBudget()
@@ -225,7 +229,7 @@ internal class AndroidNavidromePlaybackSession(
         pendingPositionMs = position
         strictPositionRestore = true
         openingRecoveryOffset = false
-        readRecoveryError = error
+        recoveryError = error
         recoveryFailureReported = false
         failed = false
         driver.setPlaying(false)
@@ -260,7 +264,7 @@ internal class AndroidNavidromePlaybackSession(
         logger.warn("NavidromePlayback") {
             "read-recovery-scheduled generation=$generation attempt=$readRecoveryAttempts target=$target " +
                 "offset=${offset / 1_000L} delay=$delayMs cause=" +
-                generateSequence(readRecoveryError) { it.cause }.take(8).joinToString("->") { it.javaClass.simpleName }
+                generateSequence(recoveryError) { it.cause }.take(8).joinToString("->") { it.javaClass.simpleName }
         }
         cancelScheduledRecovery = driver.scheduleRecovery(delayMs) {
             if (isCurrentRequest && version == recoveryVersion) {
@@ -274,7 +278,7 @@ internal class AndroidNavidromePlaybackSession(
     private fun openRecoveryOffset(positionMs: Long) {
         val offset = positionMs / 1_000L * 1_000L
         if (invalidRecoveryTarget(positionMs)) {
-            failReadRecovery(readRecoveryError ?: IOException("Navidrome recovery target is at the end of the track"),
+            failReadRecovery(recoveryError ?: IOException("Navidrome recovery target is at the end of the track"),
                 NavidromeReadRecoveryResult.InvalidTarget, notify = true)
             return
         }
@@ -300,6 +304,7 @@ internal class AndroidNavidromePlaybackSession(
     private fun failReadRecovery(error: Throwable, result: NavidromeReadRecoveryResult, notify: Boolean) {
         cancelRecovery()
         failed = true
+        restoreFailure = RestoreFailure(error, result, positionMs)
         if (result == NavidromeReadRecoveryResult.AddressUnavailable) exhaustedAddresses += url
         driver.setPlaying(false)
         if (!recoveryFailureReported) {
@@ -317,7 +322,8 @@ internal class AndroidNavidromePlaybackSession(
     }
 
     private fun resetReadRecoveryBudget() {
-        readRecoveryError = null
+        recoveryError = null
+        restoreFailure = null
         readRecoveryAttempts = 0
         readRecoveryCheckpointMs = null
     }
@@ -329,10 +335,11 @@ internal class AndroidNavidromePlaybackSession(
         expectedMediaId = "$id:$opening"
         responseReceived = false
         failed = false
+        restoreFailure = null
         replacing = true
         try {
             driver.open(navidromeStreamUrlAtOffset(url, originMs / 1_000L), expectedMediaId,
-                wantsPlayback && pendingPositionMs == null, readRecoveryError != null) { response ->
+                wantsPlayback && pendingPositionMs == null, recoveryError != null) { response ->
                 if (isCurrentRequest && opening == generation) {
                     responseReceived = true
                     ranges = response.ranges
@@ -353,8 +360,8 @@ internal class AndroidNavidromePlaybackSession(
     fun setPlaying(playing: Boolean) {
         if (!isCurrentRequest) return
         wantsPlayback = playing
-        val error = readRecoveryError
-        if (playing && failed && error != null) {
+        val failure = restoreFailure
+        if (playing && failed && failure != null) {
             cancelRecovery()
             readRecoveryAttempts = 0
             readRecoveryCheckpointMs = null
@@ -362,7 +369,25 @@ internal class AndroidNavidromePlaybackSession(
             openingRecoveryOffset = false
             recoveryFailureReported = false
             failed = false
-            val result = if (invalidRecoveryTarget(positionMs)) {
+            restoreFailure = null
+            pendingPositionMs = failure.positionMs
+            recoveryError = failure.error
+            strictPositionRestore = true
+            if (failure.result == NavidromeReadRecoveryResult.AddressUnavailable && !invalidRecoveryTarget(positionMs)) {
+                // The response may now be a complete cached resource. Reopen it instead of
+                // rejecting the retry using the previous response's Range/seekability state.
+                originMs = 0L
+                offsetStream = false
+                ranges = NavidromeRangeSupport.Unknown
+                classifyingRecoveryAddress = true
+                val probe = refreshSupport.takeIf { support == NavidromeTranscodeOffsetSupport.Unknown }
+                if (probe != null) capabilityResolved = false
+                recoveryStarted()
+                openStream()
+                probe?.invoke(::updateSupport)
+                return
+            }
+            val result = if (failure.result == NavidromeReadRecoveryResult.InvalidTarget || invalidRecoveryTarget(positionMs)) {
                 NavidromeReadRecoveryResult.InvalidTarget
             } else if (!capabilityResolved && !classifyingRecoveryAddress) {
                 waitingForRecoveryCapability = true
@@ -370,7 +395,8 @@ internal class AndroidNavidromePlaybackSession(
             } else {
                 scheduleReadRecovery()
             }
-            if (result != NavidromeReadRecoveryResult.Recovering) failReadRecovery(error, result, notify = true)
+            if (result == NavidromeReadRecoveryResult.Recovering) recoveryStarted()
+            else failReadRecovery(failure.error, result, notify = true)
             changed()
             return
         }
@@ -385,8 +411,14 @@ internal class AndroidNavidromePlaybackSession(
         if (isCurrentRequest && reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) wantsPlayback = playing
     }
 
-    fun onFailure() {
-        pendingPositionMs = positionMs
+    fun onFailure(error: Throwable) {
+        val position = positionMs
+        pendingPositionMs = position
+        // Keep ordinary terminal errors out of automatic recovery, but allow an explicit
+        // play request to retry an existing restore using its latest cause and position.
+        if (restoreFailure == null && recoveryError != null) {
+            restoreFailure = RestoreFailure(error, NavidromeReadRecoveryResult.NotApplicable, position)
+        }
         cancelRecovery()
         failed = true
     }

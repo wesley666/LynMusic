@@ -208,6 +208,34 @@ class AndroidNavidromeDataSourceTest {
         assertReadFailurePositionWasPreserved(fixture)
     }
 
+    @Test fun anOrdinaryAddressRestoreFailureCanReloadACachedResponseOnPlay() {
+        NavidromeMp3RetryFixture(offsetSupport = NavidromeTranscodeOffsetSupport.Unsupported,
+            backups = listOf(NavidromeMp3RetryFixture.BackupResource())).use { fixture ->
+            fixture.awaitReady(requireCanSeek = false)
+            fixture.session.setPlaying(true)
+            fixture.awaitPlayingPast(2_000L)
+            fixture.switchToBackup()
+            fixture.awaitTerminalReadFailure()
+            val target = fixture.session.positionMs
+            assertTrue(fixture.loadErrors.isEmpty(), fixture.diagnostics())
+            assertNull(fixture.player.playerError, fixture.diagnostics())
+            assertEquals(Player.STATE_READY, fixture.player.playbackState, fixture.diagnostics())
+            val previousRequests = fixture.requests.size
+            fixture.replaceBackup(0, NavidromeMp3RetryFixture.BackupResource(cached = true))
+
+            fixture.session.setPlaying(true)
+            assertEquals(target, fixture.session.positionMs, fixture.diagnostics())
+            assertTrue(fixture.session.awaitingPosition, fixture.diagnostics())
+            fixture.awaitManualRetryReady(previousRequests, previousFailures = 1)
+            assertTrue(fixture.requests.drop(previousRequests).all {
+                it.path == "/backup/0/rest/stream" && it.offsetSeconds == 0L
+            }, fixture.diagnostics())
+            assertTrue(fixture.session.positionMs >= target - 999L, fixture.diagnostics())
+            assertEquals(1, fixture.terminalFailures.size, fixture.diagnostics())
+            assertEquals(0, fixture.endedCount, fixture.diagnostics())
+        }
+    }
+
     private fun assertReadFailurePositionWasPreserved(fixture: NavidromeMp3RetryFixture) {
         val target = assertNotNull(fixture.firstReadFailurePositionMs, fixture.diagnostics())
         val minimum = assertNotNull(fixture.minimumWholePositionAfterReadFailure, fixture.diagnostics())
@@ -305,6 +333,7 @@ class AndroidNavidromeDataSourceTest {
                 generateSequence<Throwable>(error) { it.cause }.any { it is SocketException }
             }, fixture.diagnostics())
             assertTrue(fixture.session.wantsPlayback, fixture.diagnostics())
+            assertEquals(1, fixture.recoveryTargets.size, fixture.diagnostics())
             assertEquals(fixture.recoveryTargets.single() / 1_000L, fixture.requests.last().offsetSeconds, fixture.diagnostics())
             assertEquals(0, fixture.completedStreams, fixture.diagnostics())
             assertEquals(0, fixture.endedCount, fixture.diagnostics())
@@ -407,7 +436,7 @@ class AndroidNavidromeDataSourceTest {
                     override fun onPlayerError(error: PlaybackException) {
                         if (!fellBack) {
                             fellBack = true
-                            session.onFailure()
+                            session.onFailure(error)
                             // Re-enter Exo from its error listener, as the gateway's fallback does.
                             session.reload(backup.url)
                             if (pauseDuringRecovery) session.setPlaying(false)

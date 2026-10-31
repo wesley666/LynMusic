@@ -6,6 +6,7 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
@@ -45,13 +46,17 @@ internal class NavidromeMp3RetryFixture(
     private val offsetAcceptRanges: String? = acceptRanges,
     private val failRangeProbe: Boolean = false,
     offsetSupport: NavidromeTranscodeOffsetSupport = NavidromeTranscodeOffsetSupport.Supported,
-    private val backups: List<BackupResource> = emptyList(),
+    backups: List<BackupResource> = emptyList(),
     deferCapability: Boolean = false,
 ) : Closeable {
     private companion object {
         const val SAMPLE_RATE = 44_100
         const val SAMPLES_PER_FRAME = 1_152
         const val FIRST_RESPONSE_FRAMES = 240
+        // Exceed Media3's 1 MiB loading checkpoint so the recovered stream can fill its
+        // buffer and pause loading. A short held response can cause an unrelated second
+        // HTTP read timeout while a busy test runner waits for playback to advance.
+        const val RECOVERY_RESPONSE_FRAMES = 2_640
         const val FRAME_SIZE = 417
     }
 
@@ -80,6 +85,8 @@ internal class NavidromeMp3RetryFixture(
     @Volatile private var resetSocket: Socket? = null
     @Volatile private var closed = false
     private var backupIndex = -1
+    private val backups = CopyOnWriteArrayList(backups)
+    private val playedMediaIds = mutableSetOf<String>()
     private lateinit var recoveryFailureHandler: NavidromeRecoveryFailureHandler
 
     val player: ExoPlayer
@@ -110,7 +117,11 @@ internal class NavidromeMp3RetryFixture(
         }
         player = ExoPlayer.Builder(RuntimeEnvironment.getApplication()).setUsePlatformDiagnostics(false).build()
         session = AndroidNavidromePlaybackSession(
-            ExoNavidromePlaybackDriver(player),
+            ExoNavidromePlaybackDriver(player, httpDataSourceFactory = {
+                // This fixture deliberately holds the HTTP response open. Keep incidental
+                // read timeouts outside the 30-second test deadline; inject failures by RST.
+                DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true).setReadTimeoutMs(60_000)
+            }),
             "http://127.0.0.1:${server.localPort}/rest/stream?id=silent&maxBitRate=128&format=mp3",
             durationMs = 120_000L,
             playWhenReady = false,
@@ -124,6 +135,11 @@ internal class NavidromeMp3RetryFixture(
                 recoveryFailures += it.error
             })
         player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) player.currentMediaItem?.mediaId?.let { playedMediaIds += it }
+                record("is-playing=$isPlaying")
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 val target = session.positionMs
                 if (resetSocket != null && firstReadFailurePositionMs == null) firstReadFailurePositionMs = target
@@ -132,7 +148,7 @@ internal class NavidromeMp3RetryFixture(
                 if (result == NavidromeReadRecoveryResult.Recovering) {
                     recoveryTargets += target
                 } else {
-                    session.onFailure()
+                    session.onFailure(error)
                     recoveryFailureHandler.handle(session.recoveryFailure(error, result))
                 }
                 record("player-error recovery=$result target=$target")
@@ -193,8 +209,17 @@ internal class NavidromeMp3RetryFixture(
         player.playbackState == Player.STATE_READY && session.originMs == originMs && (!requireCanSeek || session.canSeek)
     }
 
-    fun awaitPlayingPast(segmentPositionMs: Long) = await("playing past segment=$segmentPositionMs") {
-        player.isPlaying && player.currentPosition >= segmentPositionMs
+    fun awaitPlayingPast(segmentPositionMs: Long) {
+        val previousErrors = loadErrors.size
+        await("playing past segment=$segmentPositionMs") {
+            // A busy application looper can observe BUFFERING after the finite payload
+            // has played. The event and clock prove this generation consumed audio.
+            // Reject EOF and new errors, while allowing earlier, deliberately injected errors.
+            val state = player.playbackState
+            player.currentMediaItem?.mediaId in playedMediaIds && player.playWhenReady &&
+                (state == Player.STATE_READY || state == Player.STATE_BUFFERING) &&
+                player.playerError == null && loadErrors.size == previousErrors && player.currentPosition >= segmentPositionMs
+        }
     }
 
     fun resetCurrentConnection(): Long {
@@ -225,13 +250,27 @@ internal class NavidromeMp3RetryFixture(
     }
 
     fun awaitCapabilityWait() = await("read recovery waiting for capability") {
-        loadErrors.isNotEmpty() && session.isRecoveringRead && !player.playWhenReady
+        loadErrors.isNotEmpty() && session.isRecoveringPosition && !player.playWhenReady
     }
 
     fun awaitFallbackReady(index: Int = 0) = await("backup $index positioned and READY") {
         backupIndex == index && player.playbackState == Player.STATE_READY && !session.awaitingPosition &&
             (if (session.wantsPlayback) player.isPlaying else !player.playWhenReady)
     }
+
+    fun switchToBackup(index: Int = 0) {
+        backupIndex = index
+        check(session.reload(backupUrl(index)))
+    }
+
+    fun replaceBackup(index: Int, resource: BackupResource) { backups[index] = resource }
+
+    fun awaitManualRetryReady(previousRequests: Int, previousFailures: Int) =
+        await("manual retry positioned and READY", allowRecoveryFailure = true) {
+            if (terminalFailures.size > previousFailures) fail("Manual retry failed.\n${diagnostics()}")
+            requests.size > previousRequests && player.playbackState == Player.STATE_READY &&
+                !session.awaitingPosition && player.isPlaying
+        }
 
     fun awaitReadFailureOrRollback() = await("read error followed by a final failure or an internal rollback", allowRecoveryFailure = true) {
         loadErrors.isNotEmpty() && (recoveryFailures.isNotEmpty() ||
@@ -248,7 +287,10 @@ internal class NavidromeMp3RetryFixture(
     fun diagnostics(): String = buildString {
         appendLine("requests=$requests")
         appendLine("serverFailures=$serverFailures")
-        appendLine("loadErrors=${loadErrors.map { "${it.javaClass.simpleName}: ${it.message}" }}")
+        appendLine("loadErrors=${loadErrors.map { error ->
+            generateSequence<Throwable>(error) { it.cause }.take(8)
+                .joinToString(" -> ") { "${it.javaClass.simpleName}: ${it.message}" }
+        }}")
         appendLine("loadErrorEndTimesMs=$loadErrorEndTimesMs")
         appendLine("recoveryTargets=$recoveryTargets recoveryFailures=$recoveryFailures")
         appendLine("internalDiscontinuities=$internalDiscontinuities completed=$completedStreams ended=$endedCount " +
@@ -263,7 +305,7 @@ internal class NavidromeMp3RetryFixture(
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
         while (!condition()) {
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10))
-            if (!allowRecoveryFailure && (recoveryFailures.isNotEmpty() || (player.playerError != null && !session.isRecoveringRead))) {
+            if (!allowRecoveryFailure && (recoveryFailures.isNotEmpty() || (player.playerError != null && !session.isRecoveringPosition))) {
                 fail("Player failed while waiting for $description.\n${diagnostics()}")
             }
             if (serverFailures.isNotEmpty()) fail("HTTP fixture failed while waiting for $description.\n${diagnostics()}")
@@ -286,11 +328,14 @@ internal class NavidromeMp3RetryFixture(
 
     private fun nextBackup(): Boolean {
         while (++backupIndex < backups.size) {
-            val url = "http://127.0.0.1:${server.localPort}/backup/$backupIndex/rest/stream?id=silent&maxBitRate=128&format=mp3"
+            val url = backupUrl(backupIndex)
             if (session.canReload(url)) return session.reload(url)
         }
         return false
     }
+
+    private fun backupUrl(index: Int) =
+        "http://127.0.0.1:${server.localPort}/backup/$index/rest/stream?id=silent&maxBitRate=128&format=mp3"
 
     private fun serve(socket: Socket) {
         try {
@@ -327,7 +372,7 @@ internal class NavidromeMp3RetryFixture(
             val rangeHeader = responseRanges?.let { "Accept-Ranges: $it\r\n" }.orEmpty()
             output.write(("HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\n$rangeHeader" +
                 "Transfer-Encoding: chunked\r\nConnection: close\r\nX-Content-Duration: 120\r\n\r\n").toByteArray(US_ASCII))
-            val body = silentMp3Frames(if (resetSocket == null) FIRST_RESPONSE_FRAMES else FIRST_RESPONSE_FRAMES * 2)
+            val body = silentMp3Frames(if (resetSocket == null) FIRST_RESPONSE_FRAMES else RECOVERY_RESPONSE_FRAMES)
             output.write("${body.size.toString(16)}\r\n".toByteArray(US_ASCII))
             output.write(body)
             output.write("\r\n".toByteArray(US_ASCII))

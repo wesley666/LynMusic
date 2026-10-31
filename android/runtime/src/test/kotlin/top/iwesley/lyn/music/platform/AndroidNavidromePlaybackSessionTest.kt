@@ -139,7 +139,7 @@ class AndroidNavidromePlaybackSessionTest {
         f.session.seek(60_000)
         f.ready()
         f.driver.positionMs = 5_000
-        f.session.onFailure()
+        f.session.onFailure(readError())
         f.session.reload("https://wan.test/rest/stream?id=1")
         f.ready()
         f.ready()
@@ -151,7 +151,7 @@ class AndroidNavidromePlaybackSessionTest {
         val f = Fixture()
         f.prepare()
         f.session.seek(60_000)
-        f.session.onFailure()
+        f.session.onFailure(readError())
         f.session.reload("https://wan.test/rest/stream?id=1")
         assertFalse(f.driver.playRequested)
         // Exo can deliver this after reload() has returned from a player error listener.
@@ -166,7 +166,7 @@ class AndroidNavidromePlaybackSessionTest {
         val f = Fixture()
         f.prepare()
         f.session.seek(60_000)
-        f.session.onFailure()
+        f.session.onFailure(readError())
         f.session.reload("https://wan.test/rest/stream?id=1")
         f.session.setPlaying(false)
         f.session.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
@@ -319,7 +319,7 @@ class AndroidNavidromePlaybackSessionTest {
         val f = Fixture()
         exhaustReadRecovery(f)
         f.session.setPlaying(true)
-        assertTrue(f.session.isRecoveringRead)
+        assertTrue(f.session.isRecoveringPosition)
         assertEquals(0L, f.driver.scheduled.last().delayMs)
         assertTrue(f.session.canReload("https://lan.test/rest/stream?id=1&maxBitRate=192"))
         f.driver.runRecovery()
@@ -397,6 +397,193 @@ class AndroidNavidromePlaybackSessionTest {
         assertEquals(1, f.failures.size)
     }
 
+    @Test fun ordinaryAddressRestoreFailureCanBeRetriedAsANewFullRequest() {
+        val f = Fixture()
+        f.prepare(support = NavidromeTranscodeOffsetSupport.Unsupported)
+        f.driver.positionMs = 9_500
+        val backup = "https://wan.test/rest/stream?id=1"
+        f.session.reload(backup)
+        f.ready()
+        assertEquals(1, f.failures.size)
+        assertFalse(f.session.awaitingPosition)
+
+        f.session.setPlaying(true)
+        assertEquals(3, f.driver.opens.size)
+        assertEquals(backup, f.driver.opens.last().url)
+        assertEquals(9_500L, f.session.positionMs)
+        assertTrue(f.session.awaitingPosition)
+        assertFalse(f.driver.playRequested)
+        f.session.setPlaying(true)
+        assertEquals(3, f.driver.opens.size)
+
+        f.ready(NavidromeRangeSupport.Bytes, seekable = true)
+        assertEquals(9_500L, f.driver.positionMs)
+        assertTrue(f.driver.playRequested)
+        assertFalse(f.session.awaitingPosition)
+    }
+
+    @Test fun aManualRetryReclassifiesTheResponseBeforeChoosingAnOffset() {
+        val f = Fixture()
+        f.prepare()
+        f.driver.positionMs = 9_500
+        f.session.reload("https://wan.test/rest/stream?id=1")
+        f.ready(NavidromeRangeSupport.Unknown)
+        assertEquals(1, f.failures.size)
+
+        f.session.setPlaying(true)
+        assertEquals(3, f.driver.opens.size)
+        assertFalse(f.driver.opens.last().url.contains("timeOffset"))
+        f.ready()
+        assertTrue(f.driver.opens.last().url.endsWith("timeOffset=9"))
+        assertEquals(9_500L, f.session.positionMs)
+        assertFalse(f.driver.playRequested)
+        f.ready()
+        assertEquals(9_000L, f.session.positionMs)
+        assertTrue(f.driver.playRequested)
+    }
+
+    @Test fun manualClassificationOpenFailuresHaveThreeRetriesAfterTheFirstOpen() {
+        val f = Fixture()
+        failOrdinaryRestore(f)
+        f.session.setPlaying(true)
+        repeat(3) {
+            assertEquals(NavidromeReadRecoveryResult.Recovering,
+                f.session.recoverReadFailure(SocketTimeoutException("manual reopen timed out")))
+            f.driver.runRecovery()
+        }
+        assertEquals(NavidromeReadRecoveryResult.Exhausted,
+            f.session.recoverReadFailure(SocketTimeoutException("manual reopen timed out")))
+        assertEquals(listOf(0L, 1_000L, 2_000L), f.driver.scheduled.map { it.delayMs })
+        assertEquals(6, f.driver.opens.size)
+        assertTrue(f.driver.opens.drop(2).all { it.readRecovery && !it.url.contains("timeOffset") })
+        assertEquals(9_500L, f.session.positionMs)
+        assertFalse(f.driver.playRequested)
+        assertEquals(1, f.recoveryStarts)
+    }
+
+    @Test fun anUnknownCapabilityIsRefreshedOnceOnManualRetryAndUsesTheLatestFocusIntent() {
+        val f = Fixture()
+        f.prepare(support = NavidromeTranscodeOffsetSupport.Unknown)
+        f.driver.positionMs = 9_500
+        f.session.reload("https://wan.test/rest/stream?id=1")
+        f.ready()
+        f.session.setPlaying(true)
+        f.ready()
+        assertTrue(f.session.awaitingPosition)
+        assertEquals(9_500L, f.session.positionMs)
+        assertFalse(f.driver.playRequested)
+        f.session.setPlaying(true)
+        assertEquals(1, f.supportRefreshes.size)
+        assertEquals(3, f.driver.opens.size)
+
+        f.session.onPlayWhenReadyChanged(false, Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)
+        f.supportRefreshes.single()(NavidromeTranscodeOffsetSupport.Supported)
+        assertTrue(f.driver.opens.last().url.endsWith("timeOffset=9"))
+        assertEquals(9_500L, f.session.positionMs)
+        f.ready()
+        assertEquals(9_000L, f.session.positionMs)
+        assertFalse(f.driver.playRequested)
+        assertFalse(f.session.wantsPlayback)
+        assertEquals(1, f.recoveryStarts)
+    }
+
+    @Test fun failedManualClassificationReportsOncePerAttemptWithoutClearingTheNewFailure() {
+        val f = Fixture()
+        failOrdinaryRestore(f)
+        f.session.setPlaying(true)
+        f.ready()
+        f.session.reconcile()
+        assertEquals(2, f.failures.size)
+        assertEquals(NavidromeReadRecoveryResult.AddressUnavailable, f.failureNotices.last().result)
+        assertEquals(9_500L, f.session.positionMs)
+        assertFalse(f.session.awaitingPosition)
+        assertFalse(f.driver.playRequested)
+        assertEquals(1, f.recoveryStarts)
+        assertTrue(f.supportRefreshes.isEmpty())
+    }
+
+    @Test fun pausingOrLosingFocusDuringManualRetryDoesNotStartTheCachedResource() {
+        for (focusLoss in listOf(false, true)) {
+            val f = Fixture()
+            failOrdinaryRestore(f)
+            f.session.setPlaying(true)
+            if (focusLoss) f.session.onPlayWhenReadyChanged(false, Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)
+            else f.session.setPlaying(false)
+            f.ready(NavidromeRangeSupport.Bytes, seekable = true)
+            assertEquals(9_500L, f.session.positionMs)
+            assertFalse(f.driver.playRequested)
+            assertFalse(f.session.wantsPlayback)
+        }
+    }
+
+    @Test fun cancelingAManualRetryRetiresItsQueuedOpenAndLateResponse() {
+        repeat(3) { action ->
+            var current = true
+            val f = Fixture(currentRequest = { current })
+            failOrdinaryRestore(f)
+            f.session.setPlaying(true)
+            val oldOpen = f.driver.opens.last()
+            f.session.recoverReadFailure(SocketTimeoutException("manual reopen timed out"))
+            val oldTask = f.driver.scheduled.last()
+            when (action) {
+                0 -> { f.driver.seekable = true; f.session.seek(80_000L) }
+                1 -> f.session.close()
+                else -> current = false
+            }
+            val opens = f.driver.opens.size
+            oldTask.action()
+            oldOpen.response(NavidromeStreamResponse(NavidromeRangeSupport.None))
+            assertEquals(opens, f.driver.opens.size)
+            assertEquals(1, f.failures.size)
+            if (action == 0) assertEquals(80_000L, f.session.positionMs)
+        }
+    }
+
+    @Test fun aLateSupportRefreshDoesNotReviveACanceledManualRestore() {
+        repeat(3) { action ->
+            var current = true
+            val f = Fixture(currentRequest = { current })
+            f.prepare(support = NavidromeTranscodeOffsetSupport.Unknown)
+            f.driver.positionMs = 9_500L
+            f.session.reload("https://wan.test/rest/stream?id=1")
+            f.ready()
+            f.session.setPlaying(true)
+            val refresh = f.supportRefreshes.single()
+            when (action) {
+                0 -> { f.driver.seekable = true; f.session.seek(80_000L) }
+                1 -> f.session.close()
+                else -> current = false
+            }
+            val opens = f.driver.opens.size
+            refresh(NavidromeTranscodeOffsetSupport.Supported)
+            assertEquals(opens, f.driver.opens.size)
+            assertEquals(1, f.failures.size)
+            if (action == 0) assertEquals(80_000L, f.session.positionMs)
+        }
+    }
+
+    @Test fun manualRetryDoesNotReopenAnInvalidEndPositionOrClearItsFailure() {
+        val f = Fixture()
+        f.prepare()
+        f.driver.positionMs = 120_000L
+        assertEquals(NavidromeReadRecoveryResult.InvalidTarget, f.session.recoverReadFailure(readError()))
+        f.session.onFailure(readError())
+        f.session.setPlaying(true)
+        assertEquals(1, f.driver.opens.size)
+        assertEquals(0, f.recoveryStarts)
+        assertEquals(NavidromeReadRecoveryResult.InvalidTarget, f.failureNotices.single().result)
+        assertEquals(120_000L, f.session.positionMs)
+        assertFalse(f.driver.playRequested)
+    }
+
+    private fun failOrdinaryRestore(f: Fixture) {
+        f.prepare(support = NavidromeTranscodeOffsetSupport.Unsupported)
+        f.driver.positionMs = 9_500
+        f.session.reload("https://wan.test/rest/stream?id=1")
+        f.ready()
+        assertEquals(1, f.failures.size)
+    }
+
     @Test fun failedFallbackClassificationRetriesBeforeApplyingAnOffset() {
         val f = Fixture()
         exhaustReadRecovery(f)
@@ -424,7 +611,7 @@ class AndroidNavidromePlaybackSessionTest {
             assertTrue(f.failures.isEmpty())
             assertFalse(f.session.awaitingPosition)
 
-            f.session.onFailure()
+            f.session.onFailure(readError())
             assertTrue(f.session.reload("https://wan.test/rest/stream?id=1"))
             f.ready(NavidromeRangeSupport.Bytes, seekable = true)
             assertEquals(51_269L, f.driver.positionMs)
@@ -463,7 +650,7 @@ class AndroidNavidromePlaybackSessionTest {
             exhaustReadRecovery(f, position = 0L)
             assertTrue(f.session.reload("https://wan.test/rest/stream?id=1"))
             assertTrue(f.session.awaitingPosition)
-            assertTrue(f.session.isRecoveringRead)
+            assertTrue(f.session.isRecoveringPosition)
             assertFalse(f.driver.playRequested)
             assertEquals(NavidromeReadRecoveryResult.Recovering,
                 f.session.recoverReadFailure(SocketTimeoutException("classification open timed out")))
@@ -476,7 +663,7 @@ class AndroidNavidromePlaybackSessionTest {
             assertEquals(opened, f.driver.opens.size)
             assertEquals(0L, f.session.positionMs)
             assertFalse(f.session.awaitingPosition)
-            assertFalse(f.session.isRecoveringRead)
+            assertFalse(f.session.isRecoveringPosition)
             assertEquals(!pause, f.driver.playRequested)
             assertEquals(!pause, f.session.wantsPlayback)
             assertTrue(f.driver.opens.none { it.url.contains("timeOffset") })
@@ -635,7 +822,7 @@ class AndroidNavidromePlaybackSessionTest {
         oldStream.response(NavidromeStreamResponse(NavidromeRangeSupport.None))
         f.session.updateSupport(NavidromeTranscodeOffsetSupport.Supported)
         assertFalse(f.session.isCurrentRequest)
-        assertFalse(f.session.isRecoveringRead)
+        assertFalse(f.session.isRecoveringPosition)
         assertEquals(1, f.driver.opens.size)
         assertTrue(f.failures.isEmpty())
     }
@@ -688,13 +875,17 @@ class AndroidNavidromePlaybackSessionTest {
         val driver = Driver()
         val failures = mutableListOf<Pair<Throwable, Long>>()
         val failureNotices = mutableListOf<NavidromeRecoveryFailure>()
+        val supportRefreshes = mutableListOf<(NavidromeTranscodeOffsetSupport) -> Unit>()
+        var recoveryStarts = 0
         var recoveryFailureHandler: (NavidromeRecoveryFailure) -> Unit = { failures += it.error to it.positionMs }
         val session = AndroidNavidromePlaybackSession(driver, "https://lan.test/rest/stream?id=1&maxBitRate=192",
             duration, playing, start, {}, recoveryFailed = {
                 failureNotices += it
                 recoveryFailureHandler(it)
             },
-            currentRequest = currentRequest)
+            currentRequest = currentRequest,
+            recoveryStarted = { recoveryStarts++ },
+            refreshSupport = { supportRefreshes += it })
         init { session.start() }
         fun prepare(ranges: NavidromeRangeSupport = NavidromeRangeSupport.None, seekable: Boolean = false,
                     support: NavidromeTranscodeOffsetSupport = NavidromeTranscodeOffsetSupport.Supported) {
@@ -709,7 +900,7 @@ class AndroidNavidromePlaybackSessionTest {
         }
     }
 
-    internal data class Open(val url: String, val response: (NavidromeStreamResponse) -> Unit)
+    internal data class Open(val url: String, val response: (NavidromeStreamResponse) -> Unit, val readRecovery: Boolean)
     internal data class Scheduled(val delayMs: Long, val action: () -> Unit, var canceled: Boolean = false)
     internal class Driver : NavidromePlaybackDriver {
         override var mediaId: String? = null
@@ -730,7 +921,7 @@ class AndroidNavidromePlaybackSessionTest {
             ended = false
             seekable = false
             playRequested = playWhenReady
-            opens += Open(url, onResponse)
+            opens += Open(url, onResponse, readRecovery)
         }
         override fun seek(positionMs: Long) { this.positionMs = positionMs; ended = false }
         override fun setPlaying(playing: Boolean) { this.playRequested = playing }

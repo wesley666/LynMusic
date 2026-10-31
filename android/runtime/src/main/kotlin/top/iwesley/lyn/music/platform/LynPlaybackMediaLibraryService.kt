@@ -10,6 +10,7 @@ import androidx.media3.common.C
 import androidx.media3.common.ForwardingSimpleBasePlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.BitmapLoader
@@ -46,6 +47,8 @@ import top.iwesley.lyn.music.core.model.DiagnosticLogger
 import top.iwesley.lyn.music.core.model.GlobalDiagnosticLogger
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.diagnosticMessage
 import top.iwesley.lyn.music.core.model.info
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.core.model.warn
@@ -425,6 +428,8 @@ internal class LynMediaSessionPlayer(
     private var artworkVersion = 0L
     private var artworkVersionJob: Job? = null
     private var lastSessionStateKey: Pair<Media3SessionStateKey, Boolean>? = null
+    private var applicationErrorKey: Triple<String?, String?, UiText?>? = null
+    private var applicationError: PlaybackException? = null
 
     init {
         serviceScope.launch {
@@ -469,6 +474,18 @@ internal class LynMediaSessionPlayer(
             .build()
         val metadata = snapshot.toMedia3SessionMetadata(artworkVersion)
         val playlist = snapshot.toMedia3SessionPlaylist(artworkVersion)
+        val navidromeBuffer = navidromeBufferPositionMs()
+        val hasApplicationError = !snapshot.errorMessage.isNullOrBlank() || snapshot.errorText != null
+        val errorKey = if (navidromeBuffer != null && !snapshot.isPlaying && hasApplicationError) {
+            Triple(snapshot.currentTrack?.id, snapshot.errorMessage, snapshot.errorText)
+        } else null
+        if (errorKey != applicationErrorKey) {
+            applicationErrorKey = errorKey
+            applicationError = errorKey?.let {
+                PlaybackException(snapshot.errorMessage?.takeIf { it.isNotBlank() }
+                    ?: snapshot.errorText?.diagnosticMessage(), null, PlaybackException.ERROR_CODE_UNSPECIFIED)
+            }
+        }
         return state.buildUpon()
             .setAvailableCommands(commands)
             .setPlayWhenReady(snapshot.isPlaying, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
@@ -479,7 +496,7 @@ internal class LynMediaSessionPlayer(
                     val contentPositionMs = snapshot.coercedSessionPositionMs()
                     setContentPositionMs(contentPositionMs)
                     // The underlying player's buffer belongs to a fragment after a server-side seek.
-                    navidromeBufferPositionMs()?.let { buffered ->
+                    navidromeBuffer?.let { buffered ->
                         // ForwardingSimpleBasePlayer also copies Exo's segment-relative jump event.
                         // Keep its reason, but report the same whole-track position as our timeline.
                         if (state.hasPositionDiscontinuity) {
@@ -491,7 +508,12 @@ internal class LynMediaSessionPlayer(
                     setPlaylistMetadata(metadata ?: MediaMetadata.EMPTY)
                     // READY can still mean a paused, unpositioned full stream while capability
                     // detection runs. BUFFERING keeps the system clock fixed at the restore target.
-                    if (navidromeAwaitingPosition.value && snapshot.errorMessage == null) {
+                    if (applicationError != null) {
+                        setPlayerError(state.playerError ?: applicationError)
+                        setPlaybackState(Player.STATE_IDLE)
+                        setPlayWhenReady(false, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                        setIsLoading(false)
+                    } else if (navidromeAwaitingPosition.value && !hasApplicationError) {
                         // Exo's source error is being handled by offset recovery, including its
                         // backoff. The system session must keep a buffering clock at the target.
                         setPlayerError(null)
@@ -891,6 +913,8 @@ private data class Media3SessionStateKey(
     val positionMs: Long,
     val durationMs: Long,
     val canSeek: Boolean,
+    val errorMessage: String?,
+    val errorText: UiText?,
     val displayTitle: String,
     val displayArtistName: String?,
     val displayAlbumTitle: String?,
@@ -958,6 +982,8 @@ private fun PlaybackSnapshot.toMedia3SessionStateKey(): Media3SessionStateKey {
         positionMs = positionMs,
         durationMs = durationMs,
         canSeek = canSeek,
+        errorMessage = errorMessage,
+        errorText = errorText,
         displayTitle = currentDisplayTitle,
         displayArtistName = currentDisplayArtistName,
         displayAlbumTitle = currentDisplayAlbumTitle,

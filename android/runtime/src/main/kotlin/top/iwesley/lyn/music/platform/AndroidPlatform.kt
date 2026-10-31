@@ -2813,7 +2813,7 @@ internal class AndroidPlaybackGateway(
                 mutableState.update { it.copy(errorMessage = null, errorText = null) }
                 return
             }
-            navidrome?.onFailure()
+            navidrome?.onFailure(error)
             if (navidrome != null) {
                 navidromeRecoveryFailureHandler.handle(navidrome.recoveryFailure(error, recovery))
                 return
@@ -2943,7 +2943,7 @@ internal class AndroidPlaybackGateway(
             candidateKinds = fallback.candidates.map { it.kind },
             currentIndex = fallback.selectedIndex,
             networkState = networkState,
-            isPlaybackActive = navidromeSession?.isRecoveringRead == true ||
+            isPlaybackActive = navidromeSession?.isRecoveringPosition == true ||
                 (player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE),
         ) ?: return
         switchRemoteCandidate(fallback, targetIndex, reason = "network-change")
@@ -3157,6 +3157,18 @@ internal class AndroidPlaybackGateway(
                             recoveryFailed = navidromeRecoveryFailureHandler::handle,
                             logger = logger,
                             currentRequest = { !released && loadToken.isCurrent() },
+                            recoveryStarted = {
+                                mutableState.update { it.copy(errorMessage = null, errorText = null) }
+                            },
+                            refreshSupport = { accept ->
+                                navidromeCapabilityJob?.cancel()
+                                navidromeCapabilityJob = networkChangeScope.launch {
+                                    val support = checkNotNull(navidromeCapabilities).support(navidromeSource)
+                                    onPlayerThread {
+                                        if (!released && loadToken.isCurrent()) accept(support)
+                                    }
+                                }
+                            },
                         )
                         navidromeSession = session
                         session.start()
@@ -3276,10 +3288,7 @@ internal class AndroidPlaybackGateway(
             logger.warn(PLAYBACK_LOG_TAG) {
                 "gateway-play-request ${playerDebugSummary()}"
             }
-            navidromeSession?.takeIf { it.isCurrentRequest }?.let { session ->
-                session.setPlaying(true)
-                if (session.isRecoveringRead) mutableState.update { it.copy(errorMessage = null, errorText = null) }
-            } ?: player.play()
+            navidromeSession?.takeIf { it.isCurrentRequest }?.setPlaying(true) ?: player.play()
         }
     }
 

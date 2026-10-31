@@ -28,7 +28,12 @@ internal class NavidromeLoadErrorHandlingPolicy(@Volatile var recoveringOpen: Bo
 }
 
 @UnstableApi
-internal class ExoNavidromePlaybackDriver(private val player: ExoPlayer) : NavidromePlaybackDriver {
+internal class ExoNavidromePlaybackDriver(
+    private val player: ExoPlayer,
+    private val httpDataSourceFactory: () -> HttpDataSource.Factory = {
+        DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+    },
+) : NavidromePlaybackDriver {
     private val handler = Handler(player.applicationLooper)
     private var currentErrorPolicy: NavidromeLoadErrorHandlingPolicy? = null
     override val mediaId get() = player.currentMediaItem?.mediaId
@@ -39,7 +44,7 @@ internal class ExoNavidromePlaybackDriver(private val player: ExoPlayer) : Navid
     override val ended get() = player.playbackState == Player.STATE_ENDED
 
     override fun open(url: String, mediaId: String, playWhenReady: Boolean, readRecovery: Boolean, onResponse: (NavidromeStreamResponse) -> Unit) {
-        val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+        val httpFactory = httpDataSourceFactory()
         val errorPolicy = NavidromeLoadErrorHandlingPolicy(readRecovery)
         currentErrorPolicy = errorPolicy
         val factory = DataSource.Factory {
