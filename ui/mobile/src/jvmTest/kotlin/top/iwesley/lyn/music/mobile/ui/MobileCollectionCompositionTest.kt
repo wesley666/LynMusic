@@ -31,6 +31,26 @@ import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class MobileCollectionCompositionTest {
     @Test
+    fun `phone and tablet page menus navigate from library and favorites into details`() = onUiThread {
+        for (width in listOf(480, 1280)) {
+            for (tab in listOf(AppTab.Library, AppTab.Favorites)) {
+                for (label in listOf("View artist", "View album")) Fixture(tab, width = width).use { ui ->
+                    ui.click("More actions for First track")
+                    ui.click(label)
+                    val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"))
+                        else LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album"))
+                    assertEquals(expected, ui.lastNavigationTarget)
+                    assertEquals(AppTab.Library, ui.selectedTab)
+                    ui.assertVisible("Back")
+                    assertTrue(ui.playerIntents.isEmpty())
+                    assertTrue(ui.favoriteIntents.isEmpty())
+                    ui.capture("navigation-$width-${tab.name}-${label.substringAfterLast(' ')}")
+                }
+            }
+        }
+    }
+
+    @Test
     fun `library keeps playback order and album folder navigation`() = onUiThread {
         for (width in listOf(480, 1280)) Fixture(width = width).use { ui ->
             ui.click("Second track")

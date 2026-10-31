@@ -2,10 +2,12 @@ package top.iwesley.lyn.music
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -44,6 +46,8 @@ fun trackListMenuActions(
     onAddToPlaylist: (() -> Unit)?,
     onTrackInfo: () -> Unit,
     onOfflineDownload: (() -> Unit)?,
+    onArtistClick: (() -> Unit)? = null,
+    onAlbumClick: (() -> Unit)? = null,
 ): List<ListItemMenuAction> = buildList {
     val liked = favorite.isKnown && favorite.isFavorite
     add(ListItemMenuAction("favorite", uiText(if (liked) Res.string.favorites_remove_track else Res.string.favorites_add_track),
@@ -51,6 +55,12 @@ fun trackListMenuActions(
         onClick = { onSetFavorite(!liked) }))
     add(ListItemMenuAction("playlist", uiText(Res.string.playlist_add_track), Icons.Rounded.Add,
         enabled = onAddToPlaylist != null, onClick = { onAddToPlaylist?.invoke() }))
+    if (onArtistClick != null) {
+        add(ListItemMenuAction("artist", uiText(Res.string.track_view_artist), Icons.Rounded.RecentActors, onClick = onArtistClick))
+    }
+    if (onAlbumClick != null) {
+        add(ListItemMenuAction("album", uiText(Res.string.track_view_album), Icons.Rounded.Album, onClick = onAlbumClick))
+    }
     add(ListItemMenuAction("info", uiText(Res.string.lyrics_share_track_information), Icons.Rounded.Info, onClick = onTrackInfo))
     if (onOfflineDownload != null) {
         add(ListItemMenuAction("offline", uiText(Res.string.player_offline_downloads_title), Icons.Rounded.Download, onClick = onOfflineDownload))

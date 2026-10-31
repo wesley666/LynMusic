@@ -3,6 +3,27 @@ package top.iwesley.lyn.music
 import kotlin.test.*
 
 class TrackListActionsTest {
+    @Test fun `navigation actions keep their order and are independently optional`() {
+        for (artistAvailable in listOf(false, true)) {
+            for (albumAvailable in listOf(false, true)) {
+                val events = mutableListOf<String>()
+                val actions = trackListMenuActions(
+                    favorite = TrackFavoriteUiState(false),
+                    onSetFavorite = { events += "favorite" },
+                    onAddToPlaylist = { events += "playlist" },
+                    onTrackInfo = { events += "info" },
+                    onOfflineDownload = { events += "offline" },
+                    onArtistClick = if (artistAvailable) ({ events += "artist" }) else null,
+                    onAlbumClick = if (albumAvailable) ({ events += "album" }) else null,
+                )
+                val navigationIds = listOfNotNull("artist".takeIf { artistAvailable }, "album".takeIf { albumAvailable })
+                assertEquals(listOf("favorite", "playlist") + navigationIds + listOf("info", "offline"), actions.map { it.id })
+                actions.filter { it.id in navigationIds }.forEach { it.onClick() }
+                assertEquals(navigationIds, events)
+            }
+        }
+    }
+
     @Test fun `actions have stable order and omit unsupported downloads`() {
         val actions = trackListMenuActions(TrackFavoriteUiState(false), {}, {}, {}, {})
         assertEquals(listOf("favorite", "playlist", "info", "offline"), actions.map { it.id })

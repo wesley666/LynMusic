@@ -19,6 +19,10 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
+import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
+import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
+import top.iwesley.lyn.music.feature.library.libraryAlbumId
+import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.online.*
 import top.iwesley.lyn.music.feature.player.PlayerState
@@ -29,6 +33,24 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class AutomotiveShellCompositionTest {
+    @Test
+    fun `song menus open artist and album details from both shell orientations and collections`() = onUiThread {
+        for ((width, height) in listOf(1184 to 800, 480 to 900)) {
+            for (tab in listOf(AppTab.Library, AppTab.Favorites)) {
+                for (label in listOf("View artist", "View album")) Fixture(width, height, withTracks = true, initialTab = tab).use { ui ->
+                    ui.clickLabel("More actions for Fixture track")
+                    ui.clickLabel(label)
+                    val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"))
+                        else LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album"))
+                    assertEquals(listOf(expected), ui.navigationTargets)
+                    assertEquals(AppTab.Library, ui.selectedTab)
+                    ui.assertHasLabel("Back")
+                    assertTrue(ui.playerIntents.isEmpty())
+                }
+            }
+        }
+    }
+
     @Test
     fun `landscape navigation opens every maintained page`() = onUiThread {
         Fixture(1280, 800).use { ui ->
@@ -100,9 +122,18 @@ class AutomotiveShellCompositionTest {
         failure?.let { throw it }
     }
 
-    private class Fixture(width: Int, height: Int, playing: Boolean = false) : AutoCloseable {
+    private class Fixture(width: Int, height: Int, playing: Boolean = false, withTracks: Boolean = false, initialTab: AppTab = AppTab.Library) : AutoCloseable {
         var portrait by mutableStateOf(width < height)
-        var selectedTab by mutableStateOf(AppTab.Library)
+        var selectedTab by mutableStateOf(initialTab)
+        private var navigationTarget by mutableStateOf<LibraryNavigationTarget?>(null)
+        val navigationTargets = mutableListOf<LibraryNavigationTarget>()
+        private val tracks = if (withTracks) listOf(Track("fixture", "source", "Fixture track", artistName = "Fixture artist",
+            albumTitle = "Fixture album", mediaLocator = "/fixture.flac", relativePath = "fixture.flac")) else emptyList()
+        private val library = if (withTracks) LibraryState(isLoadingContent = false, tracks = tracks, filteredTracks = tracks,
+            albums = deriveVisibleAlbums(tracks), filteredAlbums = deriveVisibleAlbums(tracks),
+            artists = deriveVisibleArtists(tracks), filteredArtists = deriveVisibleArtists(tracks)) else LibraryState()
+        private val favorites = if (withTracks) FavoritesState(isLoadingContent = false, tracks = tracks, filteredTracks = tracks,
+            favoriteTrackIds = tracks.map { it.id }.toSet()) else FavoritesState()
         val libraryIntents = mutableListOf<LibraryIntent>()
         val playerIntents = mutableListOf<PlayerIntent>()
         private val playerState = if (playing) PlayerState(snapshot = PlaybackSnapshot(
@@ -128,11 +159,11 @@ class AutomotiveShellCompositionTest {
                                 onTabSelected = { selectedTab = it },
                                 platform = platform,
                                 myState = MyState(isLoadingContent = false),
-                                libraryState = LibraryState(),
+                                libraryState = library,
                                 onlineLibraryState = OnlineLibraryState(),
                                 playlistsState = PlaylistsState(),
                                 onlinePlaylistsState = OnlinePlaylistsState(),
-                                favoritesState = FavoritesState(),
+                                favoritesState = favorites,
                                 onlineFavoritesState = OnlineFavoritesState(),
                                 importState = ImportState(capabilities = platform.capabilities),
                                 playerState = playerState,
@@ -148,7 +179,9 @@ class AutomotiveShellCompositionTest {
                                 onPlayerIntent = { playerIntents += it },
                                 onSettingsIntent = {},
                                 onOpenBackgroundRunSettings = {},
-                                onOpenLibraryNavigationTarget = {},
+                                libraryNavigationTarget = navigationTarget,
+                                onLibraryNavigationHandled = { navigationTarget = null },
+                                onOpenLibraryNavigationTarget = { navigationTargets += it; navigationTarget = it; selectedTab = AppTab.Library },
                                 onOpenAddToPlaylist = {},
                             )
                         } else {
@@ -160,11 +193,11 @@ class AutomotiveShellCompositionTest {
                                 onTabSelected = { selectedTab = it },
                                 platform = platform,
                                 myState = MyState(isLoadingContent = false),
-                                libraryState = LibraryState(),
+                                libraryState = library,
                                 onlineLibraryState = OnlineLibraryState(),
                                 playlistsState = PlaylistsState(),
                                 onlinePlaylistsState = OnlinePlaylistsState(),
-                                favoritesState = FavoritesState(),
+                                favoritesState = favorites,
                                 onlineFavoritesState = OnlineFavoritesState(),
                                 importState = ImportState(capabilities = platform.capabilities),
                                 playerState = PlayerState(),
@@ -180,7 +213,9 @@ class AutomotiveShellCompositionTest {
                                 onPlayerIntent = {},
                                 onSettingsIntent = {},
                                 onOpenBackgroundRunSettings = {},
-                                onOpenLibraryNavigationTarget = {},
+                                libraryNavigationTarget = navigationTarget,
+                                onLibraryNavigationHandled = { navigationTarget = null },
+                                onOpenLibraryNavigationTarget = { navigationTargets += it; navigationTarget = it; selectedTab = AppTab.Library },
                                 onOpenAddToPlaylist = {},
                             )
                         }

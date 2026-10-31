@@ -613,17 +613,17 @@ private val LibraryFolderScrollPositionsSaver = listSaver<MutableMap<String, Lib
 
 internal fun resolveTrackRowLibraryNavigationTargets(
     track: Track,
-    showDuration: Boolean,
     metadataNavigationEnabled: Boolean,
     preferredSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    onlineSourceId: String? = null,
 ): PlaybackLibraryNavigationTargets {
-    return if (showDuration && metadataNavigationEnabled) {
-        deriveTrackLibraryNavigationTargets(
+    return when {
+        !metadataNavigationEnabled -> PlaybackLibraryNavigationTargets(albumTarget = null, artistTarget = null)
+        onlineSourceId != null -> deriveOnlineTrackLibraryNavigationTargets(track, onlineSourceId)
+        else -> deriveTrackLibraryNavigationTargets(
             track = track,
             preferredSourceFilter = preferredSourceFilter,
         )
-    } else {
-        PlaybackLibraryNavigationTargets(albumTarget = null, artistTarget = null)
     }
 }
 
@@ -1025,7 +1025,7 @@ private fun LibraryBrowserTab(
                 if (shouldClearNavigationQuery(command.clearQuery, state.query)) {
                     actions.onSearchChanged("")
                 }
-                if (state.selectedSourceFilter != command.sourceFilter) {
+                if (state.isOnline || state.selectedSourceFilter != command.sourceFilter) {
                     actions.onSourceFilterChanged(command.sourceFilter)
                 }
             }
@@ -1181,23 +1181,11 @@ private fun LibraryBrowserTab(
         selectedFolderPath = null
     }
     fun trackRowNavigationTargets(track: Track): PlaybackLibraryNavigationTargets {
-        val onlineSourceId = state.sourceId
-        if (
-            state.isOnline &&
-            onlineSourceId != null &&
-            showDuration &&
-            onOpenLibraryNavigationTarget != null
-        ) {
-            return deriveOnlineTrackLibraryNavigationTargets(
-                track = track,
-                sourceId = onlineSourceId,
-            )
-        }
         return resolveTrackRowLibraryNavigationTargets(
             track = track,
-            showDuration = showDuration,
             metadataNavigationEnabled = onOpenLibraryNavigationTarget != null,
             preferredSourceFilter = state.selectedSourceFilter,
+            onlineSourceId = state.sourceId.takeIf { state.isOnline },
         )
     }
     fun navigationTargetClick(target: LibraryNavigationTarget?): (() -> Unit)? {

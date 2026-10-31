@@ -17,6 +17,39 @@ import top.iwesley.lyn.music.feature.library.libraryAlbumId
 import top.iwesley.lyn.music.feature.library.libraryArtistId
 
 class LibraryNavigationTest {
+    @Test
+    fun `local targets leave online context even when filters and visible IDs already match`() {
+        val album = Album(libraryAlbumId("Artist", "Album"), "Album", "Artist")
+        val artist = Artist(libraryArtistId("Artist"), "Artist")
+        for (filter in listOf(LibrarySourceFilter.ALL, LibrarySourceFilter.Source("local-source"))) {
+            val targets = listOf(
+                LibraryNavigationTarget.Album(album.id, filter),
+                LibraryNavigationTarget.Artist(artist.id, filter),
+            )
+            for (target in targets) {
+                for (query in listOf("", "active search")) {
+                    val command = resolveLibraryNavigationCommand(
+                        target = target, query = query, isOnline = true, onlineSourceId = "online-source",
+                        selectedSourceFilter = filter, availableSourceFilters = listOf(LibrarySourceFilter.ALL, filter),
+                        filteredAlbums = listOf(album), filteredArtists = listOf(artist),
+                    )
+                    assertEquals(LibraryNavigationCommand.ApplyContext(filter, clearQuery = query.isNotBlank()), command)
+                }
+                val localCommand = resolveLibraryNavigationCommand(
+                    target = target, query = "", isOnline = false,
+                    selectedSourceFilter = filter, availableSourceFilters = listOf(LibrarySourceFilter.ALL, filter),
+                    filteredAlbums = listOf(album), filteredArtists = listOf(artist),
+                )
+                val navigation = assertIs<LibraryNavigationCommand.Navigate>(localCommand)
+                when (target) {
+                    is LibraryNavigationTarget.Album -> assertEquals(album.id, navigation.resolution.selectedAlbumId)
+                    is LibraryNavigationTarget.Artist -> assertEquals(artist.id, navigation.resolution.selectedArtistId)
+                    else -> error("Expected a local target")
+                }
+            }
+        }
+    }
+
 
     @Test
     fun `navigation switches between individual sources of the same protocol`() {
@@ -157,23 +190,16 @@ class LibraryNavigationTest {
     }
 
     @Test
-    fun `track row targets require desktop metadata navigation`() {
+    fun `track row targets require a navigation handler and preserve the source filter`() {
         val track = testTrack(albumTitle = "Parachutes", artistName = "Coldplay")
 
-        val desktopTargets = resolveTrackRowLibraryNavigationTargets(
+        val targets = resolveTrackRowLibraryNavigationTargets(
             track = track,
-            showDuration = true,
             metadataNavigationEnabled = true,
             preferredSourceFilter = LibrarySourceFilter.Source("dav-1"),
         )
-        val mobileTargets = resolveTrackRowLibraryNavigationTargets(
-            track = track,
-            showDuration = false,
-            metadataNavigationEnabled = true,
-        )
         val disabledTargets = resolveTrackRowLibraryNavigationTargets(
             track = track,
-            showDuration = true,
             metadataNavigationEnabled = false,
         )
 
@@ -182,19 +208,44 @@ class LibraryNavigationTest {
                 albumId = libraryAlbumId("Coldplay", "Parachutes"),
                 preferredSourceFilter = LibrarySourceFilter.Source("dav-1"),
             ),
-            desktopTargets.albumTarget,
+            targets.albumTarget,
         )
         assertEquals(
             LibraryNavigationTarget.Artist(
                 artistId = libraryArtistId("Coldplay"),
                 preferredSourceFilter = LibrarySourceFilter.Source("dav-1"),
             ),
-            desktopTargets.artistTarget,
+            targets.artistTarget,
         )
-        assertNull(mobileTargets.albumTarget)
-        assertNull(mobileTargets.artistTarget)
         assertNull(disabledTargets.albumTarget)
         assertNull(disabledTargets.artistTarget)
+    }
+
+    @Test
+    fun `online row targets use remote IDs and never fall back to matching local names`() {
+        for ((artistId, albumId) in listOf(null to null, "artist-remote" to null, null to "album-remote", "artist-remote" to "album-remote")) {
+            val track = testTrack(artistName = "Artist", albumTitle = "Album", artistId = artistId, albumId = albumId)
+            for (sourceId in listOf("online-a", "online-b")) {
+                val targets = resolveTrackRowLibraryNavigationTargets(
+                    track = track,
+                    metadataNavigationEnabled = true,
+                    onlineSourceId = sourceId,
+                )
+                assertEquals(artistId?.let { LibraryNavigationTarget.OnlineArtist(sourceId, it, "Artist") }, targets.artistTarget)
+                assertEquals(albumId?.let { LibraryNavigationTarget.OnlineAlbum(sourceId, it, "Album", "Artist") }, targets.albumTarget)
+            }
+        }
+    }
+
+    @Test
+    fun `online row IDs support missing display names but still require a navigation handler`() {
+        val track = testTrack(artistName = null, albumTitle = " ", artistId = "artist-remote", albumId = "album-remote")
+        val targets = resolveTrackRowLibraryNavigationTargets(track, metadataNavigationEnabled = true, onlineSourceId = "online")
+        assertEquals(LibraryNavigationTarget.OnlineArtist("online", "artist-remote"), targets.artistTarget)
+        assertEquals(LibraryNavigationTarget.OnlineAlbum("online", "album-remote"), targets.albumTarget)
+        val disabled = resolveTrackRowLibraryNavigationTargets(track, metadataNavigationEnabled = false, onlineSourceId = "online")
+        assertNull(disabled.artistTarget)
+        assertNull(disabled.albumTarget)
     }
 
     @Test

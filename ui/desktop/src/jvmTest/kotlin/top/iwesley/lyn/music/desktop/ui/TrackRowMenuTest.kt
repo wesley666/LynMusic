@@ -22,10 +22,74 @@ import kotlin.test.*
 import top.iwesley.lyn.music.*
 import top.iwesley.lyn.music.core.model.*
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.libraryAlbumId
+import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class TrackRowMenuTest {
+    @Test fun `artist and album menus navigate the selected row at narrow and wide widths`() = onUiThread {
+        for (width in listOf(360, 1100)) {
+            for (gesture in listOf(false, true)) Fixture(width).use { ui ->
+                for (label in listOf("View artist", "View album")) {
+                    if (gesture) ui.openGesture() else ui.click("More actions for Track A")
+                    assertTrue(ui.visible("View artist"))
+                    assertTrue(ui.visible("View album"))
+                    ui.click(label)
+                    assertFalse(ui.visible("View artist"))
+                    assertFalse(ui.visible("View album"))
+                }
+                val filter = LibrarySourceFilter.Source(ui.track.sourceId)
+                assertEquals(listOf(
+                    LibraryNavigationTarget.Artist(libraryArtistId(ui.track.artistName!!), filter),
+                    LibraryNavigationTarget.Album(libraryAlbumId(ui.track.artistName, ui.track.albumTitle!!), filter),
+                ), ui.navigationTargets)
+                assertEquals(2, ui.navigations)
+                assertEquals(0, ui.plays)
+                assertEquals(0, ui.selections)
+                assertTrue(ui.favorites.isEmpty())
+                assertTrue(ui.added.isEmpty())
+            }
+        }
+    }
+
+    @Test fun `navigation menu items independently follow available targets`() = onUiThread {
+        Fixture(360).use { ui ->
+            for ((artist, album) in listOf(null to null, "Artist A" to null, null to "Album A", " " to "Album A")) {
+                ui.track = ui.track.copy(artistName = artist, albumTitle = album)
+                ui.render()
+                ui.click("More actions for Track A")
+                assertEquals(!artist.isNullOrBlank(), ui.visible("View artist"))
+                assertEquals(!album.isNullOrBlank(), ui.visible("View album"))
+                ui.escape()
+            }
+            ui.track = ui.track.copy(artistName = "Artist A", albumTitle = "Album A")
+            ui.navigationEnabled = false
+            ui.render()
+            ui.click("More actions for Track A")
+            assertFalse(ui.visible("View artist"))
+            assertFalse(ui.visible("View album"))
+        }
+    }
+
+    @Test fun `online IDs allow navigation without display names`() = onUiThread {
+        Fixture(360).use { ui ->
+            ui.onlineSourceId = "online-source"
+            ui.track = ui.track.copy(artistName = null, albumTitle = null, artistId = "artist-a", albumId = "album-a")
+            ui.render()
+            ui.click("More actions for Track A")
+            ui.click("View artist")
+            ui.click("More actions for Track A")
+            ui.click("View album")
+            assertEquals(listOf(
+                LibraryNavigationTarget.OnlineArtist("online-source", "artist-a"),
+                LibraryNavigationTarget.OnlineAlbum("online-source", "album-a"),
+            ), ui.navigationTargets)
+            assertEquals(0, ui.plays)
+        }
+    }
+
     @Test fun `badge and menu fit narrow and wide rows and favorites hides only badge`() = onUiThread {
         for (width in listOf(360, 1100)) Fixture(width).use { ui ->
             val heart = ui.node("Liked").boundsInRoot
@@ -94,6 +158,8 @@ class TrackRowMenuTest {
             ui.click("More actions for Track A2")
             ui.selection = true
             ui.render()
+            assertFalse(ui.visible("View artist"))
+            assertFalse(ui.visible("View album"))
             assertFalse(ui.visible("Remove from favorites"))
             assertFalse(ui.visible("More actions for Track A2"))
             assertTrue(ui.visible("Liked"))
@@ -206,6 +272,9 @@ class TrackRowMenuTest {
         var showBadge by mutableStateOf(true)
         var selection by mutableStateOf(false)
         var context by mutableStateOf("tracks")
+        var navigationEnabled by mutableStateOf(true)
+        var onlineSourceId by mutableStateOf<String?>(null)
+        val navigationTargets = mutableListOf<LibraryNavigationTarget>()
         var plays = 0
         var navigations = 0
         var selections = 0
@@ -236,8 +305,14 @@ class TrackRowMenuTest {
                             if (legacy) {
                                 TrackActionContainer(track, { plays++ }, modifier = Modifier.fillMaxWidth().height(80.dp)) { Text("Track A") }
                             } else {
+                                val targets = resolveTrackRowLibraryNavigationTargets(
+                                    track, metadataNavigationEnabled = navigationEnabled,
+                                    preferredSourceFilter = LibrarySourceFilter.Source(track.sourceId), onlineSourceId = onlineSourceId,
+                                )
                                 TrackRow(track, index, false, {}, showFavoriteIndicator = showBadge, menuContextKey = context,
-                                    showDuration = width >= 600, onArtistClick = { navigations++ }, onAlbumClick = { navigations++ },
+                                    showDuration = width >= 600,
+                                    onArtistClick = targets.artistTarget?.let { target -> { navigations++; navigationTargets += target } },
+                                    onAlbumClick = targets.albumTarget?.let { target -> { navigations++; navigationTargets += target } },
                                     selectionMode = selection, onSelectionToggle = { selections++ }, onClick = { plays++ })
                             }
                             Text("Playing Track B")

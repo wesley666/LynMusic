@@ -862,6 +862,8 @@ internal fun TrackRow(
         onAddToPlaylist = bindings.onAddToPlaylist?.let { action -> { action(track) } },
         onTrackInfo = { infoVisible = true },
         onOfflineDownload = if (canDownload) ({ offlineVisible = true }) else null,
+        onArtistClick = onArtistClick,
+        onAlbumClick = onAlbumClick,
     )
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(

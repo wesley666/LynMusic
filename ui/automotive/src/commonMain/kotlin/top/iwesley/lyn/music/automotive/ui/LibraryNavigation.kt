@@ -241,7 +241,7 @@ internal fun resolveLibraryNavigationCommand(
     val targetSourceFilter = target.navigationSourceFilter
         .takeIf { it == LibrarySourceFilter.ALL || it in availableSourceFilters }
         ?: LibrarySourceFilter.ALL
-    if (query.isNotBlank() || selectedSourceFilter != targetSourceFilter) {
+    if (isOnline || query.isNotBlank() || selectedSourceFilter != targetSourceFilter) {
         return LibraryNavigationCommand.ApplyContext(
             sourceFilter = targetSourceFilter,
             clearQuery = query.isNotBlank(),

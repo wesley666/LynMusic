@@ -24,11 +24,91 @@ import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.favorites.FavoritesState
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryState
+import top.iwesley.lyn.music.feature.library.LibraryIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
+import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
+import top.iwesley.lyn.music.data.repository.OnlineAlbumItem
+import top.iwesley.lyn.music.data.repository.OnlineArtistItem
+import top.iwesley.lyn.music.feature.library.libraryAlbumId
+import top.iwesley.lyn.music.feature.library.libraryArtistId
 import top.iwesley.lyn.music.feature.online.*
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesMenuIntegrationTest {
+    @Test
+    fun `favorite menu navigation switches library mode before opening either detail`() = onUiThread {
+        for (onlineFavorites in listOf(false, true)) {
+            for (query in listOf("", "unrelated search")) {
+                for (label in listOf("View artist", "View album")) {
+                    Fixture(online = onlineFavorites, width = 360, navigationEnabled = true,
+                        libraryInitiallyOnline = !onlineFavorites, navigateToLibrary = true,
+                        libraryQuery = query, deferLibrarySourceChange = !onlineFavorites).use { ui ->
+                        ui.click("More actions for Track A")
+                        ui.click(label)
+                        assertFalse(ui.visible("View artist"))
+                        assertFalse(ui.visible("View album"))
+                        if (!onlineFavorites) {
+                            assertEquals("library-online", ui.onlineLibrary.sourceId)
+                            assertEquals(0, ui.navigationHandledCount)
+                            assertTrue(ui.libraryOnlineIntents.any { it is OnlineLibraryIntent.SelectSource && it.sourceId == null })
+                            ui.completeLibrarySourceChange()
+                        }
+                        assertEquals(if (onlineFavorites) "source" else null, ui.onlineLibrary.sourceId)
+                        assertEquals(1, ui.navigationHandledCount)
+                        assertTrue(ui.visible("Back"))
+                        assertEquals("", ui.onlineLibrary.query)
+                        if (!onlineFavorites) assertEquals("", ui.library.query)
+                        assertEquals(1, ui.navigationTargets.size)
+                        if (onlineFavorites) {
+                            val expected = if (label == "View artist") LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A")
+                                else LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A")
+                            assertEquals(expected, ui.navigationTargets.single())
+                        } else {
+                            val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Artist A"))
+                                else LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A"))
+                            assertEquals(expected, ui.navigationTargets.single())
+                        }
+                        assertTrue(ui.appFavoriteTargets.isEmpty())
+                        assertTrue(ui.localIntents.isEmpty())
+                        assertTrue(ui.onlineIntents.isEmpty())
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `library and favorites menus expose row navigation in narrow and wide layouts`() = onUiThread {
+        for (online in listOf(false, true)) {
+            for (favorites in listOf(false, true)) {
+                for (width in listOf(360, 1000)) Fixture(online, width = width, navigationEnabled = true).use { ui ->
+                    ui.showFavorites = favorites
+                    ui.render()
+                    ui.click("More actions for Track A")
+                    ui.click("View artist")
+                    assertFalse(ui.visible("View album"))
+                    ui.click("More actions for Track A")
+                    ui.click("View album")
+                    assertFalse(ui.visible("View artist"))
+                    val expected = if (online) listOf(
+                        LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A"),
+                        LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A"),
+                    ) else listOf(
+                        LibraryNavigationTarget.Artist(libraryArtistId("Artist A")),
+                        LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A")),
+                    )
+                    assertEquals(expected, ui.navigationTargets)
+                    assertTrue(ui.appFavoriteTargets.isEmpty())
+                    assertTrue(ui.localIntents.isEmpty())
+                    assertTrue(ui.onlineIntents.isEmpty())
+                    assertTrue(ui.playlistTracks.isEmpty())
+                }
+            }
+        }
+    }
+
     @Test
     fun `online favorites preserve the pages remove callback`() = onUiThread {
         Fixture(online = true).use { ui ->
@@ -128,7 +208,11 @@ class FavoritesMenuIntegrationTest {
         failure?.let { throw it }
     }
 
-    private class Fixture(online: Boolean, previousUnlike: Boolean = false) : AutoCloseable {
+    private class Fixture(
+        online: Boolean, previousUnlike: Boolean = false, width: Int = 1000, navigationEnabled: Boolean = false,
+        libraryInitiallyOnline: Boolean = online, private val navigateToLibrary: Boolean = false,
+        libraryQuery: String = "", private val deferLibrarySourceChange: Boolean = false,
+    ) : AutoCloseable {
         val platform = PlatformDescriptor(ANDROID_PLATFORM_NAME, PlatformCapabilities(true, true, true, true, false))
         val track = Track(
             id = "a",
@@ -140,6 +224,8 @@ class FavoritesMenuIntegrationTest {
             relativePath = "a.flac",
             mediaLocator = buildNavidromeSongLocator("source", "a"),
             remoteFavoriteHint = true,
+            artistId = if (online && navigationEnabled) "artist-a" else null,
+            albumId = if (online && navigationEnabled) "album-a" else null,
         )
         private val importState = ImportState(
             capabilities = platform.capabilities,
@@ -149,7 +235,10 @@ class FavoritesMenuIntegrationTest {
                 label = "Server",
                 rootReference = "https://example.invalid",
                 indexMode = if (online) ImportSourceIndexMode.ONLINE else ImportSourceIndexMode.LOCAL_INDEX,
-            ))),
+            ))) + if (libraryInitiallyOnline && !online) listOf(SourceWithStatus(ImportSource(
+                id = "library-online", type = ImportSourceType.NAVIDROME, label = "Library server",
+                rootReference = "https://library.example.invalid", indexMode = ImportSourceIndexMode.ONLINE,
+            ))) else emptyList(),
         )
         // Existing online refresh accepts the server row while retaining the earlier operation record.
         private val onlineFavorites = if (online) OnlineFavoritesState(
@@ -157,17 +246,25 @@ class FavoritesMenuIntegrationTest {
             tracks = listOf(track),
             favoriteOverridesBySourceId = if (previousUnlike) mapOf("source" to mapOf("a" to false)) else emptyMap(),
         ) else OnlineFavoritesState()
-        private val onlineLibrary = if (online) OnlineLibraryState(sourceId = "source", tracks = listOf(track)) else OnlineLibraryState()
-        private val library = LibraryState(isLoadingContent = false, tracks = listOf(track), filteredTracks = listOf(track))
+        var onlineLibrary by mutableStateOf(if (libraryInitiallyOnline) OnlineLibraryState(
+            sourceId = if (online) "source" else "library-online", query = libraryQuery,
+            tracks = if (online) listOf(track) else emptyList(),
+        ) else OnlineLibraryState())
+        var library by mutableStateOf(localLibraryState(libraryQuery))
+        private var pendingNavigation by mutableStateOf<LibraryNavigationTarget?>(null)
+        private var deferredSourceChange: OnlineLibraryIntent.SelectSource? = null
+        var navigationHandledCount = 0
+        val libraryOnlineIntents = mutableListOf<OnlineLibraryIntent>()
         private var localFavorites by mutableStateOf(localFavoriteState(true))
         var showFavorites by mutableStateOf(true)
         val onlineIntents = mutableListOf<OnlineFavoritesIntent>()
         val localIntents = mutableListOf<FavoritesIntent>()
         val appFavoriteTargets = mutableListOf<Pair<Track, Boolean>>()
         val playlistTracks = mutableListOf<Track>()
+        val navigationTargets = mutableListOf<LibraryNavigationTarget>()
         private val scheduler = TestCoroutineScheduler()
         private var frame = 0L
-        private val scene = ImageComposeScene(1000, 1000, coroutineContext = UnconfinedTestDispatcher(scheduler)) {
+        private val scene = ImageComposeScene(width, 1000, coroutineContext = UnconfinedTestDispatcher(scheduler)) {
             ProvideUiResourceLanguage("en") {
                 // Use the same state resolver and event routing as the app, rather than a preset liked flag.
                 val bindings = TrackListActionBindings(
@@ -199,6 +296,8 @@ class FavoritesMenuIntegrationTest {
                                 onFavoritesIntent = ::onLocalIntent,
                                 onOnlineIntent = { onlineIntents += it },
                                 onPlayerIntent = { error("Menu action must not play a song") },
+                                showDuration = width >= 600,
+                                onOpenLibraryNavigationTarget = if (navigationEnabled) (::openNavigation) else null,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         } else {
@@ -207,10 +306,20 @@ class FavoritesMenuIntegrationTest {
                                 favoritesState = localFavorites,
                                 importState = importState,
                                 onlineState = onlineLibrary,
-                                onLibraryIntent = {},
+                                onLibraryIntent = { intent ->
+                                    library = when (intent) {
+                                        is LibraryIntent.SearchChanged -> localLibraryState(intent.query, library.selectedSourceFilter)
+                                        is LibraryIntent.SourceFilterChanged -> localLibraryState(library.query, intent.filter)
+                                        else -> library
+                                    }
+                                },
                                 onFavoritesIntent = ::onLocalIntent,
-                                onOnlineIntent = {},
+                                onOnlineIntent = ::onLibraryOnlineIntent,
                                 onPlayerIntent = { error("Menu action must not play a song") },
+                                showDuration = width >= 600,
+                                navigationTarget = pendingNavigation,
+                                onNavigationHandled = { navigationHandledCount++; pendingNavigation = null },
+                                onOpenLibraryNavigationTarget = if (navigationEnabled) (::openNavigation) else null,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -220,6 +329,50 @@ class FavoritesMenuIntegrationTest {
         }
 
         init { render() }
+
+        private fun localLibraryState(query: String, filter: LibrarySourceFilter = LibrarySourceFilter.ALL): LibraryState {
+            val tracks = listOf(track)
+            val visible = tracks.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+            return LibraryState(isLoadingContent = false, query = query, tracks = tracks, filteredTracks = visible,
+                albums = deriveVisibleAlbums(tracks), filteredAlbums = deriveVisibleAlbums(visible),
+                artists = deriveVisibleArtists(tracks), filteredArtists = deriveVisibleArtists(visible), selectedSourceFilter = filter)
+        }
+
+        private fun openNavigation(target: LibraryNavigationTarget) {
+            navigationTargets += target
+            if (navigateToLibrary) {
+                pendingNavigation = target
+                showFavorites = false
+            }
+        }
+
+        private fun onLibraryOnlineIntent(intent: OnlineLibraryIntent) {
+            libraryOnlineIntents += intent
+            when (intent) {
+                is OnlineLibraryIntent.SelectSource -> {
+                    if (deferLibrarySourceChange) deferredSourceChange = intent
+                    else onlineLibrary = OnlineLibraryState(sourceId = intent.sourceId)
+                }
+                is OnlineLibraryIntent.SearchChanged -> onlineLibrary = onlineLibrary.copy(query = intent.query)
+                is OnlineLibraryIntent.PrepareAlbumNavigation -> onlineLibrary = onlineLibrary.copy(sourceId = intent.sourceId,
+                    knownAlbumItemsById = onlineLibrary.knownAlbumItemsById + (intent.albumId to OnlineAlbumItem(
+                        Album(intent.albumId, intent.albumTitle.orEmpty(), intent.artistName), intent.artworkLocator)))
+                is OnlineLibraryIntent.PrepareArtistNavigation -> onlineLibrary = onlineLibrary.copy(sourceId = intent.sourceId,
+                    knownArtistItemsById = onlineLibrary.knownArtistItemsById + (intent.artistId to OnlineArtistItem(
+                        Artist(intent.artistId, intent.artistName.orEmpty()))))
+                is OnlineLibraryIntent.LoadAlbumTracks -> onlineLibrary = onlineLibrary.copy(
+                    selectedAlbumTracks = onlineLibrary.selectedAlbumTracks + (intent.albumId to listOf(track)))
+                is OnlineLibraryIntent.LoadArtistAlbums -> onlineLibrary = onlineLibrary.copy(
+                    selectedArtistAlbumsById = onlineLibrary.selectedArtistAlbumsById + (intent.artistId to emptyList()))
+                else -> Unit
+            }
+        }
+
+        fun completeLibrarySourceChange() {
+            onlineLibrary = OnlineLibraryState(sourceId = assertNotNull(deferredSourceChange).sourceId)
+            deferredSourceChange = null
+            render()
+        }
 
         private fun localFavoriteState(liked: Boolean) = FavoritesState(
             isLoadingContent = false,

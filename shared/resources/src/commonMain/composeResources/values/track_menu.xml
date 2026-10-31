@@ -1,4 +1,6 @@
 <resources>
     <string name="track_more_actions">More actions for %1$s</string>
     <string name="track_favorite_indicator">Liked</string>
+    <string name="track_view_artist">View artist</string>
+    <string name="track_view_album">View album</string>
 </resources>

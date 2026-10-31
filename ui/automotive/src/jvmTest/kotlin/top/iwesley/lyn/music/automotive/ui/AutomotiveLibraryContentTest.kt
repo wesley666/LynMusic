@@ -289,10 +289,10 @@ class AutomotiveLibraryContentTest {
                                         compact = compact,
                                         libraryNavigationTarget = navigationTarget,
                                         onLibraryNavigationHandled = { navigationTarget = null },
-                                        onOpenLibraryNavigationTarget = if (compact) null else ({ target ->
+                                        onOpenLibraryNavigationTarget = { target ->
                                             metadataTargets += target
                                             navigationTarget = target
-                                        }),
+                                        },
                                     )
                                 }
                             }
