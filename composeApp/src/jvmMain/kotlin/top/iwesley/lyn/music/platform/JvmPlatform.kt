@@ -200,6 +200,8 @@ import top.iwesley.lyn.music.domain.testEmbyConnection
 import top.iwesley.lyn.music.domain.testNavidromeConnection
 import top.iwesley.lyn.music.domain.testSubsonicConnection
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.encodeLibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.decodeLibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.TrackSortMode
 import com.hierynomus.msdtyp.AccessMask
@@ -667,18 +669,29 @@ internal class JvmAppPreferencesStore(
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
-        updateProperties(
-            mutate = { setProperty(KEY_LIBRARY_SOURCE_FILTER, filter.name) },
-            onPersisted = { mutableLibrarySourceFilter.value = filter },
-        )
+        updateSourceFilter(KEY_LIBRARY_SOURCE_FILTER, mutableLibrarySourceFilter, filter)
     }
 
     override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
-        updateProperties(
-            mutate = { setProperty(KEY_FAVORITES_SOURCE_FILTER, filter.name) },
-            onPersisted = { mutableFavoritesSourceFilter.value = filter },
-        )
+        updateSourceFilter(KEY_FAVORITES_SOURCE_FILTER, mutableFavoritesSourceFilter, filter)
     }
+
+    override suspend fun compareAndSetLibrarySourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(KEY_LIBRARY_SOURCE_FILTER, mutableLibrarySourceFilter, filter, expected)
+
+    override suspend fun compareAndSetFavoritesSourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(KEY_FAVORITES_SOURCE_FILTER, mutableFavoritesSourceFilter, filter, expected)
+
+    private suspend fun updateSourceFilter(
+        key: String,
+        current: MutableStateFlow<LibrarySourceFilter>,
+        filter: LibrarySourceFilter,
+        expected: LibrarySourceFilter? = null,
+    ): Boolean = propertiesFile.updateIf(
+        condition = { expected == null || current.value == expected },
+        mutate = { setProperty(key, encodeLibrarySourceFilter(filter)) },
+        onPersisted = { current.value = filter },
+    )
 
     override suspend fun setOnlineLibrarySourceId(sourceId: String?) {
         val normalizedSourceId = normalizeNullablePreference(sourceId)
@@ -848,7 +861,7 @@ internal class JvmAppPreferencesStore(
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = loadProperties().getProperty(key)
-        return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+        return decodeLibrarySourceFilter(name)
     }
 
     private fun readNullablePreference(key: String): String? {
@@ -965,11 +978,19 @@ internal class JvmSettingsPropertiesFile(
         mutate: Properties.() -> Unit,
         onPersisted: () -> Unit = {},
     ) {
-        updateMutex.withLock {
-            val properties = load().apply(mutate)
-            persist(properties)
-            onPersisted()
-        }
+        updateIf(condition = { true }, mutate = mutate, onPersisted = onPersisted)
+    }
+
+    suspend fun updateIf(
+        condition: () -> Boolean,
+        mutate: Properties.() -> Unit,
+        onPersisted: () -> Unit = {},
+    ): Boolean = updateMutex.withLock {
+        if (!condition()) return@withLock false
+        val properties = load().apply(mutate)
+        persist(properties)
+        onPersisted()
+        true
     }
 
     private fun persist(properties: Properties) {

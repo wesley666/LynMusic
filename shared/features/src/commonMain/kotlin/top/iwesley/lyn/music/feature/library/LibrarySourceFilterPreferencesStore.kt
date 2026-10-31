@@ -15,6 +15,11 @@ interface LibrarySourceFilterPreferencesStore {
 
     suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter)
 
+    /** Checks [expected] and saves [filter] under the same lock as ordinary source selection writes. */
+    suspend fun compareAndSetLibrarySourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean
+
+    suspend fun compareAndSetFavoritesSourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean
+
     suspend fun setLibraryTrackSortMode(mode: TrackSortMode)
 
     suspend fun setFavoritesTrackSortMode(mode: TrackSortMode)

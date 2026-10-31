@@ -24,8 +24,10 @@ import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.PlaylistImportReport
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
+import top.iwesley.lyn.music.feature.library.availableOrAll
+import top.iwesley.lyn.music.feature.library.buildLibrarySourceFilterOptions
 import top.iwesley.lyn.music.feature.library.isLocalIndexedEnabled
-import top.iwesley.lyn.music.feature.library.toLibrarySourceFilter
 
 data class PlaylistsState(
     val isLoadingContent: Boolean = true,
@@ -33,17 +35,16 @@ data class PlaylistsState(
     val selectedPlaylistId: String? = null,
     val selectedPlaylist: PlaylistDetail? = null,
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
-        LibrarySourceFilter.ALL,
-        LibrarySourceFilter.DOWNLOADED,
-    ),
+    val sourceFilterOptions: List<LibrarySourceFilterOption> = buildLibrarySourceFilterOptions(),
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
     val offlineDownloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
     val isRefreshing: Boolean = false,
     val isImporting: Boolean = false,
     val playlistImportReport: PlaylistImportReport? = null,
     val message: UiText? = null,
-)
+) {
+    val availableSourceFilters: List<LibrarySourceFilter> get() = sourceFilterOptions.map { it.filter }
+}
 
 sealed interface PlaylistsIntent {
     data class SelectPlaylist(val playlistId: String?) : PlaylistsIntent
@@ -113,24 +114,18 @@ class PlaylistsStore(
                 val nextSelectedId = previousSelectedId?.takeIf { selectedId ->
                     snapshot.playlists.any { it.id == selectedId }
                 }
+                val enabledSources = snapshot.sources.map { it.source }.filter { it.isLocalIndexedEnabled() }
+                val sourceFilterOptions = buildLibrarySourceFilterOptions(enabledSources)
+                val sourceTypesById = enabledSources.associate { it.id to it.type }
                 updateState {
-                    val availableSourceFilters = buildAvailableSourceFilters(snapshot.sources)
-                    val selectedSourceFilter = it.selectedSourceFilter
-                        .takeIf { filter ->
-                            filter == LibrarySourceFilter.ALL || filter in availableSourceFilters
-                        }
-                        ?: LibrarySourceFilter.ALL
+                    val selectedSourceFilter = it.selectedSourceFilter.availableOrAll(sourceFilterOptions, sourceTypesById)
                     it.copy(
                         isLoadingContent = false,
                         playlists = snapshot.playlists,
                         selectedPlaylistId = nextSelectedId,
                         selectedSourceFilter = selectedSourceFilter,
-                        availableSourceFilters = availableSourceFilters,
-                        sourceTypesById = snapshot.sources
-                            .filter { it.source.isLocalIndexedEnabled() }
-                            .associate { sourceWithStatus ->
-                            sourceWithStatus.source.id to sourceWithStatus.source.type
-                        },
+                        sourceFilterOptions = sourceFilterOptions,
+                        sourceTypesById = sourceTypesById,
                         offlineDownloadsByTrackId = snapshot.offlineDownloadsByTrackId,
                     )
                 }
@@ -149,9 +144,7 @@ class PlaylistsStore(
             PlaylistsIntent.Refresh -> refreshPlaylists()
             is PlaylistsIntent.SourceFilterChanged -> updateState { state ->
                 state.copy(
-                    selectedSourceFilter = intent.filter
-                        .takeIf { it == LibrarySourceFilter.ALL || it in state.availableSourceFilters }
-                        ?: LibrarySourceFilter.ALL,
+                    selectedSourceFilter = intent.filter.availableOrAll(state.sourceFilterOptions, state.sourceTypesById),
                 )
             }
             is PlaylistsIntent.SelectPlaylist -> observeSelectedPlaylist(intent.playlistId)
@@ -317,28 +310,4 @@ class PlaylistsStore(
         val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val navidromeSourceIds: Set<String>,
     )
-
-    private fun buildAvailableSourceFilters(sources: List<SourceWithStatus>): List<LibrarySourceFilter> {
-        val presentFilters = sources
-            .filter { it.source.isLocalIndexedEnabled() }
-            .map { it.source.type.toLibrarySourceFilter() }
-            .toSet()
-        return buildList {
-            add(LibrarySourceFilter.ALL)
-            FILTER_ORDER.filter { it in presentFilters }.forEach(::add)
-            add(LibrarySourceFilter.DOWNLOADED)
-        }
-    }
-
-    private companion object {
-        val FILTER_ORDER = listOf(
-            LibrarySourceFilter.LOCAL_FOLDER,
-            LibrarySourceFilter.SAMBA,
-            LibrarySourceFilter.WEBDAV,
-            LibrarySourceFilter.NAVIDROME,
-            LibrarySourceFilter.SUBSONIC,
-            LibrarySourceFilter.EMBY,
-            LibrarySourceFilter.FN_MUSIC,
-        )
-    }
 }

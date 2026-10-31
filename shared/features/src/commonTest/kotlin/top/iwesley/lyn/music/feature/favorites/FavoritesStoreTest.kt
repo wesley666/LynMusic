@@ -1,5 +1,8 @@
 package top.iwesley.lyn.music.feature.favorites
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -7,13 +10,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import top.iwesley.lyn.music.core.model.ImportScanSummary
 import top.iwesley.lyn.music.core.model.ImportSource
+import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.NavidromeLibraryProbe
 import top.iwesley.lyn.music.core.model.NavidromeSourceDraft
@@ -34,6 +41,172 @@ import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FavoritesStoreTest {
+
+    @Test
+    fun `automatic fallback cannot overwrite a source selection already being saved`() = runTest {
+        val first = sampleFavoriteTracks().first().copy(sourceId = "dav-1")
+        val second = first.copy(id = "second-track", sourceId = "dav-2")
+        val tracks = listOf(first, second)
+        val sources = FakeImportSourceRepository(listOf(
+            sampleSource("dav-1", ImportSourceType.WEBDAV, "A"),
+            sampleSource("dav-2", ImportSourceType.WEBDAV, "B"),
+        ))
+        val preferences = FakeLibrarySourceFilterPreferencesStore(favoritesSourceFilter = LibrarySourceFilter.Source("dav-1"))
+        val writeStarted = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = FavoritesStore(FakeFavoritesRepository(tracks, tracks.mapTo(mutableSetOf()) { it.id }), sources, preferences, scope)
+            advanceUntilIdle()
+            preferences.beforeSourceFilterWrite = {
+                writeStarted.complete(Unit)
+                releaseWrite.await()
+            }
+            store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.Source("dav-2")))
+            runCurrent()
+            assertEquals(true, writeStarted.isCompleted)
+            preferences.beforeSourceFilterWrite = null
+            sources.updateSources(listOf(sampleSource("dav-2", ImportSourceType.WEBDAV, "B")))
+            runCurrent()
+            assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+
+            releaseWrite.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(LibrarySourceFilter.Source("dav-2"), preferences.favoritesSourceFilter.value)
+            assertEquals(LibrarySourceFilter.Source("dav-2"), store.state.value.selectedSourceFilter)
+            assertEquals(listOf(second), store.state.value.filteredTracks)
+        } finally { releaseWrite.complete(Unit); scope.cancel() }
+    }
+
+    @Test
+    fun `local favorites combine named folders and keep the group after one folder is removed`() = runTest {
+        val first = sampleFavoriteTracks().first()
+        val second = first.copy(id = "track-local-2", sourceId = "local-2")
+        val remote = sampleFavoriteTracks().last().copy(sourceId = "dav-1")
+        val localSource = sampleSource("local-1", ImportSourceType.LOCAL_FOLDER, "Downloads")
+        val remoteSource = sampleSource("dav-1", ImportSourceType.WEBDAV, "NAS")
+        val sources = FakeImportSourceRepository(listOf(localSource, sampleSource("local-2", ImportSourceType.LOCAL_FOLDER, "Other"), remoteSource))
+        val tracks = listOf(first, second, remote)
+        val repository = FakeFavoritesRepository(tracks, tracks.mapTo(mutableSetOf()) { it.id })
+        val preferences = FakeLibrarySourceFilterPreferencesStore(favoritesSourceFilter = LibrarySourceFilter.Source("local-2"))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = FavoritesStore(repository, sources, preferences, scope)
+            advanceUntilIdle()
+            assertEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
+            assertEquals(LibrarySourceFilter.LOCAL_FOLDER, preferences.favoritesSourceFilter.value)
+            assertEquals(setOf(first.id, second.id), store.state.value.filteredTracks.map { it.id }.toSet())
+
+            sources.updateSources(listOf(localSource, remoteSource))
+            repository.updateFavorites(listOf(first, remote), setOf(first.id, remote.id))
+            advanceUntilIdle()
+            assertEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
+            assertEquals(listOf(first), store.state.value.filteredTracks)
+
+            sources.updateSources(listOf(localSource.copy(source = localSource.source.copy(enabled = false)), remoteSource))
+            repository.updateFavorites(listOf(remote), setOf(remote.id))
+            advanceUntilIdle()
+            assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+            assertEquals(LibrarySourceFilter.ALL, preferences.favoritesSourceFilter.value)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun `fallback write failures keep state ready and allow later updates and persistence recovery`() = runTest {
+        for (missingOnStartup in listOf(true, false)) {
+            val tracks = sampleFavoriteTracks().take(1).map { it.copy(sourceId = "dav-1") }
+            val repository = FakeFavoritesRepository(tracks, tracks.mapTo(mutableSetOf()) { it.id })
+            val selectedSource = sampleSource("dav-1", ImportSourceType.WEBDAV, "Remote")
+            val sources = FakeImportSourceRepository(if (missingOnStartup) emptyList() else listOf(selectedSource))
+            val releaseWrite = CompletableDeferred<Unit>()
+            val preferences = FakeLibrarySourceFilterPreferencesStore(
+                favoritesSourceFilter = LibrarySourceFilter.Source("dav-1"),
+            ).apply {
+                sourceFilterWriteFailure = IllegalStateException("Settings are not writable")
+                beforeSourceFilterWrite = { releaseWrite.await() }
+            }
+            val failures = mutableListOf<Throwable>()
+            val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob() +
+                CoroutineExceptionHandler { _, error -> failures += error })
+            try {
+                val store = FavoritesStore(repository, sources, preferences, scope)
+                advanceUntilIdle()
+                if (!missingOnStartup) {
+                    sources.updateSources(emptyList())
+                    advanceUntilIdle()
+                }
+                // The preference write is still suspended; the fallback must already be visible.
+                assertEquals(false, store.state.value.isLoadingContent)
+                assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+                releaseWrite.complete(Unit)
+                advanceUntilIdle()
+                assertEquals(emptyList<Throwable>(), failures)
+
+                val updated = tracks.first().copy(id = "other-track", sourceId = "other", title = "Updated")
+                sources.updateSources(listOf(sampleSource("other", ImportSourceType.WEBDAV, "Other")))
+                repository.updateFavorites(listOf(updated), setOf(updated.id))
+                advanceUntilIdle()
+                assertEquals(listOf(updated), store.state.value.filteredTracks)
+                assertEquals(emptyList<Throwable>(), failures)
+
+                preferences.sourceFilterWriteFailure = null
+                val recovered = updated.copy(title = "Recovered")
+                repository.updateFavorites(listOf(recovered), setOf(recovered.id))
+                advanceUntilIdle()
+                assertEquals(listOf(recovered), store.state.value.filteredTracks)
+                assertEquals(LibrarySourceFilter.ALL, preferences.favoritesSourceFilter.value)
+            } finally { scope.cancel() }
+        }
+    }
+
+    @Test
+    fun `fallback write cancellation still stops its collection`() = runTest {
+        val tracks = sampleFavoriteTracks().take(1).map { it.copy(sourceId = "dav-1") }
+        val repository = FakeFavoritesRepository(tracks, tracks.mapTo(mutableSetOf()) { it.id })
+        val sources = FakeImportSourceRepository()
+        val preferences = FakeLibrarySourceFilterPreferencesStore(
+            favoritesSourceFilter = LibrarySourceFilter.Source("dav-1"),
+        ).apply { sourceFilterWriteFailure = CancellationException("Store cancelled") }
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = FavoritesStore(repository, sources, preferences, scope)
+            advanceUntilIdle()
+            val beforeUpdate = store.state.value.tracks
+            preferences.sourceFilterWriteFailure = null
+            repository.updateFavorites(tracks.map { it.copy(title = "After cancellation") }, tracks.mapTo(mutableSetOf()) { it.id })
+            store.ensureContentStarted()
+            advanceUntilIdle()
+            assertEquals(beforeUpdate, store.state.value.tracks)
+            assertEquals(LibrarySourceFilter.Source("dav-1"), preferences.favoritesSourceFilter.value)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun `same protocol favorites filter by source and clear unavailable saved source`() = runTest {
+        val original = sampleFavoriteTracks().last()
+        val otherTrack = original.copy(id = "track-nav-2", sourceId = "nav-2")
+        val first = sampleSource("nav-1", ImportSourceType.NAVIDROME, "NAS")
+        val second = sampleSource("nav-2", ImportSourceType.NAVIDROME, "NAS")
+        val sources = FakeImportSourceRepository(listOf(first, second))
+        val preferences = FakeLibrarySourceFilterPreferencesStore(favoritesSourceFilter = LibrarySourceFilter.Source("nav-2"))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = FavoritesStore(
+            FakeFavoritesRepository(listOf(original, otherTrack), setOf(original.id, otherTrack.id)),
+            sources, preferences, scope,
+        )
+
+        advanceUntilIdle()
+        assertEquals(listOf(otherTrack.id), store.state.value.filteredTracks.map { it.id })
+        assertEquals(1, store.state.value.filteredAlbums.single().trackCount)
+        sources.updateSources(listOf(first, second.copy(source = second.source.copy(label = "公司"))))
+        advanceUntilIdle()
+        assertEquals(LibrarySourceFilter.Source("nav-2"), store.state.value.selectedSourceFilter)
+        sources.updateSources(listOf(first, second.copy(source = second.source.copy(indexMode = ImportSourceIndexMode.ONLINE))))
+        advanceUntilIdle()
+        assertEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+        assertEquals(LibrarySourceFilter.ALL, preferences.favoritesSourceFilter.value)
+        scope.cancel()
+    }
 
     @Test
     fun `favorite ids and counts reflect current favorites`() = runTest {
@@ -70,7 +243,7 @@ class FavoritesStoreTest {
         val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
-        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
+        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.Source("nav-1")))
         store.dispatch(FavoritesIntent.SearchChanged("night"))
         advanceUntilIdle()
 
@@ -107,7 +280,7 @@ class FavoritesStoreTest {
     }
 
     @Test
-    fun `selected filter falls back to all when source type disappears`() = runTest {
+    fun `selected filter falls back to all when selected source disappears`() = runTest {
         val favoritesRepository = FakeFavoritesRepository(
             tracks = sampleFavoriteTracks(),
             favoriteTrackIds = setOf("track-local-1", "track-nav-1"),
@@ -118,7 +291,7 @@ class FavoritesStoreTest {
         val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
-        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
+        store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.Source("nav-1")))
         advanceUntilIdle()
 
         importSourceRepository.updateSources(
@@ -249,13 +422,13 @@ class FavoritesStoreTest {
         )
         val importSourceRepository = FakeImportSourceRepository(sampleSources())
         val preferencesStore = FakeLibrarySourceFilterPreferencesStore(
-            favoritesSourceFilter = LibrarySourceFilter.NAVIDROME,
+            favoritesSourceFilter = LibrarySourceFilter.Source("nav-1"),
         )
         val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
         val store = FavoritesStore(favoritesRepository, importSourceRepository, preferencesStore, scope)
 
         advanceUntilIdle()
-        assertEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
+        assertEquals(LibrarySourceFilter.Source("nav-1"), store.state.value.selectedSourceFilter)
         assertEquals(listOf("track-nav-1"), store.state.value.filteredTracks.map { it.id })
 
         store.dispatch(FavoritesIntent.SourceFilterChanged(LibrarySourceFilter.ALL))
@@ -486,6 +659,10 @@ private class FakeLibrarySourceFilterPreferencesStore(
     libraryTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
     favoritesTrackSortMode: TrackSortMode = TrackSortMode.ADDED_AT,
 ) : top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore {
+    private val sourceFilterMutex = Mutex()
+    var sourceFilterWriteFailure: Exception? = null
+    var beforeSourceFilterWrite: (suspend () -> Unit)? = null
+
     override val librarySourceFilter = MutableStateFlow(librarySourceFilter)
     override val favoritesSourceFilter = MutableStateFlow(favoritesSourceFilter)
     override val libraryTrackSortMode = MutableStateFlow(libraryTrackSortMode)
@@ -495,11 +672,29 @@ private class FakeLibrarySourceFilterPreferencesStore(
     override val onlinePlaylistsSourceId = MutableStateFlow<String?>(null)
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
-        librarySourceFilter.value = filter
+        updateSourceFilter(librarySourceFilter, filter)
     }
 
     override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
-        favoritesSourceFilter.value = filter
+        updateSourceFilter(favoritesSourceFilter, filter)
+    }
+
+    override suspend fun compareAndSetLibrarySourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(librarySourceFilter, filter, expected)
+
+    override suspend fun compareAndSetFavoritesSourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(favoritesSourceFilter, filter, expected)
+
+    private suspend fun updateSourceFilter(
+        current: MutableStateFlow<LibrarySourceFilter>,
+        filter: LibrarySourceFilter,
+        expected: LibrarySourceFilter? = null,
+    ): Boolean = sourceFilterMutex.withLock {
+        if (expected != null && current.value != expected) return@withLock false
+        beforeSourceFilterWrite?.invoke()
+        sourceFilterWriteFailure?.let { throw it }
+        current.value = filter
+        true
     }
 
     override suspend fun setLibraryTrackSortMode(mode: TrackSortMode) {

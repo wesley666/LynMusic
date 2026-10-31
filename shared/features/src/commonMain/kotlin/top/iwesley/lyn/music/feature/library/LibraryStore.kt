@@ -1,5 +1,6 @@
 package top.iwesley.lyn.music.feature.library
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -20,18 +21,6 @@ import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 
-enum class LibrarySourceFilter {
-    ALL,
-    LOCAL_FOLDER,
-    SAMBA,
-    WEBDAV,
-    NAVIDROME,
-    SUBSONIC,
-    EMBY,
-    FN_MUSIC,
-    DOWNLOADED,
-}
-
 enum class TrackSortMode {
     TITLE,
     ARTIST,
@@ -50,10 +39,7 @@ data class LibraryState(
     val filteredAlbums: List<Album> = emptyList(),
     val filteredArtists: List<Artist> = emptyList(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
-        LibrarySourceFilter.ALL,
-        LibrarySourceFilter.DOWNLOADED,
-    ),
+    val sourceFilterOptions: List<LibrarySourceFilterOption> = buildLibrarySourceFilterOptions(),
     val selectedTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
     val trackPlaybackStats: Map<String, TrackPlaybackStat> = emptyMap(),
     val offlineDownloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
@@ -61,7 +47,9 @@ data class LibraryState(
     val visibleArtistCount: Int = 0,
     val sourceTypesById: Map<String, ImportSourceType> = emptyMap(),
     val sourceLabelsById: Map<String, String> = emptyMap(),
-)
+) {
+    val availableSourceFilters: List<LibrarySourceFilter> get() = sourceFilterOptions.map { it.filter }
+}
 
 sealed interface LibraryIntent {
     data class SearchChanged(val query: String) : LibraryIntent
@@ -131,9 +119,10 @@ class LibraryStore(
                     offlineDownloadsByTrackId = offlineDownloads,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
                     sourceLabelsById = enabledSources.associate { it.id to it.label.trim().ifBlank { it.id } },
-                    availableSourceFilters = buildAvailableSourceFilters(enabledSources.map { it.type }),
+                    sourceFilterOptions = buildLibrarySourceFilterOptions(enabledSources),
                 )
             }.collect { snapshot ->
+                val selectedSourceFilter = snapshot.selectedSourceFilter.availableOrAll(snapshot.sourceFilterOptions, snapshot.sourceTypesById)
                 updateState { state ->
                     deriveState(
                         state.copy(
@@ -141,15 +130,27 @@ class LibraryStore(
                             tracks = snapshot.tracks,
                             albums = snapshot.albums,
                             artists = snapshot.artists,
-                            selectedSourceFilter = snapshot.selectedSourceFilter,
+                            selectedSourceFilter = selectedSourceFilter,
                             selectedTrackSortMode = snapshot.selectedTrackSortMode,
                             trackPlaybackStats = snapshot.trackPlaybackStats,
                             offlineDownloadsByTrackId = snapshot.offlineDownloadsByTrackId,
                             sourceTypesById = snapshot.sourceTypesById,
                             sourceLabelsById = snapshot.sourceLabelsById,
-                            availableSourceFilters = snapshot.availableSourceFilters,
+                            sourceFilterOptions = snapshot.sourceFilterOptions,
                         ),
                     )
+                }
+                if (selectedSourceFilter != snapshot.selectedSourceFilter) {
+                    try {
+                        preferencesStore.compareAndSetLibrarySourceFilter(
+                            expected = snapshot.selectedSourceFilter,
+                            filter = selectedSourceFilter,
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        // A failed settings write must not stop content updates.
+                    }
                 }
             }
         }
@@ -168,9 +169,7 @@ class LibraryStore(
     }
 
     private fun deriveState(state: LibraryState): LibraryState {
-        val selectedSourceFilter = state.selectedSourceFilter
-            .takeIf { it == LibrarySourceFilter.ALL || it in state.availableSourceFilters }
-            ?: LibrarySourceFilter.ALL
+        val selectedSourceFilter = state.selectedSourceFilter.availableOrAll(state.sourceFilterOptions, state.sourceTypesById)
         val filteredTracks = sortTracks(
             tracks = filterTracks(
                 tracks = state.tracks,
@@ -214,15 +213,6 @@ class LibraryStore(
         }
     }
 
-    private fun buildAvailableSourceFilters(types: List<ImportSourceType>): List<LibrarySourceFilter> {
-        val presentFilters = types.map { it.toLibrarySourceFilter() }.toSet()
-        return buildList {
-            add(LibrarySourceFilter.ALL)
-            FILTER_ORDER.filter { it in presentFilters }.forEach(::add)
-            add(LibrarySourceFilter.DOWNLOADED)
-        }
-    }
-
     private data class LibrarySnapshot(
         val tracks: List<Track>,
         val albums: List<Album>,
@@ -233,7 +223,7 @@ class LibraryStore(
         val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val sourceTypesById: Map<String, ImportSourceType>,
         val sourceLabelsById: Map<String, String>,
-        val availableSourceFilters: List<LibrarySourceFilter>,
+        val sourceFilterOptions: List<LibrarySourceFilterOption>,
     )
 
     private data class LibraryContentSnapshot(
@@ -242,18 +232,6 @@ class LibraryStore(
         val artists: List<Artist>,
         val sources: List<top.iwesley.lyn.music.core.model.SourceWithStatus>,
     )
-
-    private companion object {
-        val FILTER_ORDER = listOf(
-            LibrarySourceFilter.LOCAL_FOLDER,
-            LibrarySourceFilter.SAMBA,
-            LibrarySourceFilter.WEBDAV,
-            LibrarySourceFilter.NAVIDROME,
-            LibrarySourceFilter.SUBSONIC,
-            LibrarySourceFilter.EMBY,
-            LibrarySourceFilter.FN_MUSIC,
-        )
-    }
 }
 
 internal fun ImportSource.isLocalIndexedEnabled(): Boolean {
@@ -268,12 +246,13 @@ fun matchesLibrarySourceFilter(
 ): Boolean {
     return when (selectedSourceFilter) {
         LibrarySourceFilter.ALL -> true
+        LibrarySourceFilter.LOCAL_FOLDER -> sourceTypesById[track.sourceId] == ImportSourceType.LOCAL_FOLDER
         LibrarySourceFilter.DOWNLOADED -> isTrackAvailableOffline(
             track = track,
             sourceTypesById = sourceTypesById,
             offlineDownloadsByTrackId = offlineDownloadsByTrackId,
         )
-        else -> sourceTypesById[track.sourceId]?.toLibrarySourceFilter() == selectedSourceFilter
+        is LibrarySourceFilter.Source -> track.sourceId == selectedSourceFilter.sourceId
     }
 }
 
@@ -285,18 +264,6 @@ fun isTrackAvailableOffline(
     if (sourceTypesById[track.sourceId] == ImportSourceType.LOCAL_FOLDER) return true
     val download = offlineDownloadsByTrackId[track.id] ?: return false
     return download.status == OfflineDownloadStatus.Completed && download.hasLocalFileReference
-}
-
-fun ImportSourceType.toLibrarySourceFilter(): LibrarySourceFilter {
-    return when (this) {
-        ImportSourceType.LOCAL_FOLDER -> LibrarySourceFilter.LOCAL_FOLDER
-        ImportSourceType.SAMBA -> LibrarySourceFilter.SAMBA
-        ImportSourceType.WEBDAV -> LibrarySourceFilter.WEBDAV
-        ImportSourceType.NAVIDROME -> LibrarySourceFilter.NAVIDROME
-        ImportSourceType.SUBSONIC -> LibrarySourceFilter.SUBSONIC
-        ImportSourceType.EMBY -> LibrarySourceFilter.EMBY
-        ImportSourceType.FN_MUSIC -> LibrarySourceFilter.FN_MUSIC
-    }
 }
 
 internal fun sortTracks(

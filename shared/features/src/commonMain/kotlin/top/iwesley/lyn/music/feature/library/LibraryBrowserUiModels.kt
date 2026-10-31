@@ -26,10 +26,7 @@ data class LibraryBrowserUiState(
     val isOnline: Boolean = false,
     val sourceId: String? = null,
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
-        LibrarySourceFilter.ALL,
-        LibrarySourceFilter.DOWNLOADED,
-    ),
+    val sourceFilterOptions: List<LibrarySourceFilterOption> = buildLibrarySourceFilterOptions(),
     val selectedTrackSortMode: TrackSortMode = TrackSortMode.TITLE,
     val favoriteTrackIds: Set<String> = emptySet(),
     val sourceLabelsById: Map<String, String> = emptyMap(),
@@ -45,7 +42,9 @@ data class LibraryBrowserUiState(
     val capabilities: LibraryBrowserCapabilities = LibraryBrowserCapabilities(),
     val message: UiText? = null,
     val errorMessage: UiText? = null,
-)
+) {
+    val availableSourceFilters: List<LibrarySourceFilter> get() = sourceFilterOptions.map { it.filter }
+}
 
 data class LibraryBrowserCount(
     val loaded: Int,
@@ -170,7 +169,7 @@ fun LibraryState.toBrowserUiState(
         isLoading = isLoadingContent,
         isOnline = false,
         selectedSourceFilter = selectedSourceFilter,
-        availableSourceFilters = availableSourceFilters,
+        sourceFilterOptions = sourceFilterOptions,
         selectedTrackSortMode = selectedTrackSortMode,
         favoriteTrackIds = favoriteTrackIds,
         sourceLabelsById = sourceLabelsById,
@@ -207,7 +206,7 @@ fun FavoritesState.toBrowserUiState(
         isLoading = isLoadingContent,
         isOnline = false,
         selectedSourceFilter = selectedSourceFilter,
-        availableSourceFilters = availableSourceFilters,
+        sourceFilterOptions = sourceFilterOptions,
         selectedTrackSortMode = selectedTrackSortMode,
         favoriteTrackIds = favoriteTrackIds,
         message = message,

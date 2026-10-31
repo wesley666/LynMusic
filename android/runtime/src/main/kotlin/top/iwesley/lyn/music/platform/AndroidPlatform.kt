@@ -80,6 +80,8 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -222,6 +224,8 @@ import top.iwesley.lyn.music.domain.testEmbyConnection
 import top.iwesley.lyn.music.domain.testNavidromeConnection
 import top.iwesley.lyn.music.domain.testSubsonicConnection
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.encodeLibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.decodeLibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
 import top.iwesley.lyn.music.feature.library.TrackSortMode
 import com.hierynomus.msdtyp.AccessMask
@@ -726,6 +730,7 @@ internal class AndroidAppPreferencesStore(
     AndroidEqualizerPreferencesStore, AutoOpenPlayerOnStartupPreferencesStore {
     private val preferences: SharedPreferences =
         context.getSharedPreferences("lynmusic.settings", Context.MODE_PRIVATE)
+    private val sourceFilterMutex = Mutex()
     private val mutableAppLanguage = MutableStateFlow(appLanguageOrDefault(preferences.getString(APP_LANGUAGE_PREFERENCE_KEY, null)))
     override val appLanguage: StateFlow<AppLanguage> = mutableAppLanguage.asStateFlow()
     init { AppLanguageRuntime.install(this, java.util.Locale.getDefault().toLanguageTag()) }
@@ -1013,13 +1018,29 @@ internal class AndroidAppPreferencesStore(
     }
 
     override suspend fun setLibrarySourceFilter(filter: LibrarySourceFilter) {
-        preferences.edit().putString(KEY_LIBRARY_SOURCE_FILTER, filter.name).apply()
-        mutableLibrarySourceFilter.value = filter
+        updateSourceFilter(KEY_LIBRARY_SOURCE_FILTER, mutableLibrarySourceFilter, filter)
     }
 
     override suspend fun setFavoritesSourceFilter(filter: LibrarySourceFilter) {
-        preferences.edit().putString(KEY_FAVORITES_SOURCE_FILTER, filter.name).apply()
-        mutableFavoritesSourceFilter.value = filter
+        updateSourceFilter(KEY_FAVORITES_SOURCE_FILTER, mutableFavoritesSourceFilter, filter)
+    }
+
+    override suspend fun compareAndSetLibrarySourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(KEY_LIBRARY_SOURCE_FILTER, mutableLibrarySourceFilter, filter, expected)
+
+    override suspend fun compareAndSetFavoritesSourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        updateSourceFilter(KEY_FAVORITES_SOURCE_FILTER, mutableFavoritesSourceFilter, filter, expected)
+
+    private suspend fun updateSourceFilter(
+        key: String,
+        current: MutableStateFlow<LibrarySourceFilter>,
+        filter: LibrarySourceFilter,
+        expected: LibrarySourceFilter? = null,
+    ): Boolean = sourceFilterMutex.withLock {
+        if (expected != null && current.value != expected) return@withLock false
+        preferences.edit().putString(key, encodeLibrarySourceFilter(filter)).apply()
+        current.value = filter
+        true
     }
 
     override suspend fun setOnlineLibrarySourceId(sourceId: String?) {
@@ -1068,7 +1089,7 @@ internal class AndroidAppPreferencesStore(
 
     private fun readLibrarySourceFilter(key: String): LibrarySourceFilter {
         val name = preferences.getString(key, null)
-        return LibrarySourceFilter.entries.firstOrNull { it.name == name } ?: LibrarySourceFilter.ALL
+        return decodeLibrarySourceFilter(name)
     }
 
     private fun readNullablePreference(key: String): String? {

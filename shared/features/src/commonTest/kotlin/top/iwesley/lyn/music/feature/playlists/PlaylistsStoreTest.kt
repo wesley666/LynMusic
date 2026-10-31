@@ -36,10 +36,84 @@ import top.iwesley.lyn.music.data.repository.PlaylistImportReport
 import top.iwesley.lyn.music.data.repository.PlaylistRepository
 import top.iwesley.lyn.music.feature.TestOfflineDownloadRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
 import top.iwesley.lyn.music.feature.testOfflineDownload
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlaylistsStoreTest : UiResourceTest() {
+
+    @Test
+    fun `playlist local filter combines folders and survives removing one folder`() = runTest {
+        val repository = FakePlaylistRepository()
+        val sources = FakePlaylistsImportSourceRepository(listOf(
+            source("local-1", ImportSourceType.LOCAL_FOLDER, "Downloads"),
+            source("local-2", ImportSourceType.LOCAL_FOLDER, "Other"),
+            source("dav-1", ImportSourceType.WEBDAV, "NAS"),
+        ))
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        try {
+            val store = PlaylistsStore(repository, sources, scope)
+            val first = samplePlaylistTrack().copy(id = "local-track-1", sourceId = "local-1")
+            val second = first.copy(id = "local-track-2", sourceId = "local-2")
+            val remote = first.copy(id = "remote-track", sourceId = "dav-1")
+            store.dispatch(PlaylistsIntent.CreatePlaylistAndAddTrack("Mixed", first))
+            advanceUntilIdle()
+            val playlistId = store.state.value.selectedPlaylistId!!
+            store.dispatch(PlaylistsIntent.AddTrackToPlaylist(playlistId, second))
+            store.dispatch(PlaylistsIntent.AddTrackToPlaylist(playlistId, remote))
+            store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.Source("local-1")))
+            advanceUntilIdle()
+
+            fun visibleTrackIds(): List<String> {
+                val state = store.state.value
+                return state.selectedPlaylist!!.tracks.filter {
+                    matchesLibrarySourceFilter(it.track, state.selectedSourceFilter, state.sourceTypesById, state.offlineDownloadsByTrackId)
+                }.map { it.track.id }
+            }
+            assertLocalizedEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
+            assertLocalizedEquals(listOf(first.id, second.id), visibleTrackIds())
+            sources.updateSources(listOf(
+                source("local-2", ImportSourceType.LOCAL_FOLDER, "Renamed"),
+                source("dav-1", ImportSourceType.WEBDAV, "NAS"),
+            ))
+            advanceUntilIdle()
+            assertLocalizedEquals(LibrarySourceFilter.LOCAL_FOLDER, store.state.value.selectedSourceFilter)
+            assertLocalizedEquals(listOf(second.id), visibleTrackIds())
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun `playlist source selection separates same protocol tracks without filtering playlist list`() = runTest {
+        val repository = FakePlaylistRepository()
+        val sources = FakePlaylistsImportSourceRepository(
+            listOf(
+                source("dav-1", ImportSourceType.WEBDAV, "家里"),
+                source("dav-2", ImportSourceType.WEBDAV, "公司"),
+            ),
+        )
+        val scope = CoroutineScope(StandardTestDispatcher(testScheduler) + SupervisorJob())
+        val store = PlaylistsStore(repository, sources, scope)
+        val firstTrack = samplePlaylistTrack().copy(id = "dav-track-1", sourceId = "dav-1")
+        val secondTrack = firstTrack.copy(id = "dav-track-2", sourceId = "dav-2")
+        store.dispatch(PlaylistsIntent.CreatePlaylistAndAddTrack("混合歌单", firstTrack))
+        advanceUntilIdle()
+        val playlistId = store.state.value.selectedPlaylistId!!
+        store.dispatch(PlaylistsIntent.AddTrackToPlaylist(playlistId, secondTrack))
+        store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.Source("dav-2")))
+        advanceUntilIdle()
+
+        val state = store.state.value
+        val visibleTracks = state.selectedPlaylist!!.tracks.filter {
+            matchesLibrarySourceFilter(it.track, state.selectedSourceFilter, state.sourceTypesById, state.offlineDownloadsByTrackId)
+        }
+        assertLocalizedEquals(listOf(secondTrack.id), visibleTracks.map { it.track.id })
+        assertLocalizedEquals(listOf("混合歌单"), state.playlists.map { it.name })
+        assertLocalizedEquals("WebDAV · 公司", state.sourceFilterOptions.first { it.filter == state.selectedSourceFilter }.label)
+        sources.updateSources(listOf(source("dav-1", ImportSourceType.WEBDAV, "家里")))
+        advanceUntilIdle()
+        assertLocalizedEquals(LibrarySourceFilter.ALL, store.state.value.selectedSourceFilter)
+        scope.cancel()
+    }
 
     @Test
     fun `create playlist selects newly created playlist`() = runTest {
@@ -187,15 +261,15 @@ class PlaylistsStoreTest : UiResourceTest() {
             listOf(
                 LibrarySourceFilter.ALL,
                 LibrarySourceFilter.LOCAL_FOLDER,
-                LibrarySourceFilter.NAVIDROME,
+                LibrarySourceFilter.Source("nav-1"),
                 LibrarySourceFilter.DOWNLOADED,
             ),
             store.state.value.availableSourceFilters,
         )
 
-        store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.NAVIDROME))
+        store.dispatch(PlaylistsIntent.SourceFilterChanged(LibrarySourceFilter.Source("nav-1")))
         advanceUntilIdle()
-        assertLocalizedEquals(LibrarySourceFilter.NAVIDROME, store.state.value.selectedSourceFilter)
+        assertLocalizedEquals(LibrarySourceFilter.Source("nav-1"), store.state.value.selectedSourceFilter)
 
         importSources.updateSources(
             listOf(source("local-1", ImportSourceType.LOCAL_FOLDER, "下载目录")),

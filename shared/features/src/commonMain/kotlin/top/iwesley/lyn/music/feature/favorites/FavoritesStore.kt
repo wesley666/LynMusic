@@ -8,6 +8,7 @@ import top.iwesley.lyn.music.core.model.uiText
 import top.iwesley.lyn.music.core.model.uiErrorText
 import top.iwesley.lyn.music.core.model.plus
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -15,7 +16,6 @@ import top.iwesley.lyn.music.core.model.Album
 import top.iwesley.lyn.music.core.model.Artist
 import top.iwesley.lyn.music.core.model.ImportSourceType
 import top.iwesley.lyn.music.core.model.OfflineDownload
-import top.iwesley.lyn.music.core.model.SourceWithStatus
 import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.mvi.BaseStore
 import top.iwesley.lyn.music.data.repository.FavoriteTrackMetadata
@@ -26,14 +26,16 @@ import top.iwesley.lyn.music.data.repository.OfflineDownloadRepository
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStat
 import top.iwesley.lyn.music.data.repository.TrackPlaybackStatsRepository
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterPreferencesStore
+import top.iwesley.lyn.music.feature.library.availableOrAll
+import top.iwesley.lyn.music.feature.library.buildLibrarySourceFilterOptions
 import top.iwesley.lyn.music.feature.library.TrackSortMode
 import top.iwesley.lyn.music.feature.library.deriveVisibleAlbums
 import top.iwesley.lyn.music.feature.library.deriveVisibleArtists
 import top.iwesley.lyn.music.feature.library.isLocalIndexedEnabled
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.sortTracks
-import top.iwesley.lyn.music.feature.library.toLibrarySourceFilter
 
 data class FavoritesState(
     val query: String = "",
@@ -45,10 +47,7 @@ data class FavoritesState(
     val favoriteTrackIds: Set<String> = emptySet(),
     val favoriteTrackMetadata: Map<String, FavoriteTrackMetadata> = emptyMap(),
     val selectedSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
-    val availableSourceFilters: List<LibrarySourceFilter> = listOf(
-        LibrarySourceFilter.ALL,
-        LibrarySourceFilter.DOWNLOADED,
-    ),
+    val sourceFilterOptions: List<LibrarySourceFilterOption> = buildLibrarySourceFilterOptions(),
     val selectedTrackSortMode: TrackSortMode = TrackSortMode.ADDED_AT,
     val trackPlaybackStats: Map<String, TrackPlaybackStat> = emptyMap(),
     val offlineDownloadsByTrackId: Map<String, OfflineDownload> = emptyMap(),
@@ -58,7 +57,9 @@ data class FavoritesState(
     val canRefreshRemote: Boolean = false,
     val isRefreshing: Boolean = false,
     val message: UiText? = null,
-)
+) {
+    val availableSourceFilters: List<LibrarySourceFilter> get() = sourceFilterOptions.map { it.filter }
+}
 
 sealed interface FavoritesIntent {
     data class SearchChanged(val query: String) : FavoritesIntent
@@ -120,7 +121,7 @@ class FavoritesStore(
                     favoriteTrackMetadata = favoriteTrackMetadata,
                     offlineDownloadsByTrackId = offlineDownloads,
                     sourceTypesById = enabledSources.associate { it.id to it.type },
-                    availableSourceFilters = buildAvailableSourceFilters(sources.filter { it.source.isLocalIndexedEnabled() }),
+                    sourceFilterOptions = buildLibrarySourceFilterOptions(enabledSources),
                     navidromeSourceIds = enabledSources
                         .filter {
                             it.type == ImportSourceType.NAVIDROME ||
@@ -144,26 +145,39 @@ class FavoritesStore(
                     trackPlaybackStats = trackPlaybackStats,
                     offlineDownloadsByTrackId = content.offlineDownloadsByTrackId,
                     sourceTypesById = content.sourceTypesById,
-                    availableSourceFilters = content.availableSourceFilters,
+                    sourceFilterOptions = content.sourceFilterOptions,
                     navidromeSourceIds = content.navidromeSourceIds,
                 )
             }.collect { snapshot ->
                 refreshNavidromeFavoritesOnFirstActivation(snapshot.navidromeSourceIds)
+                val selectedSourceFilter = snapshot.selectedSourceFilter.availableOrAll(snapshot.sourceFilterOptions, snapshot.sourceTypesById)
                 updateState { state ->
                     deriveState(
                         state.copy(
                             isLoadingContent = false,
                             tracks = snapshot.tracks,
                             favoriteTrackMetadata = snapshot.favoriteTrackMetadata,
-                            selectedSourceFilter = snapshot.selectedSourceFilter,
+                            selectedSourceFilter = selectedSourceFilter,
                             selectedTrackSortMode = snapshot.selectedTrackSortMode,
                             trackPlaybackStats = snapshot.trackPlaybackStats,
                             offlineDownloadsByTrackId = snapshot.offlineDownloadsByTrackId,
                             sourceTypesById = snapshot.sourceTypesById,
-                            availableSourceFilters = snapshot.availableSourceFilters,
+                            sourceFilterOptions = snapshot.sourceFilterOptions,
                             canRefreshRemote = snapshot.navidromeSourceIds.isNotEmpty(),
                         ),
                     )
+                }
+                if (selectedSourceFilter != snapshot.selectedSourceFilter) {
+                    try {
+                        preferencesStore.compareAndSetFavoritesSourceFilter(
+                            expected = snapshot.selectedSourceFilter,
+                            filter = selectedSourceFilter,
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        // A failed settings write must not stop content updates.
+                    }
                 }
             }
         }
@@ -237,9 +251,7 @@ class FavoritesStore(
     }
 
     private fun deriveState(state: FavoritesState): FavoritesState {
-        val selectedSourceFilter = state.selectedSourceFilter
-            .takeIf { it == LibrarySourceFilter.ALL || it in state.availableSourceFilters }
-            ?: LibrarySourceFilter.ALL
+        val selectedSourceFilter = state.selectedSourceFilter.availableOrAll(state.sourceFilterOptions, state.sourceTypesById)
         val filteredTracks = sortTracks(
             tracks = filterTracks(
                 tracks = state.tracks,
@@ -283,15 +295,6 @@ class FavoritesStore(
         }
     }
 
-    private fun buildAvailableSourceFilters(sources: List<SourceWithStatus>): List<LibrarySourceFilter> {
-        val presentFilters = sources.map { it.source.type.toLibrarySourceFilter() }.toSet()
-        return buildList {
-            add(LibrarySourceFilter.ALL)
-            FILTER_ORDER.filter { it in presentFilters }.forEach(::add)
-            add(LibrarySourceFilter.DOWNLOADED)
-        }
-    }
-
     private fun setMessage(message: UiText) {
         updateState { it.copy(message = message) }
     }
@@ -301,7 +304,7 @@ class FavoritesStore(
         val favoriteTrackMetadata: Map<String, FavoriteTrackMetadata>,
         val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val sourceTypesById: Map<String, ImportSourceType>,
-        val availableSourceFilters: List<LibrarySourceFilter>,
+        val sourceFilterOptions: List<LibrarySourceFilterOption>,
         val navidromeSourceIds: Set<String>,
     )
 
@@ -313,21 +316,9 @@ class FavoritesStore(
         val trackPlaybackStats: Map<String, TrackPlaybackStat>,
         val offlineDownloadsByTrackId: Map<String, OfflineDownload>,
         val sourceTypesById: Map<String, ImportSourceType>,
-        val availableSourceFilters: List<LibrarySourceFilter>,
+        val sourceFilterOptions: List<LibrarySourceFilterOption>,
         val navidromeSourceIds: Set<String>,
     )
-
-    private companion object {
-        val FILTER_ORDER = listOf(
-            LibrarySourceFilter.LOCAL_FOLDER,
-            LibrarySourceFilter.SAMBA,
-            LibrarySourceFilter.WEBDAV,
-            LibrarySourceFilter.NAVIDROME,
-            LibrarySourceFilter.SUBSONIC,
-            LibrarySourceFilter.EMBY,
-            LibrarySourceFilter.FN_MUSIC,
-        )
-    }
 }
 
 private object EmptyTrackPlaybackStatsRepository : TrackPlaybackStatsRepository {

@@ -129,6 +129,7 @@ import top.iwesley.lyn.music.feature.importing.ImportIntent
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.TrackSortMode
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
@@ -266,29 +267,6 @@ internal fun mobileLibraryHubRefreshIndicatorVisible(
     isMinimumHoldActive: Boolean,
 ): Boolean {
     return isRefreshing || isMinimumHoldActive
-}
-
-@Composable
-private fun mobileLibraryHubSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
-        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
-        LibrarySourceFilter.SAMBA -> "Samba"
-        LibrarySourceFilter.WEBDAV -> "WebDAV"
-        LibrarySourceFilter.NAVIDROME -> "Navidrome"
-        LibrarySourceFilter.SUBSONIC -> "Subsonic"
-        LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.FN_MUSIC -> uiString(Res.string.fn_music_name)
-        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
-    }
-}
-
-@Composable
-private fun mobileLibraryHubSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
-        else -> mobileLibraryHubSourceFilterButtonLabel(filter)
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1122,7 +1100,7 @@ internal fun AutomotiveLibraryContent(
     }
     val sourceMenu = MobileLibraryHubSourceMenu(
         selectedSourceFilter = libraryState.selectedSourceFilter,
-        availableSourceFilters = libraryState.availableSourceFilters,
+        sourceFilterOptions = libraryState.sourceFilterOptions,
         onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
         selectedOnlineSourceId = onlineLibraryState.sourceId,
         onSourceFilterChanged = {
@@ -1270,7 +1248,7 @@ private fun LandscapeLibraryTabStrip(
             }
         }
         LibraryBrowserToolbarActions(
-            availableSourceFilters = sourceMenu.availableSourceFilters,
+            sourceFilterOptions = sourceMenu.sourceFilterOptions,
             selectedSourceFilter = sourceMenu.selectedSourceFilter,
             onlineSourceOptions = sourceMenu.onlineSourceOptions,
             selectedOnlineSourceId = sourceMenu.selectedOnlineSourceId,
@@ -1503,7 +1481,7 @@ private fun MobileLibraryHubTab(
                 sourceMenu = when (activeSearchTab) {
                     AppTab.Favorites -> MobileLibraryHubSourceMenu(
                         selectedSourceFilter = favoritesState.selectedSourceFilter,
-                        availableSourceFilters = favoritesState.availableSourceFilters,
+                        sourceFilterOptions = favoritesState.sourceFilterOptions,
                         onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
                         selectedOnlineSourceId = onlineFavoritesState.sourceId,
                         onSourceFilterChanged = { filter ->
@@ -1517,7 +1495,7 @@ private fun MobileLibraryHubTab(
 
                     AppTab.Playlists -> MobileLibraryHubSourceMenu(
                         selectedSourceFilter = playlistsState.selectedSourceFilter,
-                        availableSourceFilters = playlistsState.availableSourceFilters,
+                        sourceFilterOptions = playlistsState.sourceFilterOptions,
                         onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
                         selectedOnlineSourceId = onlinePlaylistsState.sourceId,
                         onSourceFilterChanged = { filter ->
@@ -1675,7 +1653,7 @@ private fun MobileLibraryHubTab(
 
 private data class MobileLibraryHubSourceMenu(
     val selectedSourceFilter: LibrarySourceFilter,
-    val availableSourceFilters: List<LibrarySourceFilter>,
+    val sourceFilterOptions: List<LibrarySourceFilterOption>,
     val onlineSourceOptions: List<OnlineSourceOption> = emptyList(),
     val selectedOnlineSourceId: String? = null,
     val onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
@@ -1859,11 +1837,12 @@ private fun MobileLibraryHubActionsDropdownMenu(
                     },
                     onClick = { onLayerChanged(MobileLibraryHubMenuLayer.Root) },
                 )
-                sourceMenu?.availableSourceFilters.orEmpty().forEach { filter ->
+                sourceMenu?.sourceFilterOptions.orEmpty().forEach { option ->
+                    val filter = option.filter
                     val isSelected = sourceMenu?.selectedOnlineSourceId == null &&
                         filter == sourceMenu?.selectedSourceFilter
                     DropdownMenuItem(
-                        text = { Text(mobileLibraryHubSourceFilterMenuLabel(filter)) },
+                        text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         trailingIcon = if (isSelected) {
                             {
                                 Icon(
@@ -1880,7 +1859,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
                 sourceMenu?.onlineSourceOptions.orEmpty().forEach { option ->
                     val isSelected = option.sourceId == sourceMenu?.selectedOnlineSourceId
                     DropdownMenuItem(
-                        text = { Text(option.label.displayText()) },
+                        text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         trailingIcon = if (isSelected) {
                             {
                                 Icon(

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -97,6 +98,8 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
+import top.iwesley.lyn.music.feature.library.librarySourceFilterButtonLabel
 import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
 import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
 import top.iwesley.lyn.music.feature.offline.batchDownloadInsufficientSpaceMessage
@@ -748,7 +751,7 @@ internal fun PlaylistsTab(
                     selectedPlaylistId = requestedPlaylistId,
                     isRefreshing = isRefreshing,
                     selectedSourceFilter = state.selectedSourceFilter,
-                    availableSourceFilters = state.availableSourceFilters,
+                    sourceFilterOptions = state.sourceFilterOptions,
                     onlineSourceOptions = onlineSourceOptions,
                     selectedOnlineSourceId = onlineState.sourceId,
                     isOnlineMode = isOnlineMode,
@@ -841,7 +844,7 @@ internal fun PlaylistsTab(
                 selectedPlaylistId = requestedPlaylistId,
                 isRefreshing = isRefreshing,
                 selectedSourceFilter = state.selectedSourceFilter,
-                availableSourceFilters = state.availableSourceFilters,
+                sourceFilterOptions = state.sourceFilterOptions,
                 onlineSourceOptions = onlineSourceOptions,
                 selectedOnlineSourceId = onlineState.sourceId,
                 isOnlineMode = isOnlineMode,
@@ -962,7 +965,7 @@ private fun PlaylistListPane(
     selectedPlaylistId: String?,
     isRefreshing: Boolean,
     selectedSourceFilter: LibrarySourceFilter,
-    availableSourceFilters: List<LibrarySourceFilter>,
+    sourceFilterOptions: List<LibrarySourceFilterOption>,
     onlineSourceOptions: List<OnlineSourceOption> = emptyList(),
     selectedOnlineSourceId: String? = null,
     isOnlineMode: Boolean = false,
@@ -1056,7 +1059,7 @@ private fun PlaylistListPane(
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     text = selectedOnlineSourceLabel?.displayText()
-                                        ?: playlistSourceFilterButtonLabel(selectedSourceFilter),
+                                        ?: librarySourceFilterButtonLabel(selectedSourceFilter, sourceFilterOptions).displayText(),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -1066,9 +1069,13 @@ private fun PlaylistListPane(
                                 onDismissRequest = { sourceFilterMenuExpanded = false },
                                 containerColor = mainShellColors.navContainer,
                             ) {
-                                availableSourceFilters.forEach { filter ->
+                                sourceFilterOptions.forEach { option ->
+                                    val filter = option.filter
                                     DropdownMenuItem(
-                                        text = { Text(playlistSourceFilterMenuLabel(filter)) },
+                                        text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        trailingIcon = if (selectedOnlineSourceId == null && filter == selectedSourceFilter) {
+                                            { Icon(Icons.Rounded.Check, contentDescription = null) }
+                                        } else null,
                                         onClick = {
                                             sourceFilterMenuExpanded = false
                                             onSourceFilterChanged(filter)
@@ -1077,7 +1084,10 @@ private fun PlaylistListPane(
                                 }
                                 onlineSourceOptions.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text(option.label.displayText()) },
+                                        text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        trailingIcon = if (option.sourceId == selectedOnlineSourceId) {
+                                            { Icon(Icons.Rounded.Check, contentDescription = null) }
+                                        } else null,
                                         onClick = {
                                             sourceFilterMenuExpanded = false
                                             onOnlineSourceSelected(option.sourceId)
@@ -1560,7 +1570,7 @@ private fun PlaylistDetailPane(
                         uiString(Res.string.playlist_empty_title)
                     },
                     body = if (hasTracksOutsideFilter) {
-                        uiString(Res.string.playlist_source_filter_hint, playlistSourceFilterButtonLabel(LibrarySourceFilter.ALL))
+                        uiString(Res.string.playlist_source_filter_hint, librarySourceFilterButtonLabel(LibrarySourceFilter.ALL).displayText())
                     } else {
                         uiString(Res.string.playlists_add_current_track_hint)
                     },
@@ -1653,29 +1663,6 @@ private fun matchesPlaylistSourceFilter(
         sourceTypesById = sourceTypesById,
         offlineDownloadsByTrackId = offlineDownloadsByTrackId,
     )
-}
-
-@Composable
-private fun playlistSourceFilterButtonLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
-        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
-        LibrarySourceFilter.SAMBA -> "Samba"
-        LibrarySourceFilter.WEBDAV -> "WebDAV"
-        LibrarySourceFilter.NAVIDROME -> "Navidrome"
-        LibrarySourceFilter.SUBSONIC -> "Subsonic"
-        LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.FN_MUSIC -> uiString(Res.string.fn_music_name)
-        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
-    }
-}
-
-@Composable
-private fun playlistSourceFilterMenuLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
-        else -> playlistSourceFilterButtonLabel(filter)
-    }
 }
 
 @Composable

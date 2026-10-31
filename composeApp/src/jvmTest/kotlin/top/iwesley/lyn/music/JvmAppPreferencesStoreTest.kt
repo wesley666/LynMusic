@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -17,8 +18,104 @@ import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.DesktopLyricsPosition
 import top.iwesley.lyn.music.platform.JvmAppPreferencesStore
 import top.iwesley.lyn.music.platform.JvmSettingsPropertiesFile
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 
 class JvmAppPreferencesStoreTest {
+    @Test
+    fun `conditional source updates reject stale values and preserve selection after reload`() = runTest {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-source-filter-conditional")
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties").toFile()
+            val store = JvmAppPreferencesStore(settingsFile)
+            val first = LibrarySourceFilter.Source("dav-a")
+            val second = LibrarySourceFilter.Source("dav-b")
+            for (favorites in listOf(false, true)) {
+                val setFilter: suspend (LibrarySourceFilter) -> Unit =
+                    if (favorites) store::setFavoritesSourceFilter else store::setLibrarySourceFilter
+                val compareAndSet: suspend (LibrarySourceFilter, LibrarySourceFilter) -> Boolean =
+                    if (favorites) store::compareAndSetFavoritesSourceFilter else store::compareAndSetLibrarySourceFilter
+                val current = if (favorites) store.favoritesSourceFilter else store.librarySourceFilter
+                setFilter(first)
+                assertTrue(compareAndSet(first, LibrarySourceFilter.ALL))
+                assertEquals(LibrarySourceFilter.ALL, current.value)
+                setFilter(second)
+                assertFalse(compareAndSet(first, LibrarySourceFilter.ALL))
+                assertEquals(second, current.value)
+                val reloaded = JvmAppPreferencesStore(settingsFile)
+                assertEquals(second, if (favorites) reloaded.favoritesSourceFilter.value else reloaded.librarySourceFilter.value)
+            }
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `conditional settings update checks the expected value after the pending write finishes`() = runBlocking {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-source-filter-write-race")
+        val releaseFirstWrite = CountDownLatch(1)
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties").toFile()
+            val propertiesFile = JvmSettingsPropertiesFile(settingsFile)
+            val first = LibrarySourceFilter.Source("dav-a")
+            val second = LibrarySourceFilter.Source("dav-b")
+            val current = MutableStateFlow<LibrarySourceFilter>(first)
+            val firstWriteStarted = CountDownLatch(1)
+            val conditionChecked = CountDownLatch(1)
+            val userWrite = async(Dispatchers.IO) {
+                propertiesFile.update(
+                    mutate = {
+                        firstWriteStarted.countDown()
+                        check(releaseFirstWrite.await(5, TimeUnit.SECONDS))
+                        setProperty("library_source_filter", "source:dav-b")
+                    },
+                    onPersisted = { current.value = second },
+                )
+            }
+            assertTrue(firstWriteStarted.await(5, TimeUnit.SECONDS))
+            val fallback = async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+                propertiesFile.updateIf(
+                    condition = { conditionChecked.countDown(); current.value == first },
+                    mutate = { setProperty("library_source_filter", "ALL") },
+                    onPersisted = { current.value = LibrarySourceFilter.ALL },
+                )
+            }
+            assertEquals(1L, conditionChecked.count)
+            releaseFirstWrite.countDown()
+            userWrite.await()
+            assertFalse(fallback.await())
+            assertEquals(second, current.value)
+            assertEquals(second, JvmAppPreferencesStore(settingsFile).librarySourceFilter.value)
+        } finally {
+            releaseFirstWrite.countDown()
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `source selections survive file round trip and replace old protocol selections`() = runTest {
+        val temporaryDirectory = Files.createTempDirectory("lynmusic-source-filter")
+        try {
+            val settingsFile = temporaryDirectory.resolve("settings.properties")
+            Files.writeString(settingsFile, "library_source_filter=WEBDAV\nfavorites_source_filter=NAVIDROME\n")
+            val store = JvmAppPreferencesStore(settingsFile.toFile())
+            assertEquals(LibrarySourceFilter.ALL, store.librarySourceFilter.value)
+            assertEquals(LibrarySourceFilter.ALL, store.favoritesSourceFilter.value)
+            store.setLibrarySourceFilter(LibrarySourceFilter.Source("dav-1"))
+            store.setFavoritesSourceFilter(LibrarySourceFilter.Source("nav-2"))
+
+            val reloaded = JvmAppPreferencesStore(settingsFile.toFile())
+            assertEquals(LibrarySourceFilter.Source("dav-1"), reloaded.librarySourceFilter.value)
+            assertEquals(LibrarySourceFilter.Source("nav-2"), reloaded.favoritesSourceFilter.value)
+            reloaded.setLibrarySourceFilter(LibrarySourceFilter.LOCAL_FOLDER)
+            reloaded.setFavoritesSourceFilter(LibrarySourceFilter.LOCAL_FOLDER)
+            val localSelection = JvmAppPreferencesStore(settingsFile.toFile())
+            assertEquals(LibrarySourceFilter.LOCAL_FOLDER, localSelection.librarySourceFilter.value)
+            assertEquals(LibrarySourceFilter.LOCAL_FOLDER, localSelection.favoritesSourceFilter.value)
+        } finally {
+            temporaryDirectory.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `valid desktop lyrics position survives a file round trip`() = runTest {
         val temporaryDirectory = Files.createTempDirectory("lynmusic-desktop-lyrics-position")

@@ -1308,8 +1308,8 @@ private class FakeLibrarySourceFilterPreferencesStore(
     onlineFavoritesSourceId: String? = null,
     onlinePlaylistsSourceId: String? = null,
 ) : LibrarySourceFilterPreferencesStore {
-    override val librarySourceFilter = MutableStateFlow(LibrarySourceFilter.ALL)
-    override val favoritesSourceFilter = MutableStateFlow(LibrarySourceFilter.ALL)
+    override val librarySourceFilter = MutableStateFlow<LibrarySourceFilter>(LibrarySourceFilter.ALL)
+    override val favoritesSourceFilter = MutableStateFlow<LibrarySourceFilter>(LibrarySourceFilter.ALL)
     override val onlineLibrarySourceId = MutableStateFlow(onlineLibrarySourceId)
     override val onlineFavoritesSourceId = MutableStateFlow(onlineFavoritesSourceId)
     override val onlinePlaylistsSourceId = MutableStateFlow(onlinePlaylistsSourceId)
@@ -1335,6 +1335,12 @@ private class FakeLibrarySourceFilterPreferencesStore(
     override suspend fun setOnlinePlaylistsSourceId(sourceId: String?) {
         onlinePlaylistsSourceId.value = sourceId
     }
+
+    override suspend fun compareAndSetLibrarySourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        librarySourceFilter.compareAndSet(expected, filter)
+
+    override suspend fun compareAndSetFavoritesSourceFilter(expected: LibrarySourceFilter, filter: LibrarySourceFilter): Boolean =
+        favoritesSourceFilter.compareAndSet(expected, filter)
 
     override suspend fun setLibraryTrackSortMode(mode: TrackSortMode) {
         libraryTrackSortMode.value = mode

@@ -115,6 +115,7 @@ import top.iwesley.lyn.music.feature.library.LibraryBrowserActions
 import top.iwesley.lyn.music.feature.library.LibraryBrowserCount
 import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.library.LibraryTrackUiItem
 import top.iwesley.lyn.music.feature.library.LibraryBrowserUiState
@@ -191,7 +192,7 @@ internal fun LibraryTab(
         favoritesMessage = favoritesState.message,
     )
     val browserState = if (isOnlineMode) {
-        onlineState.toBrowserUiState(message = browserMessage)
+        onlineState.toBrowserUiState(message = browserMessage).copy(sourceFilterOptions = state.sourceFilterOptions)
     } else {
         state.toBrowserUiState(
             favoriteTrackIds = favoritesState.favoriteTrackIds,
@@ -314,6 +315,7 @@ internal fun FavoritesTab(
     val isOnlineMode = onlineState.sourceId != null
     val browserState = if (isOnlineMode) {
         onlineState.toBrowserUiState(message = onlineState.errorMessage ?: onlineState.message ?: state.message)
+            .copy(sourceFilterOptions = state.sourceFilterOptions)
     } else {
         state.toBrowserUiState(message = state.message)
     }
@@ -1257,7 +1259,7 @@ private fun LibraryBrowserTab(
                                     } else {
                                         {
                                             LibraryBrowserToolbarActions(
-                                                availableSourceFilters = state.availableSourceFilters,
+                                                sourceFilterOptions = state.sourceFilterOptions,
                                                 selectedSourceFilter = state.selectedSourceFilter,
                                                 onlineSourceOptions = onlineSourceOptions,
                                                 selectedOnlineSourceId = state.sourceId,
@@ -1278,7 +1280,7 @@ private fun LibraryBrowserTab(
                                 if (useDesktopToolbar) {
                                     Spacer(Modifier.weight(1f))
                                     LibraryBrowserToolbarActions(
-                                        availableSourceFilters = state.availableSourceFilters,
+                                        sourceFilterOptions = state.sourceFilterOptions,
                                         selectedSourceFilter = state.selectedSourceFilter,
                                         onlineSourceOptions = onlineSourceOptions,
                                         selectedOnlineSourceId = state.sourceId,
@@ -2415,7 +2417,7 @@ private fun librarySearchTextFieldValueFor(value: String): TextFieldValue {
 
 @Composable
 private fun LibraryBrowserToolbarActions(
-    availableSourceFilters: List<LibrarySourceFilter>,
+    sourceFilterOptions: List<LibrarySourceFilterOption>,
     selectedSourceFilter: LibrarySourceFilter,
     onlineSourceOptions: List<OnlineSourceOption>,
     selectedOnlineSourceId: String?,
@@ -2440,7 +2442,7 @@ private fun LibraryBrowserToolbarActions(
             }
             LibrarySourceFilterDropdownMenu(
                 expanded = sourceFilterMenuExpanded,
-                availableSourceFilters = availableSourceFilters,
+                sourceFilterOptions = sourceFilterOptions,
                 selectedSourceFilter = selectedSourceFilter,
                 onlineSourceOptions = onlineSourceOptions,
                 selectedOnlineSourceId = selectedOnlineSourceId,
@@ -2479,32 +2481,9 @@ private fun LibraryBrowserToolbarActions(
 }
 
 @Composable
-private fun librarySourceFilterButtonLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.source_filter_all)
-        LibrarySourceFilter.LOCAL_FOLDER -> uiString(Res.string.source_local_folder_label)
-        LibrarySourceFilter.SAMBA -> "Samba"
-        LibrarySourceFilter.WEBDAV -> "WebDAV"
-        LibrarySourceFilter.NAVIDROME -> "Navidrome"
-        LibrarySourceFilter.SUBSONIC -> "Subsonic"
-        LibrarySourceFilter.EMBY -> "Emby"
-        LibrarySourceFilter.FN_MUSIC -> uiString(Res.string.fn_music_name)
-        LibrarySourceFilter.DOWNLOADED -> uiString(Res.string.offline_downloaded_status)
-    }
-}
-
-@Composable
-private fun librarySourceFilterMenuLabel(filter: LibrarySourceFilter): String {
-    return when (filter) {
-        LibrarySourceFilter.ALL -> uiString(Res.string.common_all)
-        else -> librarySourceFilterButtonLabel(filter)
-    }
-}
-
-@Composable
-private fun LibrarySourceFilterDropdownMenu(
+internal fun LibrarySourceFilterDropdownMenu(
     expanded: Boolean,
-    availableSourceFilters: List<LibrarySourceFilter>,
+    sourceFilterOptions: List<LibrarySourceFilterOption>,
     selectedSourceFilter: LibrarySourceFilter,
     onlineSourceOptions: List<OnlineSourceOption>,
     selectedOnlineSourceId: String?,
@@ -2517,10 +2496,11 @@ private fun LibrarySourceFilterDropdownMenu(
         onDismissRequest = onDismiss,
         containerColor = mainShellColors.navContainer,
     ) {
-        availableSourceFilters.forEach { filter ->
+        sourceFilterOptions.forEach { option ->
+            val filter = option.filter
             val isSelected = selectedOnlineSourceId == null && filter == selectedSourceFilter
             DropdownMenuItem(
-                text = { Text(librarySourceFilterMenuLabel(filter)) },
+                text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 trailingIcon = if (isSelected) {
                     {
                         Icon(
@@ -2537,7 +2517,7 @@ private fun LibrarySourceFilterDropdownMenu(
         onlineSourceOptions.forEach { option ->
             val isSelected = option.sourceId == selectedOnlineSourceId
             DropdownMenuItem(
-                text = { Text(option.label.displayText()) },
+                text = { Text(option.label.displayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 trailingIcon = if (isSelected) {
                     {
                         Icon(
