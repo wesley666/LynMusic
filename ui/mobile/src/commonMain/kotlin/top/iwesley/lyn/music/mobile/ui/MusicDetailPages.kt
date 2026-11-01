@@ -68,6 +68,7 @@ private fun MusicDetailPage(
         return
     }
     val request = route.request()
+    val indexColumnWidth = rememberListIndexColumnWidth(data.tracks.size)
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("music-detail-page-${route.kind}").background(background), state = list,
         contentPadding = dockContentPadding(PaddingValues(20.dp)), verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -101,6 +102,7 @@ private fun MusicDetailPage(
                 else deriveTrackLibraryNavigationTargets(track, request.sourceFilter)
             TrackRow(
                 track = track, index = index, isFavorite = false, onToggleFavorite = {},
+                indexColumnWidth = indexColumnWidth,
                 menuContextKey = route.entryId,
                 showDuration = showDuration,
                 onArtistClick = targets.artistTarget?.let { target -> { navigation.open(target) } },

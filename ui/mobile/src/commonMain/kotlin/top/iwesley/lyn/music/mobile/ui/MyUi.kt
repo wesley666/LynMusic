@@ -50,6 +50,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.time.Instant
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
@@ -528,6 +529,7 @@ private fun DailyRecommendationDetail(
     onPlayTrack: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val indexColumnWidth = rememberListIndexColumnWidth(tracks.size)
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = dockContentPadding(PaddingValues(horizontal = 16.dp, vertical = 18.dp)),
@@ -585,6 +587,7 @@ private fun DailyRecommendationDetail(
                 DailyRecommendationTrackRow(
                     track = track,
                     index = index,
+                    indexColumnWidth = indexColumnWidth,
                     showDuration = showDuration,
                     onClick = { onPlayTrack(index) },
                 )
@@ -602,6 +605,7 @@ private fun RecentTracksDetail(
     onPlayTrack: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val indexColumnWidth = rememberListIndexColumnWidth(recentTracks.size)
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = dockContentPadding(PaddingValues(
@@ -629,6 +633,7 @@ private fun RecentTracksDetail(
                 RecentTrackRow(
                     recentTrack = recentTrack,
                     index = index,
+                    indexColumnWidth = indexColumnWidth,
                     showDuration = showDuration,
                     onClick = { onPlayTrack(index) },
                 )
@@ -723,6 +728,7 @@ private fun RecentTracksSection(
     onViewAll: () -> Unit,
 ) {
     val previewTracks = recentPreviewItems(recentTracks, isMobile)
+    val indexColumnWidth = rememberListIndexColumnWidth(previewTracks.size)
     Column(
         modifier = Modifier.padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -743,6 +749,7 @@ private fun RecentTracksSection(
                 RecentTrackRow(
                     recentTrack = recentTrack,
                     index = index,
+                    indexColumnWidth = indexColumnWidth,
                     showDuration = showDuration,
                     onClick = { onPlayTrack(index) },
                 )
@@ -915,6 +922,7 @@ private fun RecentSectionHeader(
 private fun RecentTrackRow(
     recentTrack: RecentTrack,
     index: Int,
+    indexColumnWidth: Dp,
     showDuration: Boolean,
     onClick: () -> Unit,
 ) {
@@ -927,14 +935,14 @@ private fun RecentTrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 0.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = (index + 1).toString().padStart(2, '0'),
+            ListIndexColumn(
+                index = index,
+                width = indexColumnWidth,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
             )
             TrackArtworkThumbnail(
                 artworkLocator = track.artworkLocator,
@@ -982,6 +990,7 @@ private fun RecentTrackRow(
 private fun DailyRecommendationTrackRow(
     track: Track,
     index: Int,
+    indexColumnWidth: Dp,
     showDuration: Boolean,
     onClick: () -> Unit,
 ) {
@@ -993,14 +1002,14 @@ private fun DailyRecommendationTrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 0.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = (index + 1).toString().padStart(2, '0'),
+            ListIndexColumn(
+                index = index,
+                width = indexColumnWidth,
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
             )
             TrackArtworkThumbnail(
                 artworkLocator = track.artworkLocator,

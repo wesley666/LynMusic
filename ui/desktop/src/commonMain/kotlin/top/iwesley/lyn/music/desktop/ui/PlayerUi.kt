@@ -338,6 +338,7 @@ internal fun QueueDrawer(
     if (effectiveSnapshot.currentTrack == null) return
     val shellColors = mainShellColors
     val listState = rememberLazyListState()
+    val indexColumnWidth = rememberListIndexColumnWidth(state.snapshot.queue.size)
     LaunchedEffect(presentation.isQueueVisible, effectiveSnapshot.currentIndex, state.snapshot.queue.size) {
         if (presentation.isQueueVisible && effectiveSnapshot.currentIndex in state.snapshot.queue.indices) {
             listState.scrollToItem((effectiveSnapshot.currentIndex - 2).coerceAtLeast(0))
@@ -435,6 +436,7 @@ internal fun QueueDrawer(
                                 QueueTrackRow(
                                     track = track,
                                     index = index,
+                                    indexColumnWidth = indexColumnWidth,
                                     isCurrent = index == effectiveSnapshot.currentIndex,
                                     isPlaying = index == effectiveSnapshot.currentIndex && effectiveSnapshot.isPlaying,
                                     onClick = { onPlayerIntent(PlayerIntent.PlayQueueIndex(index)) },
@@ -2879,6 +2881,7 @@ private const val PLAYER_INFO_VINYL_INNER_GLOW_DIAMETER_FRACTION = 0.8f
 private fun QueueTrackRow(
     track: Track,
     index: Int,
+    indexColumnWidth: Dp,
     isCurrent: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
@@ -2891,22 +2894,24 @@ private fun QueueTrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 0.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (isCurrent) {
-                Icon(
-                    imageVector = Icons.Rounded.GraphicEq,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
-                )
+                ListIndexColumn(index = index, width = indexColumnWidth) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             } else {
-                Text(
-                    text = (index + 1).toString().padStart(2, '0'),
+                ListIndexColumn(
+                    index = index,
+                    width = indexColumnWidth,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
                 )
             }
             Column(modifier = Modifier.weight(1f)) {

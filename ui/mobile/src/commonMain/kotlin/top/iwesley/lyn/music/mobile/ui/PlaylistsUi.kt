@@ -1388,6 +1388,7 @@ private fun PlaylistDetailPane(
     var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
     val visibleTracks = detail?.tracks?.map { it.track }.orEmpty()
+    val indexColumnWidth = rememberListIndexColumnWidth(visibleTracks.size)
     val selectedBatchTracks = remember(visibleTracks, selectedTrackIds) {
         selectedTracksInVisibleOrder(visibleTracks, selectedTrackIds)
     }
@@ -1581,6 +1582,7 @@ private fun PlaylistDetailPane(
                 PlaylistTrackRow(
                     entry = item,
                     index = index,
+                    indexColumnWidth = indexColumnWidth,
                     selectionMode = selectionMode,
                     selected = item.track.id in selectedTrackIds,
                     onSelectionToggle = {
@@ -1669,6 +1671,7 @@ private fun matchesPlaylistSourceFilter(
 private fun PlaylistTrackRow(
     entry: top.iwesley.lyn.music.core.model.PlaylistTrackEntry,
     index: Int,
+    indexColumnWidth: Dp,
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onSelectionToggle: (() -> Unit)? = null,
@@ -1693,18 +1696,20 @@ private fun PlaylistTrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 0.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onSelectionToggle?.invoke() },
-                    modifier = Modifier.size(32.dp),
-                )
+                ListIndexColumn(index = index, width = indexColumnWidth) {
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { onSelectionToggle?.invoke() },
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
             } else {
-                Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold)
+                ListIndexColumn(index = index, width = indexColumnWidth)
             }
             PlaylistArtworkThumbnail(
                 artworkLocator = entry.track.artworkLocator,

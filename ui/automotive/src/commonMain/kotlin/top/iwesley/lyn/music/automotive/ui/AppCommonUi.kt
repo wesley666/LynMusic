@@ -836,6 +836,7 @@ internal fun TrackRow(
     selectionMode: Boolean = false,
     selected: Boolean = false,
     onSelectionToggle: (() -> Unit)? = null,
+    indexColumnWidth: Dp = 32.dp,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -878,21 +879,23 @@ internal fun TrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(start = 14.dp, top = 12.dp, end = 0.dp, bottom = 12.dp),
+                .padding(start = 0.dp, top = 12.dp, end = 0.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (selectionMode) {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { onSelectionToggle?.invoke() },
-                    modifier = Modifier.size(32.dp),
-                )
+                ListIndexColumn(index = index, width = indexColumnWidth) {
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { onSelectionToggle?.invoke() },
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
             } else {
-                Text(
-                    (index + 1).toString().padStart(2, '0'),
+                ListIndexColumn(
+                    index = index,
+                    width = indexColumnWidth,
                     color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold
                 )
             }
             TrackArtworkThumbnail(

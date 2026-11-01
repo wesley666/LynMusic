@@ -658,6 +658,7 @@ private fun LibraryBrowserTab(
     val foldersListState = rememberLazyListState()
     val folderDetailListState = rememberLazyListState()
     val visibleTracks = remember(state.tracks) { state.tracks.map(LibraryTrackUiItem::track) }
+    val trackIndexColumnWidth = rememberListIndexColumnWidth(visibleTracks.size)
     val visibleAlbums = remember(state.albums) { state.albums.map(LibraryAlbumUiItem::album) }
     val visibleArtists = remember(state.artists) { state.artists.map(LibraryArtistUiItem::artist) }
     val folderDetailScrollPositions = rememberSaveable(saver = LibraryFolderScrollPositionsSaver) {
@@ -723,6 +724,7 @@ private fun LibraryBrowserTab(
     val selectedFolder = selectedFolderKey?.let { folderTree.nodesByKey[it] }
     val selectedFolderChildren = selectedFolderKey?.let { folderTree.childFoldersByKey[it].orEmpty() }.orEmpty()
     val selectedFolderTracks = selectedFolderKey?.let { folderTree.directTracksByKey[it].orEmpty() }.orEmpty()
+    val folderTrackIndexColumnWidth = rememberListIndexColumnWidth(selectedFolderTracks.size)
     val selectedFolderDetailItemCount = if (selectedFolder == null) {
         0
     } else {
@@ -1189,6 +1191,7 @@ private fun LibraryBrowserTab(
                                 TrackRow(
                                     track = track,
                                     index = index,
+                                    indexColumnWidth = folderTrackIndexColumnWidth,
                                     isFavorite = track.id in state.favoriteTrackIds,
                                     onToggleFavorite = { actions.onToggleFavorite(track) },
                                     menuContextKey = trackMenuContext,
@@ -1276,6 +1279,7 @@ private fun LibraryBrowserTab(
                                         TrackRow(
                                             track = track,
                                             index = index,
+                                            indexColumnWidth = trackIndexColumnWidth,
                                             isFavorite = trackItem.isFavorite,
                                             onToggleFavorite = { actions.onToggleFavorite(track) },
                                             menuContextKey = trackMenuContext,
