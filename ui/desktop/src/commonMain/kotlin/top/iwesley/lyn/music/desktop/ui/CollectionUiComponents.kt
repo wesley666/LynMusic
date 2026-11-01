@@ -475,6 +475,7 @@ internal fun AlbumRow(
     album: Album,
     artworkLocator: String?,
     artworkCacheKey: String? = null,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -483,7 +484,7 @@ internal fun AlbumRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
+                .clickable(enabled = enabled, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -526,6 +527,7 @@ internal fun ArtistRow(
     artist: Artist,
     trackCount: Int?,
     albumCount: Int?,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -534,7 +536,7 @@ internal fun ArtistRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
+                .clickable(enabled = enabled, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),

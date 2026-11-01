@@ -870,15 +870,21 @@ private fun LibraryBrowserTab(
         )
     }
     fun openAlbumDetail(item: LibraryAlbumUiItem) {
-        val target = if (state.isOnline && state.sourceId != null) LibraryNavigationTarget.OnlineAlbum(
-            requireNotNull(state.sourceId), item.id, item.album.title, item.album.artistName, item.artworkLocator,
-        ) else LibraryNavigationTarget.Album(item.id, state.selectedSourceFilter)
+        val target = if (state.isOnline) {
+            val sourceId = state.sourceId?.takeIf(String::isNotBlank) ?: return
+            val albumId = item.remoteAlbumId?.trim()?.takeIf(String::isNotBlank) ?: return
+            LibraryNavigationTarget.OnlineAlbum(
+                sourceId, albumId, item.album.title, item.album.artistName, item.artworkLocator,
+            )
+        } else LibraryNavigationTarget.Album(item.id, state.selectedSourceFilter)
         onOpenLibraryNavigationTarget?.invoke(target)
     }
     fun openArtistDetail(item: LibraryArtistUiItem) {
-        val target = if (state.isOnline && state.sourceId != null) LibraryNavigationTarget.OnlineArtist(
-            requireNotNull(state.sourceId), item.id, item.artist.name,
-        ) else LibraryNavigationTarget.Artist(item.id, state.selectedSourceFilter)
+        val target = if (state.isOnline) {
+            val sourceId = state.sourceId?.takeIf(String::isNotBlank) ?: return
+            val artistId = item.remoteArtistId?.trim()?.takeIf(String::isNotBlank) ?: return
+            LibraryNavigationTarget.OnlineArtist(sourceId, artistId, item.artist.name)
+        } else LibraryNavigationTarget.Artist(item.id, state.selectedSourceFilter)
         onOpenLibraryNavigationTarget?.invoke(target)
     }
 
@@ -1250,6 +1256,9 @@ private fun LibraryBrowserTab(
                                         val fallbackArtworkTrack = tracksByAlbumId[album.id].orEmpty().firstOrNull()
                                         AlbumRow(
                                             album = album,
+                                            enabled = !state.isOnline || (
+                                                state.sourceId?.isNotBlank() == true && albumItem.remoteAlbumId?.isNotBlank() == true
+                                            ),
                                             artworkLocator = albumItem.artworkLocator ?: fallbackArtworkTrack?.artworkLocator,
                                             artworkCacheKey = if (albumItem.artworkLocator == null) {
                                                 fallbackArtworkTrack?.let(::trackArtworkCacheKey)
@@ -1277,6 +1286,9 @@ private fun LibraryBrowserTab(
                                         val artist = artistItem.artist
                                         ArtistRow(
                                             artist = artist,
+                                            enabled = !state.isOnline || (
+                                                state.sourceId?.isNotBlank() == true && artistItem.remoteArtistId?.isNotBlank() == true
+                                            ),
                                             trackCount = artistItem.trackCount ?: if (state.isOnline) null else artist.trackCount,
                                             albumCount = artistItem.albumCount
                                                 ?: if (state.isOnline) null else artistAlbumCountById[artist.id] ?: 0,

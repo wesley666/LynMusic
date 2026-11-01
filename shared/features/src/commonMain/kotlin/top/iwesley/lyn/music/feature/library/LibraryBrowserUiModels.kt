@@ -80,6 +80,7 @@ data class LibraryAlbumUiItem(
     val id: String,
     val album: Album,
     val artworkLocator: String? = null,
+    val remoteAlbumId: String? = null,
 )
 
 data class LibraryArtistUiItem(
@@ -87,6 +88,7 @@ data class LibraryArtistUiItem(
     val artist: Artist,
     val trackCount: Int? = null,
     val albumCount: Int? = null,
+    val remoteArtistId: String? = null,
 )
 
 data class LibraryBrowserCapabilities(
@@ -225,6 +227,7 @@ fun OnlineLibraryState.toBrowserUiState(
                 id = albumItem.album.id,
                 album = albumItem.album,
                 artworkLocator = albumItem.artworkLocator,
+                remoteAlbumId = albumItem.album.id.normalizedRemoteEntityIdOrNull(),
             )
         },
         artists = artists.map { artistItem ->
@@ -233,6 +236,7 @@ fun OnlineLibraryState.toBrowserUiState(
                 artist = artistItem.artist,
                 trackCount = artistItem.trackCount,
                 albumCount = artistItem.albumCount,
+                remoteArtistId = artistItem.artist.id.normalizedRemoteEntityIdOrNull(),
             )
         },
         allTrackCount = if (hasActiveQuery) {
@@ -264,6 +268,7 @@ fun OnlineLibraryState.toBrowserUiState(
                 id = albumItem.album.id,
                 album = albumItem.album,
                 artworkLocator = albumItem.artworkLocator,
+                remoteAlbumId = albumItem.album.id.normalizedRemoteEntityIdOrNull(),
             )
         },
         onlineArtistItemsById = knownArtistItemsById.mapValues { (_, artistItem) ->
@@ -272,6 +277,7 @@ fun OnlineLibraryState.toBrowserUiState(
                 artist = artistItem.artist,
                 trackCount = artistItem.trackCount,
                 albumCount = artistItem.albumCount,
+                remoteArtistId = artistItem.artist.id.normalizedRemoteEntityIdOrNull(),
             )
         },
         onlineArtistAlbumsById = selectedArtistAlbumsById.mapValues { (_, albums) ->
@@ -280,6 +286,7 @@ fun OnlineLibraryState.toBrowserUiState(
                     id = albumItem.album.id,
                     album = albumItem.album,
                     artworkLocator = albumItem.artworkLocator,
+                    remoteAlbumId = albumItem.album.id.normalizedRemoteEntityIdOrNull(),
                 )
             }
         },
@@ -362,38 +369,60 @@ fun OnlineFavoritesState.toBrowserUiState(
 }
 
 private fun artistItemsForTracks(tracks: List<Track>): List<LibraryArtistUiItem> {
-    val albumCountByArtistId = albumCountByArtistId(tracks)
-    return deriveVisibleArtists(tracks).map { artist ->
-        LibraryArtistUiItem(
-            id = artist.id,
-            artist = artist,
-            trackCount = artist.trackCount,
-            albumCount = albumCountByArtistId[artist.id] ?: 0,
-        )
-    }
+    return tracks
+        .groupBy { it.favoriteArtistGroupIdOrNull() }
+        .mapNotNull { (artistId, artistTracks) ->
+            artistId?.let {
+                LibraryArtistUiItem(
+                    id = artistId,
+                    artist = Artist(
+                        id = artistId,
+                        name = artistTracks.firstNotNullOfOrNull { track ->
+                            track.artistName?.trim()?.takeIf(String::isNotBlank)
+                        }.orEmpty(),
+                        trackCount = artistTracks.size,
+                    ),
+                    trackCount = artistTracks.size,
+                    albumCount = albumTracksById(artistTracks).size,
+                    remoteArtistId = artistTracks.first().artistId.normalizedRemoteEntityIdOrNull(),
+                )
+            }
+        }
+        .sortedWith(compareByDescending<LibraryArtistUiItem> { it.artist.trackCount }.thenBy { it.artist.name.lowercase() })
 }
 
 private fun albumItemsForTracks(tracks: List<Track>): List<LibraryAlbumUiItem> {
-    val tracksByAlbumId = albumTracksById(tracks)
-    return deriveVisibleAlbums(tracks).map { album ->
-        LibraryAlbumUiItem(
-            id = album.id,
-            album = album,
-            artworkLocator = tracksByAlbumId[album.id].orEmpty().firstArtworkLocatorOrNull(),
-        )
-    }
+    return albumTracksById(tracks)
+        .map { (albumId, albumTracks) ->
+            LibraryAlbumUiItem(
+                id = albumId,
+                album = Album(
+                    id = albumId,
+                    title = albumTracks.firstNotNullOfOrNull { track ->
+                        track.albumTitle?.trim()?.takeIf(String::isNotBlank)
+                    }.orEmpty(),
+                    artistName = albumTracks.firstNotNullOfOrNull { track ->
+                        track.artistName?.trim()?.takeIf(String::isNotBlank)
+                    },
+                    trackCount = albumTracks.size,
+                ),
+                artworkLocator = albumTracks.firstArtworkLocatorOrNull(),
+                remoteAlbumId = albumTracks.first().albumId.normalizedRemoteEntityIdOrNull(),
+            )
+        }
+        .sortedWith(compareByDescending<LibraryAlbumUiItem> { it.album.trackCount }.thenBy { it.album.title.lowercase() })
 }
 
 private fun albumTracksById(tracks: List<Track>): Map<String, List<Track>> {
     return tracks
-        .groupBy { it.albumLibraryIdOrNull() }
+        .groupBy { it.favoriteAlbumGroupIdOrNull() }
         .mapNotNull { (albumId, albumTracks) -> albumId?.let { it to albumTracks } }
         .toMap()
 }
 
 private fun artistAlbumsById(tracks: List<Track>): Map<String, List<LibraryAlbumUiItem>> {
     return tracks
-        .groupBy { it.artistLibraryIdOrNull() }
+        .groupBy { it.favoriteArtistGroupIdOrNull() }
         .mapNotNull { (artistId, artistTracks) ->
             artistId?.let { it to albumItemsForTracks(artistTracks) }
         }
@@ -403,6 +432,21 @@ private fun artistAlbumsById(tracks: List<Track>): Map<String, List<LibraryAlbum
 private fun List<Track>.firstArtworkLocatorOrNull(): String? {
     return firstNotNullOfOrNull { track -> track.artworkLocator?.takeIf { it.isNotBlank() } }
 }
+
+// Display groups without remote IDs remain visible, but do not provide online navigation targets.
+private fun Track.favoriteArtistGroupIdOrNull(): String? {
+    return artistId.normalizedRemoteEntityIdOrNull()
+        ?.let { "online-artist:${sourceId.length}:$sourceId:$it" }
+        ?: artistLibraryIdOrNull()
+}
+
+private fun Track.favoriteAlbumGroupIdOrNull(): String? {
+    return albumId.normalizedRemoteEntityIdOrNull()
+        ?.let { "online-album:${sourceId.length}:$sourceId:$it" }
+        ?: albumLibraryIdOrNull()
+}
+
+private fun String?.normalizedRemoteEntityIdOrNull(): String? = this?.trim()?.takeIf(String::isNotBlank)
 
 private fun Track.artistLibraryIdOrNull(): String? {
     return artistName?.trim()?.takeIf { it.isNotBlank() }?.let(::libraryArtistId)
