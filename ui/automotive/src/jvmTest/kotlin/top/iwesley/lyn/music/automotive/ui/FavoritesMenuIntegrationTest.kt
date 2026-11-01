@@ -38,7 +38,7 @@ import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesMenuIntegrationTest {
     @Test
-    fun `favorite menu navigation switches library mode before opening either detail`() = onUiThread {
+    fun `favorite menu opens independent details without changing library mode or search`() = onUiThread {
         for (onlineFavorites in listOf(false, true)) {
             for (query in listOf("", "unrelated search")) {
                 for (label in listOf("View artist", "View album")) {
@@ -49,27 +49,20 @@ class FavoritesMenuIntegrationTest {
                         ui.click(label)
                         assertFalse(ui.visible("View artist"))
                         assertFalse(ui.visible("View album"))
-                        if (!onlineFavorites) {
-                            assertEquals("library-online", ui.onlineLibrary.sourceId)
-                            assertEquals(0, ui.navigationHandledCount)
-                            assertTrue(ui.libraryOnlineIntents.any { it is OnlineLibraryIntent.SelectSource && it.sourceId == null })
-                            ui.completeLibrarySourceChange()
-                        }
-                        assertEquals(if (onlineFavorites) "source" else null, ui.onlineLibrary.sourceId)
+                        assertEquals(if (!onlineFavorites) "library-online" else null, ui.onlineLibrary.sourceId)
+                        assertEquals(query, if (!onlineFavorites) ui.onlineLibrary.query else ui.library.query)
                         assertEquals(1, ui.navigationHandledCount)
-                        assertTrue(ui.visible("Back"))
-                        assertEquals("", ui.onlineLibrary.query)
-                        if (!onlineFavorites) assertEquals("", ui.library.query)
                         assertEquals(1, ui.navigationTargets.size)
-                        if (onlineFavorites) {
-                            val expected = if (label == "View artist") LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A")
-                                else LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A")
-                            assertEquals(expected, ui.navigationTargets.single())
+                        val expected = if (onlineFavorites) {
+                            if (label == "View artist") LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A")
+                            else LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A")
                         } else {
-                            val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Artist A"))
-                                else LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A"))
-                            assertEquals(expected, ui.navigationTargets.single())
+                            if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Artist A"))
+                            else LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A"))
                         }
+                        assertEquals(expected, ui.navigationTargets.single())
+                        assertTrue(ui.visible("Back"))
+                        assertTrue(ui.libraryOnlineIntents.isEmpty())
                         assertTrue(ui.appFavoriteTargets.isEmpty())
                         assertTrue(ui.localIntents.isEmpty())
                         assertTrue(ui.onlineIntents.isEmpty())
@@ -89,6 +82,7 @@ class FavoritesMenuIntegrationTest {
                     ui.click("More actions for Track A")
                     ui.click("View artist")
                     assertFalse(ui.visible("View album"))
+                    ui.backFromDetail()
                     ui.click("More actions for Track A")
                     ui.click("View album")
                     assertFalse(ui.visible("View artist"))
@@ -120,17 +114,24 @@ class FavoritesMenuIntegrationTest {
 
     @Test
     fun `server returned favorites remain removable despite an earlier unlike`() = onUiThread {
-        for (albumDetail in listOf(false, true)) {
-            Fixture(online = true, previousUnlike = true).use { ui ->
-                if (albumDetail) {
-                    ui.click("Album")
-                    ui.click("Album A")
-                }
-                ui.click("More actions for Track A")
-                assertFalse(ui.visible("Add to favorites"))
-                ui.click("Remove from favorites")
-                ui.assertOnlineRemoval()
-            }
+        Fixture(online = true, previousUnlike = true).use { ui ->
+            ui.click("More actions for Track A")
+            assertFalse(ui.visible("Add to favorites"))
+            ui.click("Remove from favorites")
+            ui.assertOnlineRemoval()
+        }
+    }
+
+    @Test
+    fun `independent album detail uses the app favorite state instead of assuming the whole album is liked`() = onUiThread {
+        Fixture(online = true, previousUnlike = true, navigationEnabled = true).use { ui ->
+            ui.click("Album")
+            ui.click("Album A")
+            ui.click("More actions for Track A")
+            assertTrue(ui.visible("Add to favorites"))
+            ui.click("Add to favorites")
+            assertEquals(listOf(ui.track to true), ui.appFavoriteTargets)
+            assertEquals(listOf<OnlineFavoritesIntent>(OnlineFavoritesIntent.SetFavorite("source", ui.track, true)), ui.onlineIntents)
         }
     }
 
@@ -263,6 +264,10 @@ class FavoritesMenuIntegrationTest {
         val playlistTracks = mutableListOf<Track>()
         val navigationTargets = mutableListOf<LibraryNavigationTarget>()
         private val scheduler = TestCoroutineScheduler()
+        private lateinit var detailNavigation: MusicDetailNavigation
+        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
+            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, listOf(track)))
+        }
         private var frame = 0L
         private val scene = ImageComposeScene(width, 1000, coroutineContext = UnconfinedTestDispatcher(scheduler)) {
             ProvideUiResourceLanguage("en") {
@@ -283,11 +288,14 @@ class FavoritesMenuIntegrationTest {
                     },
                     onAddToPlaylist = { playlistTracks += it },
                 )
-                CompositionLocalProvider(
+                val details = rememberMusicDetailNavigation(detailQueries) {}.also { detailNavigation = it }
+                CompositionLocalProvider(LocalMusicDetailNavigation provides details,
                     LocalPlatformDescriptor provides platform,
                     LocalTrackListActionBindings provides bindings,
                 ) {
                     LynMusicTheme {
+                        MusicDetailHost(onPlayerIntent = { error("Unexpected playback") }, modifier = Modifier.fillMaxSize()) {
+
                         if (showFavorites) {
                             FavoritesTab(
                                 state = localFavorites,
@@ -323,6 +331,7 @@ class FavoritesMenuIntegrationTest {
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
+                        }
                     }
                 }
             }
@@ -338,12 +347,12 @@ class FavoritesMenuIntegrationTest {
                 artists = deriveVisibleArtists(tracks), filteredArtists = deriveVisibleArtists(visible), selectedSourceFilter = filter)
         }
 
+        fun backFromDetail() { detailNavigation.pop(); render() }
+
         private fun openNavigation(target: LibraryNavigationTarget) {
             navigationTargets += target
-            if (navigateToLibrary) {
-                pendingNavigation = target
-                showFavorites = false
-            }
+            navigationHandledCount++
+            detailNavigation.open(target)
         }
 
         private fun onLibraryOnlineIntent(intent: OnlineLibraryIntent) {
@@ -425,4 +434,15 @@ class FavoritesMenuIntegrationTest {
 
         override fun close() = scene.close()
     }
+}
+
+private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
+    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
+    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
+    return top.iwesley.lyn.music.feature.details.MusicDetailData(
+        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
+        artistName = request.artistName ?: album?.artistName,
+        tracks = tracks,
+        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
+    )
 }

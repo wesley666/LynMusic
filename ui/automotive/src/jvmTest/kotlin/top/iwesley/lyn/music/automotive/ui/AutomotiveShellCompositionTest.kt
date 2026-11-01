@@ -43,7 +43,7 @@ class AutomotiveShellCompositionTest {
                     val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"))
                         else LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album"))
                     assertEquals(listOf(expected), ui.navigationTargets)
-                    assertEquals(AppTab.Library, ui.selectedTab)
+                    assertEquals(tab, ui.selectedTab)
                     ui.assertHasLabel("Back")
                     assertTrue(ui.playerIntents.isEmpty())
                 }
@@ -144,10 +144,15 @@ class AutomotiveShellCompositionTest {
             durationMs = 180_000,
         )) else PlayerState()
         private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME, PlatformCapabilities(true, true, true, true, false))
+        private lateinit var detailNavigation: MusicDetailNavigation
+        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
+            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, tracks))
+        }
         private var frame = 0L
         private val scene = ImageComposeScene(width, height) {
             ProvideUiResourceLanguage("en") {
-                CompositionLocalProvider(LocalPlatformDescriptor provides platform) {
+                val details = rememberMusicDetailNavigation(detailQueries) {}.also { detailNavigation = it }
+                CompositionLocalProvider(LocalMusicDetailNavigation provides details, LocalPlatformDescriptor provides platform) {
                     LynMusicTheme {
                         val railState = rememberWideNavigationRailState()
                         val libraryEntry = rememberAutomotiveLibraryEntry()
@@ -156,7 +161,7 @@ class AutomotiveShellCompositionTest {
                             AutomotiveLandscapeShell(
                                 navigationRailState = railState,
                                 selectedTab = selectedTab,
-                                onTabSelected = { selectedTab = it },
+                                onTabSelected = { detailNavigation.clear(); selectedTab = it },
                                 platform = platform,
                                 myState = MyState(isLoadingContent = false),
                                 libraryState = library,
@@ -179,9 +184,9 @@ class AutomotiveShellCompositionTest {
                                 onPlayerIntent = { playerIntents += it },
                                 onSettingsIntent = {},
                                 onOpenBackgroundRunSettings = {},
-                                libraryNavigationTarget = navigationTarget,
+                                libraryNavigationTarget = null,
                                 onLibraryNavigationHandled = { navigationTarget = null },
-                                onOpenLibraryNavigationTarget = { navigationTargets += it; navigationTarget = it; selectedTab = AppTab.Library },
+                                onOpenLibraryNavigationTarget = { navigationTargets += it; detailNavigation.open(it) },
                                 onOpenAddToPlaylist = {},
                             )
                         } else {
@@ -190,7 +195,7 @@ class AutomotiveShellCompositionTest {
                                 mobilePortraitMiniPlayer = true,
                                 hideMiniPlayerBar = false,
                                 selectedTab = selectedTab,
-                                onTabSelected = { selectedTab = it },
+                                onTabSelected = { detailNavigation.clear(); selectedTab = it },
                                 platform = platform,
                                 myState = MyState(isLoadingContent = false),
                                 libraryState = library,
@@ -213,9 +218,9 @@ class AutomotiveShellCompositionTest {
                                 onPlayerIntent = {},
                                 onSettingsIntent = {},
                                 onOpenBackgroundRunSettings = {},
-                                libraryNavigationTarget = navigationTarget,
+                                libraryNavigationTarget = null,
                                 onLibraryNavigationHandled = { navigationTarget = null },
-                                onOpenLibraryNavigationTarget = { navigationTargets += it; navigationTarget = it; selectedTab = AppTab.Library },
+                                onOpenLibraryNavigationTarget = { navigationTargets += it; detailNavigation.open(it) },
                                 onOpenAddToPlaylist = {},
                             )
                         }
@@ -282,4 +287,15 @@ class AutomotiveShellCompositionTest {
         }
         override fun close() = scene.close()
     }
+}
+
+private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
+    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
+    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
+    return top.iwesley.lyn.music.feature.details.MusicDetailData(
+        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
+        artistName = request.artistName ?: album?.artistName,
+        tracks = tracks,
+        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
+    )
 }

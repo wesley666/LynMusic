@@ -40,7 +40,7 @@ class MobileCollectionCompositionTest {
                     val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"))
                         else LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album"))
                     assertEquals(expected, ui.lastNavigationTarget)
-                    assertEquals(AppTab.Library, ui.selectedTab)
+                    assertEquals(tab, ui.selectedTab)
                     ui.assertVisible("Back")
                     assertTrue(ui.playerIntents.isEmpty())
                     assertTrue(ui.favoriteIntents.isEmpty())
@@ -116,14 +116,14 @@ class MobileCollectionCompositionTest {
     }
 
     @Test
-    fun `my recent album navigates into this platforms library`() = onUiThread {
+    fun `my recent album opens details without changing the entry tab`() = onUiThread {
         Fixture(AppTab.My, height = 1600).use { ui ->
             ui.click("Second track")
             ui.assertPlayback(listOf("one", "two"), 1)
             ui.capture("my")
             ui.click("Fixture album")
             assertEquals(LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album")), ui.lastNavigationTarget)
-            assertEquals(AppTab.Library, ui.selectedTab)
+            assertEquals(AppTab.My, ui.selectedTab)
             ui.assertVisible("First track")
             ui.assertVisible("Back")
         }
@@ -156,15 +156,20 @@ class MobileCollectionCompositionTest {
             visibleAlbumCount = 1, visibleArtistCount = 1, sourceLabelsById = mapOf("source" to "Fixture source"))
         private val playlist = PlaylistSummary("playlist", "Fixture playlist", trackCount = 2)
         private var playlists by mutableStateOf(PlaylistsState(isLoadingContent = false, playlists = listOf(playlist)))
+        private lateinit var detailNavigation: MusicDetailNavigation
+        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
+            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, tracks))
+        }
         private var frame = 0L
         private val scene = ImageComposeScene(width, height) {
             ProvideUiResourceLanguage("en") {
-                CompositionLocalProvider(LocalPlatformDescriptor provides platform) {
+                val details = rememberMusicDetailNavigation(detailQueries) {}.also { detailNavigation = it }
+                CompositionLocalProvider(LocalMusicDetailNavigation provides details, LocalPlatformDescriptor provides platform) {
                     LynMusicTheme {
                         MobilePageContent(
                             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                             selectedTab = selectedTab,
-                            onTabSelected = { selectedTab = it },
+                            onTabSelected = { detailNavigation.clear(); selectedTab = it },
                             platform = platform,
                             myState = MyState(isLoadingContent = false,
                                 recentTracks = tracks.map { RecentTrack(it, 1, 1L) },
@@ -195,12 +200,11 @@ class MobileCollectionCompositionTest {
                             onOnlineFavoritesIntent = {}, onImportIntent = { importIntents += it },
                             onPlayerIntent = { playerIntents += it }, onSettingsIntent = {},
                             onOpenBackgroundRunSettings = {},
-                            libraryNavigationTarget = navigationTarget,
+                            libraryNavigationTarget = null,
                             onLibraryNavigationHandled = { navigationTarget = null },
                             onOpenLibraryNavigationTarget = {
                                 lastNavigationTarget = it
-                                navigationTarget = it
-                                selectedTab = AppTab.Library
+                                detailNavigation.open(it)
                             },
                             compact = width < 1000,
                             mobileLibraryHub = width < 1000,
@@ -250,4 +254,15 @@ class MobileCollectionCompositionTest {
         }
         override fun close() = scene.close()
     }
+}
+
+private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
+    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
+    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
+    return top.iwesley.lyn.music.feature.details.MusicDetailData(
+        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
+        artistName = request.artistName ?: album?.artistName,
+        tracks = tracks,
+        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
+    )
 }

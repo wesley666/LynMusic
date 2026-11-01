@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="music_detail_loading">正在載入詳細資訊…</string>
+    <string name="music_detail_source_unavailable">此來源目前無法使用。請返回，或恢復來源後重試。</string>
+    <string name="music_detail_load_failed">詳細資訊載入失敗，請重試。</string>
+</resources>

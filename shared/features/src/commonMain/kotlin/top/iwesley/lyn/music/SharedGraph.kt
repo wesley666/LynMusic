@@ -180,6 +180,7 @@ class SharedGraph(
     val platform: PlatformDescriptor,
     val database: LynMusicDatabase,
     val myStore: MyStore,
+    val musicDetailQueries: top.iwesley.lyn.music.feature.details.MusicDetailQueries,
     val libraryStore: LibraryStore,
     val onlineLibraryStore: OnlineLibraryStore,
     val playlistsStore: PlaylistsStore,
@@ -446,6 +447,9 @@ fun buildSharedGraph(
         settingsRepository.ensureDefaults()
     }
     return SharedGraph(
+        musicDetailQueries = top.iwesley.lyn.music.feature.details.DefaultMusicDetailQueries(
+            libraryRepository, importSourceRepository, navidromeOnlineRepository, offlineDownloadRepository,
+        ),
         platform = platform,
         database = database,
         myStore = MyStore(

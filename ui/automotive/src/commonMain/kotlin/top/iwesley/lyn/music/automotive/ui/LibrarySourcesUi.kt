@@ -627,35 +627,6 @@ internal fun resolveTrackRowLibraryNavigationTargets(
     }
 }
 
-private fun prepareOnlineNavigationTarget(
-    target: LibraryNavigationTarget,
-    actions: LibraryBrowserActions,
-) {
-    when (target) {
-        is LibraryNavigationTarget.OnlineAlbum -> {
-            actions.onPrepareOnlineAlbumNavigation(
-                target.sourceId,
-                target.albumId,
-                target.albumTitle,
-                target.artistName,
-                target.artworkLocator,
-            )
-        }
-
-        is LibraryNavigationTarget.OnlineArtist -> {
-            actions.onPrepareOnlineArtistNavigation(
-                target.sourceId,
-                target.artistId,
-                target.artistName,
-            )
-        }
-
-        is LibraryNavigationTarget.Album,
-        is LibraryNavigationTarget.Artist,
-        -> Unit
-    }
-}
-
 @Composable
 private fun LibraryBrowserTab(
     state: LibraryBrowserUiState,
@@ -685,8 +656,6 @@ private fun LibraryBrowserTab(
     val albumsListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
     val foldersListState = rememberLazyListState()
-    val albumDetailListState = rememberLazyListState()
-    val artistDetailListState = rememberLazyListState()
     val folderDetailListState = rememberLazyListState()
     val visibleTracks = remember(state.tracks) { state.tracks.map(LibraryTrackUiItem::track) }
     val visibleAlbums = remember(state.albums) { state.albums.map(LibraryAlbumUiItem::album) }
@@ -701,13 +670,10 @@ private fun LibraryBrowserTab(
     var rootView by (rootState ?: defaultRootState)
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
-    var selectedArtistId by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedAlbumId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFolderPath by rememberSaveable { mutableStateOf<String?>(null) }
-    var lastAppliedOnlineContextTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
     val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter,
-        rootView, selectedArtistId, selectedAlbumId, selectedFolderSourceId, selectedFolderPath)
+        rootView, selectedFolderSourceId, selectedFolderPath)
     fun selectedFolderStableId(): String? {
         val sourceId = selectedFolderSourceId ?: return null
         return LibraryFolderKey(sourceId = sourceId, path = selectedFolderPath.orEmpty()).stableId
@@ -733,123 +699,17 @@ private fun LibraryBrowserTab(
         selectedFolderSourceId = destination.sourceId
         selectedFolderPath = destination.path
     }
-    when (resolveLibraryBrowserBackTarget(selectedArtistId, selectedAlbumId, selectedFolderSourceId)) {
-        LibraryBrowserBackTarget.Album -> {
-            PlatformBackHandler { selectedAlbumId = null }
-        }
-
-        LibraryBrowserBackTarget.Artist -> {
-            PlatformBackHandler {
-                selectedArtistId = null
-                selectedAlbumId = null
-            }
-        }
-
-        LibraryBrowserBackTarget.Folder -> {
-            PlatformBackHandler { navigateBackFromSelectedFolder() }
-        }
-
-        null -> Unit
-    }
+    PlatformBackHandler(enabled = selectedFolderSourceId != null) { navigateBackFromSelectedFolder() }
     val tracksByArtistId = remember(visibleTracks) {
         visibleTracks.groupBy(Track::artistLibraryIdOrNull)
     }
-    val tracksByAlbumId = remember(visibleTracks) {
-        visibleTracks.groupBy(Track::albumLibraryIdOrNull)
-    }
+    val tracksByAlbumId = remember(visibleTracks) { visibleTracks.groupBy(Track::albumLibraryIdOrNull) }
     val artistAlbumCountById = remember(tracksByArtistId) {
         tracksByArtistId.entries
             .mapNotNull { (artistId, tracks) ->
                 artistId?.let { it to deriveVisibleAlbums(tracks).size }
             }
             .toMap()
-    }
-    val selectedArtistItem = remember(state.artists, state.onlineArtistItemsById, state.isOnline, selectedArtistId) {
-        val artistId = selectedArtistId
-        when {
-            artistId == null -> null
-            state.isOnline -> state.artists.firstOrNull { it.id == artistId }
-                ?: state.onlineArtistItemsById[artistId]
-            else -> state.artists.firstOrNull { it.id == artistId }
-        }
-    }
-    val selectedArtist = selectedArtistItem?.artist
-    val onlineArtistAlbumItems = selectedArtistId
-        ?.let { state.onlineArtistAlbumsById[it] }
-        .orEmpty()
-    val isLoadingOnlineArtistAlbums = selectedArtistId in state.loadingArtistAlbumIds
-    val localArtistTracks = remember(tracksByArtistId, selectedArtistId) {
-        tracksByArtistId[selectedArtistId].orEmpty().sortedWith(ARTIST_DETAIL_TRACK_COMPARATOR)
-    }
-    val artistTracks = if (state.isOnline && selectedArtistId != null) {
-        emptyList()
-    } else {
-        localArtistTracks
-    }
-    val localArtistAlbumItems = remember(localArtistTracks) {
-        deriveVisibleAlbums(localArtistTracks)
-            .map { album -> LibraryAlbumUiItem(id = album.id, album = album) }
-    }
-    val artistAlbumItems = if (state.isOnline && selectedArtistId != null) {
-        onlineArtistAlbumItems
-    } else {
-        localArtistAlbumItems
-    }
-    val artistAlbums = remember(artistAlbumItems) {
-        artistAlbumItems.map(LibraryAlbumUiItem::album)
-    }
-    val selectedArtistTrackCount = if (state.isOnline) {
-        selectedArtistItem?.trackCount
-    } else {
-        artistTracks.size
-    }
-    val selectedArtistAlbumCount = if (state.isOnline) {
-        selectedArtistItem?.albumCount
-            ?: artistAlbumItems.size.takeIf {
-                selectedArtistId != null &&
-                    selectedArtistId in state.onlineArtistAlbumsById &&
-                    !isLoadingOnlineArtistAlbums
-            }
-    } else {
-        artistAlbumItems.size
-    }
-    val isLoadingOnlineAlbumTracks = selectedAlbumId in state.loadingAlbumIds
-    val selectedAlbumItem =
-        remember(
-            visibleAlbums,
-            state.albums,
-            artistAlbumItems,
-            selectedAlbumId,
-            selectedArtistId,
-            state.isOnline,
-            state.onlineAlbumItemsById,
-        ) {
-            when {
-                selectedAlbumId == null -> null
-                state.isOnline && selectedArtistId != null -> artistAlbumItems.firstOrNull { it.id == selectedAlbumId }
-                    ?: state.onlineAlbumItemsById[selectedAlbumId]
-                selectedArtistId != null -> artistAlbumItems.firstOrNull { it.id == selectedAlbumId }
-                state.isOnline -> state.albums.firstOrNull { it.id == selectedAlbumId }
-                    ?: state.onlineAlbumItemsById[selectedAlbumId]
-                else -> state.albums.firstOrNull { it.id == selectedAlbumId }
-            }
-        }
-    val selectedAlbum = selectedAlbumItem?.album
-    val albumTracks = remember(
-        tracksByAlbumId,
-        artistTracks,
-        selectedAlbumId,
-        selectedArtistId,
-        state.onlineAlbumTracksById,
-        state.isOnline,
-    ) {
-        val albumId = selectedAlbumId
-        when {
-            albumId == null -> emptyList()
-            state.isOnline -> state.onlineAlbumTracksById[albumId].orEmpty()
-            selectedArtistId != null -> artistTracks.filter { it.albumLibraryIdOrNull() == albumId }
-            else -> tracksByAlbumId[albumId].orEmpty()
-        }.sortedWith(ALBUM_DETAIL_TRACK_COMPARATOR)
     }
     val folderTree = remember(visibleTracks, state.sourceLabelsById, currentUiLanguage) {
         deriveLibraryFolderTree(
@@ -896,9 +756,7 @@ private fun LibraryBrowserTab(
     var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
     val batchVisibleTracks = if (
-        rootView == LibraryBrowserRootView.Tracks &&
-        selectedArtistId == null &&
-        selectedAlbumId == null
+        rootView == LibraryBrowserRootView.Tracks
     ) {
         visibleTracks
     } else {
@@ -992,78 +850,10 @@ private fun LibraryBrowserTab(
             selectionMode = true
         }
     }
-    LaunchedEffect(
-        navigationTarget,
-        state.query,
-        state.isOnline,
-        state.sourceId,
-        state.selectedSourceFilter,
-        visibleAlbums,
-        visibleArtists,
-    ) {
-        val target = navigationTarget
-        if (target == null) {
-            lastAppliedOnlineContextTarget = null
-            return@LaunchedEffect
-        }
-        if (lastAppliedOnlineContextTarget != null && lastAppliedOnlineContextTarget != target) {
-            lastAppliedOnlineContextTarget = null
-        }
-        when (
-            val command = resolveLibraryNavigationCommand(
-                target = target,
-                query = state.query,
-                isOnline = state.isOnline,
-                onlineSourceId = state.sourceId,
-                selectedSourceFilter = state.selectedSourceFilter,
-                availableSourceFilters = state.availableSourceFilters,
-                filteredAlbums = visibleAlbums,
-                filteredArtists = visibleArtists,
-            )
-        ) {
-            is LibraryNavigationCommand.ApplyContext -> {
-                if (shouldClearNavigationQuery(command.clearQuery, state.query)) {
-                    actions.onSearchChanged("")
-                }
-                if (state.isOnline || state.selectedSourceFilter != command.sourceFilter) {
-                    actions.onSourceFilterChanged(command.sourceFilter)
-                }
-            }
-
-            is LibraryNavigationCommand.ApplyOnlineContext -> {
-                if (shouldClearNavigationQuery(command.clearQuery, state.query)) {
-                    actions.onSearchChanged("")
-                }
-                if (shouldApplyOnlineNavigationContext(target, lastAppliedOnlineContextTarget)) {
-                    prepareOnlineNavigationTarget(target, actions)
-                    lastAppliedOnlineContextTarget = target
-                }
-            }
-
-            is LibraryNavigationCommand.Navigate -> {
-                prepareOnlineNavigationTarget(target, actions)
-                when (target) {
-                    is LibraryNavigationTarget.OnlineAlbum -> {
-                        actions.onLoadAlbumTracks(target.albumId)
-                    }
-
-                    is LibraryNavigationTarget.OnlineArtist -> {
-                        actions.onLoadArtistAlbums(target.artistId)
-                    }
-
-                    is LibraryNavigationTarget.Album,
-                    is LibraryNavigationTarget.Artist,
-                    -> Unit
-                }
-                // External album/artist navigation owns the detail target; pager synchronization
-                // must not treat it as a user switching back to a category's root list.
-                previousRootView = command.resolution.rootView
-                rootView = command.resolution.rootView
-                selectedArtistId = command.resolution.selectedArtistId
-                selectedAlbumId = command.resolution.selectedAlbumId
-                lastAppliedOnlineContextTarget = null
-                onNavigationHandled()
-            }
+    LaunchedEffect(navigationTarget) {
+        navigationTarget?.let { target ->
+            onOpenLibraryNavigationTarget?.invoke(target)
+            onNavigationHandled()
         }
     }
 
@@ -1073,8 +863,8 @@ private fun LibraryBrowserTab(
         ) {
             saveSelectedFolderScrollPosition()
             exitSelectionMode()
-            selectedArtistId = null
-            selectedAlbumId = null
+
+
             selectedFolderSourceId = null
             selectedFolderPath = null
         }
@@ -1082,71 +872,15 @@ private fun LibraryBrowserTab(
         lastHandledRootClickRequestKey = rootClickRequestKey
     }
 
-    LaunchedEffect(
-        rootView,
-        state.isOnline,
-        visibleAlbums,
-        visibleArtists,
-        selectedArtistId,
-        selectedAlbumId,
-        artistAlbums,
-        selectedFolderKey,
-        folderTree.nodesByKey,
-    ) {
-        when (rootView) {
-            LibraryBrowserRootView.Tracks -> {
-                if (selectedArtistId != null) selectedArtistId = null
-                if (selectedAlbumId != null) selectedAlbumId = null
-                if (selectedFolderSourceId != null) selectedFolderSourceId = null
-                if (selectedFolderPath != null) selectedFolderPath = null
-            }
-
-            LibraryBrowserRootView.Albums -> {
-                if (selectedArtistId != null) selectedArtistId = null
-                if (selectedFolderSourceId != null) selectedFolderSourceId = null
-                if (selectedFolderPath != null) selectedFolderPath = null
-                if (
-                    !state.isOnline &&
-                    selectedAlbumId != null &&
-                    visibleAlbums.none { it.id == selectedAlbumId }
-                ) {
-                    selectedAlbumId = null
-                }
-            }
-
-            LibraryBrowserRootView.Artists -> {
-                if (selectedFolderSourceId != null) selectedFolderSourceId = null
-                if (selectedFolderPath != null) selectedFolderPath = null
-                if (
-                    !state.isOnline &&
-                    selectedArtistId != null &&
-                    visibleArtists.none { it.id == selectedArtistId }
-                ) {
-                    selectedArtistId = null
-                    selectedAlbumId = null
-                } else if (
-                    !state.isOnline &&
-                    selectedAlbumId != null &&
-                    artistAlbums.none { it.id == selectedAlbumId }
-                ) {
-                    selectedAlbumId = null
-                }
-            }
-
-            LibraryBrowserRootView.Folders -> {
-                if (!showFolderBrowser && rootState == null) {
-                    rootView = LibraryBrowserRootView.Tracks
-                    selectedFolderSourceId = null
-                    selectedFolderPath = null
-                    return@LaunchedEffect
-                }
-                if (selectedArtistId != null) selectedArtistId = null
-                if (selectedAlbumId != null) selectedAlbumId = null
-                if (selectedFolderKey != null && selectedFolderKey !in folderTree.nodesByKey) {
-                    selectedFolderSourceId = null
-                    selectedFolderPath = null
-                }
-            }
+    LaunchedEffect(rootView, selectedFolderKey, folderTree.nodesByKey, showFolderBrowser) {
+        if (rootView != LibraryBrowserRootView.Folders ||
+            (selectedFolderKey != null && selectedFolderKey !in folderTree.nodesByKey)
+        ) {
+            selectedFolderSourceId = null
+            selectedFolderPath = null
+        }
+        if (rootView == LibraryBrowserRootView.Folders && !showFolderBrowser && rootState == null) {
+            rootView = LibraryBrowserRootView.Tracks
         }
     }
 
@@ -1175,8 +909,8 @@ private fun LibraryBrowserTab(
         saveSelectedFolderScrollPosition()
         previousRootView = view
         rootView = view
-        selectedArtistId = null
-        selectedAlbumId = null
+
+
         selectedFolderSourceId = null
         selectedFolderPath = null
     }
@@ -1188,6 +922,19 @@ private fun LibraryBrowserTab(
             onlineSourceId = state.sourceId.takeIf { state.isOnline },
         )
     }
+    fun openAlbumDetail(item: LibraryAlbumUiItem) {
+        val target = if (state.isOnline && state.sourceId != null) LibraryNavigationTarget.OnlineAlbum(
+            requireNotNull(state.sourceId), item.id, item.album.title, item.album.artistName, item.artworkLocator,
+        ) else LibraryNavigationTarget.Album(item.id, state.selectedSourceFilter)
+        onOpenLibraryNavigationTarget?.invoke(target)
+    }
+    fun openArtistDetail(item: LibraryArtistUiItem) {
+        val target = if (state.isOnline && state.sourceId != null) LibraryNavigationTarget.OnlineArtist(
+            requireNotNull(state.sourceId), item.id, item.artist.name,
+        ) else LibraryNavigationTarget.Artist(item.id, state.selectedSourceFilter)
+        onOpenLibraryNavigationTarget?.invoke(target)
+    }
+
     fun navigationTargetClick(target: LibraryNavigationTarget?): (() -> Unit)? {
         val handler = onOpenLibraryNavigationTarget ?: return null
         return target?.let { resolvedTarget ->
@@ -1198,9 +945,7 @@ private fun LibraryBrowserTab(
     val shellColors = mainShellColors
     val searchFieldContainerColor = shellColors.cardBorder
     val showTrackSortMenu = showTrackSortActionButton &&
-        rootView == LibraryBrowserRootView.Tracks &&
-        selectedArtistId == null &&
-        selectedAlbumId == null
+        rootView == LibraryBrowserRootView.Tracks
     val batchOperationButton: (@Composable () -> Unit)? = if (
         supportsBatchDownload &&
         inlineBatchOperationButtonVisible &&
@@ -1249,12 +994,8 @@ private fun LibraryBrowserTab(
     val activeRootView = rootView
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
         val rootView = pageRoot
-        val selectedAlbum = selectedAlbum.takeIf { pageRoot == activeRootView }
-        val selectedArtist = selectedArtist.takeIf { pageRoot == activeRootView }
         val selectedFolder = selectedFolder.takeIf { pageRoot == activeRootView }
         val activeListState = when {
-            selectedAlbum != null -> albumDetailListState
-            rootView == LibraryBrowserRootView.Artists && selectedArtist != null -> artistDetailListState
             rootView == LibraryBrowserRootView.Folders && selectedFolder != null -> folderDetailListState
             rootView == LibraryBrowserRootView.Albums -> albumsListState
             rootView == LibraryBrowserRootView.Artists -> artistsListState
@@ -1396,173 +1137,6 @@ private fun LibraryBrowserTab(
                             )
                         }
                     }
-                    selectedAlbum != null -> {
-                        item {
-                            DetailBackButton(onClick = { selectedAlbumId = null })
-                        }
-                        item {
-                            DetailSummaryCard(
-                                title = selectedAlbum.title.ifBlank { uiString(Res.string.common_unknown_album) },
-                                subtitle = selectedAlbum.artistName ?: uiString(Res.string.common_unknown_artist),
-                                supportingText = if (isLoadingOnlineAlbumTracks) {
-                                    uiString(Res.string.library_tracks_loading)
-                                } else {
-                                    uiString(Res.plurals.common_track_count, (albumTracks.size).toInt(), albumTracks.size)
-                                },
-                                artworkLocator = albumTracks.firstOrNull()?.artworkLocator
-                                    ?: selectedAlbumItem?.artworkLocator,
-                                artworkCacheKey = albumTracks.firstOrNull()?.let(::trackArtworkCacheKey),
-                            )
-                        }
-                        item {
-                            SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_album_visible_tracks_description))
-                        }
-                        if (isLoadingOnlineAlbumTracks && albumTracks.isEmpty()) {
-                            item {
-                                EmptyStateCard(
-                                    title = uiString(Res.string.library_album_tracks_loading),
-                                    body = uiString(Res.string.library_online_album_loading_hint),
-                                )
-                            }
-                        } else if (albumTracks.isEmpty()) {
-                            item {
-                                EmptyStateCard(
-                                    title = uiString(Res.string.library_album_tracks_empty_title),
-                                    body = uiString(Res.string.library_album_tracks_filter_empty_hint),
-                                )
-                            }
-                        } else {
-                            itemsIndexed(albumTracks, key = { _, item -> item.id }) { index, track ->
-                                val navigationTargets = trackRowNavigationTargets(track)
-                                TrackRow(
-                                    track = track,
-                                    index = index,
-                                    isFavorite = track.id in state.favoriteTrackIds,
-                                    onToggleFavorite = { actions.onToggleFavorite(track) },
-                                    menuContextKey = trackMenuContext,
-                                    showFavoriteIndicator = showFavoriteIndicator,
-                                    showDuration = showDuration,
-                                    durationColumnWidth = durationColumnWidth,
-                                    onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
-                                    onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
-                                    onClick = {
-                                        actions.onPlayTracks(albumTracks, index)
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    rootView == LibraryBrowserRootView.Artists && selectedArtist != null -> {
-                        item {
-                            DetailBackButton(
-                                onClick = {
-                                    selectedArtistId = null
-                                    selectedAlbumId = null
-                                },
-                            )
-                        }
-                        item {
-                            DetailSummaryCard(
-                                title = selectedArtist.name.ifBlank { uiString(Res.string.common_unknown_artist) },
-                                subtitle = artistSummaryLabel(
-                                    trackCount = selectedArtistTrackCount,
-                                    albumCount = selectedArtistAlbumCount,
-                                ),
-                                supportingText = if (state.isOnline) {
-                                    uiString(Res.string.library_online_artist_detail_title)
-                                } else {
-                                    uiString(Res.string.library_artist_filtered_detail_description)
-                                },
-                                artworkLocator = if (state.isOnline) null else artistTracks.firstOrNull()?.artworkLocator,
-                                artworkCacheKey = if (state.isOnline) {
-                                    null
-                                } else {
-                                    artistTracks.firstOrNull()?.let(::trackArtworkCacheKey)
-                                },
-                            )
-                        }
-                        item {
-                            SectionTitle(
-                                title = uiString(Res.string.library_albums_title),
-                                subtitle = if (state.isOnline) uiString(Res.string.library_navidrome_artist_albums_description) else uiString(Res.string.library_artist_visible_albums_description),
-                            )
-                        }
-                        if (isLoadingOnlineArtistAlbums && artistAlbumItems.isEmpty()) {
-                            item {
-                                EmptyStateCard(
-                                    title = uiString(Res.string.library_artist_albums_loading),
-                                    body = uiString(Res.string.library_navidrome_artist_albums_loading_hint),
-                                )
-                            }
-                        } else if (artistAlbumItems.isEmpty()) {
-                            item {
-                                EmptyStateCard(
-                                    title = if (state.isOnline) uiString(Res.string.library_artist_albums_empty_title) else uiString(Res.string.library_artist_album_metadata_missing),
-                                    body = if (state.isOnline) {
-                                        uiString(Res.string.library_navidrome_artist_albums_empty_hint)
-                                    } else {
-                                        uiString(Res.string.library_artist_album_tags_missing_hint)
-                                    },
-                                )
-                            }
-                        } else {
-                            items(artistAlbumItems, key = { it.id }) { albumItem ->
-                                val album = albumItem.album
-                                val fallbackArtworkTrack = if (state.isOnline) {
-                                    null
-                                } else {
-                                    artistTracks.firstOrNull { it.albumLibraryIdOrNull() == album.id }
-                                }
-                                AlbumRow(
-                                    album = album,
-                                    artworkLocator = albumItem.artworkLocator ?: fallbackArtworkTrack?.artworkLocator,
-                                    artworkCacheKey = if (albumItem.artworkLocator == null) {
-                                        fallbackArtworkTrack?.let(::trackArtworkCacheKey)
-                                    } else {
-                                        null
-                                    },
-                                    onClick = {
-                                        actions.onAlbumClick(albumItem)
-                                        selectedAlbumId = album.id
-                                    },
-                                )
-                            }
-                        }
-                        if (!state.isOnline) {
-                            item {
-                                SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_artist_visible_tracks_description))
-                            }
-                            if (artistTracks.isEmpty()) {
-                                item {
-                                    EmptyStateCard(
-                                        title = uiString(Res.string.library_artist_tracks_empty_title),
-                                        body = uiString(Res.string.library_artist_tracks_filter_empty_hint),
-                                    )
-                                }
-                            } else {
-                                itemsIndexed(artistTracks, key = { _, item -> item.id }) { index, track ->
-                                    val navigationTargets = trackRowNavigationTargets(track)
-                                    TrackRow(
-                                        track = track,
-                                        index = index,
-                                        isFavorite = track.id in state.favoriteTrackIds,
-                                        onToggleFavorite = { actions.onToggleFavorite(track) },
-                                        menuContextKey = trackMenuContext,
-                                        showFavoriteIndicator = showFavoriteIndicator,
-                                        showDuration = showDuration,
-                                        durationColumnWidth = durationColumnWidth,
-                                        onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
-                                        onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
-                                        onClick = {
-                                            actions.onPlayTracks(artistTracks, index)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-
                     rootView == LibraryBrowserRootView.Folders && selectedFolder != null -> {
                         item {
                             DetailBackButton(
@@ -1738,8 +1312,7 @@ private fun LibraryBrowserTab(
                                                 null
                                             },
                                             onClick = {
-                                                actions.onAlbumClick(albumItem)
-                                                selectedAlbumId = album.id
+                                                openAlbumDetail(albumItem)
                                             },
                                         )
                                     }
@@ -1763,9 +1336,8 @@ private fun LibraryBrowserTab(
                                             albumCount = artistItem.albumCount
                                                 ?: if (state.isOnline) null else artistAlbumCountById[artist.id] ?: 0,
                                             onClick = {
-                                                actions.onArtistClick(artistItem)
-                                                selectedArtistId = artist.id
-                                                selectedAlbumId = null
+                                                openArtistDetail(artistItem)
+
                                             },
                                         )
                                     }
@@ -1831,7 +1403,7 @@ private fun LibraryBrowserTab(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize().testTag("automotive-library-pager"),
                     userScrollEnabled = rootPagerScrollEnabled && !selectionMode &&
-                        selectedAlbumId == null && selectedArtistId == null && selectedFolderSourceId == null,
+                        selectedFolderSourceId == null,
                     key = { roots[it].name },
                 ) { page -> pageContent(roots[page]) }
             } else {
@@ -2282,19 +1854,6 @@ private fun FolderRow(
         )
     }
 }
-
-private val ALBUM_DETAIL_TRACK_COMPARATOR = compareBy<Track>(
-    { it.discNumber ?: Int.MAX_VALUE },
-    { it.trackNumber ?: Int.MAX_VALUE },
-    { it.title.lowercase() },
-)
-
-private val ARTIST_DETAIL_TRACK_COMPARATOR = compareBy<Track>(
-    { it.albumTitle.orEmpty().lowercase() },
-    { it.discNumber ?: Int.MAX_VALUE },
-    { it.trackNumber ?: Int.MAX_VALUE },
-    { it.title.lowercase() },
-)
 
 private fun Track.artistLibraryIdOrNull(): String? {
     return artistName?.trim()?.takeIf { it.isNotBlank() }?.let(::libraryArtistId)

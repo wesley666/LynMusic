@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
@@ -19,6 +20,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(libs.jetbrains.navigation3.ui)
+            implementation(libs.kotlinx.serialization.json)
             implementation(project(":app:runtime"))
             implementation(project(":ui:common"))
             implementation(project(":shared:resources"))

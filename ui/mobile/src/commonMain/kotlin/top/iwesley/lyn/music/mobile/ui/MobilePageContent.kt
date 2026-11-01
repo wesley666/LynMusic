@@ -51,8 +51,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -68,10 +69,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AppTab
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
@@ -138,6 +137,88 @@ internal fun MobilePageContent(
     phoneLibraryNavigation: Boolean = false,
     playerExpanded: Boolean = false,
     onTabSelected: (AppTab) -> Unit,
+    onTabChanged: (AppTab) -> Unit = onTabSelected,
+    modifier: Modifier = Modifier,
+) {
+    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact) {
+        RootMobilePageContent(
+            selectedTab = selectedTab,
+            platform = platform,
+            myState = myState,
+            libraryState = libraryState,
+            onlineLibraryState = onlineLibraryState,
+            playlistsState = playlistsState,
+            onlinePlaylistsState = onlinePlaylistsState,
+            favoritesState = favoritesState,
+            onlineFavoritesState = onlineFavoritesState,
+            musicTagsState = musicTagsState,
+            musicTagsEffects = musicTagsEffects,
+            importState = importState,
+            settingsState = settingsState,
+            onMyIntent = onMyIntent,
+            onLibraryIntent = onLibraryIntent,
+            onOnlineLibraryIntent = onOnlineLibraryIntent,
+            onPlaylistsIntent = onPlaylistsIntent,
+            onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
+            onFavoritesIntent = onFavoritesIntent,
+            onOnlineFavoritesIntent = onOnlineFavoritesIntent,
+            onMusicTagsIntent = onMusicTagsIntent,
+            onImportIntent = onImportIntent,
+            onPlayerIntent = onPlayerIntent,
+            onSettingsIntent = onSettingsIntent,
+            onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
+            libraryNavigationTarget = libraryNavigationTarget,
+            onLibraryNavigationHandled = onLibraryNavigationHandled,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+            onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
+            compact = compact,
+            mobileLibraryHub = mobileLibraryHub,
+            phoneLibraryNavigation = phoneLibraryNavigation,
+            playerExpanded = playerExpanded,
+            onTabSelected = onTabSelected,
+            onTabChanged = onTabChanged,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+internal fun RootMobilePageContent(
+    selectedTab: AppTab,
+    platform: PlatformDescriptor,
+    myState: MyState,
+    libraryState: LibraryState,
+    onlineLibraryState: OnlineLibraryState,
+    playlistsState: PlaylistsState,
+    onlinePlaylistsState: OnlinePlaylistsState,
+    favoritesState: FavoritesState,
+    onlineFavoritesState: OnlineFavoritesState,
+    musicTagsState: MusicTagsState,
+    musicTagsEffects: Flow<MusicTagsEffect>,
+    importState: ImportState,
+    settingsState: SettingsState,
+    onMyIntent: (MyIntent) -> Unit,
+    onLibraryIntent: (LibraryIntent) -> Unit,
+    onOnlineLibraryIntent: (OnlineLibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
+    onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onOnlineFavoritesIntent: (OnlineFavoritesIntent) -> Unit,
+    onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onImportIntent: (ImportIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    onOpenBackgroundRunSettings: () -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
+    compact: Boolean,
+    mobileLibraryHub: Boolean,
+    phoneLibraryNavigation: Boolean = false,
+    playerExpanded: Boolean = false,
+    onTabSelected: (AppTab) -> Unit,
+    onTabChanged: (AppTab) -> Unit = onTabSelected,
     modifier: Modifier = Modifier,
 ) {
     if (mobileLibraryHub && isMobileLibraryHubTab(selectedTab)) {
@@ -163,6 +244,7 @@ internal fun MobilePageContent(
             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
             playerExpanded = playerExpanded,
             onTabSelected = onTabSelected,
+            onTabChanged = onTabChanged,
             modifier = modifier,
         )
         return
@@ -344,6 +426,7 @@ private fun MobileLibraryHubTab(
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     playerExpanded: Boolean,
     onTabSelected: (AppTab) -> Unit,
+    onTabChanged: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hubTabs = libraryHubTabs(selectedTab, phoneNavigation)
@@ -352,7 +435,13 @@ private fun MobileLibraryHubTab(
     var phoneRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     val initialPage = hubTabs.indexOf(selectedTab).coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialPage) { hubTabs.size }
-    val coroutineScope = rememberCoroutineScope()
+    var pagerAlignmentRequest by remember { mutableIntStateOf(0) }
+    val alignmentRequest = pagerAlignmentRequest
+    var pagerAligning by remember(pagerState, selectedTab, hubTabs, alignmentRequest) { mutableStateOf(true) }
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
+    val latestHubTabs by rememberUpdatedState(hubTabs)
+    val latestOnTabChanged by rememberUpdatedState(onTabChanged)
+    val foreground by rememberUpdatedState(LocalMusicDetailIsForeground.current)
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var isSearchMode by rememberSaveable { mutableStateOf(false) }
@@ -469,10 +558,15 @@ private fun MobileLibraryHubTab(
         }
     }
 
-    LaunchedEffect(selectedTab) {
-        val targetPage = hubTabs.indexOf(selectedTab).coerceAtLeast(0)
-        if (pagerState.currentPage != targetPage) {
-            pagerState.scrollToPage(targetPage)
+    LaunchedEffect(pagerState, selectedTab, hubTabs, alignmentRequest) {
+        pagerAligning = true
+        try {
+            val targetPage = hubTabs.indexOf(selectedTab).coerceAtLeast(0)
+            if (pagerState.currentPage != targetPage || pagerState.isScrollInProgress) {
+                pagerState.scrollToPage(targetPage)
+            }
+        } finally {
+            pagerAligning = false
         }
     }
     LaunchedEffect(playerExpanded) {
@@ -487,11 +581,19 @@ private fun MobileLibraryHubTab(
             enterSearchMode(autoFocus = false)
         }
     }
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }
-            .distinctUntilChanged()
+    // Restoring or aligning the pager must never be treated as a navigation click.
+    LaunchedEffect(pagerState, selectedTab, hubTabs, alignmentRequest) {
+        snapshotFlow {
+            if (!foreground || pagerAligning || pagerState.isScrollInProgress) null
+            else pagerState.settledPage
+        }
             .collect { page ->
-                onTabSelected(hubTabs.getOrElse(page) { hubTabs.first() })
+                val tab = page?.let { latestHubTabs.getOrNull(it) }
+                if (foreground && !pagerAligning && !pagerState.isScrollInProgress &&
+                    page == pagerState.settledPage && tab != null && tab != latestSelectedTab
+                ) {
+                    latestOnTabChanged(tab)
+                }
             }
     }
     LaunchedEffect(favoritesRefreshHoldKey) {
@@ -627,11 +729,10 @@ private fun MobileLibraryHubTab(
                     }
                     enterSearchMode(autoFocus = true)
                 },
-                onTabClick = { index, tab ->
+                onTabClick = { _, tab ->
+                    pagerAligning = true
                     onTabSelected(tab)
-                    coroutineScope.launch {
-                        pagerState.scrollToPage(index)
-                    }
+                    pagerAlignmentRequest++
                 },
             )
         }

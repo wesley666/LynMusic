@@ -72,17 +72,14 @@ class AutomotiveLibraryContentTest {
             ui.scroll(LibraryBrowserRootView.Albums, -10_000f)
             ui.clickLabel("Album 00")
             assertTrue(ui.hasLabel("Back"))
-            ui.swipe(forward = true)
-            ui.assertRoot(LibraryBrowserRootView.Albums)
             ui.resize(1184, 800)
             assertTrue(ui.hasLabel("Back"))
-            assertEquals(headerBounds, ui.tag("automotive-library-header").boundsInRoot)
             ui.registry.performSave()
         }
         Fixture(restored = saved).use { ui ->
-            ui.assertRoot(LibraryBrowserRootView.Albums)
             assertTrue(ui.hasLabel("Back"))
-            ui.clickRoot(LibraryBrowserRootView.Albums)
+            ui.clickLabel("Back")
+            ui.assertRoot(LibraryBrowserRootView.Albums)
             assertFalse(ui.hasLabel("Back"))
             ui.clickLabel("Album 00")
             ui.clickLabel("Back")
@@ -157,12 +154,10 @@ class AutomotiveLibraryContentTest {
     fun `landscape track metadata still opens album and artist details`() = onUiThread {
         Fixture().use { ui ->
             ui.clickLabel("Album 00")
-            ui.assertRoot(LibraryBrowserRootView.Albums)
             assertTrue(ui.hasLabel("Back"))
             assertIs<LibraryNavigationTarget.Album>(ui.metadataTargets.last())
-            ui.clickRoot(LibraryBrowserRootView.Tracks)
+            ui.clickLabel("Back")
             ui.clickLabel("Artist 00")
-            ui.assertRoot(LibraryBrowserRootView.Artists)
             assertTrue(ui.hasLabel("Back"))
             assertIs<LibraryNavigationTarget.Artist>(ui.metadataTargets.last())
             assertTrue(ui.playerIntents.isEmpty())
@@ -253,9 +248,16 @@ class AutomotiveLibraryContentTest {
         private val importState = ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(
             ImportSource("server", ImportSourceType.NAVIDROME, "Server", "", indexMode = ImportSourceIndexMode.ONLINE),
         )))
+        private lateinit var detailNavigation: MusicDetailNavigation
+        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
+            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, tracks))
+        }
         private var frame = 0L
         private val scene = ImageComposeScene(width, height, density = Density(1f, fontScale)) {
-            CompositionLocalProvider(
+            CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {
+
+            val details = rememberMusicDetailNavigation(detailQueries) {}.also { detailNavigation = it }
+                CompositionLocalProvider(LocalMusicDetailNavigation provides details,
                 LocalSaveableStateRegistry provides registry,
                 LocalPlatformDescriptor provides platform,
                 LocalOfflineDownloadUiState provides OfflineDownloadUiState(onIntent = {}),
@@ -266,6 +268,7 @@ class AutomotiveLibraryContentTest {
                         textPalette = if (light) AppThemeTextPalette.Black else AppThemeTextPalette.White,
                     ) {
                         val entry = rememberAutomotiveLibraryEntry()
+                        MusicDetailHost(onPlayerIntent = { playerIntents += it }, modifier = Modifier.fillMaxSize()) {
                         BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             val compact = maxWidth < maxHeight
                             // Mirrors replacement of the app's orientation branch, keeping its holder outside.
@@ -287,20 +290,22 @@ class AutomotiveLibraryContentTest {
                                         } },
                                         onFavoritesIntent = {}, onPlayerIntent = { playerIntents += it },
                                         compact = compact,
-                                        libraryNavigationTarget = navigationTarget,
+                                        libraryNavigationTarget = null,
                                         onLibraryNavigationHandled = { navigationTarget = null },
                                         onOpenLibraryNavigationTarget = { target ->
                                             metadataTargets += target
-                                            navigationTarget = target
+                                            detailNavigation.open(target)
                                         },
                                     )
                                 }
                             }
                         }
+                        }
                     }
                 }
             }
-        }
+            }
+}
         init { render() }
         fun render(frames: Int = 40) { repeat(frames) {
             Snapshot.sendApplyNotifications()
@@ -379,4 +384,15 @@ class AutomotiveLibraryContentTest {
         }
         override fun close() = scene.close()
     }
+}
+
+private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
+    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
+    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
+    return top.iwesley.lyn.music.feature.details.MusicDetailData(
+        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
+        artistName = request.artistName ?: album?.artistName,
+        tracks = tracks,
+        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
+    )
 }

@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    alias(libs.plugins.kotlinSerialization)
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidKmpLibrary)
     alias(libs.plugins.composeMultiplatform)
@@ -33,6 +34,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(libs.jetbrains.navigation3.ui)
+            implementation(libs.kotlinx.serialization.json)
             implementation(project(":app:runtime"))
             implementation(project(":ui:common"))
             implementation(project(":shared:resources"))
@@ -56,6 +59,11 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.kotlin.testJunit)
+            implementation(libs.robolectric)
+            implementation(libs.compose.uiTestJunit4)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)

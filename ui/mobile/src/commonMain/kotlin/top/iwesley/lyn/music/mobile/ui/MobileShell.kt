@@ -217,6 +217,7 @@ internal fun MobileShell(
     hideMiniPlayerBar: Boolean,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
+    onTabChanged: (AppTab) -> Unit = onTabSelected,
 ) {
     val presentation = currentPlayerPresentation()
     val navigationTabs = primaryNavigationTabs(phoneNavigation)
@@ -437,6 +438,7 @@ internal fun MobileShell(
                         phoneLibraryNavigation = phoneNavigation,
                         playerExpanded = presentation.isExpanded,
                         onTabSelected = ::selectMobileTab,
+                        onTabChanged = onTabChanged,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -568,6 +570,7 @@ internal fun TabletShell(
     onLibraryNavigationHandled: () -> Unit = {},
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onOpenAddToPlaylist: () -> Unit,
+    onTabChanged: (AppTab) -> Unit = onTabSelected,
 ) {
     val presentation = currentPlayerPresentation()
     val shellColors = mainShellColors
@@ -647,6 +650,7 @@ internal fun TabletShell(
                 compact = false,
                 mobileLibraryHub = false,
                 onTabSelected = onTabSelected,
+                onTabChanged = onTabChanged,
                 modifier = Modifier.weight(1f),
             )
             OfflineBatchDownloadStatusBar()

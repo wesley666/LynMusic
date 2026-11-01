@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="music_detail_loading">Loading details…</string>
+    <string name="music_detail_source_unavailable">This source is unavailable. Go back or retry after restoring the source.</string>
+    <string name="music_detail_load_failed">Unable to load details. Please try again.</string>
+</resources>

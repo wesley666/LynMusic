@@ -10,5 +10,5 @@ actual fun PlatformBackHandler(
     enabled: Boolean,
     onBack: () -> Unit,
 ) {
-    BackHandler(enabled = enabled, onBack = onBack)
+    BackHandler(enabled = enabled && top.iwesley.lyn.music.automotive.ui.LocalMusicDetailIsForeground.current, onBack = onBack)
 }

@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.ksp) apply false
+    alias(libs.plugins.kotlinSerialization) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
 }
 
@@ -77,6 +78,8 @@ val fullTest = tasks.register<FullTest>("fullTest") {
         ":shared:core:testAndroidHostTest" to 95,
         ":shared:data:testAndroidHostTest" to 100,
         ":shared:features:testAndroidHostTest" to 271,
+        ":ui:mobile:testAndroidHostTest" to 16,
+        ":ui:automotive:testAndroidHostTest" to 16,
         ":android:runtime:testDebugUnitTest" to 67,
         ":android:runtime:testReleaseUnitTest" to 67,
         ":cast:upnp:android:testDebugUnitTest" to 15,

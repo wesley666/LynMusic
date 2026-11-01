@@ -89,6 +89,9 @@ fun MobileApp(
         val offlineDownloadState by component.offlineDownloadStore.state.collectAsState()
         val playerState by component.playerStore.state.collectAsState()
         val presentation = rememberPlayerPresentation(component.playerStore, playerState)
+        val details = rememberMusicDetailNavigation(component.musicDetailQueries) {
+            if (component.playerStore.state.value.effectiveSnapshot.currentTrack != null) presentation.expand()
+        }
         // Keep completion feedback queued while a search/share dialog covers the player toast.
         val operationNotice = playerState.operationNotices.firstOrNull().takeIf {
             !presentation.isManualLyricsSearchVisible && !presentation.isLyricsShareVisible
@@ -103,11 +106,15 @@ fun MobileApp(
         val settingsState by component.settingsStore.state.collectAsState()
         var visibleStartupWarning by remember(startupWarning) { mutableStateOf(startupWarning) }
         var selectedTab by rememberSaveable { mutableStateOf(defaultSelectedAppTab) }
+        val tabSyncGeneration = details.generation
+        val onTabChanged: (AppTab) -> Unit = { tab ->
+            if (!details.hasDetails && details.generation == tabSyncGeneration) selectedTab = tab
+        }
         var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
         var shouldRestoreOnlinePlaylistSource by remember { mutableStateOf(false) }
         var onlinePlaylistSourceRestoreTarget by remember { mutableStateOf<String?>(null) }
         var onlinePlaylistSourceRestoreObservedChange by remember { mutableStateOf(false) }
-        var pendingLibraryNavigationTarget by remember { mutableStateOf<LibraryNavigationTarget?>(null) }
+
         var isMusicTagsMobileEditorVisible by rememberSaveable { mutableStateOf(false) }
         var startupHydrationStarted by remember(component) { mutableStateOf(false) }
         val pendingOnlinePlaylistSourceId = remember(pendingPlaylistTrack, importState.sources) {
@@ -288,6 +295,7 @@ fun MobileApp(
             )
         }
         CompositionLocalProvider(
+            LocalMusicDetailNavigation provides details,
             LocalPlayerPresentation provides presentation,
             LocalTrackListActionBindings provides trackListBindings,
             LocalPlatformDescriptor provides component.platform,
@@ -307,7 +315,7 @@ fun MobileApp(
                     val restoration = startupAutoOpenGate.restore(
                         requested = settingsState.autoOpenPlayerOnStartup,
                     ) { component.playerStore.restorePlayback() }
-                    if (restoration.autoOpenRequested && restoration.result.hasCurrentPlayback) {
+                    if (restoration.autoOpenRequested && restoration.result.hasCurrentPlayback && !details.hasDetails) {
                         presentation.expand()
                     }
                 }
@@ -414,13 +422,15 @@ fun MobileApp(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .musicDetailKeyboardBack(details, presentation)
                             .background(MaterialTheme.colorScheme.background),
                     ) {
                         if (compact) {
                             MobileShell(
                                 phoneNavigation = layoutProfile.usesPortraitLibraryNavigation,
                                 selectedTab = selectedTab,
-                                onTabSelected = { selectedTab = it },
+                                onTabSelected = { details.clear(); selectedTab = it },
+                                onTabChanged = onTabChanged,
                                 platform = component.platform,
                                 myState = myState,
                                 libraryState = libraryState,
@@ -446,11 +456,10 @@ fun MobileApp(
                                 onPlayerIntent = onPlayerIntent,
                                 onSettingsIntent = component.settingsStore::dispatch,
                                 onOpenBackgroundRunSettings = component.castBackgroundRunSettingsOpener::openSettings,
-                                libraryNavigationTarget = pendingLibraryNavigationTarget,
-                                onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                                libraryNavigationTarget = null,
+                                onLibraryNavigationHandled = {},
                                 onOpenLibraryNavigationTarget = { target ->
-                                    pendingLibraryNavigationTarget = target
-                                    selectedTab = AppTab.Library
+                                    details.open(target)
                                 },
                                 mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
                                 hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
@@ -464,7 +473,8 @@ fun MobileApp(
                         } else {
                             TabletShell(
                                 selectedTab = selectedTab,
-                                onTabSelected = { selectedTab = it },
+                                onTabSelected = { details.clear(); selectedTab = it },
+                                onTabChanged = onTabChanged,
                                 platform = component.platform,
                                 myState = myState,
                                 libraryState = libraryState,
@@ -490,11 +500,10 @@ fun MobileApp(
                                 onPlayerIntent = onPlayerIntent,
                                 onSettingsIntent = component.settingsStore::dispatch,
                                 onOpenBackgroundRunSettings = component.castBackgroundRunSettingsOpener::openSettings,
-                                libraryNavigationTarget = pendingLibraryNavigationTarget,
-                                onLibraryNavigationHandled = { pendingLibraryNavigationTarget = null },
+                                libraryNavigationTarget = null,
+                                onLibraryNavigationHandled = {},
                                 onOpenLibraryNavigationTarget = { target ->
-                                    pendingLibraryNavigationTarget = target
-                                    selectedTab = AppTab.Library
+                                    details.open(target)
                                 },
                                 onOpenAddToPlaylist = {
                                     openAddToPlaylist(effectivePlayerSnapshot.currentTrack)
@@ -549,8 +558,7 @@ fun MobileApp(
                                 onlineNavigationSourceId = playerFavoriteBinding.onlineSourceId,
                                 onOpenLibraryNavigationTarget = { target ->
                                     presentation.collapse()
-                                    pendingLibraryNavigationTarget = target
-                                    selectedTab = AppTab.Library
+                                    details.open(target, fromPlayer = true)
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )

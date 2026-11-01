@@ -5,6 +5,7 @@ import top.iwesley.lyn.music.*
 import top.iwesley.lyn.music.resources.*
 
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -37,6 +38,77 @@ import top.iwesley.lyn.music.feature.tags.MusicTagsState
 
 @Composable
 internal fun DesktopPageContent(
+    selectedTab: AppTab,
+    platform: PlatformDescriptor,
+    myState: MyState,
+    libraryState: LibraryState,
+    onlineLibraryState: OnlineLibraryState,
+    playlistsState: PlaylistsState,
+    onlinePlaylistsState: OnlinePlaylistsState,
+    favoritesState: FavoritesState,
+    onlineFavoritesState: OnlineFavoritesState,
+    musicTagsState: MusicTagsState,
+    musicTagsEffects: Flow<MusicTagsEffect>,
+    importState: ImportState,
+    settingsState: SettingsState,
+    onMyIntent: (MyIntent) -> Unit,
+    onLibraryIntent: (LibraryIntent) -> Unit,
+    onOnlineLibraryIntent: (OnlineLibraryIntent) -> Unit,
+    onPlaylistsIntent: (PlaylistsIntent) -> Unit,
+    onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit,
+    onFavoritesIntent: (FavoritesIntent) -> Unit,
+    onOnlineFavoritesIntent: (OnlineFavoritesIntent) -> Unit,
+    onMusicTagsIntent: (MusicTagsIntent) -> Unit,
+    onImportIntent: (ImportIntent) -> Unit,
+    onPlayerIntent: (PlayerIntent) -> Unit,
+    onSettingsIntent: (SettingsIntent) -> Unit,
+    onOpenBackgroundRunSettings: () -> Unit,
+    libraryNavigationTarget: LibraryNavigationTarget? = null,
+    onLibraryNavigationHandled: () -> Unit = {},
+    onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
+    onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact) {
+        RootDesktopPageContent(
+            selectedTab = selectedTab,
+            platform = platform,
+            myState = myState,
+            libraryState = libraryState,
+            onlineLibraryState = onlineLibraryState,
+            playlistsState = playlistsState,
+            onlinePlaylistsState = onlinePlaylistsState,
+            favoritesState = favoritesState,
+            onlineFavoritesState = onlineFavoritesState,
+            musicTagsState = musicTagsState,
+            musicTagsEffects = musicTagsEffects,
+            importState = importState,
+            settingsState = settingsState,
+            onMyIntent = onMyIntent,
+            onLibraryIntent = onLibraryIntent,
+            onOnlineLibraryIntent = onOnlineLibraryIntent,
+            onPlaylistsIntent = onPlaylistsIntent,
+            onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
+            onFavoritesIntent = onFavoritesIntent,
+            onOnlineFavoritesIntent = onOnlineFavoritesIntent,
+            onMusicTagsIntent = onMusicTagsIntent,
+            onImportIntent = onImportIntent,
+            onPlayerIntent = onPlayerIntent,
+            onSettingsIntent = onSettingsIntent,
+            onOpenBackgroundRunSettings = onOpenBackgroundRunSettings,
+            libraryNavigationTarget = libraryNavigationTarget,
+            onLibraryNavigationHandled = onLibraryNavigationHandled,
+            onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+            onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
+            compact = compact,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+internal fun RootDesktopPageContent(
     selectedTab: AppTab,
     platform: PlatformDescriptor,
     myState: MyState,
