@@ -1,3 +1,4 @@
+[![Total Downloads](https://img.shields.io/github/downloads/wesley666/LynMusic/total?label=Downloads&color=blue)](https://github.com/wesley666/LynMusic/releases)
 LynMusic is a cross-platform local music player for Android, Android TV, Android Automotive, and JVM desktops (Windows, Linux, and macOS), built with Kotlin Multiplatform.
 
 LynMusic 是基于 Kotlin Multiplatform 的跨平台本地音乐播放器项目，维护的平台包括 Android 手机／平板、Android TV、Android Automotive 和桌面端（JVM），桌面端支持 Windows、macOS 和 Linux。
