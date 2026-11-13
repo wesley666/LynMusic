@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tags_edit_track">编辑音乐标签</string>
     <string name="tag_format_read_only">%1$s · 只读</string>
     <string name="tags_album_artist_label">专辑艺术家</string>
     <string name="tags_artist_label">艺术家</string>

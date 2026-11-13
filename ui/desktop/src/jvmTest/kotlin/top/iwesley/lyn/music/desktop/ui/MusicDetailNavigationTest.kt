@@ -12,6 +12,49 @@ import top.iwesley.lyn.music.feature.details.*
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 
 class MusicDetailNavigationTest {
+    @Test fun tagRoutePushAndPopRetainOriginEntryAndItsPosition() = runTest {
+        val owner = owner()
+        owner.open(LibraryNavigationTarget.Album("album"))
+        val origin = owner.top
+        val entry = owner.entry(origin)
+        entry.contentListState = androidx.compose.foundation.lazy.LazyListState(23, 11)
+        owner.openMusicTags("track", "local")
+        val tags = owner.top
+        assertEquals("tags", tags.kind)
+        assertEquals("track", tags.entityId)
+        assertEquals("local", tags.sourceId)
+        assertEquals(3, owner.backStack.size)
+        assertEquals(tags, Json.decodeFromString<MusicDetailRoute>(Json.encodeToString(tags)))
+        owner.openMusicTags("track", "local")
+        assertEquals(tags, owner.top)
+        owner.pop()
+        assertEquals(origin, owner.top)
+        assertSame(entry, owner.entry(origin))
+        assertEquals(23, entry.contentListState.firstVisibleItemIndex)
+        assertEquals(11, entry.contentListState.firstVisibleItemScrollOffset)
+        owner.clear()
+    }
+
+    @Test fun tagBackRequestsWaitForTheForegroundEditorAndRejectStaleCallbacks() = runTest {
+        val owner = owner()
+        owner.openMusicTags("track", "local")
+        val tags = owner.top
+        val generation = owner.generation
+        owner.requestBack() // A composing editor must not be popped without confirmation.
+        assertEquals(tags, owner.top)
+        var requests = 0
+        owner.setBackHandler(tags.entryId) { requests++ }
+        owner.requestBack()
+        assertEquals(1, requests)
+        assertEquals(tags, owner.top)
+        owner.pop(tags.entryId, generation)
+        owner.openMusicTags("track", "other-source")
+        owner.requestBack(tags.entryId, generation)
+        assertEquals(1, requests)
+        assertEquals("other-source", owner.top.sourceId)
+        owner.clear()
+    }
+
     @Test fun stackDeduplicatesOnlyTheSameTopAndSource()=runTest {
         val owner=owner()
         owner.open(LibraryNavigationTarget.OnlineAlbum("one","album"))

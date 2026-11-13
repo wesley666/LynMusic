@@ -88,6 +88,7 @@ import top.iwesley.lyn.music.core.model.Track
 import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsEffect
+import top.iwesley.lyn.music.feature.tags.MusicTagsPendingTrackAction
 import top.iwesley.lyn.music.feature.tags.MusicTagsIntent
 import top.iwesley.lyn.music.feature.tags.MusicTagsRowMetadata
 import top.iwesley.lyn.music.feature.tags.MusicTagsState
@@ -97,6 +98,9 @@ import top.iwesley.lyn.music.ui.mainShellColors
 
 private val MusicTagsTableWidth = 940.dp
 
+private enum class MusicTagsEntrySelection { Waiting, Requested, Ready }
+private enum class MusicTagsEntryExit { None, Requested, ConfirmDiscard, CancellingSelection, Resetting, Finished }
+
 @Composable
 fun MusicTagsTab(
     state: MusicTagsState,
@@ -105,11 +109,88 @@ fun MusicTagsTab(
     onPlayerIntent: (PlayerIntent) -> Unit,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    targetTrackId: String? = null,
+    targetSourceId: String? = null,
+    onReturn: (() -> Unit)? = null,
 ) {
+    val foreground = LocalMusicDetailIsForeground.current
+    val shortcut = targetTrackId != null && onReturn != null
+    var selection by remember(targetTrackId, targetSourceId) { mutableStateOf(MusicTagsEntrySelection.Waiting) }
+    var exit by remember(targetTrackId, targetSourceId) { mutableStateOf(MusicTagsEntryExit.None) }
+    val busy = state.isLoadingContent || state.isLoadingSelected || state.isRefreshing || state.isSaving
+    val targetExists = state.tracks.any { it.id == targetTrackId && it.sourceId == targetSourceId }
+    val initialSwitch = shortcut && selection != MusicTagsEntrySelection.Ready &&
+        state.pendingTrackAction is MusicTagsPendingTrackAction.SelectOnly &&
+        state.pendingTrackAction?.trackId == targetTrackId
+    val sendIntent: (MusicTagsIntent) -> Unit = { if (foreground) onMusicTagsIntent(it) }
+    fun requestReturn() {
+        if (foreground && exit == MusicTagsEntryExit.None) exit = MusicTagsEntryExit.Requested
+    }
+    MusicDetailBackHandler(enabled = shortcut && foreground, onBack = ::requestReturn)
+    LaunchedEffect(state, selection, exit, foreground, targetTrackId, targetSourceId) {
+        if (!shortcut || !foreground) return@LaunchedEffect
+        when (exit) {
+            MusicTagsEntryExit.CancellingSelection -> {
+                if (!state.showDiscardChangesDialog && state.pendingTrackAction == null) {
+                    exit = MusicTagsEntryExit.Finished
+                    onReturn?.invoke()
+                }
+                return@LaunchedEffect
+            }
+            MusicTagsEntryExit.Resetting -> {
+                if (!busy && !state.isDirty) {
+                    exit = MusicTagsEntryExit.Finished
+                    onReturn?.invoke()
+                }
+                return@LaunchedEffect
+            }
+            MusicTagsEntryExit.ConfirmDiscard, MusicTagsEntryExit.Finished -> return@LaunchedEffect
+            else -> Unit
+        }
+        // No selection has been sent yet, so leaving cannot strand a pending switch.
+        if (exit == MusicTagsEntryExit.Requested && selection == MusicTagsEntrySelection.Waiting) {
+            exit = MusicTagsEntryExit.Finished
+            onReturn?.invoke()
+            return@LaunchedEffect
+        }
+        if (busy) return@LaunchedEffect
+        if (exit == MusicTagsEntryExit.Requested) {
+            when {
+                initialSwitch && state.showDiscardChangesDialog -> {
+                    exit = MusicTagsEntryExit.CancellingSelection
+                    sendIntent(MusicTagsIntent.DismissDiscardSelection)
+                }
+                !targetExists -> {
+                    exit = MusicTagsEntryExit.Finished
+                    onReturn?.invoke()
+                }
+                selection == MusicTagsEntrySelection.Ready -> {
+                    if (state.isDirty) exit = MusicTagsEntryExit.ConfirmDiscard
+                    else {
+                        exit = MusicTagsEntryExit.Finished
+                        onReturn?.invoke()
+                    }
+                }
+            }
+        }
+        if (exit != MusicTagsEntryExit.None && exit != MusicTagsEntryExit.Requested) return@LaunchedEffect
+        if (selection == MusicTagsEntrySelection.Waiting && targetExists && !state.showDiscardChangesDialog) {
+            selection = MusicTagsEntrySelection.Requested
+            sendIntent(MusicTagsIntent.SelectTrack(requireNotNull(targetTrackId)))
+        } else if (selection == MusicTagsEntrySelection.Requested && targetExists &&
+            state.selectedTrackId == targetTrackId && !state.showDiscardChangesDialog) {
+            androidx.compose.runtime.withFrameNanos { }
+            selection = MusicTagsEntrySelection.Ready
+        }
+    }
+    val targetReadFailed = selection == MusicTagsEntrySelection.Ready &&
+        !state.isLoadingSelected && state.selectedSnapshot == null
+    val targetReady = selection == MusicTagsEntrySelection.Ready && targetExists && !targetReadFailed
     DisposableEffect(Unit) {
         onDispose { onMobileEditorVisibilityChanged(false) }
     }
-    LaunchedEffect(effects) {
+    LaunchedEffect(effects, foreground) {
+        if (!foreground) return@LaunchedEffect
         effects.collect { effect ->
             when (effect) {
                 is MusicTagsEffect.PlayTracks -> {
@@ -118,13 +199,15 @@ fun MusicTagsTab(
             }
         }
     }
+    PlatformBackHandler(enabled = shortcut, onBack = ::requestReturn)
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
     ) {
         state.message?.let { message ->
-            LaunchedEffect(message) {
+            LaunchedEffect(message, foreground) {
+                if (!foreground) return@LaunchedEffect
                 kotlinx.coroutines.delay(2_500)
-                onMusicTagsIntent(MusicTagsIntent.ClearMessage)
+                sendIntent(MusicTagsIntent.ClearMessage)
             }
         }
         Box(
@@ -133,17 +216,25 @@ fun MusicTagsTab(
             MobileMusicTagsLayout(
                 supportsWrite = true,
                 state = state,
-                onMusicTagsIntent = onMusicTagsIntent,
+                onMusicTagsIntent = sendIntent,
                 onMobileEditorVisibilityChanged = onMobileEditorVisibilityChanged,
+                targetTrackId = targetTrackId.takeIf { shortcut },
+                targetReady = targetReady && state.selectedTrackId == targetTrackId,
+                targetAvailable = targetExists && !targetReadFailed,
+                canRetryRead = targetReadFailed && targetExists && state.selectedTrackId == targetTrackId,
+                onReturn = if (shortcut) ::requestReturn else null,
             )
-            if (state.showDiscardChangesDialog) {
+            if (foreground && state.showDiscardChangesDialog && exit != MusicTagsEntryExit.CancellingSelection) {
                 MusicTagsDiscardChangesDialog(
-                    onDismissRequest = { onMusicTagsIntent(MusicTagsIntent.DismissDiscardSelection) },
-                    onConfirm = { onMusicTagsIntent(MusicTagsIntent.ConfirmDiscardSelection) },
+                    onDismissRequest = {
+                        if (initialSwitch) exit = MusicTagsEntryExit.CancellingSelection
+                        sendIntent(MusicTagsIntent.DismissDiscardSelection)
+                    },
+                    onConfirm = { sendIntent(MusicTagsIntent.ConfirmDiscardSelection) },
                     confirmLabel = uiString(Res.string.tags_discard_and_switch),
                 )
             }
-            if (state.onlineLyricsSearch.isVisible) {
+            if (foreground && (!shortcut || targetReady) && state.onlineLyricsSearch.isVisible) {
                 LyricsSearchOverlayDialog(
                     state = LyricsSearchDialogState(
                         headerTitle = uiString(Res.string.tags_search_lyrics_online),
@@ -167,18 +258,28 @@ fun MusicTagsTab(
                         formSubtitle = uiText(Res.string.lyrics_search_metadata_hint),
                         resultsAppliedSubtitle = uiText(Res.string.lyrics_apply_result_hint),
                     ),
-                    onDismiss = { onMusicTagsIntent(MusicTagsIntent.DismissOnlineLyricsSearch) },
-                    onTitleChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsTitleChanged(it)) },
-                    onArtistChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsArtistChanged(it)) },
-                    onAlbumChanged = { onMusicTagsIntent(MusicTagsIntent.OnlineLyricsAlbumChanged(it)) },
-                    onSearch = { onMusicTagsIntent(MusicTagsIntent.SearchOnlineLyrics) },
+                    onDismiss = { sendIntent(MusicTagsIntent.DismissOnlineLyricsSearch) },
+                    onTitleChanged = { sendIntent(MusicTagsIntent.OnlineLyricsTitleChanged(it)) },
+                    onArtistChanged = { sendIntent(MusicTagsIntent.OnlineLyricsArtistChanged(it)) },
+                    onAlbumChanged = { sendIntent(MusicTagsIntent.OnlineLyricsAlbumChanged(it)) },
+                    onSearch = { sendIntent(MusicTagsIntent.SearchOnlineLyrics) },
                     onApplyDirectCandidate = { candidate, mode ->
-                        onMusicTagsIntent(MusicTagsIntent.ApplyOnlineLyricsCandidate(candidate, mode))
+                        sendIntent(MusicTagsIntent.ApplyOnlineLyricsCandidate(candidate, mode))
                     },
                     onApplyWorkflowCandidate = { candidate, mode ->
-                        onMusicTagsIntent(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(candidate, mode))
+                        sendIntent(MusicTagsIntent.ApplyOnlineWorkflowSongCandidate(candidate, mode))
                     },
                     modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (foreground && exit == MusicTagsEntryExit.ConfirmDiscard) {
+                MusicTagsDiscardChangesDialog(
+                    onDismissRequest = { exit = MusicTagsEntryExit.None },
+                    onConfirm = {
+                        exit = MusicTagsEntryExit.Resetting
+                        sendIntent(MusicTagsIntent.ResetDraft)
+                    },
+                    confirmLabel = uiString(Res.string.tags_discard_and_go_back),
                 )
             }
             state.message?.let { message ->
@@ -200,12 +301,23 @@ private fun MobileMusicTagsLayout(
     state: MusicTagsState,
     onMusicTagsIntent: (MusicTagsIntent) -> Unit,
     onMobileEditorVisibilityChanged: (Boolean) -> Unit,
+    targetTrackId: String? = null,
+    targetReady: Boolean = true,
+    targetAvailable: Boolean = true,
+    canRetryRead: Boolean = false,
+    onReturn: (() -> Unit)? = null,
 ) {
     var detailTrackId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDiscardBackDialog by rememberSaveable { mutableStateOf(false) }
-    val detailTrack = state.tracks.firstOrNull { it.id == detailTrackId }
+    // The saved marker preserves list/detail visibility; the Store owns the selection.
+    val detailTrack = if (targetTrackId != null) {
+        state.tracks.firstOrNull { it.id == targetTrackId }
+    } else {
+        state.selectedTrack.takeIf { detailTrackId != null }
+    }
     val layoutSpacing = if (detailTrack == null) 14.dp else 10.dp
     fun requestBackToList() {
+        if (onReturn != null) { onReturn(); return }
         if (state.isDirty) {
             showDiscardBackDialog = true
         } else {
@@ -221,7 +333,7 @@ private fun MobileMusicTagsLayout(
         }
     }
     PlatformBackHandler(
-        enabled = canNavigateBackFromMusicTagsDetail(detailTrackId),
+        enabled = onReturn == null && canNavigateBackFromMusicTagsDetail(detailTrackId),
         onBack = ::requestBackToList,
     )
     Column(
@@ -235,7 +347,7 @@ private fun MobileMusicTagsLayout(
             ),
         verticalArrangement = Arrangement.spacedBy(layoutSpacing),
     ) {
-        if (detailTrack == null) {
+        if (detailTrack == null && onReturn == null) {
             MusicTagsHeader(
                 title = uiString(Res.string.tags_editor_title),
                 infoText = if (supportsWrite) {
@@ -266,7 +378,7 @@ private fun MobileMusicTagsLayout(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = detailTrack.title,
+                    text = detailTrack?.title ?: uiString(Res.string.tags_editor_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
@@ -274,10 +386,28 @@ private fun MobileMusicTagsLayout(
                     overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(onClick = ::requestBackToList) {
-                    Text(uiString(Res.string.tags_back_to_list))
+                    Text(uiString(if (onReturn != null) Res.string.common_back else Res.string.tags_back_to_list))
                 }
             }
-            MusicTagsEditorPane(
+            if (onReturn != null && !targetReady) {
+                MusicTagsEmptyState(
+                    title = uiString(if (!state.isLoadingContent && !targetAvailable) Res.string.common_unavailable else Res.string.tags_reading_progress),
+                    body = state.message?.displayText().orEmpty(),
+                    modifier = Modifier.weight(1f),
+                    action = {
+                        if (canRetryRead) {
+                            TextButton(
+                                onClick = { onMusicTagsIntent(MusicTagsIntent.RefreshSelected) },
+                                enabled = !state.isLoadingSelected && !state.isSaving && !state.isRefreshing,
+                            ) {
+                                Icon(Icons.Rounded.Sync, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(uiString(if (state.isRefreshing) Res.string.tags_refreshing_progress else Res.string.common_refresh))
+                            }
+                        }
+                    },
+                )
+            } else MusicTagsEditorPane(
                 state = state,
                 showHeader = false,
                 compactLayout = true,
@@ -295,7 +425,7 @@ private fun MobileMusicTagsLayout(
             )
         }
     }
-    if (showDiscardBackDialog) {
+    if (LocalMusicDetailIsForeground.current && showDiscardBackDialog) {
         MusicTagsDiscardChangesDialog(
             onDismissRequest = { showDiscardBackDialog = false },
             onConfirm = {
@@ -1164,6 +1294,7 @@ private fun MusicTagsEmptyState(
     title: String,
     body: String,
     modifier: Modifier = Modifier,
+    action: @Composable () -> Unit = {},
 ) {
     Box(
         modifier = modifier,
@@ -1185,6 +1316,7 @@ private fun MusicTagsEmptyState(
                 text = body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            action()
         }
     }
 }

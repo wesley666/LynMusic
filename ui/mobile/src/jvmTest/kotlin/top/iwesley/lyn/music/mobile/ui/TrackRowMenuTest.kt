@@ -29,6 +29,31 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class TrackRowMenuTest {
+    @Test fun `tag edit menu targets the chosen row for button and context gestures without playing`() = onUiThread {
+        for (width in listOf(360, 1100)) for (gesture in listOf(false, true)) Fixture(width).use { ui ->
+            if (gesture) ui.openGesture() else ui.click("More actions for Track A")
+            ui.click("Edit music tags")
+            assertEquals(listOf(ui.track), ui.edited)
+            assertEquals(0, ui.plays)
+            assertEquals(0, ui.selections)
+            assertTrue(ui.added.isEmpty())
+            assertTrue(ui.favorites.isEmpty())
+        }
+    }
+
+    @Test fun `tag edit menu disappears for disabled unknown and network sources including downloaded files`() = onUiThread {
+        Fixture().use { ui ->
+            for (sources in listOf(emptyList(), listOf(ui.localSource.copy(enabled = false)),
+                listOf(ui.localSource.copy(type = ImportSourceType.NAVIDROME)))) {
+                ui.sources = sources.map { SourceWithStatus(it) }
+                ui.render()
+                ui.click("More actions for Track A")
+                assertFalse(ui.visible("Edit music tags"))
+                ui.escape()
+            }
+        }
+    }
+
     @Test fun `artist and album menus navigate the selected row at narrow and wide widths`() = onUiThread {
         for (width in listOf(360, 1100)) {
             for (gesture in listOf(false, true)) Fixture(width).use { ui ->
@@ -278,6 +303,9 @@ class TrackRowMenuTest {
         var plays = 0
         var navigations = 0
         var selections = 0
+        val edited = mutableListOf<Track>()
+        val localSource = ImportSource("source", ImportSourceType.LOCAL_FOLDER, "Local", "/Music")
+        var sources by mutableStateOf(listOf(SourceWithStatus(localSource)))
         val added = mutableListOf<Track>()
         val favorites = mutableListOf<Pair<String, Boolean>>()
         val offlineIntents = mutableListOf<OfflineDownloadIntent>()
@@ -297,6 +325,8 @@ class TrackRowMenuTest {
                         favoriteState = { favorite },
                         onSetFavorite = { target, value -> favorites += target.id to value; favorite = TrackFavoriteUiState(value) },
                         onAddToPlaylist = { added += it },
+                        canEditMusicTags = { canEditTrackMusicTags(it, sources) },
+                        onEditMusicTags = { edited += it },
                     ),
                     LocalOfflineDownloadUiState provides OfflineDownloadUiState(downloadsByTrackId = downloads, onIntent = if (offline) ({ offlineIntents += it }) else null),
                 ) {

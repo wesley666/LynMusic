@@ -190,11 +190,30 @@ class MusicDetailAndroidBackTest {
         }
     }
 
+    @Test fun tagsSystemBackRequestsTheEditorsExitInsteadOfPoppingItsRoute() {
+        Fixture().use { ui ->
+            ui.navigation.openMusicTags("track", "local")
+            ui.frames()
+            val route = ui.navigation.top
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(BackEvent.EDGE_LEFT)).close()
+            ui.frames()
+            assertEquals(1, ui.tagBackRequests)
+            assertEquals(route, ui.navigation.top)
+            assertFalse(ui.activity.isFinishing)
+            // The editor pops only after its own discard confirmation completes.
+            ui.navigation.pop(route.entryId)
+            ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertEquals(0, RecordingActivityClient.backRequests)
+        }
+    }
+
     private inner class Fixture : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         private val queries = MusicDetailQueries { flowOf(MusicDetailData("Album")) }
         val activity = controller.get()
         lateinit var navigation: MusicDetailNavigation
+        var tagBackRequests = 0
 
         init {
             RecordingActivityClient.backRequests = 0
@@ -210,7 +229,12 @@ class MusicDetailAndroidBackTest {
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() },
                 ) {
                     ProvideUiResourceLanguage("en") {
-                        LynMusicTheme { MusicDetailHost(onPlayerIntent = {}) { Text("Root") } }
+                        LynMusicTheme {
+                            MusicDetailHost(onPlayerIntent = {}, musicTags = {
+                                MusicDetailBackHandler(enabled = true) { tagBackRequests++ }
+                                Text("Tags")
+                            }) { Text("Root") }
+                        }
                     }
                 }
             }

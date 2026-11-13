@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tags_edit_track">Edit music tags</string>
     <string name="tag_format_read_only">%1$s · read-only</string>
     <string name="tags_album_artist_label">Album artist</string>
     <string name="tags_artist_label">Artist</string>

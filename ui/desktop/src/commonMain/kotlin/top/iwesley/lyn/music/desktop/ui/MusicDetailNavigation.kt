@@ -124,6 +124,7 @@ internal class MusicDetailNavigation(
     var immediate by mutableStateOf(false)
         private set
     private val entries = mutableMapOf<String, MusicDetailEntryState>()
+    private val backHandlers = mutableMapOf<String, () -> Unit>()
     var gestureGeneration: Long? = null
     var gestureInProgress: () -> Boolean = { false }
     private fun captureGesture() {
@@ -141,10 +142,32 @@ internal class MusicDetailNavigation(
         backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
     }
 
+    fun openMusicTags(trackId: String, sourceId: String) {
+        if (trackId.isBlank() || sourceId.isBlank()) return
+        val route = MusicDetailRoute(kind = "tags", entityId = trackId, sourceId = sourceId)
+        if (top.sameTarget(route)) return
+        captureGesture()
+        generation++
+        immediate = false
+        backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
+    }
+
+    fun setBackHandler(entryId: String, handler: (() -> Unit)?) {
+        if (handler == null) backHandlers.remove(entryId) else backHandlers[entryId] = handler
+    }
+
+    fun requestBack(expectedEntryId: String = top.entryId, expectedGeneration: Long = generation) {
+        if (!hasDetails || top.entryId != expectedEntryId || generation != expectedGeneration) return
+        // Tags owns its discard confirmation. Never bypass it while the entry is composing.
+        if (top.kind == "tags") backHandlers[top.entryId]?.invoke()
+        else pop(expectedEntryId, expectedGeneration)
+    }
+
     fun pop(expectedEntryId: String = top.entryId, expectedGeneration: Long = generation) {
         if (!hasDetails || top.entryId != expectedEntryId || generation != expectedGeneration) return
         generation++
         entries[top.entryId]?.cancel()
+        backHandlers.remove(top.entryId)
         backStack.removeLast()
         if (!hasDetails && restorePlayer.value) {
             restorePlayer.value = false
@@ -159,6 +182,7 @@ internal class MusicDetailNavigation(
         restorePlayer.value = false
         entries.values.forEach { it.cancel() }
         entries.clear()
+        backHandlers.clear()
         while (backStack.size > 1) backStack.removeLast()
     }
 
@@ -174,16 +198,28 @@ internal class MusicDetailNavigation(
             }
         }
     }
-    fun release(key: Any) { entries.remove(key)?.cancel() }
+    fun release(key: Any) { entries.remove(key)?.cancel(); backHandlers.remove(key) }
     fun releaseRemovedEntries() {
         val activeIds = backStack.map { (it as MusicDetailRoute).entryId }.toSet()
         entries.keys.filterNot(activeIds::contains).forEach { release(it) }
     }
-    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear() }
+    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); backHandlers.clear() }
 }
 
 internal val LocalMusicDetailNavigation = staticCompositionLocalOf<MusicDetailNavigation?> { null }
 internal val LocalMusicDetailIsForeground = staticCompositionLocalOf { true }
+private val LocalMusicDetailEntryId = staticCompositionLocalOf<String?> { null }
+
+@Composable
+internal fun MusicDetailBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    val navigation = LocalMusicDetailNavigation.current
+    val entryId = LocalMusicDetailEntryId.current
+    val latestBack by rememberUpdatedState(onBack)
+    DisposableEffect(navigation, entryId, enabled) {
+        if (enabled && entryId != null) navigation?.setBackHandler(entryId) { latestBack() }
+        onDispose { if (enabled && entryId != null) navigation?.setBackHandler(entryId, null) }
+    }
+}
 
 private val PlayerPresentation.isMusicDetailForeground: Boolean
     get() = !isExpanded && !isQueueVisible && !isManualLyricsSearchVisible &&
@@ -198,7 +234,7 @@ internal fun Modifier.musicDetailKeyboardBack(
     val foreground = presentation.isMusicDetailForeground
     return onKeyEvent { event ->
         if (foreground && navigation.hasDetails && event.key == Key.Escape && event.type == KeyEventType.KeyDown) {
-            navigation.pop(entryId, generation)
+            navigation.requestBack(entryId, generation)
             true
         } else false
     }
@@ -229,9 +265,11 @@ internal fun MusicDetailHost(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
     showDuration: Boolean = true,
+    musicTags: @Composable (MusicDetailRoute) -> Unit = {},
     root: @Composable () -> Unit,
 ) {
     val navigation = LocalMusicDetailNavigation.current
+    val currentMusicTags by rememberUpdatedState(musicTags)
     if (navigation == null) { root(); return }
     DisposableEffect(navigation) {
         onDispose { navigation.releaseRemovedEntries() }
@@ -276,7 +314,7 @@ internal fun MusicDetailHost(
         entryDecorators = decorators,
         onBack = {
             if (foreground && (navigation.gestureGeneration == null || navigation.gestureGeneration == generation)) {
-                navigation.pop(current.entryId, generation)
+                navigation.requestBack(current.entryId, generation)
             }
         },
         transitionSpec = {
@@ -297,9 +335,13 @@ internal fun MusicDetailHost(
                 // NavEntry caches this content; observe current state inside its composition.
                 val entryForeground = currentPlayerPresentation().isMusicDetailForeground &&
                     route.entryId == navigation.top.entryId
-                CompositionLocalProvider(LocalMusicDetailIsForeground provides entryForeground) {
+                CompositionLocalProvider(
+                    LocalMusicDetailIsForeground provides entryForeground,
+                    LocalMusicDetailEntryId provides route.entryId,
+                ) {
                     when {
                         route.isRoot -> root()
+                        route.kind == "tags" -> currentMusicTags(route)
                         route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, showDuration)
                         else -> ArtistDetailPage(route, navigation, onPlayerIntent, showDuration)
                     }

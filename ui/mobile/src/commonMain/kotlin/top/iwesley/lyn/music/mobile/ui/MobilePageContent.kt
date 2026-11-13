@@ -140,7 +140,18 @@ internal fun MobilePageContent(
     onTabChanged: (AppTab) -> Unit = onTabSelected,
     modifier: Modifier = Modifier,
 ) {
-    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact) {
+    val details = LocalMusicDetailNavigation.current
+    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact, musicTags = { route ->
+        MusicTagsTab(
+            state = musicTagsState,
+            effects = musicTagsEffects,
+            onMusicTagsIntent = onMusicTagsIntent,
+            onPlayerIntent = onPlayerIntent,
+            targetTrackId = route.entityId,
+            targetSourceId = route.sourceId,
+            onReturn = { details?.pop(route.entryId) },
+        )
+    }) {
         RootMobilePageContent(
             selectedTab = selectedTab,
             platform = platform,

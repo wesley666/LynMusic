@@ -274,9 +274,12 @@ fun MobileApp(
                     preferences = settingsState.textPalettePreferences,
                 )
             }
+        LaunchedEffect(details.top.kind) {
+            if (details.top.kind == "tags") component.musicTagsStore.ensureStarted()
+        }
         val latestAddToPlaylist by rememberUpdatedState<(Track) -> Unit> { openAddToPlaylist(it) }
         val trackListBindings = remember(component, favoritesState.favoriteTrackIds,
-            onlineFavoritesState, importState) {
+            onlineFavoritesState, importState, details) {
             TrackListActionBindings(
                 favoriteState = { track ->
                     val binding = playerFavoriteBinding(track, favoritesState.favoriteTrackIds, onlineFavoritesState, importState)
@@ -292,6 +295,11 @@ fun MobileApp(
                     }
                 },
                 onAddToPlaylist = { latestAddToPlaylist(it) },
+                canEditMusicTags = { canEditTrackMusicTags(it, importState.sources) },
+                onEditMusicTags = { track ->
+                    component.musicTagsStore.ensureStarted()
+                    details.openMusicTags(track.id, track.sourceId)
+                },
             )
         }
         CompositionLocalProvider(
@@ -462,7 +470,8 @@ fun MobileApp(
                                     details.open(target)
                                 },
                                 mobilePortraitMiniPlayer = mobilePortraitMiniPlayer,
-                                hideMiniPlayerBar = selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible,
+                                hideMiniPlayerBar = details.top.kind == "tags" ||
+                                    (selectedTab == AppTab.Tags && isMusicTagsMobileEditorVisible),
                                 onMobileEditorVisibilityChanged = {
                                     isMusicTagsMobileEditorVisible = it
                                 },

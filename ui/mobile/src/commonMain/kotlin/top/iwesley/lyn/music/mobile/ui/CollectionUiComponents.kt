@@ -647,6 +647,8 @@ internal fun TrackRow(
         onOfflineDownload = if (canDownload) ({ offlineVisible = true }) else null,
         onArtistClick = onArtistClick,
         onAlbumClick = onAlbumClick,
+        onEditMusicTags = bindings.onEditMusicTags?.takeIf { bindings.canEditMusicTags(track) }
+            ?.let { action -> { action(track) } },
     )
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
