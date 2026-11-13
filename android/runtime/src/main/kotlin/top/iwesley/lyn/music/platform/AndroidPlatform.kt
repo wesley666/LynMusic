@@ -52,7 +52,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.room.Room
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -198,7 +197,6 @@ import top.iwesley.lyn.music.core.model.unsupportedAudioImportFailure
 import top.iwesley.lyn.music.core.model.warn
 import top.iwesley.lyn.music.core.model.withSecureInMemoryCache
 import top.iwesley.lyn.music.data.db.LynMusicDatabase
-import top.iwesley.lyn.music.data.db.openLynMusicDatabase
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateChangeNotifier
 import top.iwesley.lyn.music.data.repository.DailyRecommendationDateKeyProvider
 import top.iwesley.lyn.music.data.repository.PlayerRuntimeServices
@@ -251,7 +249,6 @@ import kotlin.coroutines.resumeWithException
 data class AndroidRuntimeGraph(
     val sharedGraph: SharedGraph,
     val playerRuntimeServices: PlayerRuntimeServices,
-    private val ownsDatabase: Boolean = false,
 ) {
     private val failureCleanupStarted = AtomicBoolean(false)
 
@@ -277,9 +274,6 @@ data class AndroidRuntimeGraph(
                 closeResource { playerRuntimeServices.menuBarLyricsControlsPlatformService.close() }
                 closeResource { playerRuntimeServices.playbackRepository?.close() }
                 closeResource { playerRuntimeServices.closeDesktopResources() }
-                if (ownsDatabase) {
-                    closeResource { sharedGraph.database.close() }
-                }
 
                 failures.firstOrNull()?.let { primary ->
                     failures.drop(1).forEach { failure ->
@@ -292,14 +286,11 @@ data class AndroidRuntimeGraph(
     }
 }
 
-fun openAndroidRuntimeDatabase(context: Context): LynMusicDatabase {
-    return openLynMusicDatabase(
-        Room.databaseBuilder<LynMusicDatabase>(
-            context = context.applicationContext,
-            name = context.applicationContext.getDatabasePath("lynmusic.db").absolutePath,
-        ),
-    ).getOrThrow()
-}
+private val processDatabaseProvider = AndroidRuntimeDatabaseProvider()
+
+/** The database belongs to the app process; individual components must not close it. */
+fun openAndroidRuntimeDatabase(context: Context): LynMusicDatabase =
+    processDatabaseProvider.getOrCreate(context)
 
 fun createAndroidRuntimeGraph(
     activity: ComponentActivity,
@@ -307,16 +298,13 @@ fun createAndroidRuntimeGraph(
 ): AndroidRuntimeGraph {
     val logger = AndroidDiagnosticLogger(enabled = true, label = platformName)
     val database = openAndroidRuntimeDatabase(activity.applicationContext)
-    return createAndroidRuntimeGraphWithOwnedDatabase(database) {
-        createAndroidRuntimeGraph(
-            context = activity.applicationContext,
-            database = database,
-            activityActions = FixedAndroidActivityActions(activity, logger),
-            platformName = platformName,
-            logger = logger,
-            ownsDatabase = true,
-        )
-    }
+    return createAndroidRuntimeGraph(
+        context = activity.applicationContext,
+        database = database,
+        activityActions = FixedAndroidActivityActions(activity, logger),
+        platformName = platformName,
+        logger = logger,
+    )
 }
 
 fun createAndroidRuntimeGraph(
@@ -331,7 +319,6 @@ fun createAndroidRuntimeGraph(
         activityActions = FixedAndroidActivityActions(activity, logger),
         platformName = platformName,
         logger = logger,
-        ownsDatabase = false,
     )
 }
 
@@ -342,29 +329,13 @@ fun createAndroidRuntimeGraph(
 ): AndroidRuntimeGraph {
     val logger = AndroidDiagnosticLogger(enabled = true, label = platformName)
     val database = openAndroidRuntimeDatabase(context)
-    return createAndroidRuntimeGraphWithOwnedDatabase(database) {
-        createAndroidRuntimeGraph(
-            context = context.applicationContext,
-            database = database,
-            activityActions = activityActions,
-            platformName = platformName,
-            logger = logger,
-            ownsDatabase = true,
-        )
-    }
-}
-
-private fun createAndroidRuntimeGraphWithOwnedDatabase(
-    database: LynMusicDatabase,
-    factory: () -> AndroidRuntimeGraph,
-): AndroidRuntimeGraph = try {
-    factory()
-} catch (error: Throwable) {
-    runCatching { database.close() }
-        .exceptionOrNull()
-        ?.takeIf { closeError -> closeError !== error }
-        ?.let { closeError -> runCatching { error.addSuppressed(closeError) } }
-    throw error
+    return createAndroidRuntimeGraph(
+        context = context.applicationContext,
+        database = database,
+        activityActions = activityActions,
+        platformName = platformName,
+        logger = logger,
+    )
 }
 
 private fun createAndroidRuntimeGraph(
@@ -373,7 +344,6 @@ private fun createAndroidRuntimeGraph(
     activityActions: AndroidActivityActions,
     platformName: String,
     logger: DiagnosticLogger,
-    ownsDatabase: Boolean,
 ): AndroidRuntimeGraph {
     GlobalDiagnosticLogger.installStrategy(logger)
     val secureStore = AndroidCredentialStore(
@@ -517,7 +487,6 @@ private fun createAndroidRuntimeGraph(
                 lyricsShareFontPreferencesStore = appPreferencesStore,
                 playerLyricsStylePreferencesStore = appPreferencesStore,
             ),
-            ownsDatabase = ownsDatabase,
         )
     } catch (error: Throwable) {
         sharedScope.cancel()

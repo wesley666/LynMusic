@@ -15,7 +15,7 @@ sealed interface LyricsLoadResult {
     data class Unavailable(val cause: Throwable? = null) : LyricsLoadResult
 }
 
-/** Also bridges the Android UI and overlay service's separate Room instances. */
+/** Notifies the playback UI and Android lyrics overlay of lyrics or calibration changes. */
 data class LyricsChange(val trackId: String?, val contentChanged: Boolean)
 
 object LyricsChanges {
