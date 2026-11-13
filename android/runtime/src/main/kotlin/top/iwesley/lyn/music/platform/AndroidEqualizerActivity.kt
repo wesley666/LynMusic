@@ -10,7 +10,6 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
-import android.util.DisplayMetrics
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -78,7 +77,6 @@ import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
 import top.iwesley.lyn.music.core.model.clampEqualizerLevel
 import top.iwesley.lyn.music.core.model.deriveAppThemePalette
-import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.core.model.equalizerMillibelsToDecibels
 import top.iwesley.lyn.music.core.model.formatEqualizerFrequencyLabel
 import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
@@ -591,10 +589,7 @@ private fun ProvideFixedAndroidEqualizerDensity(
     val currentDensity = LocalDensity.current
     val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(
-                androidEqualizerStableDensityScale(currentDensity.density),
-                appDisplayScalePreset,
-            ),
+            density = androidAppDisplayDensity(currentDensity.density, appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }
@@ -655,14 +650,4 @@ private fun AppThemePalette.toEqualizerColorScheme(): ColorScheme {
         outlineVariant = Color(cardBorderArgb),
         scrim = Color(0x99000000.toInt()),
     )
-}
-
-private fun androidEqualizerStableDensityScale(fallbackDensity: Float): Float {
-    val fallbackDpi = (fallbackDensity.takeIf { it > 0f } ?: 1f) * DisplayMetrics.DENSITY_DEFAULT
-    val stableDpi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        DisplayMetrics.DENSITY_DEVICE_STABLE
-    } else {
-        fallbackDpi.roundToInt()
-    }.takeIf { it > 0 } ?: fallbackDpi.roundToInt()
-    return stableDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
 }

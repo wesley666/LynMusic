@@ -14,9 +14,7 @@ import top.iwesley.lyn.music.uiString
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.os.Build
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -126,7 +124,6 @@ import top.iwesley.lyn.music.core.model.PlaybackAudioFormat
 import top.iwesley.lyn.music.core.model.PlaybackMode
 import top.iwesley.lyn.music.core.model.PlaybackSnapshot
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.core.model.normalizedArtworkCacheLocator
 import top.iwesley.lyn.music.core.model.parseSubsonicCompatibleSongLocator
 import top.iwesley.lyn.music.core.model.resolveArtworkCacheTarget
@@ -134,6 +131,7 @@ import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.player.PlayerState
+import top.iwesley.lyn.music.platform.androidAppDisplayDensity
 import top.iwesley.lyn.music.tv.ui.TvMainTheme
 
 class TvPlayerActivity : TvComponentActivity() {
@@ -1215,7 +1213,7 @@ private fun ProvideTvPlayerDensity(
     val currentDensity = LocalDensity.current
     val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(tvPlayerStableDensityScale(currentDensity.density), appDisplayScalePreset),
+            density = androidAppDisplayDensity(currentDensity.density, appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }
@@ -1296,16 +1294,6 @@ private fun formatTvPlayerDuration(durationMs: Long): String {
     } else {
         "%d:%02d".format(minutes, seconds)
     }
-}
-
-private fun tvPlayerStableDensityScale(fallbackDensity: Float): Float {
-    val fallbackDpi = (fallbackDensity.takeIf { it > 0f } ?: 1f) * DisplayMetrics.DENSITY_DEFAULT
-    val stableDpi = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        DisplayMetrics.DENSITY_DEVICE_STABLE
-    } else {
-        fallbackDpi.roundToInt()
-    }.takeIf { it > 0 } ?: fallbackDpi.roundToInt()
-    return stableDpi / DisplayMetrics.DENSITY_DEFAULT.toFloat()
 }
 
 private val TvPlayerPanelShape = RoundedCornerShape(22.dp)

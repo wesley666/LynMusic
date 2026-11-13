@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button as TvButton
 import kotlin.math.min
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
-import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
+import top.iwesley.lyn.music.platform.androidAppDisplayDensity
 import top.iwesley.lyn.music.tv.ui.TvMainApp
 import top.iwesley.lyn.music.tv.ui.TvMainTheme
 import kotlin.math.roundToInt
@@ -118,7 +118,7 @@ private fun ProvideFixedAndroidComposeDensity(
     val currentDensity = LocalDensity.current
     val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(androidStableDensityScale(currentDensity.density), appDisplayScalePreset),
+            density = androidAppDisplayDensity(currentDensity.density, appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }

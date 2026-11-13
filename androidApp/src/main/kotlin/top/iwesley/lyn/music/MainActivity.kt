@@ -36,12 +36,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
-import top.iwesley.lyn.music.core.model.effectiveAppDisplayDensity
 import top.iwesley.lyn.music.core.model.resolveAppThemeTextPalette
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.settings.SettingsIntent
 import top.iwesley.lyn.music.platform.isAndroidTabletIgnoringDisplaySize
-import top.iwesley.lyn.music.platform.androidStableDensityScale
+import top.iwesley.lyn.music.platform.androidAppDisplayDensity
 import top.iwesley.lyn.music.platform.AndroidExternalAudioOpenSupport
 import top.iwesley.lyn.music.platform.createAndroidRuntimeGraph
 
@@ -196,7 +195,7 @@ private fun ProvideFixedAndroidComposeDensity(
     val currentDensity = LocalDensity.current
     val fixedDensity = remember(currentDensity.density, currentDensity.fontScale, appDisplayScalePreset) {
         Density(
-            density = effectiveAppDisplayDensity(androidStableDensityScale(currentDensity.density), appDisplayScalePreset),
+            density = androidAppDisplayDensity(currentDensity.density, appDisplayScalePreset),
             fontScale = currentDensity.fontScale,
         )
     }
