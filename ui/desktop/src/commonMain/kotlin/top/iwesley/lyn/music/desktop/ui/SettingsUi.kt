@@ -2567,9 +2567,11 @@ private fun storageCategoryDescription(category: AppStorageCategory): String {
 @Composable
 private fun appDisplayScalePresetLabel(preset: AppDisplayScalePreset): String {
     return when (preset) {
+        AppDisplayScalePreset.ExtraCompact -> uiString(Res.string.display_scale_extra_compact)
         AppDisplayScalePreset.Compact -> uiString(Res.string.display_scale_compact)
         AppDisplayScalePreset.Default -> uiString(Res.string.common_default)
         AppDisplayScalePreset.Large -> uiString(Res.string.display_scale_large)
+        AppDisplayScalePreset.ExtraLarge -> uiString(Res.string.display_scale_extra_large)
     }
 }
 

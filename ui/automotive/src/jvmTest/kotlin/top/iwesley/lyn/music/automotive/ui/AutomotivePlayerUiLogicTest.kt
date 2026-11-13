@@ -257,6 +257,42 @@ class AutomotivePlayerUiLogicTest {
     }
 
     @Test
+    fun `five display presets preserve reference pane and fit car playback controls`() {
+        val defaultReferencePane = resolveAutomotivePlaybackPaneReferenceConstraints(
+            overlayMaxWidth = 1280.dp,
+            overlayMaxHeight = 752.dp,
+            appDisplayScalePreset = AppDisplayScalePreset.Default,
+        )
+        for (preset in AppDisplayScalePreset.entries) {
+            val overlayWidth = 1280.dp / preset.scale
+            val overlayHeight = 752.dp / preset.scale
+            val actualPane = resolveAutomotivePlaybackPaneReferenceConstraints(
+                overlayMaxWidth = overlayWidth,
+                overlayMaxHeight = overlayHeight,
+                appDisplayScalePreset = AppDisplayScalePreset.Default,
+            )
+            val referencePane = resolveAutomotivePlaybackPaneReferenceConstraints(
+                overlayMaxWidth = overlayWidth,
+                overlayMaxHeight = overlayHeight,
+                appDisplayScalePreset = preset,
+            )
+            val layout = resolveAutomotivePlaybackControlsLayout(
+                maxWidth = actualPane.maxWidth,
+                maxHeight = actualPane.maxHeight,
+                referenceMaxWidth = referencePane.maxWidth,
+                referenceMaxHeight = referencePane.maxHeight,
+                appDisplayScalePreset = preset,
+            )
+
+            assertEquals(defaultReferencePane.maxWidth.value, referencePane.maxWidth.value, 0.001f)
+            assertEquals(defaultReferencePane.maxHeight.value, referencePane.maxHeight.value, 0.001f)
+            assertTrue(layout.totalWidth.value <= actualPane.maxWidth.value + 0.001f, preset.name)
+            assertTrue(layout.skipButtonSize >= 48.dp, preset.name)
+            assertTrue(layout.playButtonSize >= 48.dp, preset.name)
+        }
+    }
+
+    @Test
     fun `large preset keeps primary controls until five controls preserve physical size`() {
         listOf(240.dp, 246.dp).forEach { maxWidth ->
             val layout = resolveAutomotivePlaybackControlsLayout(

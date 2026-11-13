@@ -32,12 +32,16 @@ class AndroidDisplayDensityTest {
     @Test
     fun everyPresetScalesCurrentSystemDensity() {
         val expectedDensities = listOf(
+            Triple(3f, AppDisplayScalePreset.ExtraCompact, 2.4f),
             Triple(3f, AppDisplayScalePreset.Compact, 2.7f),
             Triple(3f, AppDisplayScalePreset.Default, 3f),
             Triple(3f, AppDisplayScalePreset.Large, 3.3f),
+            Triple(3f, AppDisplayScalePreset.ExtraLarge, 3.6f),
+            Triple(4.5f, AppDisplayScalePreset.ExtraCompact, 3.6f),
             Triple(4.5f, AppDisplayScalePreset.Compact, 4.05f),
             Triple(4.5f, AppDisplayScalePreset.Default, 4.5f),
             Triple(4.5f, AppDisplayScalePreset.Large, 4.95f),
+            Triple(4.5f, AppDisplayScalePreset.ExtraLarge, 5.4f),
         )
 
         for ((systemDensity, preset, expectedDensity) in expectedDensities) {
@@ -63,9 +67,11 @@ class AndroidDisplayDensityTest {
     @Test
     fun invalidSystemDensityUsesUnitBaselineBeforeApplyingPreset() {
         val expectedDensities = mapOf(
+            AppDisplayScalePreset.ExtraCompact to 0.8f,
             AppDisplayScalePreset.Compact to 0.9f,
             AppDisplayScalePreset.Default to 1f,
             AppDisplayScalePreset.Large to 1.1f,
+            AppDisplayScalePreset.ExtraLarge to 1.2f,
         )
 
         for (systemDensity in invalidDensities) {

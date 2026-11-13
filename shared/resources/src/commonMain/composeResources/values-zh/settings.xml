@@ -29,6 +29,9 @@
     <string name="window_close_minimize_hint">开启后，关闭窗口会最小化到程序坞（Dock）；关闭此选项后会退出应用。仍可使用 ⌘Q 退出。</string>
     <string name="settings_help_description">查看投屏和后台运行常见问题。</string>
     <string name="display_scale_compact">紧凑</string>
+    <string name="display_scale_extra_compact">更紧凑</string>
+    <string name="display_scale_extra_large">特大号</string>
+    <string name="display_scale_value">%1$s · %2$s</string>
     <string name="lyrics_sources_settings_summary">配置歌词 API 和搜索源。</string>
     <string name="lyrics_sources_settings_description">配置歌词 API、搜索源和播放缓存。</string>
     <string name="workflow_editor_description">用于新建或编辑多阶段歌词源，支持搜歌 -&gt; 选歌 -&gt; 拉歌词。当前仍直接编辑原始 JSON。</string>

@@ -29,6 +29,9 @@
     <string name="window_close_minimize_hint">Closing the window minimizes to the Dock when enabled, or exits the app when disabled. You can still quit with ⌘Q.</string>
     <string name="settings_help_description">Common questions about casting and background operation.</string>
     <string name="display_scale_compact">Compact</string>
+    <string name="display_scale_extra_compact">Extra compact</string>
+    <string name="display_scale_extra_large">Extra large</string>
+    <string name="display_scale_value">%1$s · %2$s</string>
     <string name="lyrics_sources_settings_summary">Configure lyrics APIs and search sources.</string>
     <string name="lyrics_sources_settings_description">Configure lyrics APIs, search sources, and playback cache.</string>
     <string name="workflow_editor_description">Create or edit a multi-stage lyrics source: search songs → select a song → fetch lyrics. Configuration is edited as raw JSON.</string>

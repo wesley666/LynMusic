@@ -84,7 +84,6 @@ import top.iwesley.lyn.music.resources.about_app_wechat_qr
 import org.jetbrains.compose.resources.imageResource
 import top.iwesley.lyn.music.core.model.AppStorageCategory
 import top.iwesley.lyn.music.core.model.AppDataLocationChangeMode
-import top.iwesley.lyn.music.core.model.AppDisplayScalePreset
 import top.iwesley.lyn.music.core.model.AppThemeId
 import top.iwesley.lyn.music.core.model.AppThemeTextPalette
 import top.iwesley.lyn.music.core.model.AppThemeTokens
@@ -1103,34 +1102,12 @@ private fun GeneralSettingsPane(
                             color = shellColors.secondaryText,
                         )
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AppDisplayScalePreset.entries.forEach { preset ->
-                            val selected = state.appDisplayScalePreset == preset
-                            if (selected) {
-                                Button(
-                                    onClick = {
-                                        onSettingsIntent(SettingsIntent.AppDisplayScalePresetChanged(preset))
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(appDisplayScalePresetLabel(preset))
-                                }
-                            } else {
-                                OutlinedButton(
-                                    onClick = {
-                                        onSettingsIntent(SettingsIntent.AppDisplayScalePresetChanged(preset))
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(appDisplayScalePresetLabel(preset))
-                                }
-                            }
-                        }
-                    }
+                    AppDisplayScaleSlider(
+                        preset = state.appDisplayScalePreset,
+                        onSelect = { preset ->
+                            onSettingsIntent(SettingsIntent.AppDisplayScalePresetChanged(preset))
+                        },
+                    )
                 }
             }
         }
@@ -2674,15 +2651,6 @@ private fun storageCategoryDescription(category: AppStorageCategory): String {
         AppStorageCategory.OfflineDownloads -> uiString(Res.string.storage_offline_music_description)
         AppStorageCategory.LyricsShareTemp -> uiString(Res.string.storage_lyrics_share_temporary_description)
         AppStorageCategory.TagEditTemp -> uiString(Res.string.storage_tags_temporary_description)
-    }
-}
-
-@Composable
-private fun appDisplayScalePresetLabel(preset: AppDisplayScalePreset): String {
-    return when (preset) {
-        AppDisplayScalePreset.Compact -> uiString(Res.string.display_scale_compact)
-        AppDisplayScalePreset.Default -> uiString(Res.string.common_default)
-        AppDisplayScalePreset.Large -> uiString(Res.string.display_scale_large)
     }
 }
 

@@ -6,9 +6,11 @@ import kotlinx.coroutines.flow.StateFlow
 enum class AppDisplayScalePreset(
     val scale: Float,
 ) {
+    ExtraCompact(0.8f),
     Compact(0.9f),
     Default(1.0f),
     Large(1.1f),
+    ExtraLarge(1.2f),
 }
 
 enum class NavidromeAudioQuality(
