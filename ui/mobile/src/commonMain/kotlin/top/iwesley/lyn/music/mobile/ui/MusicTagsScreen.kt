@@ -200,8 +200,8 @@ fun MusicTagsTab(
         }
     }
     PlatformBackHandler(enabled = shortcut, onBack = ::requestReturn)
-    BoxWithConstraints(
-        modifier = modifier.fillMaxSize(),
+    Box(
+        modifier = modifier.fillMaxSize().padding(bottom = LocalDockBottomInset.current),
     ) {
         state.message?.let { message ->
             LaunchedEffect(message, foreground) {
