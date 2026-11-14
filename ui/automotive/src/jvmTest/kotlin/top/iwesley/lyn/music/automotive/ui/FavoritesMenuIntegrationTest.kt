@@ -265,9 +265,7 @@ class FavoritesMenuIntegrationTest {
         val navigationTargets = mutableListOf<LibraryNavigationTarget>()
         private val scheduler = TestCoroutineScheduler()
         private lateinit var detailNavigation: MusicDetailNavigation
-        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
-            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, listOf(track)))
-        }
+        private val detailQueries = TestMusicDetailQueries(tracks = { listOf(track) })
         private var frame = 0L
         private val scene = ImageComposeScene(width, 1000, coroutineContext = UnconfinedTestDispatcher(scheduler)) {
             ProvideUiResourceLanguage("en") {
@@ -434,15 +432,4 @@ class FavoritesMenuIntegrationTest {
 
         override fun close() = scene.close()
     }
-}
-
-private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
-    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
-    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
-    return top.iwesley.lyn.music.feature.details.MusicDetailData(
-        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
-        artistName = request.artistName ?: album?.artistName,
-        tracks = tracks,
-        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
-    )
 }

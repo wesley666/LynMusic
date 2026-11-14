@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -20,6 +22,7 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import top.iwesley.lyn.music.mobile.ui.platform.PlatformMusicDetailBackInput
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import androidx.savedstate.serialization.SavedStateConfiguration
 import kotlinx.coroutines.*
@@ -44,36 +47,34 @@ internal data class MusicDetailRoute(
     val isRoot get() = kind == "root"
     fun sameTarget(other: MusicDetailRoute) = kind == other.kind && entityId == other.entityId &&
         sourceId == other.sourceId && sourceFilter == other.sourceFilter
-    fun request() = MusicDetailRequest(
-        if (kind == "album") MusicDetailKind.Album else MusicDetailKind.Artist,
-        entityId, decodeLibrarySourceFilter(sourceFilter), sourceId, title, artistName, artworkLocator,
-    )
+    val librarySourceFilter get() = decodeLibrarySourceFilter(sourceFilter)
+    fun artistRequest() = ArtistDetailRequest(entityId, librarySourceFilter, sourceId)
+    fun albumRequest() = AlbumDetailRequest(entityId, librarySourceFilter, sourceId, title, artistName, artworkLocator)
+
 }
 
 internal fun LibraryNavigationTarget.detailRoute(): MusicDetailRoute = when (this) {
     is LibraryNavigationTarget.Album -> MusicDetailRoute(kind = "album", entityId = albumId,
         sourceFilter = encodeLibrarySourceFilter(preferredSourceFilter))
     is LibraryNavigationTarget.Artist -> MusicDetailRoute(kind = "artist", entityId = artistId,
-        sourceFilter = encodeLibrarySourceFilter(preferredSourceFilter))
+        sourceFilter = encodeLibrarySourceFilter(preferredSourceFilter), title = artistName)
     is LibraryNavigationTarget.OnlineAlbum -> MusicDetailRoute(kind = "album", entityId = albumId,
         sourceId = sourceId, title = albumTitle, artistName = artistName, artworkLocator = artworkLocator)
     is LibraryNavigationTarget.OnlineArtist -> MusicDetailRoute(kind = "artist", entityId = artistId,
         sourceId = sourceId, title = artistName)
 }
 
-internal class MusicDetailEntryState(
-    private val request: MusicDetailRequest,
-    private val queries: MusicDetailQueries,
+/** Each independently retriable query owns its job and publication generation. */
+internal class DetailQueryState<T>(
     private val scope: CoroutineScope,
+    private val query: () -> Flow<T>,
 ) {
-    var data by mutableStateOf<MusicDetailData?>(null)
+    var data by mutableStateOf<T?>(null)
         private set
     var loading by mutableStateOf(true)
         private set
     var error by mutableStateOf<Throwable?>(null)
         private set
-    var contentListState = LazyListState()
-        internal set
     private var version = 0L
     private var job: Job? = null
     private var active = true
@@ -86,7 +87,7 @@ internal class MusicDetailEntryState(
         error = null
         job = scope.launch {
             try {
-                queries.observe(request).collect { result ->
+                query().collect { result ->
                     if (active && version == requestVersion) {
                         data = result
                         loading = false
@@ -97,6 +98,7 @@ internal class MusicDetailEntryState(
                 throw cancelled
             } catch (failure: Throwable) {
                 if (active && version == requestVersion) {
+                    data = null
                     error = failure
                     loading = false
                 }
@@ -108,6 +110,44 @@ internal class MusicDetailEntryState(
         active = false
         version++
         job?.cancel()
+    }
+}
+
+internal enum class ArtistDetailTab { Songs, Albums, Favorites }
+
+@OptIn(ExperimentalMaterial3Api::class)
+internal class MusicDetailEntryState(
+    private val route: MusicDetailRoute,
+    queries: MusicDetailQueries,
+    scope: CoroutineScope,
+) {
+    val album = DetailQueryState(scope) { queries.observeAlbum(route.albumRequest()) }
+    val artistTracks = DetailQueryState(scope) { queries.observeArtistTracks(route.artistRequest()) }
+    val artistAlbums = DetailQueryState(scope) { queries.observeArtistAlbums(route.artistRequest()) }
+    var contentListState = LazyListState()
+    var albumListState = LazyListState()
+    var favoriteListState = LazyListState()
+    var artistHeaderState = TopAppBarState(
+        initialHeightOffsetLimit = -Float.MAX_VALUE,
+        initialHeightOffset = 0f,
+        initialContentOffset = 0f,
+    )
+    var selectedArtistTab by mutableStateOf(ArtistDetailTab.Songs)
+    val loading get() = album.loading
+    val error get() = album.error
+    val data get() = album.data
+
+    fun retry() {
+        if (route.kind == "album") album.retry() else {
+            artistTracks.retry()
+            artistAlbums.retry()
+        }
+    }
+
+    fun cancel() {
+        album.cancel()
+        artistTracks.cancel()
+        artistAlbums.cancel()
     }
 }
 
@@ -189,7 +229,7 @@ internal class MusicDetailNavigation(
 
     fun entry(route: MusicDetailRoute): MusicDetailEntryState {
         entries[route.entryId]?.let { return it }
-        return MusicDetailEntryState(route.request(), queries, scope).also { state ->
+        return MusicDetailEntryState(route, queries, scope).also { state ->
             if (backStack.any { (it as MusicDetailRoute).entryId == route.entryId }) {
                 entries[route.entryId] = state
                 state.retry()

@@ -1170,6 +1170,7 @@ private class FakeNavidromeOnlineDataSource(
         limit: Int,
     ): OnlinePage<OnlineArtistItem> = OnlinePage(emptyList(), offset = offset, limit = limit)
 
+    override suspend fun artistTracks(sourceId: String, artistId: String): List<Track> = error("Unexpected artist tracks query")
     override suspend fun artistAlbums(sourceId: String, artistId: String): List<OnlineAlbumItem> = emptyList()
 
     override suspend fun albumTracks(sourceId: String, albumId: String): List<Track> = emptyList()

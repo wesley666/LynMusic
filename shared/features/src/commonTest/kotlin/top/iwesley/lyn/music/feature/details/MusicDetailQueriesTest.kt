@@ -15,9 +15,9 @@ class MusicDetailQueriesTest {
         val a = track("a", "one"); val b = track("b", "two")
         val fixture = Fixture(listOf(a,b))
         val id = libraryAlbumId("Artist", "Album")
-        assertEquals(listOf(a,b), fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album, id)).first().tracks)
-        assertEquals(listOf(a), fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album, id, LibrarySourceFilter.Source("one"))).first().tracks)
-        assertEquals(listOf(b), fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album, id, LibrarySourceFilter.Source("two"))).first().tracks)
+        assertEquals(listOf(a,b), fixture.queries.observeAlbum(AlbumDetailRequest( id)).first().tracks)
+        assertEquals(listOf(a), fixture.queries.observeAlbum(AlbumDetailRequest( id, LibrarySourceFilter.Source("one"))).first().tracks)
+        assertEquals(listOf(b), fixture.queries.observeAlbum(AlbumDetailRequest( id, LibrarySourceFilter.Source("two"))).first().tracks)
         assertTrue(fixture.online.calls.isEmpty())
     }
     @Test fun localArtistContainsAllAlbumsAndOrdersSongs() = runTest {
@@ -25,61 +25,73 @@ class MusicDetailQueriesTest {
         val b = track("b").copy(albumTitle="First", discNumber=1, trackNumber=1)
         val c = track("c").copy(albumTitle="Second")
         val fixture=Fixture(listOf(c,a,b,track("other").copy(artistName="Other")))
-        val data=fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Artist, libraryArtistId("Artist"))).first()
-        assertEquals(listOf(b,a,c),data.tracks)
-        assertEquals(setOf("First","Second"),data.albums.map { it.album.title }.toSet())
-        assertEquals("Artist",data.title)
+        val data=fixture.queries.observeArtistTracks(ArtistDetailRequest( libraryArtistId("Artist"))).first()
+        assertEquals(listOf(b,a,c),data)
+        assertEquals(setOf("First","Second"),fixture.queries.observeArtistAlbums(ArtistDetailRequest(libraryArtistId("Artist"))).first().map { it.album.title }.toSet())
     }
     @Test fun albumSortsDiscBeforeTrackNumber() = runTest {
         val a=track("a").copy(discNumber=2,trackNumber=1)
         val b=track("b").copy(discNumber=1,trackNumber=2)
         val c=track("c").copy(discNumber=1,trackNumber=1)
         val fixture=Fixture(listOf(a,b,c))
-        assertEquals(listOf(c,b,a),fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,libraryAlbumId("Artist","Album"))).first().tracks)
+        assertEquals(listOf(c,b,a),fixture.queries.observeAlbum(AlbumDetailRequest(libraryAlbumId("Artist","Album"))).first().tracks)
     }
     @Test fun disabledAndOnlineSourcesAreExcludedFromLocalDetail() = runTest {
         val fixture=Fixture(listOf(track("a"),track("b","two"),track("c","remote")))
         fixture.sources.updateSources(listOf(source("one"),source("two",enabled=false),source("remote",online=true)))
-        assertEquals(listOf("a"),fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Artist,libraryArtistId("Artist"))).first().tracks.map { it.id })
+        assertEquals(listOf("a"),fixture.queries.observeArtistTracks(ArtistDetailRequest(libraryArtistId("Artist"))).first().map { it.id })
     }
     @Test fun missingLocalSourceNeverFallsBackToAllSources() = runTest {
         val fixture=Fixture(listOf(track("a","two")))
         fixture.sources.updateSources(listOf(source("two")))
         assertFailsWith<MusicDetailUnavailableException> {
-            fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,libraryAlbumId("Artist","Album"),LibrarySourceFilter.Source("one"))).first()
+            fixture.queries.observeAlbum(AlbumDetailRequest(libraryAlbumId("Artist","Album"),LibrarySourceFilter.Source("one"))).first()
         }
     }
     @Test fun localQueryObservesContentChanges() = runTest {
         val fixture=Fixture(listOf(track("a")))
-        val received = Channel<MusicDetailData>(Channel.UNLIMITED)
+        val received = Channel<List<Track>>(Channel.UNLIMITED)
         backgroundScope.launch {
-            fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Artist,libraryArtistId("Artist"))).collect { received.send(it) }
+            fixture.queries.observeArtistTracks(ArtistDetailRequest(libraryArtistId("Artist"))).collect { received.send(it) }
         }
-        assertEquals(1, received.receive().tracks.size)
+        assertEquals(1, received.receive().size)
         fixture.library.tracks.value=listOf(track("a"),track("b"))
-        assertEquals(2, received.receive().tracks.size)
+        assertEquals(2, received.receive().size)
     }
     @Test fun onlineAlbumsUseExplicitSourceAndKeepAlbumArtistSeed() = runTest {
         val fixture=Fixture(emptyList())
         fixture.online.tracks={source,id -> listOf(track(id,source).copy(artistName="Song artist"))}
         for (id in listOf("remote","second")) {
-            val data=fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,"same-id",onlineSourceId=id,title="Compilation",artistName="Various artists")).first()
+            val data=fixture.queries.observeAlbum(AlbumDetailRequest("same-id",onlineSourceId=id,title="Compilation",artistName="Various artists")).first()
             assertEquals("Various artists",data.artistName); assertEquals("Compilation",data.title)
             assertEquals(id,data.tracks.single().sourceId)
         }
         assertEquals(listOf("remote" to "same-id","second" to "same-id"),fixture.online.calls)
     }
-    @Test fun onlineArtistReadsOnlyItsAlbumsAndAllowsMissingName() = runTest {
+    @Test fun onlineArtistQueriesAreIndependentAndNeverReadAlbumTracks() = runTest {
         val fixture=Fixture(emptyList())
         fixture.online.albums={_,_ -> listOf(OnlineAlbumItem(Album("album","Album","Artist")))}
-        val data=fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Artist,"artist-id",onlineSourceId="remote")).first()
-        assertEquals("album",data.albums.single().album.id)
-        assertTrue(data.tracks.isEmpty());assertEquals(listOf("remote" to "artist-id"),fixture.online.calls)
+        val request=ArtistDetailRequest("artist-id",onlineSourceId="remote")
+        assertEquals("album",fixture.queries.observeArtistAlbums(request).first().single().album.id)
+        assertEquals(listOf("remote" to "artist-id"),fixture.online.calls)
+        // A collaboration remains in the response even when the legacy single artist ID differs.
+        val duet = track("duet", "remote").copy(artistId = "other", remoteFavoriteHint = true)
+        fixture.online.tracks={_,_ -> listOf(duet)}
+        assertEquals(listOf(duet),fixture.queries.observeArtistTracks(request).first())
+        assertEquals(listOf("remote" to "artist-id", "remote" to "artist-id"),fixture.online.calls)
+    }
+    @Test fun albumFailureDoesNotAffectArtistTracksQuery() = runTest {
+        val fixture=Fixture(emptyList())
+        fixture.online.albums={_,_ -> error("albums failed")}
+        fixture.online.tracks={_,_ -> listOf(track("song"))}
+        val request=ArtistDetailRequest("artist",onlineSourceId="remote")
+        assertFailsWith<IllegalStateException> { fixture.queries.observeArtistAlbums(request).first() }
+        assertEquals("song",fixture.queries.observeArtistTracks(request).first().single().id)
     }
     @Test fun missingOnlineSourceDoesNotRequestAnotherSource() = runTest {
         val fixture=Fixture(emptyList())
         assertFailsWith<MusicDetailUnavailableException> {
-            fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,"id",onlineSourceId="missing")).first()
+            fixture.queries.observeAlbum(AlbumDetailRequest("id",onlineSourceId="missing")).first()
         }
         assertTrue(fixture.online.calls.isEmpty())
     }
@@ -88,7 +100,7 @@ class MusicDetailQueriesTest {
         val loaded = CompletableDeferred<Unit>()
         val failure = CompletableDeferred<Throwable>()
         backgroundScope.launch {
-            fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,"id",onlineSourceId="remote"))
+            fixture.queries.observeAlbum(AlbumDetailRequest("id",onlineSourceId="remote"))
                 .catch { failure.complete(it) }.collect { loaded.complete(Unit) }
         }
         loaded.await()
@@ -97,12 +109,12 @@ class MusicDetailQueriesTest {
     }
     @Test fun emptyResultsRemainSuccessful() = runTest {
         val fixture=Fixture(emptyList())
-        assertTrue(fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,"id",onlineSourceId="remote")).first().tracks.isEmpty())
-        assertTrue(fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Artist,"id",onlineSourceId="remote")).first().albums.isEmpty())
+        assertTrue(fixture.queries.observeAlbum(AlbumDetailRequest("id",onlineSourceId="remote")).first().tracks.isEmpty())
+        assertTrue(fixture.queries.observeArtistAlbums(ArtistDetailRequest("id",onlineSourceId="remote")).first().isEmpty())
     }
     @Test fun downloadedFilterUsesExistingOfflineRules() = runTest {
         val fixture=Fixture(listOf(track("a"),track("b","two")))
-        val data=fixture.queries.observe(MusicDetailRequest(MusicDetailKind.Album,libraryAlbumId("Artist","Album"),LibrarySourceFilter.DOWNLOADED)).first()
+        val data=fixture.queries.observeAlbum(AlbumDetailRequest(libraryAlbumId("Artist","Album"),LibrarySourceFilter.DOWNLOADED)).first()
         assertEquals(listOf("a"),data.tracks.map { it.id })
     }
     private class Fixture(tracks:List<Track>) {
@@ -131,6 +143,7 @@ private class DetailOnlineSource:NavidromeOnlineDataSource {
     override suspend fun searchTracks(sourceId: String, query: String, offset: Int, limit: Int): OnlinePage<Track> = error("Unexpected non-detail query")
     override suspend fun searchAlbums(sourceId: String, query: String, offset: Int, limit: Int): OnlinePage<OnlineAlbumItem> = error("Unexpected non-detail query")
     override suspend fun searchArtists(sourceId: String, query: String, offset: Int, limit: Int): OnlinePage<OnlineArtistItem> = error("Unexpected non-detail query")
+    override suspend fun artistTracks(sourceId: String, artistId: String): List<Track> { calls += sourceId to artistId; return tracks(sourceId, artistId) }
     override suspend fun artistAlbums(sourceId: String, artistId: String): List<OnlineAlbumItem> { calls += sourceId to artistId; return albums(sourceId, artistId) }
     override suspend fun albumTracks(sourceId: String, albumId: String): List<Track> { calls += sourceId to albumId; return tracks(sourceId, albumId) }
     override suspend fun favoriteTracks(sourceId: String, offset: Int, limit: Int, query: String): OnlinePage<Track> = error("Unexpected non-detail query")

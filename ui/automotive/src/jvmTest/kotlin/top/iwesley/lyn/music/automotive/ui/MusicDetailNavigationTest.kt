@@ -31,13 +31,13 @@ class MusicDetailNavigationTest {
         owner.open(LibraryNavigationTarget.Artist("artist",LibrarySourceFilter.Source("one")))
         owner.open(LibraryNavigationTarget.Artist("artist",LibrarySourceFilter.Source("two")))
         assertEquals(3,owner.backStack.size)
-        assertEquals(LibrarySourceFilter.Source("two"),owner.top.request().sourceFilter)
+        assertEquals(LibrarySourceFilter.Source("two"),owner.top.librarySourceFilter)
     }
     @Test fun routesSerializeOnlyIdentifiersContextAndSeeds() {
         val route=LibraryNavigationTarget.OnlineAlbum("source","album","Title","Various artists","cover").detailRoute().copy(entryId="entry")
         assertEquals(route,Json.decodeFromString<MusicDetailRoute>(Json.encodeToString(route)))
         val local=LibraryNavigationTarget.Album("album",LibrarySourceFilter.DOWNLOADED).detailRoute()
-        assertEquals(LibrarySourceFilter.DOWNLOADED,Json.decodeFromString<MusicDetailRoute>(Json.encodeToString(local)).request().sourceFilter)
+        assertEquals(LibrarySourceFilter.DOWNLOADED,Json.decodeFromString<MusicDetailRoute>(Json.encodeToString(local)).librarySourceFilter)
     }
     @Test fun clearInvalidatesOldCallbacksAndDoesNotRestorePlayer()=runTest {
         var restores=0
@@ -67,7 +67,7 @@ class MusicDetailNavigationTest {
     }
     @Test fun poppedEntryIgnoresNonCancellableLateResponse()=runTest {
         val gate=CompletableDeferred<Unit>()
-        val queries=MusicDetailQueries { flow { withContext(NonCancellable) { gate.await() }; emit(MusicDetailData("late")) } }
+        val queries=TestMusicDetailQueries(album = { flow { withContext(NonCancellable) { gate.await() }; emit(AlbumDetailData("late")) } })
         val owner=owner(queries)
         owner.open(LibraryNavigationTarget.Album("a"));val state=owner.entry(owner.top);runCurrent()
         owner.pop();gate.complete(Unit);runCurrent()
@@ -75,10 +75,10 @@ class MusicDetailNavigationTest {
     }
     @Test fun retryOnlyUpdatesItsOwnEntryAndAcceptsSuccessfulEmptyData()=runTest {
         var calls=0
-        val owner=owner(MusicDetailQueries { request -> flow {
-            if(request.entityId=="a" && ++calls==1) error("failure")
-            emit(MusicDetailData(request.entityId))
-        } })
+        val owner=owner(TestMusicDetailQueries(album = { request -> flow {
+            if(request.albumId=="a" && ++calls==1) error("failure")
+            emit(AlbumDetailData(request.albumId))
+        } }))
         owner.open(LibraryNavigationTarget.Album("a"));val a=owner.entry(owner.top);runCurrent()
         assertNotNull(a.error)
         owner.open(LibraryNavigationTarget.Album("b"));val b=owner.entry(owner.top);runCurrent()
@@ -89,7 +89,7 @@ class MusicDetailNavigationTest {
     }
     @Test fun anOutgoingSceneCannotStartANewQueryAfterItsRouteWasRemoved() = runTest {
         var requests = 0
-        val owner = owner(MusicDetailQueries { flow { requests++; emit(MusicDetailData("late")) } })
+        val owner = owner(TestMusicDetailQueries(album = { flow { requests++; emit(AlbumDetailData("late")) } }))
         owner.open(LibraryNavigationTarget.Album("a"))
         val route = owner.top
         owner.pop()
@@ -100,7 +100,7 @@ class MusicDetailNavigationTest {
         owner.release(route.entryId)
     }
     @Test fun unavailableSourceIsExposedWithoutChangingTarget()=runTest {
-        val owner=owner(MusicDetailQueries { flow { throw MusicDetailUnavailableException() } })
+        val owner=owner(TestMusicDetailQueries(artistAlbums = { flow { throw MusicDetailUnavailableException() } }, artistTracks = { flow { throw MusicDetailUnavailableException() } }))
         owner.open(LibraryNavigationTarget.OnlineArtist("missing","artist"))
         val state=owner.entry(owner.top);runCurrent()
         assertIs<MusicDetailUnavailableException>(state.error)
@@ -108,7 +108,7 @@ class MusicDetailNavigationTest {
         owner.clear()
     }
     private fun CoroutineScope.owner(
-        queries:MusicDetailQueries=MusicDetailQueries { request -> flowOf(MusicDetailData(request.entityId)) },
+        queries:MusicDetailQueries=TestMusicDetailQueries(),
         restore:()->Unit={},
     )=MusicDetailNavigation(NavBackStack<NavKey>(MusicDetailRoute()),queries,this,mutableStateOf(false),restore)
 }

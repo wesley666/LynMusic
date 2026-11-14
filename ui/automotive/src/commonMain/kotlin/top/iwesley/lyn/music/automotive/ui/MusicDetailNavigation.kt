@@ -20,7 +20,11 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import top.iwesley.lyn.music.automotive.ui.platform.PlatformMusicDetailBackInput
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import top.iwesley.lyn.music.core.model.Track
 import androidx.savedstate.serialization.SavedStateConfiguration
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
@@ -44,10 +48,10 @@ internal data class MusicDetailRoute(
     val isRoot get() = kind == "root"
     fun sameTarget(other: MusicDetailRoute) = kind == other.kind && entityId == other.entityId &&
         sourceId == other.sourceId && sourceFilter == other.sourceFilter
-    fun request() = MusicDetailRequest(
-        if (kind == "album") MusicDetailKind.Album else MusicDetailKind.Artist,
-        entityId, decodeLibrarySourceFilter(sourceFilter), sourceId, title, artistName, artworkLocator,
-    )
+    val librarySourceFilter get() = decodeLibrarySourceFilter(sourceFilter)
+    fun artistRequest() = ArtistDetailRequest(entityId, librarySourceFilter, sourceId)
+    fun albumRequest() = AlbumDetailRequest(entityId, librarySourceFilter, sourceId, title, artistName, artworkLocator)
+
 }
 
 internal fun LibraryNavigationTarget.detailRoute(): MusicDetailRoute = when (this) {
@@ -61,12 +65,22 @@ internal fun LibraryNavigationTarget.detailRoute(): MusicDetailRoute = when (thi
         sourceId = sourceId, title = artistName)
 }
 
+/** Content for this module's existing combined detail presentation. */
+internal data class MusicDetailContent(
+    val title: String,
+    val artistName: String? = null,
+    val artworkLocator: String? = null,
+    val tracks: List<Track> = emptyList(),
+    val albums: List<MusicDetailAlbum> = emptyList(),
+    val artworkCacheKey: String? = null,
+)
+
 internal class MusicDetailEntryState(
-    private val request: MusicDetailRequest,
+    private val route: MusicDetailRoute,
     private val queries: MusicDetailQueries,
     private val scope: CoroutineScope,
 ) {
-    var data by mutableStateOf<MusicDetailData?>(null)
+    var data by mutableStateOf<MusicDetailContent?>(null)
         private set
     var loading by mutableStateOf(true)
         private set
@@ -78,6 +92,20 @@ internal class MusicDetailEntryState(
     private var job: Job? = null
     private var active = true
 
+    private fun observeContent(): Flow<MusicDetailContent> {
+        if (route.kind == "album") return queries.observeAlbum(route.albumRequest()).map {
+            MusicDetailContent(it.title, it.artistName, it.artworkLocator, it.tracks, artworkCacheKey = it.artworkCacheKey)
+        }
+        val albums = queries.observeArtistAlbums(route.artistRequest())
+        if (route.sourceId != null) return albums.map { MusicDetailContent(route.title.orEmpty(), albums = it) }
+        return combine(queries.observeArtistTracks(route.artistRequest()), albums) { tracks, items ->
+            val artwork = tracks.firstOrNull { !it.artworkLocator.isNullOrBlank() }
+            MusicDetailContent(route.title ?: tracks.firstOrNull()?.artistName.orEmpty(),
+                artworkLocator = artwork?.artworkLocator, tracks = tracks, albums = items,
+                artworkCacheKey = artwork?.let { top.iwesley.lyn.music.core.model.trackArtworkCacheKey(it) })
+        }
+    }
+
     fun retry() {
         if (!active) return
         val requestVersion = ++version
@@ -86,7 +114,7 @@ internal class MusicDetailEntryState(
         error = null
         job = scope.launch {
             try {
-                queries.observe(request).collect { result ->
+                observeContent().collect { result ->
                     if (active && version == requestVersion) {
                         data = result
                         loading = false
@@ -165,7 +193,7 @@ internal class MusicDetailNavigation(
 
     fun entry(route: MusicDetailRoute): MusicDetailEntryState {
         entries[route.entryId]?.let { return it }
-        return MusicDetailEntryState(route.request(), queries, scope).also { state ->
+        return MusicDetailEntryState(route, queries, scope).also { state ->
             if (backStack.any { (it as MusicDetailRoute).entryId == route.entryId }) {
                 entries[route.entryId] = state
                 state.retry()

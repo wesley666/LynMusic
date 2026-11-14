@@ -219,7 +219,7 @@ class MusicTagsShortcutUiTest {
             val dispatcher = LocalNavigationEventDispatcherOwner.current!!.navigationEventDispatcher
             DisposableEffect(dispatcher) { dispatcher.addInput(back); onDispose { dispatcher.removeInput(back) } }
             scope = rememberCoroutineScope()
-            navigation = rememberMusicDetailNavigation(MusicDetailQueries { flowOf(MusicDetailData("Unused")) }) {}
+            navigation = rememberMusicDetailNavigation(TestMusicDetailQueries(album = { flowOf(AlbumDetailData("Unused")) })) {}
             CompositionLocalProvider(
                 LocalMusicDetailNavigation provides navigation,
                 LocalPlatformDescriptor provides PlatformDescriptor("Desktop", PlatformCapabilities(true, true, true, true, false)),

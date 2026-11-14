@@ -96,7 +96,7 @@ class LibraryNavigationTest {
             result.albumTarget,
         )
         assertEquals(
-            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             result.artistTarget,
         )
     }
@@ -110,7 +110,7 @@ class LibraryNavigationTest {
 
         assertNull(result.albumTarget)
         assertEquals(
-            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             result.artistTarget,
         )
     }
@@ -144,7 +144,7 @@ class LibraryNavigationTest {
             result.albumTarget,
         )
         assertEquals(
-            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             result.artistTarget,
         )
     }
@@ -174,7 +174,7 @@ class LibraryNavigationTest {
             result.albumTarget,
         )
         assertEquals(
-            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             result.artistTarget,
         )
     }
@@ -214,6 +214,7 @@ class LibraryNavigationTest {
             LibraryNavigationTarget.Artist(
                 artistId = libraryArtistId("Coldplay"),
                 preferredSourceFilter = LibrarySourceFilter.Source("dav-1"),
+                artistName = "Coldplay",
             ),
             targets.artistTarget,
         )
@@ -251,7 +252,7 @@ class LibraryNavigationTest {
     @Test
     fun `resolve command clears query before navigation`() {
         val result = resolveLibraryNavigationCommand(
-            target = LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            target = LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             query = "cold",
             selectedSourceFilter = LibrarySourceFilter.ALL,
             availableSourceFilters = listOf(LibrarySourceFilter.ALL),
@@ -459,7 +460,7 @@ class LibraryNavigationTest {
     @Test
     fun `resolve command falls back to artist root when target is missing`() {
         val result = resolveLibraryNavigationCommand(
-            target = LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+            target = LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
             query = "",
             selectedSourceFilter = LibrarySourceFilter.ALL,
             availableSourceFilters = listOf(LibrarySourceFilter.ALL),
@@ -575,7 +576,7 @@ class LibraryNavigationTest {
         )
         assertFalse(
             shouldApplyOnlineNavigationContext(
-                LibraryNavigationTarget.Artist(libraryArtistId("Coldplay")),
+                LibraryNavigationTarget.Artist(libraryArtistId("Coldplay"), artistName = "Coldplay"),
                 lastAppliedOnlineContextTarget = null,
             ),
         )

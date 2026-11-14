@@ -3,4 +3,11 @@
     <string name="music_detail_loading">正在載入詳細資訊…</string>
     <string name="music_detail_source_unavailable">此來源目前無法使用。請返回，或恢復來源後重試。</string>
     <string name="music_detail_load_failed">詳細資訊載入失敗，請重試。</string>
+    <string name="music_detail_artist">歌手</string>
+    <string name="music_detail_songs">歌曲</string>
+    <string name="music_detail_albums">專輯</string>
+    <string name="music_detail_favorites">喜歡</string>
+    <string name="music_detail_play_favorites">播放喜歡</string>
+    <string name="music_detail_favorites_empty">還沒有喜歡這位歌手的歌曲</string>
+    <string name="music_detail_albums_empty">暫無專輯</string>
 </resources>

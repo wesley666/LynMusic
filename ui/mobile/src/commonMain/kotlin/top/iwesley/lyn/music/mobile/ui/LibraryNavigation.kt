@@ -22,6 +22,7 @@ sealed interface LibraryNavigationTarget {
     data class Artist(
         val artistId: String,
         val preferredSourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+        val artistName: String? = null,
     ) : LibraryNavigationTarget
 
     data class OnlineAlbum(
@@ -186,6 +187,7 @@ private fun deriveLibraryNavigationTargets(
             LibraryNavigationTarget.Artist(
                 artistId = libraryArtistId(it),
                 preferredSourceFilter = preferredSourceFilter,
+                artistName = it,
             )
         },
     )

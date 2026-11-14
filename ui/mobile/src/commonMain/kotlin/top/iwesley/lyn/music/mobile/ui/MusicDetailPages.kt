@@ -25,14 +25,6 @@ internal fun AlbumDetailPage(
 ) = MusicDetailPage(route, navigation, onPlayerIntent, showDuration)
 
 @Composable
-internal fun ArtistDetailPage(
-    route: MusicDetailRoute,
-    navigation: MusicDetailNavigation,
-    onPlayerIntent: (PlayerIntent) -> Unit,
-    showDuration: Boolean,
-) = MusicDetailPage(route, navigation, onPlayerIntent, showDuration)
-
-@Composable
 private fun MusicDetailPage(
     route: MusicDetailRoute,
     navigation: MusicDetailNavigation,
@@ -67,7 +59,7 @@ private fun MusicDetailPage(
         }
         return
     }
-    val request = route.request()
+    val sourceFilter = route.librarySourceFilter
     val indexColumnWidth = rememberListIndexColumnWidth(data.tracks.size)
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("music-detail-page-${route.kind}").background(background), state = list,
@@ -78,7 +70,7 @@ private fun MusicDetailPage(
             DetailSummaryCard(
                 title = data.title.ifBlank { uiString(if (route.kind == "album") Res.string.common_unknown_album else Res.string.common_unknown_artist) },
                 subtitle = if (route.kind == "album") data.artistName ?: uiString(Res.string.common_unknown_artist) else uiString(Res.string.library_artists_title),
-                supportingText = if (route.kind == "artist" && route.sourceId != null) uiString(Res.plurals.common_album_count, data.albums.size, data.albums.size) else uiString(Res.plurals.common_track_count, data.tracks.size, data.tracks.size),
+                supportingText = uiString(Res.plurals.common_track_count, data.tracks.size, data.tracks.size),
                 artworkLocator = data.artworkLocator,
                 artworkCacheKey = data.artworkCacheKey,
             )
@@ -86,20 +78,10 @@ private fun MusicDetailPage(
         if (data.tracks.isNotEmpty()) item("play") {
             TextButton(onClick = { onPlayerIntent(PlayerIntent.PlayTracks(data.tracks, 0)) }) { Text(uiString(Res.string.player_play_all)) }
         }
-        if (data.albums.isNotEmpty()) {
-            item("albums") { SectionTitle(uiString(Res.string.library_albums_title), "") }
-            items(data.albums, key = { "album:${it.album.id}" }) { item ->
-                AlbumRow(item.album, item.artworkLocator, artworkCacheKey = item.artworkCacheKey, onClick = {
-                    navigation.open(if (route.sourceId != null) LibraryNavigationTarget.OnlineAlbum(
-                        route.sourceId, item.album.id, item.album.title, item.album.artistName, item.artworkLocator,
-                    ) else LibraryNavigationTarget.Album(item.album.id, request.sourceFilter))
-                })
-            }
-        }
         if (data.tracks.isNotEmpty()) item("tracks") { SectionTitle(uiString(Res.string.library_tracks_title), "") }
         itemsIndexed(data.tracks, key = { _, track -> "track:${track.sourceId}:${track.id}" }) { index, track ->
             val targets = if (route.sourceId != null) deriveOnlineTrackLibraryNavigationTargets(track, route.sourceId)
-                else deriveTrackLibraryNavigationTargets(track, request.sourceFilter)
+                else deriveTrackLibraryNavigationTargets(track, sourceFilter)
             TrackRow(
                 track = track, index = index, isFavorite = false, onToggleFavorite = {},
                 indexColumnWidth = indexColumnWidth,
@@ -110,7 +92,7 @@ private fun MusicDetailPage(
                 onClick = { onPlayerIntent(PlayerIntent.PlayTracks(data.tracks, index)) },
             )
         }
-        if (data.tracks.isEmpty() && data.albums.isEmpty()) item("empty") {
+        if (data.tracks.isEmpty()) item("empty") {
             EmptyStateCard(uiString(Res.string.library_detail_tracks_empty), "")
         }
     }

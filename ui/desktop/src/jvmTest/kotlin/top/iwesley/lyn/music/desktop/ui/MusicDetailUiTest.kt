@@ -150,14 +150,23 @@ class MusicDetailUiTest {
         lateinit var scope:CoroutineScope
         var registry=SaveableStateRegistry(null){true}
         private var frame=0L
-        private val queries=MusicDetailQueries { request -> flow {
-            if(fail) error("controlled failure")
-            val tracks=if(empty || request.kind==MusicDetailKind.Artist) emptyList() else (0..140).map {
-                Track("track-$it","server","Detail track $it","Artist A","Album A",mediaLocator="",relativePath="$it",albumId="album",artistId="artist")
-            }
-            emit(MusicDetailData(if(request.kind==MusicDetailKind.Artist) "Artist A" else "Album A",artistName="Artist A",tracks=tracks,
-                albums=if(!empty && request.kind==MusicDetailKind.Artist) (0..140).map {MusicDetailAlbum(Album("album-$it","Album $it","Artist A"))} else emptyList()))
-        } }
+        private fun fixtureTracks() = if (empty) emptyList() else (0..140).map {
+            Track("track-$it","server","Detail track $it","Artist A","Album A",mediaLocator="",relativePath="$it",albumId="album",artistId="artist")
+        }
+        private val queries = TestMusicDetailQueries(
+            album = { flow {
+                if (fail) error("controlled failure")
+                emit(AlbumDetailData("Album A", artistName = "Artist A", tracks = fixtureTracks()))
+            } },
+            artistTracks = { flow {
+                if (fail) error("controlled failure")
+                emit(fixtureTracks())
+            } },
+            artistAlbums = { flow {
+                if (fail) error("controlled failure")
+                emit(if (empty) emptyList() else (0..140).map { MusicDetailAlbum(Album("album-$it", "Album $it", "Artist A")) })
+            } },
+        )
         var scene=createScene()
         private fun createScene()=ImageComposeScene(width,800,coroutineContext=UnconfinedTestDispatcher(scheduler)) {
             CompositionLocalProvider(LocalSaveableStateRegistry provides registry) {

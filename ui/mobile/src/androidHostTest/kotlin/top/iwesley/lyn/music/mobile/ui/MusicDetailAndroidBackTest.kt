@@ -15,6 +15,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.assertIsSelected
 import org.junit.Rule
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Test
@@ -31,7 +35,7 @@ import org.robolectric.annotation.Implements
 import org.robolectric.annotation.ClassName
 import org.robolectric.shadows.ShadowWindowManagerGlobal
 import org.robolectric.util.ReflectionHelpers
-import top.iwesley.lyn.music.feature.details.MusicDetailData
+import top.iwesley.lyn.music.feature.details.AlbumDetailData
 import top.iwesley.lyn.music.feature.details.MusicDetailQueries
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -107,6 +111,30 @@ class MusicDetailAndroidBackTest {
             assertEquals(0, RecordingActivityClient.backRequests)
             ui.topCallback().onBackInvoked()
             assertEquals(1, RecordingActivityClient.backRequests)
+        }
+    }
+
+    @Test fun artistPagerKeepsItsTabWhenEitherSystemBackEdgeIsCancelled() {
+        for (edge in listOf(BackEvent.EDGE_LEFT, BackEvent.EDGE_RIGHT)) Fixture().use { ui ->
+            ui.navigation.open(LibraryNavigationTarget.Artist("artist", artistName = "Artist"))
+            ui.frames()
+            val route = ui.navigation.top
+            compose.onNodeWithTag("artist-pager").performTouchInput { swipeLeft() }
+            ui.frames()
+            compose.onNodeWithTag("artist-tab-Albums").assertIsSelected()
+            assertEquals(ArtistDetailTab.Albums, ui.navigation.entry(route).selectedArtistTab)
+            val cancelled = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            cancelled.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f, 0f)
+            ui.frames(2)
+            cancelled.cancel()
+            ui.frames()
+            assertEquals(route, ui.navigation.top)
+            compose.onNodeWithTag("artist-tab-Albums").assertIsSelected()
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close()
+            ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertFalse(ui.activity.isFinishing)
+            assertEquals(0, RecordingActivityClient.backRequests)
         }
     }
 
@@ -210,7 +238,7 @@ class MusicDetailAndroidBackTest {
 
     private inner class Fixture : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
-        private val queries = MusicDetailQueries { flowOf(MusicDetailData("Album")) }
+        private val queries = TestMusicDetailQueries(album = { flowOf(AlbumDetailData("Album")) })
         val activity = controller.get()
         lateinit var navigation: MusicDetailNavigation
         var tagBackRequests = 0

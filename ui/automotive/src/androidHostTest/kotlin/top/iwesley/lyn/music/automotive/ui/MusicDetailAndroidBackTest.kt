@@ -31,7 +31,7 @@ import org.robolectric.annotation.Implements
 import org.robolectric.annotation.ClassName
 import org.robolectric.shadows.ShadowWindowManagerGlobal
 import org.robolectric.util.ReflectionHelpers
-import top.iwesley.lyn.music.feature.details.MusicDetailData
+import top.iwesley.lyn.music.feature.details.AlbumDetailData
 import top.iwesley.lyn.music.feature.details.MusicDetailQueries
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
@@ -192,7 +192,7 @@ class MusicDetailAndroidBackTest {
 
     private inner class Fixture : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
-        private val queries = MusicDetailQueries { flowOf(MusicDetailData("Album")) }
+        private val queries = TestMusicDetailQueries(album = { flowOf(AlbumDetailData("Album")) })
         val activity = controller.get()
         lateinit var navigation: MusicDetailNavigation
 

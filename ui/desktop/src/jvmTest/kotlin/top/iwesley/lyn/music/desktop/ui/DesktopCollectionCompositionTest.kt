@@ -137,9 +137,7 @@ class DesktopCollectionCompositionTest {
         private val playlist = PlaylistSummary("playlist", "Fixture playlist", trackCount = 2)
         private var playlists by mutableStateOf(PlaylistsState(isLoadingContent = false, playlists = listOf(playlist)))
         private lateinit var detailNavigation: MusicDetailNavigation
-        private val detailQueries = top.iwesley.lyn.music.feature.details.MusicDetailQueries { request ->
-            kotlinx.coroutines.flow.flowOf(detailFixtureData(request, tracks))
-        }
+        private val detailQueries = TestMusicDetailQueries(tracks = { tracks })
         private var frame = 0L
         private val scene = ImageComposeScene(width, height) {
             ProvideUiResourceLanguage("en") {
@@ -231,15 +229,4 @@ class DesktopCollectionCompositionTest {
         }
         override fun close() = scene.close()
     }
-}
-
-private fun detailFixtureData(request: top.iwesley.lyn.music.feature.details.MusicDetailRequest, tracks: List<Track>): top.iwesley.lyn.music.feature.details.MusicDetailData {
-    val album = deriveVisibleAlbums(tracks).firstOrNull { it.id == request.entityId }
-    val artist = deriveVisibleArtists(tracks).firstOrNull { it.id == request.entityId }
-    return top.iwesley.lyn.music.feature.details.MusicDetailData(
-        title = request.title ?: (if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Album) album?.title ?: tracks.firstOrNull()?.albumTitle else artist?.name ?: tracks.firstOrNull()?.artistName).orEmpty(),
-        artistName = request.artistName ?: album?.artistName,
-        tracks = tracks,
-        albums = if (request.kind == top.iwesley.lyn.music.feature.details.MusicDetailKind.Artist) deriveVisibleAlbums(tracks).map { top.iwesley.lyn.music.feature.details.MusicDetailAlbum(it) } else emptyList(),
-    )
 }

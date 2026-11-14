@@ -66,10 +66,7 @@ class LynMusicAppComponent(
     val equalizerPlatformService: EqualizerPlatformService,
     private val scope: CoroutineScope,
     private val onDispose: suspend () -> Unit,
-    val musicDetailQueries: top.iwesley.lyn.music.feature.details.MusicDetailQueries =
-        top.iwesley.lyn.music.feature.details.MusicDetailQueries {
-            kotlinx.coroutines.flow.flow { throw top.iwesley.lyn.music.feature.details.MusicDetailUnavailableException() }
-        },
+    val musicDetailQueries: top.iwesley.lyn.music.feature.details.MusicDetailQueries,
 ) {
     private val resourceDisposer = AppResourceDisposer(
         scope = scope,

@@ -3,4 +3,11 @@
     <string name="music_detail_loading">Loading details…</string>
     <string name="music_detail_source_unavailable">This source is unavailable. Go back or retry after restoring the source.</string>
     <string name="music_detail_load_failed">Unable to load details. Please try again.</string>
+    <string name="music_detail_artist">Artist</string>
+    <string name="music_detail_songs">Songs</string>
+    <string name="music_detail_albums">Albums</string>
+    <string name="music_detail_favorites">Liked</string>
+    <string name="music_detail_play_favorites">Play liked</string>
+    <string name="music_detail_favorites_empty">No liked songs by this artist yet.</string>
+    <string name="music_detail_albums_empty">No albums to display.</string>
 </resources>

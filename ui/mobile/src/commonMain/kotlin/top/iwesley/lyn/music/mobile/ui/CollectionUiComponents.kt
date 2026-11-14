@@ -617,10 +617,11 @@ internal fun TrackRow(
     selected: Boolean = false,
     onSelectionToggle: (() -> Unit)? = null,
     indexColumnWidth: Dp = 32.dp,
+    artistDetail: Boolean = false,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
-    val showAlbumTitle = showDuration
+    val showAlbumTitle = showDuration && !artistDetail
     val artistClick = onArtistClick.takeIf { !selectionMode && showDuration && !track.artistName.isNullOrBlank() }
     val albumClick = onAlbumClick.takeIf { !selectionMode && showAlbumTitle && !track.albumTitle.isNullOrBlank() }
     val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[track.id]
@@ -661,7 +662,7 @@ internal fun TrackRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(18.dp))
-                .padding(start = 0.dp, top = 12.dp, end = 0.dp, bottom = 12.dp),
+                .padding(vertical = if (artistDetail) 6.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -696,15 +697,16 @@ internal fun TrackRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        track.artistName ?: uiString(Res.string.common_unknown_artist),
+                        if (artistDetail) track.albumTitle ?: uiString(Res.string.common_unknown_album)
+                        else track.artistName ?: uiString(Res.string.common_unknown_artist),
                         modifier = Modifier
                             .weight(1f, fill = false)
-                            .then(artistClick?.let { Modifier.combinedClickable(onClick = it, onLongClick = { menuVisible = true }) } ?: Modifier),
+                            .then((if (artistDetail && !selectionMode) onAlbumClick else artistClick)?.let { Modifier.combinedClickable(onClick = it, onLongClick = { menuVisible = true }) } ?: Modifier),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (showFavoriteIndicator && favorite.isKnown && favorite.isFavorite) TrackFavoriteIndicator()
+                    if (!artistDetail && showFavoriteIndicator && favorite.isKnown && favorite.isFavorite) TrackFavoriteIndicator()
                     offlineRowIndicatorState?.let { OfflineDownloadRowIndicator(it) }
                 }
             }
@@ -723,6 +725,16 @@ internal fun TrackRow(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (artistDetail && !selectionMode) {
+                    IconButton(
+                        enabled = favorite.isKnown && favorite.canChange,
+                        onClick = { bindings.onSetFavorite?.invoke(track, !favorite.isFavorite) ?: onToggleFavorite() },
+                    ) {
+                        Icon(if (favorite.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            contentDescription = uiString(if (favorite.isFavorite) Res.string.favorites_remove_track else Res.string.favorites_add_track),
+                            tint = if (favorite.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 if (showDuration) {
                     Text(
                         formatDuration(track.durationMs),

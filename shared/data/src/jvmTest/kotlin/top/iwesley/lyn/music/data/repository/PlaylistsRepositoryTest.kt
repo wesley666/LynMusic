@@ -820,10 +820,10 @@ class PlaylistsRepositoryTest {
 
         assertEquals(listOf("Artist Covered Album", "Artist Plain Album"), albums.map { it.album.title })
         assertEquals(
-            buildNavidromeCoverLocator("nav-online-artist-detail", "cover-artist-album"),
+            buildNavidromeCoverLocator("nav-online-artist-detail", "album-artist-covered"),
             albums.first().artworkLocator,
         )
-        assertNull(albums[1].artworkLocator)
+        assertEquals(buildNavidromeCoverLocator("nav-online-artist-detail", "album-artist-plain"), albums[1].artworkLocator)
     }
 
     @Test
@@ -2427,13 +2427,11 @@ private class RecordingOnlineArtistsHttpClient(
                     body = getArtistsBody(artists),
                 )
 
-                "getArtist" -> LyricsHttpResponse(
-                    statusCode = 200,
-                    body = getArtistBody(
-                        artistId = url.parameters["id"].orEmpty(),
-                        albums = albumsByArtistId[url.parameters["id"].orEmpty()].orEmpty(),
-                    ),
-                )
+                "login" -> LyricsHttpResponse(200, """{"token":"artist-token"}""")
+                "album" -> LyricsHttpResponse(200, albumsByArtistId[url.parameters["artist_id"]].orEmpty()
+                    .joinToString(",", "[", "]") { album ->
+                        """{"id":"${album.id}","name":"${album.name}","albumArtist":"${album.artist}","songCount":1}"""
+                    })
 
                 else -> error("Unexpected online artists request endpoint: $endpoint")
             },
@@ -2460,25 +2458,6 @@ private class RecordingOnlineArtistsHttpClient(
         """.trimIndent()
     }
 
-    private fun getArtistBody(
-        artistId: String,
-        albums: List<OnlineSearchAlbumState>,
-    ): String {
-        val albumItems = albums.joinToString(",") { album -> albumJson(album) }
-        return """
-            {
-              "subsonic-response": {
-                "status": "ok",
-                "version": "1.16.1",
-                "artist": {
-                  "id": "$artistId",
-                  "name": "Artist $artistId",
-                  "album": [$albumItems]
-                }
-              }
-            }
-        """.trimIndent()
-    }
 }
 
 private data class RecordedSearch3Request(
