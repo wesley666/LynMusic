@@ -151,6 +151,9 @@ internal fun MobilePageContent(
             targetSourceId = route.sourceId,
             onReturn = { details?.pop(route.entryId) },
         )
+    }, playlist = { route ->
+        PlaylistDetailPage(route, checkNotNull(details), playlistsState, onlinePlaylistsState, importState,
+            onPlaylistsIntent, onOnlinePlaylistsIntent, onPlayerIntent, showDuration = !compact)
     }) {
         RootMobilePageContent(
             selectedTab = selectedTab,
@@ -300,7 +303,6 @@ internal fun RootMobilePageContent(
             onlineState = onlinePlaylistsState,
             onPlaylistsIntent = onPlaylistsIntent,
             onOnlineIntent = onOnlinePlaylistsIntent,
-            onPlayerIntent = onPlayerIntent,
             modifier = modifier,
         )
 
@@ -395,13 +397,10 @@ internal fun mobileLibraryHubCanBatchOperate(
     tab: AppTab,
     libraryVisibleTrackCount: Int,
     favoritesVisibleTrackCount: Int,
-    playlistDetailVisibleTrackCount: Int,
-    selectedPlaylistId: String?,
 ): Boolean {
     return when (tab) {
         AppTab.Library -> libraryVisibleTrackCount > 0
         AppTab.Favorites -> favoritesVisibleTrackCount > 0
-        AppTab.Playlists -> selectedPlaylistId != null && playlistDetailVisibleTrackCount > 0
         else -> false
     }
 }
@@ -480,26 +479,6 @@ private fun MobileLibraryHubTab(
         AppTab.Playlists -> playlistSearchQuery
         else -> ""
     }
-    val playlistDetailVisibleTrackCount = remember(
-        playlistsState.selectedPlaylist,
-        playlistsState.selectedPlaylistId,
-        playlistsState.selectedSourceFilter,
-        playlistsState.sourceTypesById,
-        playlistsState.offlineDownloadsByTrackId,
-    ) {
-        playlistsState.selectedPlaylist
-            ?.takeIf { it.id == playlistsState.selectedPlaylistId }
-            ?.tracks
-            .orEmpty()
-            .count { entry ->
-                matchesLibrarySourceFilter(
-                    track = entry.track,
-                    selectedSourceFilter = playlistsState.selectedSourceFilter,
-                    sourceTypesById = playlistsState.sourceTypesById,
-                    offlineDownloadsByTrackId = playlistsState.offlineDownloadsByTrackId,
-                )
-            }
-    }
     val activeTabOnline = when (activeSearchTab) {
         AppTab.Library -> onlineLibraryState.sourceId != null
         AppTab.Favorites -> onlineFavoritesState.sourceId != null
@@ -510,8 +489,6 @@ private fun MobileLibraryHubTab(
         tab = activeSearchTab,
         libraryVisibleTrackCount = libraryState.filteredTracks.size,
         favoritesVisibleTrackCount = favoritesState.filteredTracks.size,
-        playlistDetailVisibleTrackCount = playlistDetailVisibleTrackCount,
-        selectedPlaylistId = playlistsState.selectedPlaylistId,
     )
 
     fun updateActiveSearchQuery(query: String) {
@@ -862,12 +839,9 @@ private fun MobileLibraryHubTab(
                             onlineState = onlinePlaylistsState,
                             onPlaylistsIntent = onPlaylistsIntent,
                             onOnlineIntent = onOnlinePlaylistsIntent,
-                            onPlayerIntent = onPlayerIntent,
                             playlistSearchQuery = playlistSearchQuery,
                             showRefreshActionButton = false,
                             showSourceFilterActionButton = false,
-                            batchSelectionRequestKey = playlistsBatchSelectionRequestKey,
-                            showInlineBatchOperationButton = false,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

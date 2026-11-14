@@ -124,52 +124,13 @@ class MobileLibraryHubNavigationTest {
     }
 
     @Test
-    fun `mobile library hub batch operation availability follows active page`() = runTest {
-        assertTrue(
-            mobileLibraryHubCanBatchOperate(
-                tab = AppTab.Library,
-                libraryVisibleTrackCount = 1,
-                favoritesVisibleTrackCount = 0,
-                playlistDetailVisibleTrackCount = 0,
-                selectedPlaylistId = null,
-            ),
-        )
-        assertTrue(
-            mobileLibraryHubCanBatchOperate(
-                tab = AppTab.Favorites,
-                libraryVisibleTrackCount = 0,
-                favoritesVisibleTrackCount = 1,
-                playlistDetailVisibleTrackCount = 0,
-                selectedPlaylistId = null,
-            ),
-        )
-        assertTrue(
-            mobileLibraryHubCanBatchOperate(
-                tab = AppTab.Playlists,
-                libraryVisibleTrackCount = 0,
-                favoritesVisibleTrackCount = 0,
-                playlistDetailVisibleTrackCount = 1,
-                selectedPlaylistId = "playlist-1",
-            ),
-        )
-        assertFalse(
-            mobileLibraryHubCanBatchOperate(
-                tab = AppTab.Playlists,
-                libraryVisibleTrackCount = 0,
-                favoritesVisibleTrackCount = 0,
-                playlistDetailVisibleTrackCount = 1,
-                selectedPlaylistId = null,
-            ),
-        )
-        assertFalse(
-            mobileLibraryHubCanBatchOperate(
-                tab = AppTab.My,
-                libraryVisibleTrackCount = 1,
-                favoritesVisibleTrackCount = 1,
-                playlistDetailVisibleTrackCount = 1,
-                selectedPlaylistId = "playlist-1",
-            ),
-        )
+    fun `mobile library hub batch operation availability follows active page`() {
+        assertTrue(mobileLibraryHubCanBatchOperate(AppTab.Library, 1, 0))
+        assertTrue(mobileLibraryHubCanBatchOperate(AppTab.Favorites, 0, 1))
+        assertFalse(mobileLibraryHubCanBatchOperate(AppTab.Playlists, 1, 1))
+        assertFalse(mobileLibraryHubCanBatchOperate(AppTab.My, 1, 1))
+        assertFalse(mobileLibraryHubCanBatchOperate(AppTab.Library, 0, 1))
+        assertFalse(mobileLibraryHubCanBatchOperate(AppTab.Favorites, 1, 0))
     }
 
     @Test

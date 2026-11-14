@@ -4,10 +4,8 @@ import top.iwesley.lyn.music.*
 
 import kotlinx.coroutines.test.runTest
 
-
 import top.iwesley.lyn.music.resources.*
 
-import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,67 +18,9 @@ import top.iwesley.lyn.music.core.model.AppLanguageRuntime
 
 class PlaylistsUiLogicTest {
 
-
     @kotlin.test.BeforeTest
     fun selectFixtureLanguage() {
         top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
-    }
-
-    @Test
-    fun `detail loading stays hidden when no playlist is selected`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = null,
-            detail = null,
-            playlists = samplePlaylists(),
-        )
-
-        assertFalse(state.shouldShowDetailPane)
-        assertFalse(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertNull(state.requestedPlaylistName)
-    }
-
-    @Test
-    fun `detail loading shows while selected playlist detail is still missing`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = null,
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertTrue(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
-    }
-
-    @Test
-    fun `detail loading shows and hides stale detail when detail id does not match selection`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = PlaylistDetail(id = "playlist-1", name = "晨跑"),
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertTrue(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
-    }
-
-    @Test
-    fun `detail loading hides when matching playlist detail is ready`() = runTest {
-        val detail = PlaylistDetail(id = "playlist-2", name = "通勤")
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = detail,
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertFalse(state.isDetailSwitchLoading)
-        assertEquals(detail, state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
     }
 
     @Test
@@ -113,28 +53,4 @@ class PlaylistsUiLogicTest {
         assertTrue(canShowPlaylistImportAction(PlaylistDetail(id = "playlist-1", name = "晨跑")))
     }
 
-
-
-
-
-
-
-
-
-
-
-
-
-    @Test
-    fun `playlist track trailing width follows duration visibility`() = runTest {
-        assertEquals(112.dp, playlistTrackTrailingWidth(selectionMode = false, showDuration = true))
-        assertEquals(48.dp, playlistTrackTrailingWidth(selectionMode = false, showDuration = false))
-        assertEquals(56.dp, playlistTrackTrailingWidth(selectionMode = true, showDuration = true))
-        assertEquals(0.dp, playlistTrackTrailingWidth(selectionMode = true, showDuration = false))
-    }
-
-    private fun samplePlaylists(): List<PlaylistSummary> = listOf(
-        PlaylistSummary(id = "playlist-1", name = "晨跑"),
-        PlaylistSummary(id = "playlist-2", name = "通勤"),
-    )
 }

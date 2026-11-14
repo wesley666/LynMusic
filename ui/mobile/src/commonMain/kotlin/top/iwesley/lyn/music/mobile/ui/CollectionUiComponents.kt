@@ -617,6 +617,7 @@ internal fun TrackRow(
     selected: Boolean = false,
     onSelectionToggle: (() -> Unit)? = null,
     indexColumnWidth: Dp = 32.dp,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -649,7 +650,10 @@ internal fun TrackRow(
         onAlbumClick = onAlbumClick,
         onEditMusicTags = bindings.onEditMusicTags?.takeIf { bindings.canEditMusicTags(track) }
             ?.let { action -> { action(track) } },
-    )
+    ) + listOfNotNull(onRemoveFromPlaylist?.let { remove ->
+        ListItemMenuAction("remove_from_playlist", uiText(Res.string.playlist_remove_track_action),
+            Icons.Rounded.Delete, destructive = true, onClick = remove)
+    })
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
             track = track,

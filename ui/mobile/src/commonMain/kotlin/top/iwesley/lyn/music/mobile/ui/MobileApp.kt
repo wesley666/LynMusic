@@ -162,6 +162,10 @@ fun MobileApp(
         }
         val onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit = remember(component) {
             { intent ->
+                if (intent is OnlinePlaylistsIntent.SelectSource && intent.persist &&
+                    intent.sourceId != component.onlinePlaylistsStore.state.value.sourceId && details.playlistRoute != null) {
+                    details.clear()
+                }
                 if (
                     intent.shouldClearRememberedOnlinePlaylistsSource(
                         currentOnlineSourceId = component.onlinePlaylistsStore.state.value.sourceId,
@@ -177,6 +181,9 @@ fun MobileApp(
                 }
             }
         }
+        BindPlaylistDetailNavigation(details, playlistsState, onlinePlaylistsState, importState,
+            suspended = pendingPlaylistTrack != null || shouldRestoreOnlinePlaylistSource,
+            localIntent = component.playlistsStore::dispatch, onlineIntent = onOnlinePlaylistsIntent)
         LaunchedEffect(
             pendingPlaylistTrack,
             shouldRestoreOnlinePlaylistSource,

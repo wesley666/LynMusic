@@ -31,6 +31,7 @@ import kotlinx.serialization.modules.*
 import top.iwesley.lyn.music.feature.details.*
 import top.iwesley.lyn.music.feature.library.*
 import top.iwesley.lyn.music.feature.player.PlayerIntent
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 import kotlin.random.Random
 
 @Serializable
@@ -43,6 +44,7 @@ internal data class MusicDetailRoute(
     val title: String? = null,
     val artistName: String? = null,
     val artworkLocator: String? = null,
+    val artworkCacheKey: String? = null,
 ) : NavKey {
     val isRoot get() = kind == "root"
     fun sameTarget(other: MusicDetailRoute) = kind == other.kind && entityId == other.entityId &&
@@ -166,6 +168,9 @@ internal class MusicDetailNavigation(
     var immediate by mutableStateOf(false)
         private set
     private val entries = mutableMapOf<String, MusicDetailEntryState>()
+    private val playlistEntries = mutableMapOf<String, PlaylistDetailEntryState>()
+    var playlistListState = LazyListState()
+    val playlistRoute get() = backStack.filterIsInstance<MusicDetailRoute>().lastOrNull { it.kind == "playlist" }
     private val backHandlers = mutableMapOf<String, () -> Unit>()
     var gestureGeneration: Long? = null
     var gestureInProgress: () -> Boolean = { false }
@@ -194,6 +199,25 @@ internal class MusicDetailNavigation(
         backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
     }
 
+    fun openPlaylist(playlist: PlaylistSummary, sourceId: String?, sourceFilter: LibrarySourceFilter) {
+        if (playlist.id.isBlank() || sourceId?.isBlank() == true) return
+        val route = MusicDetailRoute(kind = "playlist", entityId = playlist.id, sourceId = sourceId,
+            sourceFilter = encodeLibrarySourceFilter(sourceFilter), title = playlist.name,
+            artworkLocator = playlist.artworkLocator, artworkCacheKey = playlist.artworkCacheKey)
+        if (top.sameTarget(route)) return
+        captureGesture()
+        generation++
+        immediate = false
+        backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
+    }
+
+    fun playlistEntry(route: MusicDetailRoute): PlaylistDetailEntryState {
+        playlistEntries[route.entryId]?.let { return it }
+        return PlaylistDetailEntryState().also {
+            if (backStack.any { key -> (key as MusicDetailRoute).entryId == route.entryId }) playlistEntries[route.entryId] = it
+        }
+    }
+
     fun setBackHandler(entryId: String, handler: (() -> Unit)?) {
         if (handler == null) backHandlers.remove(entryId) else backHandlers[entryId] = handler
     }
@@ -202,7 +226,7 @@ internal class MusicDetailNavigation(
         if (!hasDetails || top.entryId != expectedEntryId || generation != expectedGeneration) return
         // Tags owns its discard confirmation. Never bypass it while the entry is composing.
         if (top.kind == "tags") backHandlers[top.entryId]?.invoke()
-        else pop(expectedEntryId, expectedGeneration)
+        else backHandlers[top.entryId]?.invoke() ?: pop(expectedEntryId, expectedGeneration)
     }
 
     fun pop(expectedEntryId: String = top.entryId, expectedGeneration: Long = generation) {
@@ -224,6 +248,7 @@ internal class MusicDetailNavigation(
         restorePlayer.value = false
         entries.values.forEach { it.cancel() }
         entries.clear()
+        playlistEntries.clear()
         backHandlers.clear()
         while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
@@ -240,12 +265,13 @@ internal class MusicDetailNavigation(
             }
         }
     }
-    fun release(key: Any) { entries.remove(key)?.cancel(); backHandlers.remove(key) }
+    fun release(key: Any) { entries.remove(key)?.cancel(); playlistEntries.remove(key); backHandlers.remove(key) }
     fun releaseRemovedEntries() {
         val activeIds = backStack.map { (it as MusicDetailRoute).entryId }.toSet()
         entries.keys.filterNot(activeIds::contains).forEach { release(it) }
+        playlistEntries.keys.filterNot(activeIds::contains).forEach { release(it) }
     }
-    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); backHandlers.clear() }
+    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); playlistEntries.clear(); backHandlers.clear() }
 }
 
 internal val LocalMusicDetailNavigation = staticCompositionLocalOf<MusicDetailNavigation?> { null }
@@ -308,10 +334,12 @@ internal fun MusicDetailHost(
     modifier: Modifier = Modifier,
     showDuration: Boolean = true,
     musicTags: @Composable (MusicDetailRoute) -> Unit = {},
+    playlist: @Composable (MusicDetailRoute) -> Unit = {},
     root: @Composable () -> Unit,
 ) {
     val navigation = LocalMusicDetailNavigation.current
     val currentMusicTags by rememberUpdatedState(musicTags)
+    val currentPlaylist by rememberUpdatedState(playlist)
     if (navigation == null) { root(); return }
     DisposableEffect(navigation) {
         onDispose { navigation.releaseRemovedEntries() }
@@ -385,6 +413,7 @@ internal fun MusicDetailHost(
                     when {
                         route.isRoot -> root()
                         route.kind == "tags" -> currentMusicTags(route)
+                        route.kind == "playlist" -> currentPlaylist(route)
                         route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, showDuration)
                         else -> ArtistDetailPage(route, navigation, onPlayerIntent, showDuration)
                     }

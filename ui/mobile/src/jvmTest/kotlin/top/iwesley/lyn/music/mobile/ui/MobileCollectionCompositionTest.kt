@@ -90,6 +90,7 @@ class MobileCollectionCompositionTest {
             ui.click("Second track")
             ui.assertPlayback(listOf("one", "two"), 1)
             ui.capture("playlist-detail")
+            ui.click("More actions for Fixture playlist")
             ui.click("Import playlist")
             ui.assertVisible("Import playlist")
             ui.click("Close")
@@ -158,10 +159,21 @@ class MobileCollectionCompositionTest {
         private var playlists by mutableStateOf(PlaylistsState(isLoadingContent = false, playlists = listOf(playlist)))
         private lateinit var detailNavigation: MusicDetailNavigation
         private val detailQueries = TestMusicDetailQueries(tracks = { tracks })
+        private fun playlistIntent(intent: PlaylistsIntent) {
+            playlistIntents += intent
+            when (intent) {
+                is PlaylistsIntent.SelectPlaylist -> playlists = playlists.copy(selectedPlaylistId = intent.playlistId,
+                    selectedPlaylist = intent.playlistId?.let { PlaylistDetail(it, "Fixture playlist", tracks = tracks.map(::PlaylistTrackEntry)) })
+                PlaylistsIntent.BackToList -> playlists = playlists.copy(selectedPlaylistId = null, selectedPlaylist = null)
+                else -> Unit
+            }
+        }
         private var frame = 0L
         private val scene = ImageComposeScene(width, height) {
             ProvideUiResourceLanguage("en") {
                 val details = rememberMusicDetailNavigation(detailQueries) {}.also { detailNavigation = it }
+                BindPlaylistDetailNavigation(details, playlists, OnlinePlaylistsState(),
+                    ImportState(capabilities = platform.capabilities), false, ::playlistIntent, {})
                 CompositionLocalProvider(LocalMusicDetailNavigation provides details, LocalPlatformDescriptor provides platform) {
                     LynMusicTheme {
                         MobilePageContent(
@@ -185,15 +197,7 @@ class MobileCollectionCompositionTest {
                                     ImportIndexState("source", 2)))),
                             settingsState = SettingsState(),
                             onMyIntent = {}, onLibraryIntent = {}, onOnlineLibraryIntent = {},
-                            onPlaylistsIntent = { intent ->
-                                playlistIntents += intent
-                                if (intent is PlaylistsIntent.SelectPlaylist) {
-                                    playlists = playlists.copy(selectedPlaylistId = intent.playlistId,
-                                        selectedPlaylist = intent.playlistId?.let {
-                                            PlaylistDetail(it, "Fixture playlist", tracks = tracks.map(::PlaylistTrackEntry))
-                                        })
-                                }
-                            },
+                            onPlaylistsIntent = ::playlistIntent,
                             onOnlinePlaylistsIntent = {}, onFavoritesIntent = { favoriteIntents += it },
                             onOnlineFavoritesIntent = {}, onImportIntent = { importIntents += it },
                             onPlayerIntent = { playerIntents += it }, onSettingsIntent = {},

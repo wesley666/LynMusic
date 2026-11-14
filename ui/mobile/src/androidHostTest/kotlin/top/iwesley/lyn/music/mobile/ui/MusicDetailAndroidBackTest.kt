@@ -51,6 +51,25 @@ import kotlin.test.assertTrue
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
+    @Test fun playlistDetailUsesBothSystemBackEdgesWithoutFinishingTheActivity() {
+        for (edge in listOf(BackEvent.EDGE_LEFT, BackEvent.EDGE_RIGHT)) Fixture().use { ui ->
+            ui.navigation.openPlaylist(top.iwesley.lyn.music.core.model.PlaylistSummary("playlist", "Playlist"),
+                null, top.iwesley.lyn.music.feature.library.LibrarySourceFilter.ALL)
+            ui.frames()
+            val original = ui.navigation.top
+            val cancelled = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            cancelled.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f, 0f)
+            cancelled.cancel()
+            ui.frames()
+            assertEquals(original, ui.navigation.top)
+            val completed = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            completed.close()
+            ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertFalse(ui.activity.isFinishing)
+            assertEquals(0, RecordingActivityClient.backRequests)
+        }
+    }
     @Test fun lastDetailGestureDoesNotFinishActivity() {
         Fixture().use { ui ->
             ui.navigation.open(LibraryNavigationTarget.Album("album"))
