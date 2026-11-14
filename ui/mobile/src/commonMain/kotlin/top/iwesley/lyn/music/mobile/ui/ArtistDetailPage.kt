@@ -191,7 +191,7 @@ internal fun ArtistDetailPage(
                                 val targets = if (route.sourceId != null) deriveOnlineTrackLibraryNavigationTargets(track, route.sourceId)
                                     else deriveTrackLibraryNavigationTargets(track, route.librarySourceFilter)
                                 TrackRow(track, index, isFavorite = false, onToggleFavorite = {}, indexColumnWidth = indexWidth,
-                                    menuContextKey = Triple(route.entryId, tab, selected), showDuration = showDuration, artistDetail = true,
+                                    menuContextKey = Triple(route.entryId, tab, selected), showDuration = showDuration,
                                     onArtistClick = targets.artistTarget?.let { target -> { navigation.open(target) } },
                                     onAlbumClick = targets.albumTarget?.let { target -> { navigation.open(target) } },
                                     onClick = { onPlayerIntent(PlayerIntent.PlayTracks(displayTracks, index)) })
