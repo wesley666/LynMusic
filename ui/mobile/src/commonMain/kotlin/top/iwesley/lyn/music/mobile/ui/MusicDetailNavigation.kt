@@ -209,7 +209,7 @@ internal class MusicDetailNavigation(
         generation++
         entries[top.entryId]?.cancel()
         backHandlers.remove(top.entryId)
-        backStack.removeLast()
+        backStack.removeAt(backStack.lastIndex)
         if (!hasDetails && restorePlayer.value) {
             restorePlayer.value = false
             onRestorePlayer()
@@ -224,7 +224,7 @@ internal class MusicDetailNavigation(
         entries.values.forEach { it.cancel() }
         entries.clear()
         backHandlers.clear()
-        while (backStack.size > 1) backStack.removeLast()
+        while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
 
     fun entry(route: MusicDetailRoute): MusicDetailEntryState {
