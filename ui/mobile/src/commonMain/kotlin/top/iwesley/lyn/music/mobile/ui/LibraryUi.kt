@@ -22,6 +22,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -82,6 +84,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
@@ -407,6 +410,7 @@ internal fun FavoritesTab(
                 null
             },
             showFavoriteIndicator = false,
+            tracksOnly = true,
             showDuration = showDuration,
             showSearchField = showSearchField,
             showTrackSortActionButton = showSearchField && !isOnlineMode,
@@ -587,6 +591,7 @@ private fun LibraryBrowserTab(
     showSearchField: Boolean = true,
     showTrackSortActionButton: Boolean = true,
     showFolderBrowser: Boolean = false,
+    tracksOnly: Boolean = false,
     rootSelectorStyle: LibraryRootSelectorStyle = LibraryRootSelectorStyle.Default,
     actionButton: (@Composable () -> Unit)? = null,
     navigationTarget: LibraryNavigationTarget? = null,
@@ -615,7 +620,8 @@ private fun LibraryBrowserTab(
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     var trackSortMenuExpanded by remember { mutableStateOf(false) }
     val defaultRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
-    var rootView by (phoneRootState ?: defaultRootState)
+    var storedRootView by (phoneRootState ?: defaultRootState)
+    val rootView = if (tracksOnly) LibraryBrowserRootView.Tracks else storedRootView
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     var selectedFolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -829,7 +835,7 @@ private fun LibraryBrowserTab(
             selectedFolderPath = null
         }
         if (rootView == LibraryBrowserRootView.Folders && !showFolderBrowser && phoneRootState == null) {
-            rootView = LibraryBrowserRootView.Tracks
+            storedRootView = LibraryBrowserRootView.Tracks
         }
     }
 
@@ -857,7 +863,7 @@ private fun LibraryBrowserTab(
         }
         saveSelectedFolderScrollPosition()
         previousRootView = view
-        rootView = view
+        storedRootView = if (tracksOnly) LibraryBrowserRootView.Tracks else view
 
 
         selectedFolderSourceId = null
@@ -943,8 +949,8 @@ private fun LibraryBrowserTab(
         disabledBorderColor = searchFieldContainerColor,
     )
     val tracksStatFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(phoneRootState == null) {
-        if (phoneRootState == null) tracksStatFocusRequester.requestFocus()
+    LaunchedEffect(phoneRootState == null, tracksOnly) {
+        if (phoneRootState == null && !tracksOnly) tracksStatFocusRequester.requestFocus()
     }
     val activeRootView = rootView
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
@@ -1061,7 +1067,15 @@ private fun LibraryBrowserTab(
                         )
                     }
                 }
-                if (phoneRootState == null) item {
+                if (tracksOnly) item("favorites-actions") {
+                    FavoritesTrackActions(
+                        loadedCount = visibleTracks.size,
+                        partiallyLoaded = state.isOnline && state.trackCount.hasMore,
+                        loading = state.isLoading,
+                        enabled = visibleTracks.isNotEmpty() && !selectionMode,
+                        onPlay = { actions.onPlayTracks(visibleTracks, 0) },
+                    )
+                } else if (phoneRootState == null) item {
                     LibraryRootSelector(
                         model = rootSelectorModel,
                         selectedRootView = rootView,
@@ -1167,7 +1181,7 @@ private fun LibraryBrowserTab(
                             LibraryBrowserRootView.Artists -> strings.artistLabel
                             LibraryBrowserRootView.Folders -> strings.folderLabel
                         }
-                        item {
+                        if (!tracksOnly) item {
                             if (phoneRootState != null && rootView == LibraryBrowserRootView.Tracks) {
                                 PhoneLibraryTrackActions(
                                     loadedCount = visibleTracks.size,
@@ -1335,7 +1349,7 @@ private fun LibraryBrowserTab(
             )
         }
     }
-    if (phoneRootState != null) {
+    if (phoneRootState != null && !tracksOnly) {
         val roots = LibraryBrowserRootView.entries
         val pagerState = rememberPagerState(initialPage = rootView.ordinal) { roots.size }
         LaunchedEffect(rootView) {
@@ -1373,6 +1387,41 @@ private fun LibraryBrowserTab(
                 pendingBatchDownloadTracks = emptyList()
             },
         )
+    }
+}
+
+@Composable
+private fun FavoritesTrackActions(
+    loadedCount: Int,
+    partiallyLoaded: Boolean,
+    loading: Boolean,
+    enabled: Boolean,
+    onPlay: () -> Unit,
+) {
+    val countLabel = if (loading && loadedCount == 0) {
+        uiString(Res.string.library_loading_status)
+    } else {
+        uiString(Res.plurals.common_track_count, loadedCount,
+            if (partiallyLoaded) "$loadedCount+" else loadedCount.toString())
+    }
+    FlowRow(
+        Modifier.fillMaxWidth().testTag("favorites-track-actions"),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(countLabel,
+            Modifier.align(Alignment.CenterVertically).padding(end = 12.dp).testTag("favorites-track-count"),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(
+            onClick = onPlay, enabled = enabled,
+            modifier = Modifier.widthIn(min = 132.dp).heightIn(min = 48.dp).testTag("favorites-play-all"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(uiString(if (partiallyLoaded) Res.string.library_play_loaded_tracks else Res.string.player_play_all))
+        }
     }
 }
 
