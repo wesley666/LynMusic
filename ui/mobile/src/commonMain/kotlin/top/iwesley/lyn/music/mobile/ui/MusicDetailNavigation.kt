@@ -125,6 +125,7 @@ internal class MusicDetailEntryState(
     val artistTracks = DetailQueryState(scope) { queries.observeArtistTracks(route.artistRequest()) }
     val artistAlbums = DetailQueryState(scope) { queries.observeArtistAlbums(route.artistRequest()) }
     var contentListState = LazyListState()
+    var albumHeaderLayout: AlbumHeaderLayout? = null
     var albumListState = LazyListState()
     var favoriteListState = LazyListState()
     var artistHeaderState = TopAppBarState(

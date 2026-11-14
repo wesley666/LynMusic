@@ -5,6 +5,7 @@
     <string name="music_detail_load_failed">詳細資訊載入失敗，請重試。</string>
     <string name="music_detail_artist">歌手</string>
     <string name="music_detail_songs">歌曲</string>
+    <string name="music_detail_duration">時長</string>
     <string name="music_detail_albums">專輯</string>
     <string name="music_detail_favorites">喜歡</string>
     <string name="music_detail_play_favorites">播放喜歡</string>

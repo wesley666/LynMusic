@@ -5,6 +5,7 @@
     <string name="music_detail_load_failed">Unable to load details. Please try again.</string>
     <string name="music_detail_artist">Artist</string>
     <string name="music_detail_songs">Songs</string>
+    <string name="music_detail_duration">Duration</string>
     <string name="music_detail_albums">Albums</string>
     <string name="music_detail_favorites">Liked</string>
     <string name="music_detail_play_favorites">Play liked</string>

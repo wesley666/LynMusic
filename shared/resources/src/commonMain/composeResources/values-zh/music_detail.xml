@@ -5,6 +5,7 @@
     <string name="music_detail_load_failed">详情加载失败，请重试。</string>
     <string name="music_detail_artist">歌手</string>
     <string name="music_detail_songs">歌曲</string>
+    <string name="music_detail_duration">时长</string>
     <string name="music_detail_albums">专辑</string>
     <string name="music_detail_favorites">喜欢</string>
     <string name="music_detail_play_favorites">播放喜欢</string>
