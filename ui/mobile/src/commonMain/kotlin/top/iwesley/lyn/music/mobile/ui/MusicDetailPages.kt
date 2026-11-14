@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
@@ -198,26 +197,13 @@ private fun AlbumSummary(data: AlbumDetailData, coverSize: Dp, onPlayAll: () -> 
             maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(20.dp))
-        FlowRow(
-            Modifier.fillMaxWidth().testTag("album-actions"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                uiString(Res.plurals.common_track_count, data.tracks.size, data.tracks.size),
-                Modifier.align(Alignment.CenterVertically).padding(end = 12.dp),
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (data.tracks.isNotEmpty()) Button(
-                onClick = onPlayAll,
-                modifier = Modifier.widthIn(min = 132.dp).heightIn(min = 48.dp).testTag("album-play-all"),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Icon(Icons.Rounded.PlayArrow, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(uiString(Res.string.player_play_all), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+        TrackListActions(
+            countLabel = uiString(Res.plurals.common_track_count, data.tracks.size, data.tracks.size),
+            playLabel = uiString(Res.string.player_play_all),
+            onPlay = onPlayAll.takeIf { data.tracks.isNotEmpty() },
+            modifier = Modifier.testTag("album-actions"),
+            playModifier = Modifier.testTag("album-play-all"),
+        )
     }
 }
 

@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -174,16 +173,12 @@ internal fun ArtistDetailPage(
                         }
                         else -> {
                             if (displayTracks.isNotEmpty()) item("actions") {
-                                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text(uiString(Res.plurals.common_track_count, displayTracks.size, displayTracks.size),
-                                        style = MaterialTheme.typography.bodyMedium)
-                                    Button(onClick = { onPlayerIntent(PlayerIntent.PlayTracks(displayTracks, 0)) },
-                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
-                                        Icon(Icons.Rounded.PlayArrow, null, Modifier.size(20.dp))
-                                        Text(uiString(if (tab == ArtistDetailTab.Favorites) Res.string.music_detail_play_favorites else Res.string.player_play_all))
-                                    }
-                                }
+                                TrackListActions(
+                                    countLabel = uiString(Res.plurals.common_track_count, displayTracks.size, displayTracks.size),
+                                    playLabel = uiString(if (tab == ArtistDetailTab.Favorites) Res.string.music_detail_play_favorites else Res.string.player_play_all),
+                                    onPlay = { onPlayerIntent(PlayerIntent.PlayTracks(displayTracks, 0)) },
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                )
                             } else item("empty") {
                                 ArtistEmptyState(uiString(if (tab == ArtistDetailTab.Favorites) Res.string.music_detail_favorites_empty else Res.string.library_detail_tracks_empty))
                             }

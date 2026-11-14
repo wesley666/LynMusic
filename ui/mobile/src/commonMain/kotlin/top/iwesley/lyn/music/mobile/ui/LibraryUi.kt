@@ -22,7 +22,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +34,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -57,7 +55,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RecentActors
 import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -1404,25 +1401,15 @@ private fun FavoritesTrackActions(
         uiString(Res.plurals.common_track_count, loadedCount,
             if (partiallyLoaded) "$loadedCount+" else loadedCount.toString())
     }
-    FlowRow(
-        Modifier.fillMaxWidth().testTag("favorites-track-actions"),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(countLabel,
-            Modifier.align(Alignment.CenterVertically).padding(end = 12.dp).testTag("favorites-track-count"),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(
-            onClick = onPlay, enabled = enabled,
-            modifier = Modifier.widthIn(min = 132.dp).heightIn(min = 48.dp).testTag("favorites-play-all"),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(uiString(if (partiallyLoaded) Res.string.library_play_loaded_tracks else Res.string.player_play_all))
-        }
-    }
+    TrackListActions(
+        countLabel = countLabel,
+        playLabel = uiString(if (partiallyLoaded) Res.string.library_play_loaded_tracks else Res.string.player_play_all),
+        onPlay = onPlay,
+        modifier = Modifier.testTag("favorites-track-actions"),
+        enabled = enabled,
+        playModifier = Modifier.testTag("favorites-play-all"),
+        countModifier = Modifier.testTag("favorites-track-count"),
+    )
 }
 
 @Composable

@@ -37,7 +37,7 @@ class FavoritesLayoutUiTest {
             assertFalse(ui.visible("Artist"))
             val count = ui.tagged("favorites-track-count").boundsInRoot
             val play = ui.tagged("favorites-play-all").boundsInRoot
-            assertTrue(count.right < play.left)
+            assertTrue(play.right < count.left)
             ui.capture("$width")
             ui.click("Play all")
             assertEquals(listOf<PlayerIntent>(PlayerIntent.PlayTracks(ui.tracks, 0)), ui.plays)
