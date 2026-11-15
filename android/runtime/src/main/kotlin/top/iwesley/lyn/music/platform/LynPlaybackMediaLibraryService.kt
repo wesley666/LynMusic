@@ -467,9 +467,21 @@ internal class LynMediaSessionPlayer(
             .add(Player.COMMAND_SET_MEDIA_ITEM)
             .add(Player.COMMAND_SET_VOLUME)
             .apply {
-                val seekCommands = intArrayOf(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
-                    Player.COMMAND_SEEK_TO_DEFAULT_POSITION, Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD)
-                if (snapshot.canSeek) addAll(*seekCommands) else removeAll(*seekCommands)
+                if (snapshot.canSeek) {
+                    addAll(
+                        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
+                        Player.COMMAND_SEEK_BACK,
+                        Player.COMMAND_SEEK_FORWARD,
+                    )
+                } else {
+                    removeAll(
+                        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+                        Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
+                        Player.COMMAND_SEEK_BACK,
+                        Player.COMMAND_SEEK_FORWARD,
+                    )
+                }
             }
             .build()
         val metadata = snapshot.toMedia3SessionMetadata(artworkVersion)
