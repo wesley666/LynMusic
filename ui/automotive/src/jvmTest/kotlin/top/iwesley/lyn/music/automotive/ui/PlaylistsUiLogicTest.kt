@@ -15,6 +15,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.PlaylistTrackEntry
+import top.iwesley.lyn.music.feature.online.*
+import top.iwesley.lyn.music.feature.playlists.*
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.data.repository.PlaylistImportLineIssue
@@ -49,61 +53,38 @@ class PlaylistsUiLogicTest {
         top.iwesley.lyn.music.core.model.AppLanguageRuntime.update(top.iwesley.lyn.music.core.model.AppLanguage.SimplifiedChinese)
     }
 
-    @Test
-    fun `detail loading stays hidden when no playlist is selected`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = null,
-            detail = null,
-            playlists = samplePlaylists(),
-        )
-
-        assertFalse(state.shouldShowDetailPane)
-        assertFalse(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertNull(state.requestedPlaylistName)
+    @Test fun playlistBindingKeepsLoadedDetailsAndReleasesOnlyAfterPop() {
+        val route = MusicDetailRoute(entryId = "playlist:p", kind = "playlist", entityId = "p")
+        val binding = PlaylistDetailBinding()
+        val calls = mutableListOf<PlaylistsIntent>()
+        binding.sync(route, PlaylistsState(), OnlinePlaylistsState(), emptySet(), false, calls::add, {})
+        assertEquals(listOf<PlaylistsIntent>(PlaylistsIntent.SelectPlaylist("p")), calls)
+        val loaded = PlaylistsState(selectedPlaylistId = "p", selectedPlaylist = PlaylistDetail("p", "Road"))
+        repeat(3) { binding.sync(route, loaded, OnlinePlaylistsState(), emptySet(), false, calls::add, {}) }
+        assertEquals(1, calls.size)
+        binding.sync(null, loaded, OnlinePlaylistsState(), emptySet(), false, calls::add, {})
+        assertEquals(PlaylistsIntent.BackToList, calls.last())
     }
 
-    @Test
-    fun `detail loading shows while selected playlist detail is still missing`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = null,
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertTrue(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
+    @Test fun playlistBindingSuspendsForTemporarySourcesAndDoesNotRetryRetainedErrors() {
+        val route = MusicDetailRoute(entryId = "p", kind = "playlist", entityId = "p", sourceId = "a")
+        val binding = PlaylistDetailBinding()
+        val calls = mutableListOf<OnlinePlaylistsIntent>()
+        binding.sync(route, PlaylistsState(), OnlinePlaylistsState(sourceId = "b"), setOf("a", "b"), true, {}, calls::add)
+        assertTrue(calls.isEmpty())
+        binding.sync(route, PlaylistsState(), OnlinePlaylistsState(sourceId = "b"), setOf("a", "b"), false, {}, calls::add)
+        assertEquals(listOf<OnlinePlaylistsIntent>(OnlinePlaylistsIntent.SelectSource("a", persist = false)), calls)
+        binding.sync(route, PlaylistsState(), OnlinePlaylistsState(sourceId = "a", selectedPlaylistId = "p"),
+            setOf("a"), false, {}, calls::add, hasRetainedFailure = true)
+        assertEquals(1, calls.size)
     }
 
-    @Test
-    fun `detail loading shows and hides stale detail when detail id does not match selection`() = runTest {
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = PlaylistDetail(id = "playlist-1", name = "晨跑"),
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertTrue(state.isDetailSwitchLoading)
-        assertNull(state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
-    }
-
-    @Test
-    fun `detail loading hides when matching playlist detail is ready`() = runTest {
-        val detail = PlaylistDetail(id = "playlist-2", name = "通勤")
-        val state = buildPlaylistDetailPresentationState(
-            selectedPlaylistId = "playlist-2",
-            detail = detail,
-            playlists = samplePlaylists(),
-        )
-
-        assertTrue(state.shouldShowDetailPane)
-        assertFalse(state.isDetailSwitchLoading)
-        assertEquals(detail, state.resolvedDetail)
-        assertEquals("通勤", state.requestedPlaylistName)
+    @Test fun duplicatePlaylistRowsKeepOriginalIndicesAndUniqueKeys() {
+        val track = Track("one", "source", "One", mediaLocator = "", relativePath = "one")
+        val detail = PlaylistDetail("p", "Road", tracks = listOf(PlaylistTrackEntry(track), PlaylistTrackEntry(track)))
+        val rows = playlistDetailRows(detail, PlaylistsState(), MusicDetailRoute(kind = "playlist", entityId = "p"))
+        assertEquals(listOf(0, 1), rows.map { it.rawIndex })
+        assertEquals(2, rows.map { it.key }.toSet().size)
     }
 
     @Test
@@ -192,17 +173,4 @@ class PlaylistsUiLogicTest {
 
         assertEquals("已加入 2 首，已存在 1 首，重复 1 首，未导入 2 行", summary)
     }
-
-    @Test
-    fun `playlist track trailing width follows duration visibility`() = runTest {
-        assertEquals(112.dp, playlistTrackTrailingWidth(selectionMode = false, showDuration = true))
-        assertEquals(48.dp, playlistTrackTrailingWidth(selectionMode = false, showDuration = false))
-        assertEquals(56.dp, playlistTrackTrailingWidth(selectionMode = true, showDuration = true))
-        assertEquals(0.dp, playlistTrackTrailingWidth(selectionMode = true, showDuration = false))
-    }
-
-    private fun samplePlaylists(): List<PlaylistSummary> = listOf(
-        PlaylistSummary(id = "playlist-1", name = "晨跑"),
-        PlaylistSummary(id = "playlist-2", name = "通勤"),
-    )
 }

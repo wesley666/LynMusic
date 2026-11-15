@@ -831,6 +831,7 @@ internal fun TrackRow(
     menuContextKey: Any? = null,
     showDuration: Boolean = true,
     durationColumnWidth: Dp = 56.dp,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
     onArtistClick: (() -> Unit)? = null,
     onAlbumClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
@@ -868,7 +869,10 @@ internal fun TrackRow(
         onOfflineDownload = if (canDownload) ({ offlineVisible = true }) else null,
         onArtistClick = onArtistClick,
         onAlbumClick = onAlbumClick,
-    )
+    ) + listOfNotNull(onRemoveFromPlaylist?.let { remove ->
+        ListItemMenuAction("remove_from_playlist", uiText(Res.string.playlist_remove_track_action),
+            Icons.Rounded.Delete, destructive = true, onClick = remove)
+    })
     Column(modifier = Modifier.fillMaxWidth()) {
         TrackActionContainer(
             track = track,

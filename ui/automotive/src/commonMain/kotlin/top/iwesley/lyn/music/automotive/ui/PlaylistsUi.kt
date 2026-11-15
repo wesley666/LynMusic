@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,16 +36,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Check
@@ -55,13 +51,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -71,14 +65,14 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,23 +83,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import top.iwesley.lyn.music.core.model.ImportSourceType
-import top.iwesley.lyn.music.core.model.NavidromeAudioQuality
-import top.iwesley.lyn.music.core.model.OfflineDownload
 import top.iwesley.lyn.music.core.model.PlaylistAddTarget
 import top.iwesley.lyn.music.core.model.PlaylistDetail
 import top.iwesley.lyn.music.core.model.PlaylistKind
 import top.iwesley.lyn.music.core.model.PlaylistSummary
-import top.iwesley.lyn.music.core.model.SYSTEM_LIKED_PLAYLIST_ID
 import top.iwesley.lyn.music.core.model.Track
-import top.iwesley.lyn.music.core.model.trackArtworkCacheKey
 import top.iwesley.lyn.music.data.repository.PlaylistImportReport
 import top.iwesley.lyn.music.data.repository.PlaylistImportFailedLineIssue
 import top.iwesley.lyn.music.data.repository.messageUiText
@@ -113,17 +101,11 @@ import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.feature.library.LibrarySourceFilterOption
 import top.iwesley.lyn.music.feature.library.librarySourceFilterButtonLabel
-import top.iwesley.lyn.music.feature.library.matchesLibrarySourceFilter
-import top.iwesley.lyn.music.feature.offline.OfflineDownloadIntent
-import top.iwesley.lyn.music.feature.offline.batchDownloadInsufficientSpaceMessage
-import top.iwesley.lyn.music.feature.offline.batchDownloadSizeEstimateLabel
-import top.iwesley.lyn.music.feature.offline.estimateBatchDownloadSize
 import top.iwesley.lyn.music.feature.online.OnlinePlaylistsIntent
 import top.iwesley.lyn.music.feature.online.OnlinePlaylistsState
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
-import top.iwesley.lyn.music.automotive.ui.platform.PlatformBackHandler
 import top.iwesley.lyn.music.ui.mainShellColors
 
 @Composable
@@ -625,345 +607,84 @@ internal fun PlaylistsTab(
     showInlineBatchOperationButton: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val navigation = LocalMusicDetailNavigation.current
     var showCreateDialog by remember { mutableStateOf(false) }
-    var showImportDialog by rememberSaveable { mutableStateOf(false) }
-    val onlineSourceOptions = remember(importState.sources) {
-        importState.onlineNavidromeSourceOptions()
+    val entry = LocalAutomotivePlaylistsEntry.current ?: rememberAutomotivePlaylistsEntry()
+    val sourceId = onlineState.sourceId
+    LaunchedEffect(showRefreshActionButton) { if (showRefreshActionButton) entry.closeSearch() }
+    val isOnline = onlineState.sourceId != null
+    val playlists = if (isOnline) onlineState.playlists else state.playlists
+    val filteredPlaylists = remember(playlists, playlistSearchQuery, showRefreshActionButton) { filterPlaylistsByQuery(playlists, if (showRefreshActionButton) "" else playlistSearchQuery) }
+    val listState = entry.list
+    fun openPlaylist(playlist: PlaylistSummary) {
+        if (navigation?.hasDetails != false) return
+        navigation.openPlaylist(playlist, onlineState.sourceId, state.selectedSourceFilter)
     }
-    val isOnlineMode = onlineState.sourceId != null
-    val playlists = if (isOnlineMode) onlineState.playlists else state.playlists
-    val detail = if (isOnlineMode) onlineState.selectedPlaylist else state.selectedPlaylist
-    val requestedPlaylistId = if (isOnlineMode) onlineState.selectedPlaylistId else state.selectedPlaylistId
-    val isListLoading = if (isOnlineMode) {
-        onlineState.isLoading || onlineState.isMutating
-    } else {
-        state.isLoadingContent
+    LaunchedEffect(playlists, entry.pendingCreation, state.message, onlineState.errorMessage) {
+        val pending = entry.pendingCreation ?: return@LaunchedEffect
+        if (pending.sourceId != sourceId || navigation?.hasDetails != false ||
+            (if (isOnline) onlineState.errorMessage != null else state.message != null)) {
+            entry.pendingCreation = null
+            return@LaunchedEffect
+        }
+        val created = playlists.filter { it.id !in pending.previousIds && it.name == pending.name }
+        if (created.size == 1) {
+            entry.pendingCreation = null
+            openPlaylist(created.single())
+        } else if (created.size > 1) entry.pendingCreation = null
     }
-    val isDetailLoading = if (isOnlineMode) {
-        onlineState.isLoadingDetail || onlineState.isMutating
-    } else {
-        state.isLoadingContent
+    if (showCreateDialog) {
+        PlaylistNameDialog(onDismiss = { showCreateDialog = false }, onConfirm = { name ->
+            showCreateDialog = false
+            if (isOnline) onOnlineIntent(OnlinePlaylistsIntent.ClearMessage) else onPlaylistsIntent(PlaylistsIntent.ClearMessage)
+            entry.pendingCreation = PendingPlaylistCreation(sourceId, name.trim(), playlists.mapTo(mutableSetOf()) { it.id })
+            if (isOnline) onOnlineIntent(OnlinePlaylistsIntent.CreatePlaylist(name))
+            else onPlaylistsIntent(PlaylistsIntent.CreatePlaylist(name))
+        })
     }
-    val isRefreshing = if (isOnlineMode) {
-        onlineState.isLoading || onlineState.isMutating
-    } else {
-        state.isRefreshing
-    }
-    val filteredPlaylists = remember(playlists, playlistSearchQuery) {
-        filterPlaylistsByQuery(playlists, playlistSearchQuery)
-    }
-    val isFilteringPlaylists = playlistSearchQuery.isNotBlank() && playlists.isNotEmpty()
-    PlatformBackHandler(
-        enabled = canNavigateBackFromPlaylistDetail(requestedPlaylistId),
-        onBack = {
-            if (isOnlineMode) {
-                onOnlineIntent(OnlinePlaylistsIntent.SelectPlaylist(null))
-            } else {
-                onPlaylistsIntent(PlaylistsIntent.BackToList)
-            }
+    PlaylistListPane(
+        playlists = filteredPlaylists,
+        isLoadingContent = if (isOnline) onlineState.isLoading || onlineState.isMutating else state.isLoadingContent,
+        selectedPlaylistId = null,
+        isRefreshing = if (isOnline) onlineState.isLoading || onlineState.isMutating else state.isRefreshing,
+        selectedSourceFilter = state.selectedSourceFilter,
+        sourceFilterOptions = state.sourceFilterOptions,
+        onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
+        selectedOnlineSourceId = onlineState.sourceId,
+        isOnlineMode = isOnline,
+        isFilteringByQuery = playlistSearchQuery.isNotBlank() && playlists.isNotEmpty(),
+        showRefreshActionButton = showRefreshActionButton,
+        showSourceFilterActionButton = showSourceFilterActionButton,
+        onRefresh = {
+            if (isOnline) onOnlineIntent(OnlinePlaylistsIntent.Refresh)
+            else onPlaylistsIntent(PlaylistsIntent.Refresh)
         },
-    )
-    val filteredDetail = remember(
-        isOnlineMode,
-        detail,
-        state.selectedSourceFilter,
-        state.sourceTypesById,
-        state.offlineDownloadsByTrackId,
-    ) {
-        if (isOnlineMode) {
-            detail
-        } else {
-            detail?.let { playlistDetail ->
-                val filteredTracks = playlistDetail.tracks.filter { entry ->
-                    matchesPlaylistSourceFilter(
-                        track = entry.track,
-                        selectedSourceFilter = state.selectedSourceFilter,
-                        sourceTypesById = state.sourceTypesById,
-                        offlineDownloadsByTrackId = state.offlineDownloadsByTrackId,
-                    )
-                }
-                playlistDetail.copy(tracks = filteredTracks)
+        onSourceFilterChanged = {
+            entry.list.requestScrollToItem(0)
+            entry.pendingCreation = null
+            onOnlineIntent(OnlinePlaylistsIntent.SelectSource(null))
+            onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it))
+        },
+        onOnlineSourceSelected = {
+            if (it != sourceId) {
+                entry.list.requestScrollToItem(0)
+                entry.pendingCreation = null
             }
-        }
-    }
-    val rawDetailPresentation = remember(requestedPlaylistId, detail, playlists) {
-        buildPlaylistDetailPresentationState(
-            selectedPlaylistId = requestedPlaylistId,
-            detail = detail,
-            playlists = playlists,
-        )
-    }
-    val filteredDetailPresentation = remember(requestedPlaylistId, filteredDetail, playlists) {
-        buildPlaylistDetailPresentationState(
-            selectedPlaylistId = requestedPlaylistId,
-            detail = filteredDetail,
-            playlists = playlists,
-        )
-    }
-    val resolvedDetail = filteredDetailPresentation.resolvedDetail
-    val resolvedRawDetail = rawDetailPresentation.resolvedDetail
-    LaunchedEffect(showImportDialog, resolvedRawDetail?.id) {
-        if (showImportDialog && resolvedRawDetail == null) {
-            showImportDialog = false
-        }
-    }
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val density = LocalDensity.current
-        val layoutProfile = AutomotiveLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
-        val wide = layoutProfile.isExpandedLayout
-        val showPlaylistTrackDuration = !layoutProfile.isCompactLayout
-        if (showCreateDialog) {
-            PlaylistNameDialog(
-                onDismiss = { showCreateDialog = false },
-                onConfirm = { name ->
-                    showCreateDialog = false
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.CreatePlaylist(name))
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.CreatePlaylist(name))
-                    }
-                },
-            )
-        }
-        if (showImportDialog) {
-            resolvedRawDetail?.let { importTarget ->
-                PlaylistTextImportDialog(
-                    playlistName = importTarget.name,
-                    isOnlineMode = isOnlineMode,
-                    isImporting = if (isOnlineMode) onlineState.isImporting else state.isImporting,
-                    report = if (isOnlineMode) onlineState.playlistImportReport else state.playlistImportReport,
-                    onDismiss = {
-                        showImportDialog = false
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.ClearPlaylistImportReport)
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.ClearPlaylistImportReport)
-                        }
-                    },
-                    onImport = { text ->
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.ImportPlaylistText(importTarget.id, text))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.ImportPlaylistText(importTarget.id, text))
-                        }
-                    },
-                )
-            }
-        }
-        if (wide) {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
-                PlaylistListPane(
-                    playlists = filteredPlaylists,
-                    isLoadingContent = isListLoading,
-                    selectedPlaylistId = requestedPlaylistId,
-                    isRefreshing = isRefreshing,
-                    selectedSourceFilter = state.selectedSourceFilter,
-                    sourceFilterOptions = state.sourceFilterOptions,
-                    onlineSourceOptions = onlineSourceOptions,
-                    selectedOnlineSourceId = onlineState.sourceId,
-                    isOnlineMode = isOnlineMode,
-                    isFilteringByQuery = isFilteringPlaylists,
-                    showRefreshActionButton = showRefreshActionButton,
-                    showSourceFilterActionButton = showSourceFilterActionButton,
-                    onRefresh = {
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.Refresh)
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.Refresh)
-                        }
-                    },
-                    onSourceFilterChanged = {
-                        onOnlineIntent(OnlinePlaylistsIntent.SelectSource(sourceId = null))
-                        onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it))
-                    },
-                    onOnlineSourceSelected = { onOnlineIntent(OnlinePlaylistsIntent.SelectSource(it)) },
-                    onCreate = { showCreateDialog = true },
-                    onRename = { playlistId, name ->
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.RenamePlaylist(playlistId, name))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.RenamePlaylist(playlistId, name))
-                        }
-                    },
-                    onDelete = {
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.DeletePlaylist(it))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.DeletePlaylist(it))
-                        }
-                    },
-                    onSelect = {
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.SelectPlaylist(it))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it))
-                        }
-                    },
-                    modifier = Modifier.weight(0.36f).fillMaxHeight(),
-                )
-                PlaylistDetailPane(
-                    detail = resolvedDetail,
-                    isLoadingContent = isDetailLoading,
-                    isDetailSwitchLoading = filteredDetailPresentation.isDetailSwitchLoading,
-                    requestedPlaylistName = filteredDetailPresentation.requestedPlaylistName,
-                    hasTracksOutsideFilter = !isOnlineMode &&
-                        resolvedRawDetail?.tracks?.isNotEmpty() == true &&
-                        resolvedDetail?.tracks?.isEmpty() == true,
-                    onBack = {
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.SelectPlaylist(null))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.BackToList)
-                        }
-                    },
-                    onPlayAll = { tracks ->
-                        if (tracks.isNotEmpty()) {
-                            onPlayerIntent(PlayerIntent.PlayTracks(tracks, 0))
-                        }
-                    },
-                    onPlayTrack = { tracks, index ->
-                        onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
-                    },
-                    isImportingPlaylist = if (isOnlineMode) onlineState.isImporting else state.isImporting,
-                    onImportPlaylist = { showImportDialog = true },
-                    showImportPlaylistAction = true,
-                    onRemoveTrack = { trackId, index ->
-                        resolvedRawDetail?.id?.let { playlistId ->
-                            if (isOnlineMode) {
-                                onOnlineIntent(OnlinePlaylistsIntent.RemoveTrack(playlistId, index))
-                            } else {
-                                onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(playlistId, trackId))
-                            }
-                        }
-                    },
-                    showTrackDuration = showPlaylistTrackDuration,
-                    allowLocalIndexActions = !isOnlineMode,
-                    modifier = Modifier.weight(0.64f).fillMaxHeight(),
-                    showBackButton = false,
-                    batchSelectionRequestKey = batchSelectionRequestKey,
-                    showInlineBatchOperationButton = showInlineBatchOperationButton,
-                )
-            }
-        } else if (!filteredDetailPresentation.shouldShowDetailPane) {
-            PlaylistListPane(
-                playlists = filteredPlaylists,
-                isLoadingContent = isListLoading,
-                selectedPlaylistId = requestedPlaylistId,
-                isRefreshing = isRefreshing,
-                selectedSourceFilter = state.selectedSourceFilter,
-                sourceFilterOptions = state.sourceFilterOptions,
-                onlineSourceOptions = onlineSourceOptions,
-                selectedOnlineSourceId = onlineState.sourceId,
-                isOnlineMode = isOnlineMode,
-                isFilteringByQuery = isFilteringPlaylists,
-                showRefreshActionButton = showRefreshActionButton,
-                showSourceFilterActionButton = showSourceFilterActionButton,
-                onRefresh = {
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.Refresh)
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.Refresh)
-                    }
-                },
-                onSourceFilterChanged = {
-                    onOnlineIntent(OnlinePlaylistsIntent.SelectSource(sourceId = null))
-                    onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(it))
-                },
-                onOnlineSourceSelected = { onOnlineIntent(OnlinePlaylistsIntent.SelectSource(it)) },
-                onCreate = { showCreateDialog = true },
-                onRename = { playlistId, name ->
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.RenamePlaylist(playlistId, name))
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.RenamePlaylist(playlistId, name))
-                    }
-                },
-                onDelete = {
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.DeletePlaylist(it))
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.DeletePlaylist(it))
-                    }
-                },
-                onSelect = {
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.SelectPlaylist(it))
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.SelectPlaylist(it))
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            PlaylistDetailPane(
-                detail = resolvedDetail,
-                isLoadingContent = isDetailLoading,
-                isDetailSwitchLoading = filteredDetailPresentation.isDetailSwitchLoading,
-                requestedPlaylistName = filteredDetailPresentation.requestedPlaylistName,
-                hasTracksOutsideFilter = !isOnlineMode &&
-                    resolvedRawDetail?.tracks?.isNotEmpty() == true &&
-                    resolvedDetail?.tracks?.isEmpty() == true,
-                onBack = {
-                    if (isOnlineMode) {
-                        onOnlineIntent(OnlinePlaylistsIntent.SelectPlaylist(null))
-                    } else {
-                        onPlaylistsIntent(PlaylistsIntent.BackToList)
-                    }
-                },
-                onPlayAll = { tracks ->
-                    if (tracks.isNotEmpty()) {
-                        onPlayerIntent(PlayerIntent.PlayTracks(tracks, 0))
-                    }
-                },
-                onPlayTrack = { tracks, index ->
-                    onPlayerIntent(PlayerIntent.PlayTracks(tracks, index))
-                },
-                isImportingPlaylist = if (isOnlineMode) onlineState.isImporting else state.isImporting,
-                onImportPlaylist = { showImportDialog = true },
-                showImportPlaylistAction = true,
-                onRemoveTrack = { trackId, index ->
-                    resolvedRawDetail?.id?.let { playlistId ->
-                        if (isOnlineMode) {
-                            onOnlineIntent(OnlinePlaylistsIntent.RemoveTrack(playlistId, index))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.RemoveTrackFromPlaylist(playlistId, trackId))
-                        }
-                    }
-                },
-                showTrackDuration = showPlaylistTrackDuration,
-                allowLocalIndexActions = !isOnlineMode,
-                modifier = Modifier.fillMaxSize(),
-                showBackButton = true,
-                batchSelectionRequestKey = batchSelectionRequestKey,
-                showInlineBatchOperationButton = showInlineBatchOperationButton,
-            )
-        }
-    }
-}
-
-internal data class PlaylistDetailPresentationState(
-    val requestedPlaylistId: String?,
-    val requestedPlaylistName: String?,
-    val resolvedDetail: PlaylistDetail?,
-    val isDetailSwitchLoading: Boolean,
-    val shouldShowDetailPane: Boolean,
-)
-
-internal fun buildPlaylistDetailPresentationState(
-    selectedPlaylistId: String?,
-    detail: PlaylistDetail?,
-    playlists: List<PlaylistSummary>,
-): PlaylistDetailPresentationState {
-    val resolvedDetail = detail?.takeIf { it.id == selectedPlaylistId }
-    return PlaylistDetailPresentationState(
-        requestedPlaylistId = selectedPlaylistId,
-        requestedPlaylistName = playlists.firstOrNull { it.id == selectedPlaylistId }?.name,
-        resolvedDetail = resolvedDetail,
-        isDetailSwitchLoading = selectedPlaylistId != null && resolvedDetail == null,
-        shouldShowDetailPane = selectedPlaylistId != null,
+            onOnlineIntent(OnlinePlaylistsIntent.SelectSource(it))
+        },
+        onCreate = { showCreateDialog = true },
+        onRename = { id, name ->
+            if (isOnline) onOnlineIntent(OnlinePlaylistsIntent.RenamePlaylist(id, name))
+            else onPlaylistsIntent(PlaylistsIntent.RenamePlaylist(id, name))
+        },
+        onDelete = {
+            if (isOnline) onOnlineIntent(OnlinePlaylistsIntent.DeletePlaylist(it))
+            else onPlaylistsIntent(PlaylistsIntent.DeletePlaylist(it))
+        },
+        onSelect = { id -> playlists.firstOrNull { it.id == id }?.let(::openPlaylist) },
+        listState = listState,
+        menuContext = Triple(sourceId, state.selectedSourceFilter, playlistSearchQuery),
+        modifier = modifier.fillMaxSize(),
     )
 }
 
@@ -989,10 +710,12 @@ private fun PlaylistListPane(
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onSelect: (String) -> Unit,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    menuContext: Any?,
     modifier: Modifier = Modifier,
 ) {
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
-    val mobilePlatform = false
+    val statusList = androidx.compose.foundation.lazy.rememberLazyListState()
     var menuPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingRenamePlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingRenamePlaylistName by rememberSaveable { mutableStateOf("") }
@@ -1017,10 +740,17 @@ private fun PlaylistListPane(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    LaunchedEffect(menuContext) {
+        menuPlaylistId = null
+        pendingRenamePlaylistId = null
+        pendingDeletePlaylistId = null
+    }
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val padding = if (maxWidth >= 600.dp) 24.dp else 20.dp
         LazyColumn(
+            state = if (isLoadingContent) statusList else listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = dockContentPadding(PaddingValues(20.dp)),
+            contentPadding = dockContentPadding(PaddingValues(horizontal = padding, vertical = 20.dp)),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
@@ -1135,11 +865,10 @@ private fun PlaylistListPane(
                     }
                 }
             } else {
-                items(playlists, key = { it.id }) { playlist ->
+                items(playlists, key = { "playlist:${selectedOnlineSourceId.orEmpty()}:${it.id}" }) { playlist ->
                     PlaylistSummaryCard(
                         playlist = playlist,
                         selected = playlist.id == selectedPlaylistId,
-                        mobilePlatform = mobilePlatform,
                         menuExpanded = menuPlaylistId == playlist.id,
                         onClick = { onSelect(playlist.id) },
                         onOpenMenu = { menuPlaylistId = playlist.id },
@@ -1203,7 +932,6 @@ private fun PlaylistListPane(
 private fun PlaylistSummaryCard(
     playlist: PlaylistSummary,
     selected: Boolean,
-    mobilePlatform: Boolean,
     menuExpanded: Boolean,
     onClick: () -> Unit,
     onOpenMenu: () -> Unit,
@@ -1213,26 +941,18 @@ private fun PlaylistSummaryCard(
 ) {
     val shellColors = mainShellColors
     val cardShape = RoundedCornerShape(24.dp)
-    val interactionModifier = if (mobilePlatform) {
-        Modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onOpenMenu,
-        )
-    } else {
-        Modifier
-            .pointerInput(onOpenMenu) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
-                            event.changes.forEach { it.consume() }
-                            onOpenMenu()
-                        }
+    val interactionModifier = Modifier.combinedClickable(onClick = onClick, onLongClick = onOpenMenu)
+        .pointerInput(onOpenMenu) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                        event.changes.forEach { it.consume() }
+                        onOpenMenu()
                     }
                 }
             }
-            .clickable(onClick = onClick)
-    }
+        }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Card(
@@ -1268,7 +988,7 @@ private fun PlaylistSummaryCard(
                     Text(
                         playlist.name,
                         fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
@@ -1280,6 +1000,7 @@ private fun PlaylistSummaryCard(
                         },
                     )
                 }
+                ListItemMoreButton(uiString(Res.string.track_more_actions, playlist.name), onClick = onOpenMenu)
             }
         }
 
@@ -1369,7 +1090,7 @@ private fun PlaylistDeleteDialog(
 }
 
 @Composable
-private fun PlaylistTextImportDialog(
+internal fun PlaylistTextImportDialog(
     playlistName: String,
     isOnlineMode: Boolean = false,
     isImporting: Boolean,
@@ -1665,434 +1386,6 @@ private fun formatPlaylistImportLineIssue(
     issue: top.iwesley.lyn.music.data.repository.PlaylistImportLineIssue,
 ): String {
     return uiString(Res.string.playlist_import_line_label, issue.lineNumber, issue.rawText)
-}
-
-@Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun PlaylistDetailPane(
-    detail: PlaylistDetail?,
-    isLoadingContent: Boolean,
-    isDetailSwitchLoading: Boolean,
-    requestedPlaylistName: String?,
-    hasTracksOutsideFilter: Boolean,
-    onBack: () -> Unit,
-    onPlayAll: (List<Track>) -> Unit,
-    onPlayTrack: (List<Track>, Int) -> Unit,
-    isImportingPlaylist: Boolean,
-    onImportPlaylist: () -> Unit,
-    showImportPlaylistAction: Boolean = true,
-    onRemoveTrack: (String, Int) -> Unit,
-    showTrackDuration: Boolean,
-    allowLocalIndexActions: Boolean = true,
-    modifier: Modifier = Modifier,
-    showBackButton: Boolean,
-    batchSelectionRequestKey: Int = 0,
-    showInlineBatchOperationButton: Boolean = true,
-) {
-    var selectionMode by rememberSaveable(detail?.id) { mutableStateOf(false) }
-    var selectedTrackIds by rememberSaveable(detail?.id) { mutableStateOf(emptyList<String>()) }
-    var batchQualitySheetVisible by rememberSaveable(detail?.id) { mutableStateOf(false) }
-    var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
-    var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
-    val visibleTracks = detail?.tracks?.map { it.track }.orEmpty()
-    val indexColumnWidth = rememberListIndexColumnWidth(visibleTracks.size)
-    val selectedBatchTracks = remember(visibleTracks, selectedTrackIds) {
-        selectedTracksInVisibleOrder(visibleTracks, selectedTrackIds)
-    }
-    val allVisibleTracksSelected = visibleTracks.isNotEmpty() && visibleTracks.all { it.id in selectedTrackIds }
-    val offlineUiState = LocalOfflineDownloadUiState.current
-    val onOfflineDownloadIntent = offlineUiState.onIntent
-    val selectedBatchDownloadSizeEstimate = remember(
-        selectedBatchTracks,
-        offlineUiState.downloadsByTrackId,
-    ) {
-        estimateBatchDownloadSize(
-            tracks = selectedBatchTracks,
-            downloadsByTrackId = offlineUiState.downloadsByTrackId,
-        )
-    }
-    val supportsBatchDownload = allowLocalIndexActions && supportsBatchOfflineDownloadActions() && onOfflineDownloadIntent != null
-    val inlineBatchOperationButtonVisible = showInlineBatchOperationButton
-    fun exitSelectionMode() {
-        selectionMode = false
-        selectedTrackIds = emptyList()
-        batchQualitySheetVisible = false
-        pendingBatchDownloadTracks = emptyList()
-    }
-    fun startBatchDownload(tracks: List<Track>, quality: NavidromeAudioQuality) {
-        val insufficientSpaceMessage = batchDownloadInsufficientSpaceMessage(
-            estimate = estimateBatchDownloadSize(
-                tracks = tracks,
-                downloadsByTrackId = offlineUiState.downloadsByTrackId,
-                quality = quality,
-            ),
-            availableSpaceBytes = offlineUiState.availableSpaceBytes,
-        )
-        if (insufficientSpaceMessage != null) {
-            if (batchQualitySheetVisible) {
-                batchQualitySheetVisible = false
-                pendingBatchDownloadTracks = emptyList()
-            }
-            onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.ShowMessage(insufficientSpaceMessage))
-            return
-        }
-        onOfflineDownloadIntent?.invoke(OfflineDownloadIntent.DownloadMany(tracks, quality))
-        exitSelectionMode()
-    }
-    fun requestBatchDownload() {
-        val tracks = selectedBatchTracks
-        if (tracks.isEmpty()) return
-        if (hasNavidromeTracks(tracks)) {
-            pendingBatchDownloadTracks = tracks
-            batchQualitySheetVisible = true
-        } else {
-            startBatchDownload(tracks, NavidromeAudioQuality.Original)
-        }
-    }
-    PlatformBackHandler(enabled = selectionMode) {
-        exitSelectionMode()
-    }
-    LaunchedEffect(selectionMode, supportsBatchDownload) {
-        if (selectionMode && supportsBatchDownload) {
-            onOfflineDownloadIntent(OfflineDownloadIntent.RefreshAvailableSpace)
-        }
-    }
-    LaunchedEffect(visibleTracks) {
-        val pruned = pruneSelectedTrackIds(selectedTrackIds, visibleTracks)
-        if (pruned != selectedTrackIds) {
-            selectedTrackIds = pruned
-        }
-        if (selectionMode && visibleTracks.isEmpty()) {
-            exitSelectionMode()
-        }
-    }
-    LaunchedEffect(batchSelectionRequestKey, supportsBatchDownload, visibleTracks) {
-        if (batchSelectionRequestKey <= lastHandledBatchSelectionRequestKey) {
-            return@LaunchedEffect
-        }
-        val shouldEnterSelectionMode = shouldHandleBatchSelectionRequest(
-            requestKey = batchSelectionRequestKey,
-            lastHandledRequestKey = lastHandledBatchSelectionRequestKey,
-            supportsBatchDownload = supportsBatchDownload,
-            hasVisibleTracks = visibleTracks.isNotEmpty(),
-        )
-        lastHandledBatchSelectionRequestKey = batchSelectionRequestKey
-        if (shouldEnterSelectionMode) {
-            selectionMode = true
-        }
-    }
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = dockContentPadding(PaddingValues(20.dp)),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            if (isDetailSwitchLoading) {
-                PlaylistDetailLoadingContent(
-                    requestedPlaylistName = requestedPlaylistName,
-                    showBackButton = showBackButton,
-                    onBack = onBack,
-                )
-            } else if (isLoadingContent && detail == null) {
-                EmptyStateCard(
-                    title = uiString(Res.string.playlist_detail_loading_title),
-                    body = uiString(Res.string.playlists_background_loading_hint),
-                )
-            } else if (detail == null) {
-                EmptyStateCard(
-                    title = uiString(Res.string.playlist_select_title),
-                    body = uiString(Res.string.playlist_selection_hint),
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (showBackButton) {
-                        TextButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(uiString(Res.string.playlists_back_to_list))
-                        }
-                    }
-                    PlaylistSectionTitle(
-                        title = detail.name,
-                        subtitle = uiString(Res.plurals.common_track_count, (detail.tracks.size).toInt(), detail.tracks.size),
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = { onPlayAll(detail.tracks.map { it.track }) },
-                            enabled = detail.tracks.isNotEmpty(),
-                        ) {
-                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(uiString(Res.string.player_play_all))
-                        }
-                        if (showImportPlaylistAction) {
-                            OutlinedButton(
-                                onClick = onImportPlaylist,
-                                enabled = canShowPlaylistImportAction(detail) && !isImportingPlaylist,
-                            ) {
-                                Icon(Icons.AutoMirrored.Rounded.List, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = if (isImportingPlaylist) uiString(Res.string.playlist_importing_status) else uiString(Res.string.playlist_import_title),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        if (
-                            supportsBatchDownload &&
-                            inlineBatchOperationButtonVisible &&
-                            !selectionMode &&
-                            detail.tracks.isNotEmpty()
-                        ) {
-                            BatchOperationButton(onClick = { selectionMode = true })
-                        }
-                    }
-                    if (selectionMode) {
-                        TrackSelectionActionBar(
-                            selectedCount = selectedBatchTracks.size,
-                            downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate).displayText(),
-                            allVisibleSelected = allVisibleTracksSelected,
-                            hasVisibleTracks = visibleTracks.isNotEmpty(),
-                            onToggleSelectAll = {
-                                selectedTrackIds = toggleAllVisibleTrackSelection(selectedTrackIds, visibleTracks)
-                            },
-                            onDownloadSelected = ::requestBatchDownload,
-                            onCancelSelection = ::exitSelectionMode,
-                        )
-                    }
-                }
-            }
-        }
-        when {
-            detail == null -> Unit
-            detail.tracks.isEmpty() -> item {
-                EmptyStateCard(
-                    title = if (hasTracksOutsideFilter) {
-                        uiString(Res.string.playlist_source_tracks_empty)
-                    } else {
-                        uiString(Res.string.playlist_empty_title)
-                    },
-                    body = if (hasTracksOutsideFilter) {
-                        uiString(Res.string.playlist_source_filter_hint, librarySourceFilterButtonLabel(LibrarySourceFilter.ALL).displayText())
-                    } else {
-                        uiString(Res.string.playlists_add_current_track_hint)
-                    },
-                )
-            }
-
-            else -> itemsIndexed(detail.tracks, key = { _, item -> item.track.id }) { index, item ->
-                PlaylistTrackRow(
-                    entry = item,
-                    index = index,
-                    indexColumnWidth = indexColumnWidth,
-                    selectionMode = selectionMode,
-                    selected = item.track.id in selectedTrackIds,
-                    onSelectionToggle = {
-                        selectedTrackIds = toggleTrackSelection(selectedTrackIds, item.track.id)
-                    },
-                    onClick = { onPlayTrack(detail.tracks.map { it.track }, index) },
-                    onRemove = { onRemoveTrack(item.track.id, index) },
-                    showDuration = showTrackDuration,
-                )
-            }
-        }
-    }
-    if (batchQualitySheetVisible) {
-        BatchDownloadQualityBottomSheet(
-            selectedCount = pendingBatchDownloadTracks.size,
-            tracks = pendingBatchDownloadTracks,
-            downloadsByTrackId = offlineUiState.downloadsByTrackId,
-            onQualitySelected = { quality ->
-                startBatchDownload(pendingBatchDownloadTracks, quality)
-            },
-            onDismiss = {
-                batchQualitySheetVisible = false
-                pendingBatchDownloadTracks = emptyList()
-            },
-        )
-    }
-}
-
-@Composable
-private fun PlaylistDetailLoadingContent(
-    requestedPlaylistName: String?,
-    showBackButton: Boolean,
-    onBack: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (showBackButton) {
-            TextButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(uiString(Res.string.playlists_back_to_list))
-            }
-        }
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = mainShellColors.cardContainer),
-            border = BorderStroke(1.dp, mainShellColors.cardBorder),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(uiString(Res.string.playlist_opening_status), fontWeight = FontWeight.Bold)
-                    Text(
-                        text = requestedPlaylistName
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { uiString(Res.string.playlist_named_tracks_loading_hint, it) }
-                            ?: uiString(Res.string.playlist_tracks_loading_hint),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun matchesPlaylistSourceFilter(
-    track: Track,
-    selectedSourceFilter: LibrarySourceFilter,
-    sourceTypesById: Map<String, ImportSourceType>,
-    offlineDownloadsByTrackId: Map<String, OfflineDownload>,
-): Boolean {
-    return matchesLibrarySourceFilter(
-        track = track,
-        selectedSourceFilter = selectedSourceFilter,
-        sourceTypesById = sourceTypesById,
-        offlineDownloadsByTrackId = offlineDownloadsByTrackId,
-    )
-}
-
-@Composable
-private fun PlaylistTrackRow(
-    entry: top.iwesley.lyn.music.core.model.PlaylistTrackEntry,
-    index: Int,
-    indexColumnWidth: Dp,
-    selectionMode: Boolean = false,
-    selected: Boolean = false,
-    onSelectionToggle: (() -> Unit)? = null,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-    showDuration: Boolean,
-) {
-    val shellColors = mainShellColors
-    val offlineDownload = LocalOfflineDownloadUiState.current.downloadsByTrackId[entry.track.id]
-    val offlineRowIndicatorState = offlineDownloadRowIndicatorState(offlineDownload)
-    val rowClick = if (selectionMode) {
-        onSelectionToggle ?: {}
-    } else {
-        onClick
-    }
-    val trailingWidth = playlistTrackTrailingWidth(selectionMode = selectionMode, showDuration = showDuration)
-    Column(modifier = Modifier.fillMaxWidth()) {
-        TrackActionContainer(
-            track = entry.track,
-            onClick = rowClick,
-            enableOfflineActions = !selectionMode,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .padding(start = 0.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            if (selectionMode) {
-                ListIndexColumn(index = index, width = indexColumnWidth) {
-                    Checkbox(
-                        checked = selected,
-                        onCheckedChange = { onSelectionToggle?.invoke() },
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-            } else {
-                ListIndexColumn(index = index, width = indexColumnWidth)
-            }
-            PlaylistArtworkThumbnail(
-                artworkLocator = entry.track.artworkLocator,
-                artworkCacheKey = trackArtworkCacheKey(entry.track),
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    entry.track.title,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        entry.track.artistName ?: uiString(Res.string.common_unknown_artist),
-                        modifier = Modifier.weight(1f, fill = false),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    offlineRowIndicatorState?.let { OfflineDownloadRowIndicator(it) }
-                }
-            }
-            if (trailingWidth > 0.dp) {
-                Row(
-                    modifier = Modifier.width(trailingWidth),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (!selectionMode) {
-                        IconButton(
-                            onClick = onRemove,
-                            modifier = Modifier.size(48.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Delete,
-                                contentDescription = uiString(Res.string.playlist_remove_track_action),
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
-                    if (showDuration) {
-                        Text(
-                            text = formatDuration(entry.track.durationMs),
-                            modifier = Modifier.width(56.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.End,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                        )
-                    }
-                }
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 88.dp)
-                .height(1.dp)
-                .background(shellColors.cardBorder),
-        )
-    }
-}
-
-internal fun playlistTrackTrailingWidth(
-    selectionMode: Boolean,
-    showDuration: Boolean,
-): Dp {
-    return when {
-        !selectionMode && showDuration -> 112.dp
-        !selectionMode -> 48.dp
-        showDuration -> 56.dp
-        else -> 0.dp
-    }
 }
 
 @Composable

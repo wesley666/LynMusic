@@ -110,6 +110,10 @@ fun AutomotiveApp(
         val navigationRailState = rememberWideNavigationRailState()
         val libraryEntry = rememberAutomotiveLibraryEntry()
         val favoritesEntry = rememberAutomotiveFavoritesEntry()
+        val playlistsEntry = rememberAutomotivePlaylistsEntry()
+        LaunchedEffect(selectedTab, details.hasDetails) {
+            if (selectedTab != AppTab.Playlists || details.hasDetails) playlistsEntry.pendingCreation = null
+        }
         var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
         var shouldRestoreOnlinePlaylistSource by remember { mutableStateOf(false) }
         var onlinePlaylistSourceRestoreTarget by remember { mutableStateOf<String?>(null) }
@@ -170,8 +174,24 @@ fun AutomotiveApp(
                 }
             }
         }
-        val onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit = remember(component) {
-            { intent ->
+        val onOnlinePlaylistsIntent: (OnlinePlaylistsIntent) -> Unit = remember(component, playlistsEntry) {
+            action@{ intent ->
+                val current = component.onlinePlaylistsStore.state.value
+                val playlistId = when (intent) {
+                    is OnlinePlaylistsIntent.RemoveTrack -> intent.playlistId
+                    is OnlinePlaylistsIntent.ImportPlaylistText -> intent.playlistId
+                    else -> null
+                }
+                if (playlistId != null) {
+                    val route = details.playlistRoute
+                    if (route?.sourceId == null || route.sourceId != current.sourceId ||
+                        route.entityId != playlistId || current.selectedPlaylistId != playlistId) return@action
+                }
+                if (intent is OnlinePlaylistsIntent.SelectSource && intent.persist && intent.sourceId != current.sourceId) {
+                    playlistsEntry.list.requestScrollToItem(0)
+                    playlistsEntry.pendingCreation = null
+                    if (details.playlistRoute != null) details.clear()
+                }
                 if (
                     intent.shouldClearRememberedOnlinePlaylistsSource(
                         currentOnlineSourceId = component.onlinePlaylistsStore.state.value.sourceId,
@@ -187,6 +207,9 @@ fun AutomotiveApp(
                 }
             }
         }
+        BindPlaylistDetailNavigation(details, playlistsState, onlinePlaylistsState, importState,
+            suspended = pendingPlaylistTrack != null || shouldRestoreOnlinePlaylistSource,
+            localIntent = component.playlistsStore::dispatch, onlineIntent = onOnlinePlaylistsIntent)
         LaunchedEffect(
             pendingPlaylistTrack,
             shouldRestoreOnlinePlaylistSource,
@@ -309,6 +332,7 @@ fun AutomotiveApp(
             LocalPlayerPresentation provides presentation,
             LocalAutomotiveLibraryEntry provides libraryEntry,
             LocalAutomotiveFavoritesEntry provides favoritesEntry,
+            LocalAutomotivePlaylistsEntry provides playlistsEntry,
             LocalTrackListActionBindings provides trackListBindings,
             LocalPlatformDescriptor provides component.platform,
             LocalArtworkCacheStore provides component.artworkCacheStore,

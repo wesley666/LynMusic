@@ -40,11 +40,182 @@ import top.iwesley.lyn.music.feature.my.MyState
 import top.iwesley.lyn.music.feature.online.*
 import top.iwesley.lyn.music.feature.player.*
 import top.iwesley.lyn.music.feature.playlists.PlaylistsState
+import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
 import top.iwesley.lyn.music.feature.settings.SettingsState
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesShellTest {
+    @Test fun playlistListAndDetailsUseRealShellsInBothOrientations() = onUiThread {
+        for ((w, h) in listOf(1280 to 720, 1920 to 720, 800 to 1280, 480 to 900, 640 to 400))
+            Fixture(w, h, visual = true, playlistMode = true).use { ui ->
+                assertTrue(ui.visible("通勤歌单"))
+                ui.capture("playlists-list-$w-$h")
+                ui.openPlaylist()
+                ui.tag(if (w >= 1280) "playlist-content-split" else "playlist-content-stacked")
+                ui.capture("playlists-detail-$w-$h")
+                ui.scrollPlaylistTo(96)
+                val menu = ui.label("山阴路的夏天 96 的更多操作").boundsInRoot
+                assertTrue(menu.bottom <= ui.playerTop(), "$w/$h: last menu $menu")
+                ui.click("山阴路的夏天 96 的更多操作")
+                assertTrue(ui.visible("移出歌单"))
+            }
+        Fixture(1280, 720, visual = true, fontScale = 2f, longNames = true, dark = true, playlistMode = true).use { ui ->
+            ui.capture("playlists-list-large-font")
+            ui.openPlaylist()
+            ui.capture("playlists-detail-large-font")
+        }
+    }
+
+    @Test fun playlistLayoutThresholdsUsePageSizeAndAvailableHeight() = onUiThread {
+        Fixture(1280,720,playlistMode = true).use { ui ->
+            ui.openPlaylist()
+            val heading = ui.tag("playlist-column-duration").boundsInRoot
+            val duration = ui.label("120:00").boundsInRoot
+            assertEquals(duration.left,heading.left,1f)
+            assertEquals(duration.right,heading.right,1f)
+            val rail = (ui.width - ui.tag("music-detail-page-playlist").boundsInRoot.width).toInt()
+            for (width in listOf(599,600,899,900)) {
+                ui.resize(width + rail,600)
+                val layout = ui.navigation.playlistEntry(ui.navigation.top).headerLayout!!
+                assertEquals(width >= 900,layout.split,"W=$width")
+                assertEquals((width - if (width >= 600) 48 else 40).dp,layout.width)
+                if (width < 900) assertEquals(if (width < 600) 176.dp else 220.dp,layout.cover)
+            }
+            ui.resize(1280,720)
+            for (height in listOf(239,240,359,360)) {
+                val available = ui.tag("music-detail-page-playlist").boundsInRoot.bottom - ui.tag("playlist-toolbar").boundsInRoot.bottom
+                ui.resize(1280,ui.height + height - available.toInt())
+                val layout = ui.navigation.playlistEntry(ui.navigation.top).headerLayout!!
+                assertEquals(height >= 240,layout.split,"H=$height")
+                assertEquals(when { height < 240 -> 112.dp; height < 360 -> 160.dp; else -> 288.dp },layout.cover)
+            }
+        }
+    }
+
+    @Test fun playlistScalesKeepPlaybackAndLastMenusReachable() = onUiThread {
+        for ((w,h) in listOf(1280 to 720,480 to 900,640 to 400))
+            for (scale in AppDisplayScalePreset.entries) for (font in listOf(1f,1.5f,2f))
+                Fixture(w,h,density = scale.scale,fontScale = font,longNames = true,
+                    dark = scale.ordinal % 2 == 0,playlistMode = true,count = 24).use { ui ->
+                    ui.openPlaylist()
+                    val entry = ui.navigation.playlistEntry(ui.navigation.top)
+                    ui.revealPlaylistPlayback()
+                    val play = ui.tag("playlist-play-all").boundsInRoot
+                    assertTrue(play.height + 1f >= 48f * scale.scale, "$w/$h/$scale/$font: $play")
+                    assertTrue(play.top >= ui.tag("playlist-toolbar").boundsInRoot.bottom && play.bottom <= ui.playerTop(),
+                        "$w/$h/$scale/$font: $play")
+                    ui.scrollPlaylistTo(24)
+                    val menu = ui.label("More actions for Song 23").boundsInRoot
+                    assertTrue(menu.bottom <= ui.playerTop(), "$w/$h/$scale/$font: $menu")
+                    assertEquals(1,ui.playlistIntents.filterIsInstance<PlaylistsIntent.SelectPlaylist>().size)
+                    assertTrue(ui.intents.isEmpty())
+                    assertEquals(entry,ui.navigation.playlistEntry(ui.navigation.top))
+                }
+    }
+
+    @Test fun playlistCreateUsesUniqueNewTargetAndFailureCancelsAutoOpen() = onUiThread {
+        for (online in listOf(false,true)) Fixture(1280,720,online = online,playlistMode = true).use { ui ->
+            ui.click("More actions for Road playlist"); ui.click("Rename"); ui.setField("Renamed"); ui.click("Save")
+            if (online) assertTrue(ui.onlinePlaylistIntents.last() is OnlinePlaylistsIntent.RenamePlaylist)
+            else assertTrue(ui.playlistIntents.last() is PlaylistsIntent.RenamePlaylist)
+            ui.click("More actions for Road playlist"); ui.click("Delete playlist"); ui.click("Delete")
+            if (online) assertEquals(OnlinePlaylistsIntent.DeletePlaylist("road"),ui.onlinePlaylistIntents.last())
+            else assertEquals(PlaylistsIntent.DeletePlaylist("road"),ui.playlistIntents.last())
+            ui.click("New playlist"); ui.setField("New"); ui.click("Create")
+            assertEquals("New",ui.playlistsEntry.pendingCreation?.name)
+            val new = PlaylistSummary("new","New")
+            if (online) ui.onlinePlaylists = ui.onlinePlaylists.copy(playlists = ui.onlinePlaylists.playlists + new)
+            else ui.playlists = ui.playlists.copy(playlists = ui.playlists.playlists + new)
+            ui.render()
+            assertEquals("new",ui.navigation.top.entityId)
+            assertNull(ui.playlistsEntry.pendingCreation)
+            ui.click("More actions for " + if (online) "Road playlist" else "New")
+            ui.click("Import playlist"); ui.setField("Song - Artist"); ui.click("Import")
+            if (online) assertEquals(OnlinePlaylistsIntent.ImportPlaylistText("new","Song - Artist"),ui.onlinePlaylistIntents.last())
+            else assertEquals(PlaylistsIntent.ImportPlaylistText("new","Song - Artist"),ui.playlistIntents.last())
+            ui.click("Close")
+        }
+        Fixture(1280,720,playlistMode = true).use { ui ->
+            ui.playlistsEntry.pendingCreation = PendingPlaylistCreation(null,"New",setOf("road"))
+            ui.playlists = ui.playlists.copy(message = UiText.Raw("Create failed")); ui.render()
+            ui.playlists = ui.playlists.copy(message = null,playlists = ui.playlists.playlists + PlaylistSummary("new","New")); ui.render()
+            assertFalse(ui.navigation.hasDetails)
+            assertNull(ui.playlistsEntry.pendingCreation)
+        }
+    }
+
+    @Test fun playlistPositionAndBindingSurviveRotationChildrenAndHostRestore() = onUiThread {
+        Fixture(1920, 720, playlistMode = true).use { ui ->
+            ui.openPlaylist(); assertEquals(1, ui.playlistIntents.filterIsInstance<PlaylistsIntent.SelectPlaylist>().size)
+            ui.scrollPlaylistTo(40)
+            val route = ui.navigation.top
+            val entry = ui.navigation.playlistEntry(route)
+            val index = entry.list.firstVisibleItemIndex
+            val offset = entry.list.firstVisibleItemScrollOffset
+            ui.resize(800,1280)
+            assertEquals(index, entry.list.firstVisibleItemIndex)
+            assertEquals(offset, entry.list.firstVisibleItemScrollOffset)
+            ui.navigation.open(LibraryNavigationTarget.Album("album")); ui.render()
+            ui.navigation.pop(); ui.render()
+            assertEquals(index, entry.list.firstVisibleItemIndex)
+            ui.rebuild()
+            assertEquals(index, entry.list.firstVisibleItemIndex)
+            assertEquals(1, ui.playlistIntents.filterIsInstance<PlaylistsIntent.SelectPlaylist>().size)
+            ui.navigation.requestBack(); ui.render()
+            assertEquals(PlaylistsIntent.BackToList, ui.playlistIntents.last())
+            assertTrue(ui.visible("Road playlist"))
+        }
+    }
+
+    @Test fun playlistSearchClearsOnLandscapeAndRejectsRetiredTextCallbacks() = onUiThread {
+        Fixture(480,900,playlistMode = true).use { ui ->
+            ui.changeSearch("Road")
+            val retired = ui.nodes().last { it.config.contains(SemanticsActions.SetText) }.config[SemanticsActions.SetText].action!!
+            ui.resize(1280,720)
+            assertEquals("",ui.playlistsEntry.query)
+            assertFalse(ui.playlistsEntry.searchActive)
+            retired.invoke(androidx.compose.ui.text.AnnotatedString("late")); ui.render()
+            assertEquals("",ui.playlistsEntry.query)
+            ui.resize(480,900)
+            assertTrue(ui.visible("Search")); assertTrue(ui.visible("Road playlist"))
+            ui.changeSearch("new")
+            retired.invoke(androidx.compose.ui.text.AnnotatedString("late again")); ui.render()
+            assertEquals("new",ui.playlistsEntry.query)
+        }
+    }
+
+    @Test fun playlistOnlineFailurePersistsAndDuplicateRemovalUsesOriginalIndex() = onUiThread {
+        Fixture(1280,720,online = true,playlistMode = true).use { ui ->
+            ui.openPlaylist()
+            val route = ui.navigation.top
+            ui.onlinePlaylists = ui.onlinePlaylists.copy(selectedPlaylist = null,
+                errorMessage = UiText.Raw("detail failed")); ui.render()
+            assertTrue(ui.visible("detail failed")); assertTrue(ui.visible("Retry"))
+            ui.onlinePlaylists = ui.onlinePlaylists.copy(errorMessage = null); ui.render()
+            assertTrue(ui.visible("detail failed"))
+            ui.click("Retry")
+            assertEquals(2,ui.onlinePlaylistIntents.filterIsInstance<OnlinePlaylistsIntent.SelectPlaylist>().size)
+            val track = ui.tracks.first()
+            ui.onlinePlaylists = ui.onlinePlaylists.copy(selectedPlaylist = PlaylistDetail("road", "Road playlist",
+                tracks = listOf(PlaylistTrackEntry(track),PlaylistTrackEntry(track))))
+            ui.render()
+            assertEquals(null,ui.navigation.playlistEntry(route).loadFailure)
+            ui.click("Play all")
+            assertEquals(listOf(track,track),(ui.intents.last() as PlayerIntent.PlayTracks).tracks)
+            ui.click("More actions for Song 0"); ui.click("Remove from playlist")
+            assertEquals(1,(ui.onlinePlaylistIntents.last() as OnlinePlaylistsIntent.RemoveTrack).index)
+            ui.playlistBindingSuspended = true
+            ui.onlinePlaylists = ui.onlinePlaylists.copy(sourceId = "other",playlists = listOf(PlaylistSummary("road","Wrong source")),
+                selectedPlaylist = PlaylistDetail("road","Wrong source",tracks = listOf(PlaylistTrackEntry(track.copy(title = "Wrong song")))))
+            ui.render()
+            assertFalse(ui.visible("Wrong source")); assertFalse(ui.visible("Wrong song"))
+            ui.playlistBindingSuspended = false; ui.render()
+            assertEquals("source",ui.onlinePlaylists.sourceId)
+            assertTrue(ui.visible("Road playlist"))
+        }
+    }
+
     @Test fun actualShellsShowSongsAndTheLastMenuClearsThePlayer() = onUiThread {
         for ((w, h) in listOf(1280 to 720, 1920 to 720, 800 to 1280, 480 to 900, 640 to 400)) Fixture(w, h, visual = true).use { ui ->
             assertTrue(ui.visible("96 首歌曲"))
@@ -272,13 +443,13 @@ class FavoritesShellTest {
     private class Fixture(
         width: Int, height: Int, val visual: Boolean = false, density: Float = 1f,
         fontScale: Float = 1f, val dark: Boolean = false, val longNames: Boolean = false,
-        online: Boolean = false, count: Int = 96,
+        online: Boolean = false, count: Int = 96, val playlistMode: Boolean = false,
     ) : AutoCloseable {
         var width by mutableStateOf(width)
         var height by mutableStateOf(height)
         var density by mutableStateOf(density)
         var fontScale by mutableStateOf(fontScale)
-        var selectedTab by mutableStateOf(AppTab.Favorites)
+        var selectedTab by mutableStateOf(if (playlistMode) AppTab.Playlists else AppTab.Favorites)
         private var registry = SaveableStateRegistry(null) { true }
         private val scheduler = TestCoroutineScheduler()
         private val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
@@ -300,6 +471,48 @@ class FavoritesShellTest {
         val offlineIntents = mutableListOf<OfflineDownloadIntent>()
         val intents = mutableListOf<PlayerIntent>()
         private lateinit var favoritesEntry: AutomotiveFavoritesEntry
+        lateinit var playlistsEntry: AutomotivePlaylistsEntry
+        private val playlistSummary = PlaylistSummary("road", if (longNames) "A very long playlist name with additional information that spans several lines" else if (visual) "通勤歌单" else "Road playlist", trackCount = count)
+        var playlists by mutableStateOf(PlaylistsState(isLoadingContent = false, playlists = listOf(playlistSummary)))
+        var onlinePlaylists by mutableStateOf(OnlinePlaylistsState(sourceId = if (online && playlistMode) "source" else null,
+            playlists = listOf(playlistSummary)))
+        var playlistBindingSuspended by mutableStateOf(false)
+        val playlistIntents = mutableListOf<PlaylistsIntent>()
+        val onlinePlaylistIntents = mutableListOf<OnlinePlaylistsIntent>()
+        fun sendPlaylist(intent: PlaylistsIntent) {
+            playlistIntents += intent
+            when (intent) {
+                is PlaylistsIntent.SelectPlaylist -> playlists = playlists.copy(selectedPlaylistId = intent.playlistId,
+                    selectedPlaylist = intent.playlistId?.let { id -> PlaylistDetail(id,playlists.playlists.firstOrNull { it.id == id }?.name.orEmpty(),
+                        tracks = tracks.map { PlaylistTrackEntry(it) }) })
+                PlaylistsIntent.BackToList -> playlists = playlists.copy(selectedPlaylistId = null,selectedPlaylist = null)
+                else -> Unit
+            }
+        }
+        fun sendOnlinePlaylist(intent: OnlinePlaylistsIntent) {
+            onlinePlaylistIntents += intent
+            when (intent) {
+                is OnlinePlaylistsIntent.SelectSource -> onlinePlaylists = OnlinePlaylistsState(sourceId = intent.sourceId)
+                is OnlinePlaylistsIntent.SelectPlaylist -> onlinePlaylists = onlinePlaylists.copy(selectedPlaylistId = intent.playlistId,
+                    selectedPlaylist = intent.playlistId?.let { PlaylistDetail(it,playlistSummary.name,tracks = tracks.map { PlaylistTrackEntry(it) }) })
+                else -> Unit
+            }
+        }
+        fun openPlaylist() {
+            navigation.openPlaylist(playlistSummary,onlinePlaylists.sourceId,LibrarySourceFilter.ALL); render()
+        }
+        fun scrollPlaylistTo(index: Int, offset: Int = 0) {
+            scope.launch { navigation.playlistEntry(navigation.top).list.scrollToItem(index,offset) }; render()
+        }
+        fun revealPlaylistPlayback() {
+            val entry = navigation.playlistEntry(navigation.top)
+            if (entry.headerLayout?.split == true) scope.launch { entry.summaryScroll.scrollTo(Int.MAX_VALUE) }
+            else {
+                val header = entry.list.layoutInfo.visibleItemsInfo.first { it.index == 0 }
+                scope.launch { entry.list.scrollToItem(0,(header.size - 140 * density).toInt().coerceAtLeast(0)) }
+            }
+            render()
+        }
         private val importState = ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(
             ImportSource("source", ImportSourceType.NAVIDROME, "Server", "", indexMode = ImportSourceIndexMode.ONLINE))))
         private val player = PlayerState(snapshot = PlaybackSnapshot(queue = listOf(Track("playing", "local",
@@ -343,7 +556,10 @@ class FavoritesShellTest {
                 // The entry owner belongs above either shell and participates in this registry.
                 val savedEntry = rememberAutomotiveFavoritesEntry()
                 favoritesEntry = savedEntry
+                playlistsEntry = rememberAutomotivePlaylistsEntry()
+                BindPlaylistDetailNavigation(navigation,playlists,onlinePlaylists,importState,playlistBindingSuspended,::sendPlaylist,::sendOnlinePlaylist)
                 CompositionLocalProvider(LocalAutomotiveFavoritesEntry provides savedEntry,
+                    LocalAutomotivePlaylistsEntry provides playlistsEntry,
                     LocalDensity provides Density(density, fontScale), LocalPlatformDescriptor provides platform,
                     LocalMusicDetailNavigation provides navigation,
                     LocalPlayerPresentation provides remember { PlayerPresentation() },
@@ -365,22 +581,22 @@ class FavoritesShellTest {
                 navigationRailState = rememberWideNavigationRailState(),
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
                 myState = MyState(), libraryState = LibraryState(), onlineLibraryState = OnlineLibraryState(),
-                playlistsState = PlaylistsState(), onlinePlaylistsState = OnlinePlaylistsState(),
+                playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,
                 settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = {}, onOnlineLibraryIntent = {},
-                onPlaylistsIntent = {}, onOnlinePlaylistsIntent = {}, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
+                onPlaylistsIntent = ::sendPlaylist, onOnlinePlaylistsIntent = ::sendOnlinePlaylist, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
                 onImportIntent = {}, onPlayerIntent = { intents += it }, onSettingsIntent = {},
                 onOpenBackgroundRunSettings = {}, onOpenLibraryNavigationTarget = { navigation.open(it) }, onOpenAddToPlaylist = {},
             ) else AutomotivePortraitShell(
                 portraitNavigation = true, mobilePortraitMiniPlayer = true, hideMiniPlayerBar = false,
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
                 myState = MyState(), libraryState = LibraryState(), onlineLibraryState = OnlineLibraryState(),
-                playlistsState = PlaylistsState(), onlinePlaylistsState = OnlinePlaylistsState(),
+                playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,
                 settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = {}, onOnlineLibraryIntent = {},
-                onPlaylistsIntent = {}, onOnlinePlaylistsIntent = {}, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
+                onPlaylistsIntent = ::sendPlaylist, onOnlinePlaylistsIntent = ::sendOnlinePlaylist, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
                 onImportIntent = {}, onPlayerIntent = { intents += it }, onSettingsIntent = {},
                 onOpenBackgroundRunSettings = {}, onOpenLibraryNavigationTarget = { navigation.open(it) }, onOpenAddToPlaylist = {},
             )
@@ -422,6 +638,11 @@ class FavoritesShellTest {
         fun enterBatch() { click("More actions"); click("Batch actions") }
         fun changeSearch(value: String) {
             if (width < height) click("Search")
+            val field = nodes().last { it.config.contains(SemanticsActions.SetText) }
+            assertTrue(field.config[SemanticsActions.SetText].action!!.invoke(androidx.compose.ui.text.AnnotatedString(value)))
+            render()
+        }
+        fun setField(value: String) {
             val field = nodes().last { it.config.contains(SemanticsActions.SetText) }
             assertTrue(field.config[SemanticsActions.SetText].action!!.invoke(androidx.compose.ui.text.AnnotatedString(value)))
             render()

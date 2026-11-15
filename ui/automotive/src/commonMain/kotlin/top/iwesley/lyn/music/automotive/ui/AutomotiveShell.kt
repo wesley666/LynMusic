@@ -941,7 +941,16 @@ private fun TabContent(
     onTabChanged: (AppTab) -> Unit = onTabSelected,
     modifier: Modifier = Modifier,
 ) {
-    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact) {
+    val detailNavigation = LocalMusicDetailNavigation.current
+    val playlistsEntry = LocalAutomotivePlaylistsEntry.current ?: rememberAutomotivePlaylistsEntry()
+    LaunchedEffect(compact) { if (!compact) playlistsEntry.closeSearch() }
+    CompositionLocalProvider(LocalAutomotivePlaylistsEntry provides playlistsEntry) {
+    MusicDetailHost(onPlayerIntent, modifier, showDuration = !compact, playlist = { route ->
+        detailNavigation?.let { navigation ->
+            PlaylistDetailPage(route, navigation, playlistsState, onlinePlaylistsState, importState,
+                onPlaylistsIntent, onOnlinePlaylistsIntent, onPlayerIntent, allowSplit = !compact)
+        }
+    }) {
         RootTabContent(
             selectedTab = selectedTab,
             platform = platform,
@@ -975,6 +984,7 @@ private fun TabContent(
             onTabChanged = onTabChanged,
             modifier = Modifier.fillMaxSize(),
         )
+    }
     }
 }
 
@@ -1385,9 +1395,10 @@ private fun MobileLibraryHubTab(
     val foreground by rememberUpdatedState(LocalMusicDetailIsForeground.current)
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var otherSearchMode by rememberSaveable { mutableStateOf(false) }
     var searchBarAutoFocus by remember { mutableStateOf(false) }
-    var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
+    val playlistsEntry = LocalAutomotivePlaylistsEntry.current ?: rememberAutomotivePlaylistsEntry()
+    val playlistSearchQuery = playlistsEntry.query
     var favoritesRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
     var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
     var playlistsRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
@@ -1397,6 +1408,8 @@ private fun MobileLibraryHubTab(
     val favoritesPullRefreshState = rememberPullToRefreshState()
     val playlistsPullRefreshState = rememberPullToRefreshState()
     val activeSearchTab = hubTabs.getOrElse(pagerState.currentPage) { hubTabs.first() }
+    val isSearchMode = if (activeSearchTab == AppTab.Playlists) playlistsEntry.searchActive else otherSearchMode
+    val playlistSearchGeneration = playlistsEntry.searchGeneration
     val activeSearchQuery = when (activeSearchTab) {
         AppTab.Favorites -> onlineFavoritesState.sourceId?.let { onlineFavoritesState.query } ?: favoritesState.query
         AppTab.Playlists -> playlistSearchQuery
@@ -1432,7 +1445,7 @@ private fun MobileLibraryHubTab(
         AppTab.Playlists -> onlinePlaylistsState.sourceId != null
         else -> false
     }
-    val batchOperationAvailable = !activeTabOnline && mobileLibraryHubCanBatchOperate(
+    val batchOperationAvailable = activeSearchTab != AppTab.Playlists && !activeTabOnline && mobileLibraryHubCanBatchOperate(
         tab = activeSearchTab,
         libraryVisibleTrackCount = 0,
         favoritesVisibleTrackCount = favoritesState.filteredTracks.size,
@@ -1449,7 +1462,7 @@ private fun MobileLibraryHubTab(
                     onFavoritesIntent(FavoritesIntent.SearchChanged(query))
                 }
             }
-            AppTab.Playlists -> playlistSearchQuery = query
+            AppTab.Playlists -> playlistsEntry.changeQuery(query)
             else -> Unit
         }
     }
@@ -1459,20 +1472,23 @@ private fun MobileLibraryHubTab(
     }
 
     fun exitSearchMode() {
+        if (activeSearchTab == AppTab.Playlists) playlistsEntry.closeSearch()
         clearActiveSearchQuery()
         searchBarAutoFocus = false
-        isSearchMode = false
+        if (activeSearchTab != AppTab.Playlists) otherSearchMode = false
     }
 
     fun enterSearchMode(autoFocus: Boolean) {
+        if (activeSearchTab == AppTab.Playlists) playlistsEntry.openSearch()
         searchBarAutoFocus = autoFocus
-        isSearchMode = true
+        if (activeSearchTab != AppTab.Playlists) otherSearchMode = true
     }
 
     PlatformBackHandler(enabled = isSearchMode && foreground) {
+        if (activeSearchTab == AppTab.Playlists) exitSearchMode()
         keyboardController?.hide()
         focusManager.clearFocus()
-        exitSearchMode()
+        if (activeSearchTab != AppTab.Playlists) exitSearchMode()
     }
 
     fun startFavoritesRefreshHold() {
@@ -1567,7 +1583,10 @@ private fun MobileLibraryHubTab(
                 query = activeSearchQuery,
                 placeholder = mobileLibraryHubSearchPlaceholder(activeSearchTab),
                 autoFocus = searchBarAutoFocus,
-                onQueryChanged = ::updateActiveSearchQuery,
+                onQueryChanged = {
+                    if (activeSearchTab != AppTab.Playlists || (playlistsEntry.searchActive &&
+                        playlistSearchGeneration == playlistsEntry.searchGeneration)) updateActiveSearchQuery(it)
+                },
                 onBack = ::exitSearchMode,
                 onClearOrClose = {
                     if (activeSearchQuery.isBlank()) {
@@ -1608,9 +1627,15 @@ private fun MobileLibraryHubTab(
                         selectedOnlineSourceId = onlinePlaylistsState.sourceId,
                         onSourceFilterChanged = { filter ->
                             onOnlinePlaylistsIntent(OnlinePlaylistsIntent.SelectSource(sourceId = null))
+                            playlistsEntry.list.requestScrollToItem(0)
+                            playlistsEntry.pendingCreation = null
                             onPlaylistsIntent(PlaylistsIntent.SourceFilterChanged(filter))
                         },
                         onOnlineSourceSelected = { sourceId ->
+                            if (sourceId != onlinePlaylistsState.sourceId) {
+                                playlistsEntry.list.requestScrollToItem(0)
+                                playlistsEntry.pendingCreation = null
+                            }
                             onOnlinePlaylistsIntent(OnlinePlaylistsIntent.SelectSource(sourceId))
                         },
                     )
@@ -1628,13 +1653,6 @@ private fun MobileLibraryHubTab(
                     else -> null
                 },
                 onSearchClick = {
-                    if (activeSearchTab == AppTab.Playlists) {
-                        if (onlinePlaylistsState.sourceId != null) {
-                            onOnlinePlaylistsIntent(OnlinePlaylistsIntent.SelectPlaylist(null))
-                        } else {
-                            onPlaylistsIntent(PlaylistsIntent.BackToList)
-                        }
-                    }
                     enterSearchMode(autoFocus = true)
                 },
                 onTabClick = { _, tab ->

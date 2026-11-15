@@ -42,6 +42,17 @@ import org.robolectric.util.ReflectionHelpers
 import top.iwesley.lyn.music.feature.details.AlbumDetailData
 import top.iwesley.lyn.music.feature.details.MusicDetailQueries
 import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.core.model.PlaylistDetail
+import top.iwesley.lyn.music.core.model.PlaylistSummary
+import top.iwesley.lyn.music.core.model.PlaylistTrackEntry
+import top.iwesley.lyn.music.core.model.UiText
+import top.iwesley.lyn.music.core.model.ImportSource
+import top.iwesley.lyn.music.core.model.ImportSourceType
+import top.iwesley.lyn.music.core.model.ImportSourceIndexMode
+import top.iwesley.lyn.music.core.model.SourceWithStatus
+import top.iwesley.lyn.music.feature.playlists.PlaylistsIntent
+import top.iwesley.lyn.music.feature.online.OnlinePlaylistsIntent
+import top.iwesley.lyn.music.feature.library.LibrarySourceFilter
 import top.iwesley.lyn.music.ANDROID_AUTOMOTIVE_PLATFORM_NAME
 import top.iwesley.lyn.music.core.model.PlatformCapabilities
 import top.iwesley.lyn.music.core.model.PlatformDescriptor
@@ -73,6 +84,76 @@ class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME,
         PlatformCapabilities(true, true, true, true, false))
+    @Test fun playlistGestureCancellationRetainsPositionAndChildrenDoNotReload() {
+        for (edge in listOf(BackEvent.EDGE_LEFT,BackEvent.EDGE_RIGHT)) Fixture(playlistRoot = true).use { ui ->
+            ui.openPlaylist()
+            compose.onNodeWithTag("playlist-tracks").performScrollToIndex(15); ui.frames()
+            val route = ui.navigation.top
+            val entry = ui.navigation.playlistEntry(route)
+            val index = entry.list.firstVisibleItemIndex
+            val offset = entry.list.firstVisibleItemScrollOffset
+            compose.onNodeWithContentDescription("More actions for Road playlist").performClick()
+            compose.onNodeWithText("Batch actions").performClick(); ui.focusActivity()
+            assertTrue(entry.selectionMode)
+            val gesture = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            gesture.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f,0f)
+            gesture.cancel(); ui.frames()
+            assertEquals(route,ui.navigation.top)
+            assertEquals(index,entry.list.firstVisibleItemIndex)
+            assertEquals(offset,entry.list.firstVisibleItemScrollOffset)
+            assertTrue(entry.selectionMode)
+            ui.navigation.open(LibraryNavigationTarget.Album("album")); ui.frames()
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertEquals(route,ui.navigation.top)
+            assertEquals(1,ui.playlistRequests)
+            assertTrue(entry.selectionMode)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertEquals(route,ui.navigation.top)
+            assertFalse(entry.selectionMode)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertEquals(null,ui.playlistState.value.selectedPlaylistId)
+            assertFalse(ui.activity.isFinishing)
+            assertEquals(0,RecordingActivityClient.backRequests)
+        }
+    }
+
+    @Test fun playlistHostRecreationRestoresPositionAndQueries() {
+        lateinit var saved: android.os.Bundle
+        var index = 0
+        var offset = 0
+        Fixture(playlistRoot = true).use { ui ->
+            ui.openPlaylist()
+            compose.onNodeWithTag("playlist-tracks").performScrollToIndex(20); ui.frames()
+            val entry = ui.navigation.playlistEntry(ui.navigation.top)
+            index = entry.list.firstVisibleItemIndex
+            offset = entry.list.firstVisibleItemScrollOffset
+            saved = ui.saveState()
+        }
+        Fixture(playlistRoot = true,savedInstanceState = saved).use { ui ->
+            assertEquals("playlist",ui.navigation.top.kind)
+            val entry = ui.navigation.playlistEntry(ui.navigation.top)
+            assertEquals(index,entry.list.firstVisibleItemIndex)
+            assertEquals(offset,entry.list.firstVisibleItemScrollOffset)
+            assertEquals(1,ui.playlistRequests)
+        }
+    }
+
+    @Test fun playlistDetailErrorOutlivesGlobalMessageAndRetryStartsOneRequest() {
+        Fixture(playlistRoot = true, onlinePlaylist = true).use { ui ->
+            ui.openPlaylist()
+            ui.onlinePlaylistState.value = ui.onlinePlaylistState.value.copy(selectedPlaylist = null,
+                errorMessage = UiText.Raw("Detail failed")); ui.frames()
+            compose.onNodeWithText("Detail failed").assertExists()
+            ui.onlinePlaylistState.value = ui.onlinePlaylistState.value.copy(errorMessage = null); ui.frames()
+            compose.onNodeWithText("Detail failed").assertExists()
+            assertEquals(1,ui.playlistRequests)
+            compose.onNodeWithText("Retry").performClick(); ui.frames()
+            assertEquals(2,ui.playlistRequests)
+            compose.onNodeWithTag("playlist-tracks").assertExists()
+        }
+    }
+
     @Test fun lastDetailGestureDoesNotFinishActivity() {
         Fixture().use { ui ->
             ui.navigation.open(LibraryNavigationTarget.Album("album"))
@@ -371,7 +452,9 @@ class MusicDetailAndroidBackTest {
     }
 
     private inner class Fixture(withTracks: Boolean = false, favoritesRoot: Boolean = false,
-        private val portraitFavoritesRoot: Boolean = false) : AutoCloseable {
+        private val portraitFavoritesRoot: Boolean = false,
+        private val playlistRoot: Boolean = false, private val onlinePlaylist: Boolean = false,
+        savedInstanceState: android.os.Bundle? = null) : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         var albumRequests = 0
         private val queries = TestMusicDetailQueries(album = {
@@ -383,6 +466,28 @@ class MusicDetailAndroidBackTest {
         val activity = controller.get()
         lateinit var navigation: MusicDetailNavigation
         val favoritesQuery = androidx.compose.runtime.mutableStateOf("")
+        val playlistState = androidx.compose.runtime.mutableStateOf(PlaylistsState(isLoadingContent = false))
+        val onlinePlaylistState = androidx.compose.runtime.mutableStateOf(OnlinePlaylistsState(sourceId = if (onlinePlaylist) "source" else null))
+        var playlistRequests = 0
+        private val playlistTracks = (0..39).map { PlaylistTrackEntry(Track("song-$it","source","Song $it",mediaLocator = "",relativePath = "$it")) }
+        private val playlistSources = ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(ImportSource("source",ImportSourceType.NAVIDROME,
+            "Server","",indexMode = ImportSourceIndexMode.ONLINE))))
+        private fun localPlaylist(intent: PlaylistsIntent) {
+            when (intent) {
+                is PlaylistsIntent.SelectPlaylist -> { playlistRequests++; playlistState.value = playlistState.value.copy(selectedPlaylistId = intent.playlistId,
+                    selectedPlaylist = PlaylistDetail("road","Road playlist",tracks = playlistTracks)) }
+                PlaylistsIntent.BackToList -> playlistState.value = playlistState.value.copy(selectedPlaylistId = null,selectedPlaylist = null)
+                else -> Unit
+            }
+        }
+        private fun onlinePlaylist(intent: OnlinePlaylistsIntent) {
+            if (intent is OnlinePlaylistsIntent.SelectPlaylist) {
+                if (intent.playlistId != null) playlistRequests++
+                onlinePlaylistState.value = onlinePlaylistState.value.copy(selectedPlaylistId = intent.playlistId,errorMessage = null,
+                    selectedPlaylist = intent.playlistId?.let { PlaylistDetail(it,"Road playlist",tracks = playlistTracks) })
+            }
+        }
+        fun openPlaylist() { navigation.openPlaylist(PlaylistSummary("road","Road playlist"),if (onlinePlaylist) "source" else null,LibrarySourceFilter.ALL); frames() }
 
         init {
             RecordingActivityClient.backRequests = 0
@@ -390,19 +495,23 @@ class MusicDetailAndroidBackTest {
             val shadow = Class.forName("org.robolectric.shadows.ShadowWindowOnBackInvokedDispatcher")
             ReflectionHelpers.callStaticMethod<Any>(shadow, "setEnablePredictiveBack", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true))
             ReflectionHelpers.callInstanceMethod<Any>(RuntimeEnvironment.getApplication().applicationInfo, "setEnableOnBackInvokedCallback", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true))
-            controller.setup().visible().windowFocusChanged(true)
+            (if (savedInstanceState == null) controller.setup() else controller.setup(savedInstanceState)).visible().windowFocusChanged(true)
             activity.setContent {
                 navigation = rememberMusicDetailNavigation(queries) {}
                 val favoritesEntry = rememberAutomotiveFavoritesEntry()
+                BindPlaylistDetailNavigation(navigation,playlistState.value,onlinePlaylistState.value,playlistSources,false,::localPlaylist,::onlinePlaylist)
                 CompositionLocalProvider(
                     LocalAutomotiveFavoritesEntry provides favoritesEntry,
                     LocalPlatformDescriptor provides platform,
-                    LocalOfflineDownloadUiState provides if (favoritesRoot) OfflineDownloadUiState(onIntent = {}) else OfflineDownloadUiState(),
+                    LocalOfflineDownloadUiState provides if (favoritesRoot || playlistRoot) OfflineDownloadUiState(onIntent = {}) else OfflineDownloadUiState(),
                     LocalMusicDetailNavigation provides navigation,
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() },
                 ) {
                     ProvideUiResourceLanguage("en") {
-                        LynMusicTheme { if (portraitFavoritesRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}) {
+                        LynMusicTheme { if (portraitFavoritesRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}, playlist = { route ->
+                            PlaylistDetailPage(route,navigation,playlistState.value,onlinePlaylistState.value,playlistSources,
+                                ::localPlaylist,::onlinePlaylist,{},allowSplit = false)
+                        }) {
                             if (favoritesRoot) {
                                 val tracks = androidx.compose.runtime.remember { (0..2).map {
                                     Track("favorite-$it", "source", "Favorite $it", "Artist", "Album",
@@ -445,7 +554,7 @@ class MusicDetailAndroidBackTest {
             )
         }
 
-        fun saveState() { controller.saveInstanceState(android.os.Bundle()) }
+        fun saveState(): android.os.Bundle = android.os.Bundle().also { controller.saveInstanceState(it) }
 
         fun frames(count: Int = 30) {
             compose.waitForIdle()

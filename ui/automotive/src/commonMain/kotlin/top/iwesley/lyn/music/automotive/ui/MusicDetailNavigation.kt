@@ -31,6 +31,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.*
 import top.iwesley.lyn.music.feature.details.*
 import top.iwesley.lyn.music.feature.library.*
+import top.iwesley.lyn.music.core.model.PlaylistSummary
 import top.iwesley.lyn.music.feature.player.PlayerIntent
 import kotlin.random.Random
 
@@ -44,6 +45,7 @@ internal data class MusicDetailRoute(
     val title: String? = null,
     val artistName: String? = null,
     val artworkLocator: String? = null,
+    val artworkCacheKey: String? = null,
 ) : NavKey {
     val isRoot get() = kind == "root"
     fun sameTarget(other: MusicDetailRoute) = kind == other.kind && entityId == other.entityId &&
@@ -166,6 +168,9 @@ internal class MusicDetailNavigation(
     var immediate by mutableStateOf(false)
         private set
     private val entries = mutableMapOf<String, MusicDetailEntryState>()
+    private val playlistEntries = mutableMapOf<String, PlaylistDetailEntryState>()
+    private val backHandlers = mutableMapOf<String, () -> Unit>()
+    val playlistRoute get() = backStack.filterIsInstance<MusicDetailRoute>().lastOrNull { it.kind == "playlist" }
     var gestureGeneration: Long? = null
     var gestureInProgress: () -> Boolean = { false }
     private fun captureGesture() {
@@ -181,6 +186,34 @@ internal class MusicDetailNavigation(
         generation++
         immediate = false
         backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
+    }
+
+    fun openPlaylist(playlist: PlaylistSummary, sourceId: String?, filter: LibrarySourceFilter) {
+        if (playlist.id.isBlank() || sourceId?.isBlank() == true) return
+        val route = MusicDetailRoute(kind = "playlist", entityId = playlist.id, sourceId = sourceId,
+            sourceFilter = encodeLibrarySourceFilter(filter), title = playlist.name,
+            artworkLocator = playlist.artworkLocator, artworkCacheKey = playlist.artworkCacheKey)
+        if (top.sameTarget(route)) return
+        captureGesture()
+        generation++
+        immediate = false
+        backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
+    }
+
+    fun playlistEntry(route: MusicDetailRoute): PlaylistDetailEntryState {
+        playlistEntries[route.entryId]?.let { return it }
+        return PlaylistDetailEntryState().also { state ->
+            if (backStack.any { (it as MusicDetailRoute).entryId == route.entryId }) playlistEntries[route.entryId] = state
+        }
+    }
+
+    fun setBackHandler(id: String, handler: (() -> Unit)?) {
+        if (handler == null) backHandlers.remove(id) else backHandlers[id] = handler
+    }
+
+    fun requestBack(id: String = top.entryId, epoch: Long = generation) {
+        if (top.entryId != id || generation != epoch) return
+        backHandlers[id]?.invoke() ?: pop(id, epoch)
     }
 
     fun pop(expectedEntryId: String = top.entryId, expectedGeneration: Long = generation) {
@@ -201,6 +234,8 @@ internal class MusicDetailNavigation(
         restorePlayer.value = false
         entries.values.forEach { it.cancel() }
         entries.clear()
+        playlistEntries.clear()
+        backHandlers.clear()
         while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
 
@@ -216,16 +251,28 @@ internal class MusicDetailNavigation(
             }
         }
     }
-    fun release(key: Any) { entries.remove(key)?.cancel() }
+    fun release(key: Any) { entries.remove(key)?.cancel(); playlistEntries.remove(key); backHandlers.remove(key) }
     fun releaseRemovedEntries() {
         val activeIds = backStack.map { (it as MusicDetailRoute).entryId }.toSet()
-        entries.keys.filterNot(activeIds::contains).forEach { release(it) }
+        (entries.keys + playlistEntries.keys).filterNot(activeIds::contains).forEach { release(it) }
     }
-    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear() }
+    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); playlistEntries.clear(); backHandlers.clear() }
 }
 
 internal val LocalMusicDetailNavigation = staticCompositionLocalOf<MusicDetailNavigation?> { null }
 internal val LocalMusicDetailIsForeground = staticCompositionLocalOf { true }
+private val LocalMusicDetailEntryId = staticCompositionLocalOf<String?> { null }
+
+@Composable
+internal fun MusicDetailBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    val navigation = LocalMusicDetailNavigation.current
+    val id = LocalMusicDetailEntryId.current
+    val latestBack by rememberUpdatedState(onBack)
+    DisposableEffect(navigation, id, enabled) {
+        if (enabled && id != null) navigation?.setBackHandler(id) { latestBack() }
+        onDispose { if (enabled && id != null) navigation?.setBackHandler(id, null) }
+    }
+}
 
 private val PlayerPresentation.isMusicDetailForeground: Boolean
     get() = !isExpanded && !isQueueVisible && !isManualLyricsSearchVisible &&
@@ -240,7 +287,7 @@ internal fun Modifier.musicDetailKeyboardBack(
     val foreground = presentation.isMusicDetailForeground
     return onKeyEvent { event ->
         if (foreground && navigation.hasDetails && event.key == Key.Escape && event.type == KeyEventType.KeyDown) {
-            navigation.pop(entryId, generation)
+            navigation.requestBack(entryId, generation)
             true
         } else false
     }
@@ -271,9 +318,11 @@ internal fun MusicDetailHost(
     onPlayerIntent: (PlayerIntent) -> Unit,
     modifier: Modifier = Modifier,
     showDuration: Boolean = true,
+    playlist: @Composable (MusicDetailRoute) -> Unit = {},
     root: @Composable () -> Unit,
 ) {
     val navigation = LocalMusicDetailNavigation.current
+    val currentPlaylist by rememberUpdatedState(playlist)
     if (navigation == null) { root(); return }
     DisposableEffect(navigation) {
         onDispose { navigation.releaseRemovedEntries() }
@@ -319,7 +368,7 @@ internal fun MusicDetailHost(
         entryDecorators = decorators,
         onBack = {
             if (foreground && (navigation.gestureGeneration == null || navigation.gestureGeneration == generation)) {
-                navigation.pop(current.entryId, generation)
+                navigation.requestBack(current.entryId, generation)
             }
         },
         transitionSpec = {
@@ -340,9 +389,11 @@ internal fun MusicDetailHost(
                 // NavEntry caches this content; observe current state inside its composition.
                 val entryForeground = currentPlayerPresentation().isMusicDetailForeground &&
                     route.entryId == navigation.top.entryId
-                CompositionLocalProvider(LocalMusicDetailIsForeground provides entryForeground) {
+                CompositionLocalProvider(LocalMusicDetailIsForeground provides entryForeground,
+                    LocalMusicDetailEntryId provides route.entryId) {
                     when {
                         route.isRoot -> root()
+                        route.kind == "playlist" -> currentPlaylist(route)
                         route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, allowSplit = showDuration)
                         else -> ArtistDetailPage(route, navigation, onPlayerIntent)
                     }
