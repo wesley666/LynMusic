@@ -963,6 +963,7 @@ class OnlineFavoritesStore(
             )
 
             is OnlineFavoritesIntent.SearchChanged -> {
+                if (intent.query == state.value.query) return
                 updateState {
                     it.copy(
                         query = intent.query,
