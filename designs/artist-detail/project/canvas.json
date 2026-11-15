@@ -1,0 +1,18 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-14T03:05:37Z" },
+  "title": "LynMusic · 歌手详情页",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 1520, "title": "桌面 · 歌手概览", "expand": "fill", "is_interactive": true },
+    "Mobile.dc.html": { "x": 1520, "y": 0, "w": 390, "h": 844, "title": "手机 · 歌手概览", "is_interactive": true, "radius": 28 }
+  },
+  "order": ["Main.dc.html", "Mobile.dc.html"],
+  "notes": {
+    "direction": { "x": 0, "y": -290, "kind": "title1", "maxW": 1910, "text": "LynMusic / 歌手详情", "color": "gray" },
+    "scope": { "x": 1520, "y": 930, "w": 390, "text": "设计方向\n沿用白色背景、#E03131 强调色和系统无衬线字体。歌手身份 → 播放 → 专辑 → 歌曲，避免社交热度信息。\n\n交互\n可切换栏目、收藏、播放状态、排序及搜索；点专辑可筛选歌曲。播放为状态演示，不输出音频。", "fill": "gray" },
+    "sample": { "x": 0, "y": 1640, "w": 620, "text": "内容与素材\n陈升为项目现有截图中的歌手。示例曲库包含 6 首真实曲目、4 张专辑；数量仅对应该示例，不代表用户曲库或完整作品目录。曲目、时长、封面取自 Apple iTunes Search；肖像取自升网 https://bobbychen.cc/blog/?id=1507，仅用于本地设计预览。\n\n此次仅新增画布文件，不修改应用代码。", "fill": "gray" }
+  },
+  "designSystems": []
+}

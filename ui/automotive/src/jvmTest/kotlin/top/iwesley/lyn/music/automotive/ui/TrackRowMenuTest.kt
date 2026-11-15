@@ -42,7 +42,7 @@ class TrackRowMenuTest {
                 }
                 val filter = LibrarySourceFilter.Source(ui.track.sourceId)
                 assertEquals(listOf(
-                    LibraryNavigationTarget.Artist(libraryArtistId(ui.track.artistName!!), filter),
+                    LibraryNavigationTarget.Artist(libraryArtistId(ui.track.artistName!!), filter, ui.track.artistName),
                     LibraryNavigationTarget.Album(libraryAlbumId(ui.track.artistName, ui.track.albumTitle!!), filter),
                 ), ui.navigationTargets)
                 assertEquals(2, ui.navigations)

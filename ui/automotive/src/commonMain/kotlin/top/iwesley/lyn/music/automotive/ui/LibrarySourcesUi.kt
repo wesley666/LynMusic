@@ -939,7 +939,7 @@ private fun LibraryBrowserTab(
             val sourceId = state.sourceId?.takeIf(String::isNotBlank) ?: return
             val artistId = item.remoteArtistId?.trim()?.takeIf(String::isNotBlank) ?: return
             LibraryNavigationTarget.OnlineArtist(sourceId, artistId, item.artist.name)
-        } else LibraryNavigationTarget.Artist(item.id, state.selectedSourceFilter)
+        } else LibraryNavigationTarget.Artist(item.id, state.selectedSourceFilter, item.artist.name)
         onOpenLibraryNavigationTarget?.invoke(target)
     }
 

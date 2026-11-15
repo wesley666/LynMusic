@@ -25,14 +25,6 @@ internal fun AlbumDetailPage(
 ) = MusicDetailPage(route, navigation, onPlayerIntent, showDuration)
 
 @Composable
-internal fun ArtistDetailPage(
-    route: MusicDetailRoute,
-    navigation: MusicDetailNavigation,
-    onPlayerIntent: (PlayerIntent) -> Unit,
-    showDuration: Boolean,
-) = MusicDetailPage(route, navigation, onPlayerIntent, showDuration)
-
-@Composable
 private fun MusicDetailPage(
     route: MusicDetailRoute,
     navigation: MusicDetailNavigation,

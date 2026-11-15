@@ -57,7 +57,7 @@ class FavoritesMenuIntegrationTest {
                             if (label == "View artist") LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A")
                             else LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A")
                         } else {
-                            if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Artist A"))
+                            if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Artist A"), artistName = "Artist A")
                             else LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A"))
                         }
                         assertEquals(expected, ui.navigationTargets.single())
@@ -90,7 +90,7 @@ class FavoritesMenuIntegrationTest {
                         LibraryNavigationTarget.OnlineArtist("source", "artist-a", "Artist A"),
                         LibraryNavigationTarget.OnlineAlbum("source", "album-a", "Album A", "Artist A"),
                     ) else listOf(
-                        LibraryNavigationTarget.Artist(libraryArtistId("Artist A")),
+                        LibraryNavigationTarget.Artist(libraryArtistId("Artist A"), artistName = "Artist A"),
                         LibraryNavigationTarget.Album(libraryAlbumId("Artist A", "Album A")),
                     )
                     assertEquals(expected, ui.navigationTargets)

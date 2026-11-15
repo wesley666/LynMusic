@@ -40,7 +40,7 @@ class AutomotiveShellCompositionTest {
                 for (label in listOf("View artist", "View album")) Fixture(width, height, withTracks = true, initialTab = tab).use { ui ->
                     ui.clickLabel("More actions for Fixture track")
                     ui.clickLabel(label)
-                    val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"))
+                    val expected = if (label == "View artist") LibraryNavigationTarget.Artist(libraryArtistId("Fixture artist"), artistName = "Fixture artist")
                         else LibraryNavigationTarget.Album(libraryAlbumId("Fixture artist", "Fixture album"))
                     assertEquals(listOf(expected), ui.navigationTargets)
                     assertEquals(tab, ui.selectedTab)
@@ -266,7 +266,8 @@ class AutomotiveShellCompositionTest {
 
         fun assertHasLabel(label: String) {
             assertTrue(nodes().any { node ->
-                node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == label } == true
+                node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == label } == true ||
+                    node.config.getOrNull(SemanticsProperties.ContentDescription)?.contains(label) == true
             }, "Missing label: $label")
         }
 

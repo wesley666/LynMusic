@@ -103,10 +103,50 @@ class MusicDetailNavigationTest {
         val owner=owner(TestMusicDetailQueries(artistAlbums = { flow { throw MusicDetailUnavailableException() } }, artistTracks = { flow { throw MusicDetailUnavailableException() } }))
         owner.open(LibraryNavigationTarget.OnlineArtist("missing","artist"))
         val state=owner.entry(owner.top);runCurrent()
-        assertIs<MusicDetailUnavailableException>(state.error)
+        assertIs<MusicDetailUnavailableException>(state.artistTracks.error)
+        assertIs<MusicDetailUnavailableException>(state.artistAlbums.error)
         assertEquals("missing",owner.top.sourceId)
         owner.clear()
     }
+    @Test fun artistNameSeedIsSerializedAndSongAndAlbumJobsStartIndependently() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        var trackRequests = 0
+        var albumRequests = 0
+        val owner = owner(TestMusicDetailQueries(
+            artistTracks = { flow { trackRequests++; emit(emptyList()) } },
+            artistAlbums = { flow { albumRequests++; gate.await(); emit(emptyList()) } },
+        ))
+        owner.open(LibraryNavigationTarget.Artist("artist", artistName = "Seed name"))
+        assertEquals("Seed name", Json.decodeFromString<MusicDetailRoute>(Json.encodeToString(owner.top)).title)
+        val entry = owner.entry(owner.top)
+        runCurrent()
+        assertEquals(emptyList(), entry.artistTracks.data)
+        assertFalse(entry.artistTracks.loading)
+        assertTrue(entry.artistAlbums.loading)
+        assertSame(entry, owner.entry(owner.top))
+        entry.artistAlbums.retry(); runCurrent()
+        assertEquals(1, trackRequests)
+        assertEquals(2, albumRequests)
+        gate.complete(Unit); runCurrent()
+        assertEquals(emptyList(), entry.artistAlbums.data)
+        owner.clear()
+    }
+
+    @Test fun removedArtistDiscardsBothNonCancellableLateResults() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val owner = owner(TestMusicDetailQueries(
+            artistTracks = { flow { withContext(NonCancellable) { gate.await() }; emit(emptyList()) } },
+            artistAlbums = { flow { withContext(NonCancellable) { gate.await() }; emit(emptyList()) } },
+        ))
+        owner.open(LibraryNavigationTarget.OnlineArtist("server", "artist"))
+        val entry = owner.entry(owner.top)
+        runCurrent()
+        owner.clear()
+        gate.complete(Unit); runCurrent()
+        assertNull(entry.artistTracks.data)
+        assertNull(entry.artistAlbums.data)
+    }
+
     private fun CoroutineScope.owner(
         queries:MusicDetailQueries=TestMusicDetailQueries(),
         restore:()->Unit={},
