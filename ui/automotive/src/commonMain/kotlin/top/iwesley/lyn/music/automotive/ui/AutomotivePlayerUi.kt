@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PauseCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
@@ -105,6 +106,7 @@ internal fun AutomotiveLandscapePlayerOverlayContent(
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onPureModeChanged: (Boolean) -> Unit,
+    onOpenMore: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val currentIsPureMode by rememberUpdatedState(isPureMode)
@@ -146,6 +148,7 @@ internal fun AutomotiveLandscapePlayerOverlayContent(
                 isFavorite = isFavorite,
                 canToggleFavorite = canToggleFavorite,
                 onToggleFavorite = onToggleFavorite,
+                onOpenMore = onOpenMore,
                 onOpenQueue = onOpenQueue,
                 onlineNavigationSourceId = onlineNavigationSourceId,
                 onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
@@ -180,6 +183,7 @@ private fun AutomotivePlaybackPane(
     isFavorite: Boolean,
     canToggleFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenMore: () -> Unit,
     onOpenQueue: () -> Unit,
     onlineNavigationSourceId: String?,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
@@ -258,6 +262,7 @@ private fun AutomotivePlaybackPane(
                 isFavorite = isFavorite,
                 canToggleFavorite = canToggleFavorite,
                 onToggleFavorite = onToggleFavorite,
+                onOpenMore = onOpenMore,
                 onlineNavigationSourceId = onlineNavigationSourceId,
                 onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                 onPlayerIntent = onPlayerIntent,
@@ -295,6 +300,7 @@ private fun AutomotiveTrackAndProgress(
     isFavorite: Boolean,
     canToggleFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onOpenMore: () -> Unit,
     onlineNavigationSourceId: String?,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
@@ -311,7 +317,7 @@ private fun AutomotiveTrackAndProgress(
         val compactVertical = layout.compactVertical
         val titleStyle =
             if (compactVertical) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
-        val inlineActionButtonSize = if (compactVertical) 44.dp else 52.dp
+        val inlineActionButtonSize = if (compactVertical) 48.dp else 52.dp
         val inlineActionIconSize = if (compactVertical) 24.dp else 28.dp
         Column(
             modifier = Modifier
@@ -357,6 +363,13 @@ private fun AutomotiveTrackAndProgress(
                         iconSize = inlineActionIconSize,
                         tint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.9f),
                         enabled = canToggleFavorite,
+                    )
+                    AutomotiveRoundIconButton(
+                        icon = Icons.Rounded.MoreVert,
+                        contentDescription = uiString(Res.string.common_more_actions),
+                        onClick = onOpenMore,
+                        buttonSize = inlineActionButtonSize,
+                        iconSize = inlineActionIconSize,
                     )
                 }
                 AutomotiveMetadataNavigationRow(

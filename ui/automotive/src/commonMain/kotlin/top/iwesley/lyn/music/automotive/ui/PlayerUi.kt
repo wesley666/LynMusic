@@ -100,11 +100,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -1202,6 +1204,40 @@ private fun PlayerOverlay(
                 )
             }
             val layoutProfile = AutomotiveLayoutProfile(maxWidth = maxWidth, maxHeight = maxHeight)
+            val menuHost = remember(presentation, layoutProfile.orientation, presentation.isExpanded) { Any() }
+            val currentMenuHost by rememberUpdatedState(menuHost)
+            var isMenuHostActive by remember(menuHost) { mutableStateOf(true) }
+            val menuTrackKey = Triple(track.sourceId, track.id, onlineNavigationSourceId)
+            val currentMenuTrackKey by rememberUpdatedState(menuTrackKey)
+            var isMenuTrackActive by remember(menuHost, menuTrackKey) { mutableStateOf(true) }
+            var isMoreSheetVisible by remember(menuHost, menuTrackKey) { mutableStateOf(false) }
+            var isSleepTimerSheetVisible by remember(menuHost, menuTrackKey) { mutableStateOf(false) }
+            var isOfflineDownloadSheetVisible by remember(menuHost, menuTrackKey) { mutableStateOf(false) }
+            fun isCurrentMenuHost() = isMenuHostActive && presentation.isExpanded && currentMenuHost === menuHost
+            fun isCurrentMenuTrack() = isCurrentMenuHost() && isMenuTrackActive && currentMenuTrackKey == menuTrackKey
+            fun completeMoreAction(action: () -> Unit) {
+                if (isMoreSheetVisible && isCurrentMenuTrack()) {
+                    isMoreSheetVisible = false
+                    action()
+                }
+            }
+            val onOpenMore: () -> Unit = {
+                if (isCurrentMenuTrack()) isMoreSheetVisible = true
+            }
+            DisposableEffect(menuHost, menuTrackKey) {
+                onDispose {
+                    isMenuTrackActive = false
+                    isMoreSheetVisible = false
+                    isSleepTimerSheetVisible = false
+                    isOfflineDownloadSheetVisible = false
+                }
+            }
+            DisposableEffect(presentation, menuHost) {
+                onDispose {
+                    isMenuHostActive = false
+                    presentation.closeCast()
+                }
+            }
             val mobilePlayback = false
             val wide = layoutProfile.isExpandedLayout
             if (presentation.isLyricsStyleVisible) {
@@ -1209,7 +1245,6 @@ private fun PlayerOverlay(
             }
             val isPureMode = wide && isPureModeRequested
             val useTapToRevealLyrics = layoutProfile.isCompactLayout
-            val showPhoneEqualizerEntry = false
             val useAutomotiveLandscapePlayer =
                 layoutProfile.isLandscape
             PlatformBackHandler(
@@ -1248,6 +1283,7 @@ private fun PlayerOverlay(
                     canToggleFavorite = canToggleFavorite,
                     onToggleFavorite = onToggleFavorite,
                     onOpenQueue = onOpenQueue,
+                    onOpenMore = onOpenMore,
                     onlineNavigationSourceId = onlineNavigationSourceId,
                     onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
                     onPlayerIntent = onPlayerIntent,
@@ -1325,19 +1361,15 @@ private fun PlayerOverlay(
                     PlayerBottomControls(
                         snapshot = snapshot,
                         sleepTimer = state.sleepTimer,
-                        castState = state.castState,
-                        isCastSheetVisible = presentation.isCastSheetVisible,
-                        castMessage = state.castMessage?.displayText(),
                         track = track,
                         mobilePlayback = mobilePlayback,
                         wide = wide,
-                        showEqualizerEntry = showPhoneEqualizerEntry,
-                        onOpenEqualizer = onOpenEqualizer,
                         isFavorite = isFavorite,
                         canToggleFavorite = canToggleFavorite,
                         onToggleFavorite = onToggleFavorite,
                         onOpenAddToPlaylist = onOpenAddToPlaylist,
                         onOpenQueue = onOpenQueue,
+                        onOpenMore = onOpenMore,
                         onPlayerIntent = onPlayerIntent,
                         onlineNavigationSourceId = onlineNavigationSourceId,
                         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
@@ -1357,6 +1389,103 @@ private fun PlayerOverlay(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+            val navigationTargets = remember(
+                snapshot.currentDisplayArtistName,
+                snapshot.currentDisplayAlbumTitle,
+                track.artistName,
+                track.albumTitle,
+                track.albumId,
+                track.artistId,
+                track.artworkLocator,
+                onlineNavigationSourceId,
+            ) {
+                if (onlineNavigationSourceId != null) {
+                    deriveOnlinePlaybackLibraryNavigationTargets(
+                        snapshot = snapshot,
+                        track = track,
+                        sourceId = onlineNavigationSourceId,
+                    )
+                } else {
+                    derivePlaybackLibraryNavigationTargets(snapshot, track)
+                }
+            }
+            val offlineUiState = LocalOfflineDownloadUiState.current
+            val offlineDownload = offlineUiState.downloadsByTrackId[track.id]
+            val onOfflineDownloadIntent = offlineUiState.onIntent
+            val currentOfflineDownloadIntent by rememberUpdatedState(onOfflineDownloadIntent)
+            val showOfflineDownloadEntry = platform.supportsOfflineDownloadUiActions() &&
+                supportsOfflineDownload(track) && onOfflineDownloadIntent != null
+            val currentShowOfflineDownloadEntry by rememberUpdatedState(showOfflineDownloadEntry)
+            if (isMoreSheetVisible && isCurrentMenuTrack()) {
+                CompactPlayerMoreSheet(
+                    snapshot = snapshot,
+                    track = track,
+                    navigationTargets = navigationTargets,
+                    sleepTimer = state.sleepTimer,
+                    castState = state.castState,
+                    castMessage = state.castMessage?.displayText(),
+                    onDismiss = { isMoreSheetVisible = false },
+                    onOpenLyricsStyle = { completeMoreAction { presentation.openLyricsStyle() } },
+                    onOpenAddToPlaylist = { completeMoreAction(onOpenAddToPlaylist) },
+                    onOpenLibraryNavigationTarget = { target ->
+                        completeMoreAction { onOpenLibraryNavigationTarget(target) }
+                    },
+                    showOfflineDownload = showOfflineDownloadEntry,
+                    offlineDownloadStatus = compactPlayerOfflineDownloadStatusLabel(offlineDownload),
+                    onOpenOfflineDownload = {
+                        completeMoreAction {
+                            if (currentShowOfflineDownloadEntry) isOfflineDownloadSheetVisible = true
+                        }
+                    },
+                    onOpenSleepTimer = { completeMoreAction { isSleepTimerSheetVisible = true } },
+                    onOpenCast = { completeMoreAction { presentation.openCast() } },
+                    showEqualizerEntry = showEqualizerEntry,
+                    onOpenEqualizer = { completeMoreAction(onOpenEqualizer) },
+                )
+            }
+            if (presentation.isCastSheetVisible && isCurrentMenuHost()) {
+                CastDeviceBottomSheet(
+                    castState = state.castState,
+                    castMessage = state.castMessage?.displayText(),
+                    onDismiss = { if (isCurrentMenuHost()) presentation.closeCast() },
+                    onRefresh = { if (isCurrentMenuHost()) onPlayerIntent(PlayerIntent.RefreshCastDevices) },
+                    onCastDevice = { deviceId ->
+                        if (isCurrentMenuHost()) onPlayerIntent(PlayerIntent.CastToDevice(deviceId))
+                    },
+                    onStopCast = { if (isCurrentMenuHost()) onPlayerIntent(PlayerIntent.StopCast) },
+                )
+            }
+            if (isOfflineDownloadSheetVisible && showOfflineDownloadEntry && isCurrentMenuTrack()) {
+                TrackOfflineDownloadBottomSheet(
+                    track = track,
+                    download = offlineDownload,
+                    onIntent = { intent ->
+                        // Download rows dismiss their sheet before dispatching the selected action.
+                        if (isCurrentMenuTrack() && currentShowOfflineDownloadEntry) {
+                            currentOfflineDownloadIntent?.invoke(intent)
+                        }
+                    },
+                    onDismiss = { isOfflineDownloadSheetVisible = false },
+                )
+            }
+            if (isSleepTimerSheetVisible && isCurrentMenuTrack()) {
+                SleepTimerBottomSheet(
+                    sleepTimer = state.sleepTimer,
+                    onDismiss = { isSleepTimerSheetVisible = false },
+                    onStartTimer = { minutes ->
+                        if (isSleepTimerSheetVisible && isCurrentMenuTrack()) {
+                            isSleepTimerSheetVisible = false
+                            onPlayerIntent(PlayerIntent.StartSleepTimer(minutes))
+                        }
+                    },
+                    onCancelTimer = {
+                        if (isSleepTimerSheetVisible && isCurrentMenuTrack()) {
+                            isSleepTimerSheetVisible = false
+                            onPlayerIntent(PlayerIntent.CancelSleepTimer)
+                        }
+                    },
+                )
             }
         }
     }
@@ -1590,24 +1719,19 @@ private fun SwipeablePlayerArtwork(
 private fun PlayerBottomControls(
     snapshot: PlaybackSnapshot,
     sleepTimer: SleepTimerState,
-    castState: CastSessionState,
-    isCastSheetVisible: Boolean,
-    castMessage: String?,
     track: Track,
     mobilePlayback: Boolean,
     wide: Boolean,
-    showEqualizerEntry: Boolean,
-    onOpenEqualizer: () -> Unit,
     isFavorite: Boolean,
     canToggleFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onOpenAddToPlaylist: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenMore: () -> Unit,
     onPlayerIntent: (PlayerIntent) -> Unit,
     onlineNavigationSourceId: String? = null,
     onOpenLibraryNavigationTarget: (LibraryNavigationTarget) -> Unit,
 ) {
-    val presentation = currentPlayerPresentation()
     val favoriteTint = if (isFavorite) Color(0xFFE5484D) else Color.White.copy(alpha = 0.96f)
     val modeButtonSize = 42.dp
     val modeIconSize = 22.dp
@@ -1640,15 +1764,6 @@ private fun PlayerBottomControls(
             }
         }
         val artistNavigationTarget = navigationTargets.artistTarget
-        val offlineUiState = LocalOfflineDownloadUiState.current
-        val offlineDownload = offlineUiState.downloadsByTrackId[track.id]
-        val onOfflineDownloadIntent = offlineUiState.onIntent
-        val supportsOfflineDownloadEntry = currentPlatformDescriptor.supportsOfflineDownloadUiActions() &&
-            supportsOfflineDownload(track)
-        val showOfflineDownloadEntry = supportsOfflineDownloadEntry && onOfflineDownloadIntent != null
-        var isMoreSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
-        var isSleepTimerSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
-        var isOfflineDownloadSheetVisible by rememberSaveable(track.id) { mutableStateOf(false) }
         val mobileTopActionButtonSize = 58.dp
         val mobileTopActionIconSize = 30.dp
         val mobileBottomActionButtonSize = 62.dp
@@ -1704,21 +1819,6 @@ private fun PlayerBottomControls(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (mobilePlayback) {
-                        CompactPlayerMoreButton(
-                            onClick = { isMoreSheetVisible = true },
-                            tint = Color.White.copy(alpha = 0.96f),
-                            buttonSize = mobileTopActionButtonSize,
-                            iconSize = mobileTopActionIconSize,
-                        )
-                    } else {
-                        AddToPlaylistButton(
-                            onClick = onOpenAddToPlaylist,
-                            tint = Color.White.copy(alpha = 0.96f),
-                            buttonSize = mobileTopActionButtonSize,
-                            iconSize = mobileTopActionIconSize,
-                        )
-                    }
                     FavoriteToggleButton(
                         isFavorite = isFavorite,
                         onClick = onToggleFavorite,
@@ -1726,6 +1826,12 @@ private fun PlayerBottomControls(
                         buttonSize = mobileTopActionButtonSize,
                         iconSize = mobileTopActionIconSize,
                         enabled = canToggleFavorite,
+                    )
+                    CompactPlayerMoreButton(
+                        onClick = onOpenMore,
+                        tint = Color.White.copy(alpha = 0.96f),
+                        buttonSize = mobileTopActionButtonSize,
+                        iconSize = mobileTopActionIconSize,
                     )
                 }
             }
@@ -1798,85 +1904,6 @@ private fun PlayerBottomControls(
                     iconSize = mobileBottomActionIconSize,
                 )
             }
-        }
-        if (mobilePlayback && isMoreSheetVisible) {
-            CompactPlayerMoreSheet(
-                snapshot = snapshot,
-                track = track,
-                navigationTargets = navigationTargets,
-                onDismiss = { isMoreSheetVisible = false },
-                onOpenLyricsStyle = {
-                    isMoreSheetVisible = false
-                    presentation.openLyricsStyle()
-                },
-                onOpenAddToPlaylist = {
-                    isMoreSheetVisible = false
-                    onOpenAddToPlaylist()
-                },
-                onOpenLibraryNavigationTarget = { target ->
-                    isMoreSheetVisible = false
-                    onOpenLibraryNavigationTarget(target)
-                },
-                sleepTimer = sleepTimer,
-                castState = castState,
-                castMessage = castMessage,
-                showOfflineDownload = showOfflineDownloadEntry,
-                offlineDownloadStatus = compactPlayerOfflineDownloadStatusLabel(offlineDownload),
-                onOpenOfflineDownload = {
-                    isMoreSheetVisible = false
-                    isOfflineDownloadSheetVisible = true
-                },
-                onOpenSleepTimer = {
-                    isMoreSheetVisible = false
-                    isSleepTimerSheetVisible = true
-                },
-                onOpenCast = {
-                    isMoreSheetVisible = false
-                    presentation.openCast()
-                },
-                showEqualizerEntry = showEqualizerEntry,
-                onOpenEqualizer = {
-                    isMoreSheetVisible = false
-                    onOpenEqualizer()
-                },
-            )
-        }
-        if (mobilePlayback && isCastSheetVisible) {
-            CastDeviceBottomSheet(
-                castState = castState,
-                castMessage = castMessage,
-                onDismiss = { presentation.closeCast() },
-                onRefresh = { onPlayerIntent(PlayerIntent.RefreshCastDevices) },
-                onCastDevice = { deviceId -> onPlayerIntent(PlayerIntent.CastToDevice(deviceId)) },
-                onStopCast = { onPlayerIntent(PlayerIntent.StopCast) },
-            )
-        }
-        if (
-            mobilePlayback &&
-            isOfflineDownloadSheetVisible &&
-            supportsOfflineDownloadEntry &&
-            onOfflineDownloadIntent != null
-        ) {
-            TrackOfflineDownloadBottomSheet(
-                track = track,
-                download = offlineDownload,
-                onIntent = onOfflineDownloadIntent,
-                onDismiss = { isOfflineDownloadSheetVisible = false },
-            )
-        }
-        if (mobilePlayback && isSleepTimerSheetVisible) {
-            SleepTimerBottomSheet(
-                sleepTimer = sleepTimer,
-                onDismiss = { isSleepTimerSheetVisible = false },
-                onStartTimer = { minutes ->
-                    onPlayerIntent(PlayerIntent.StartSleepTimer(minutes))
-                    isSleepTimerSheetVisible = false
-                },
-                onCancelTimer = {
-                    onPlayerIntent(PlayerIntent.CancelSleepTimer)
-                    isSleepTimerSheetVisible = false
-                },
-            )
         }
         return
     }
@@ -2414,7 +2441,13 @@ private fun TrackOfflineDownloadBottomSheet(
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         CompositionLocalProvider(LocalDensity provides appDensity) {
-            Column(modifier = Modifier.padding(bottom = 20.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 20.dp),
+            ) {
                 Text(
                     text = track.title,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
@@ -2472,6 +2505,7 @@ private fun SleepTimerBottomSheet(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .imePadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 22.dp)
                     .padding(bottom = 22.dp),
             )
