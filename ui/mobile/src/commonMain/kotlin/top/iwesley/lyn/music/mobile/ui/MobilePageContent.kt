@@ -154,6 +154,9 @@ internal fun MobilePageContent(
     }, playlist = { route ->
         PlaylistDetailPage(route, checkNotNull(details), playlistsState, onlinePlaylistsState, importState,
             onPlaylistsIntent, onOnlinePlaylistsIntent, onPlayerIntent, showDuration = !compact)
+    }, folder = { route ->
+        FolderDetailPage(route, checkNotNull(details), libraryState, favoritesState, importState,
+            onFavoritesIntent, onPlayerIntent, showDuration = !compact)
     }) {
         RootMobilePageContent(
             selectedTab = selectedTab,
@@ -441,7 +444,9 @@ private fun MobileLibraryHubTab(
 ) {
     val hubTabs = libraryHubTabs(selectedTab, phoneNavigation)
     val phoneLibrary = phoneNavigation && selectedTab == AppTab.Library
-    val phoneRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
+    val detailNavigation = LocalMusicDetailNavigation.current
+    val phoneRootState = detailNavigation?.libraryRootState
+        ?: rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
     var phoneRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     val initialPage = hubTabs.indexOf(selectedTab).coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialPage) { hubTabs.size }

@@ -76,8 +76,8 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -543,24 +543,6 @@ internal fun libraryFolderDetailSubtitleText(folder: LibraryFolderNode): UiText 
 @Composable
 internal fun libraryFolderDetailSubtitle(folder: LibraryFolderNode): String = libraryFolderDetailSubtitleText(folder).displayText()
 
-private data class LibraryFolderDetailScrollPosition(
-    val firstVisibleItemIndex: Int,
-    val firstVisibleItemScrollOffset: Int,
-)
-
-private val LibraryFolderScrollPositionsSaver = listSaver<MutableMap<String, LibraryFolderDetailScrollPosition>, Any>(
-    save = { positions ->
-        positions.entries.flatMap { (key, position) ->
-            listOf(key, position.firstVisibleItemIndex, position.firstVisibleItemScrollOffset)
-        }
-    },
-    restore = { values ->
-        values.chunked(3).associate { entry ->
-            (entry[0] as String) to LibraryFolderDetailScrollPosition(entry[1] as Int, entry[2] as Int)
-        }.toMutableMap()
-    },
-)
-
 internal fun resolveTrackRowLibraryNavigationTargets(
     track: Track,
     metadataNavigationEnabled: Boolean,
@@ -604,53 +586,25 @@ private fun LibraryBrowserTab(
     val tracksListState = rememberLazyListState()
     val albumsListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
-    val foldersListState = rememberLazyListState()
-    val folderDetailListState = rememberLazyListState()
+    val navigation = LocalMusicDetailNavigation.current
+    val foldersListState = rememberSaveable(saver = LazyListState.Saver) {
+        if (tracksOnly) LazyListState() else navigation?.folderListState ?: LazyListState()
+    }
+    androidx.compose.runtime.SideEffect { if (!tracksOnly) navigation?.folderListState = foldersListState }
     val visibleTracks = remember(state.tracks) { state.tracks.map(LibraryTrackUiItem::track) }
     val trackIndexColumnWidth = rememberListIndexColumnWidth(visibleTracks.size)
     val visibleAlbums = remember(state.albums) { state.albums.map(LibraryAlbumUiItem::album) }
     val visibleArtists = remember(state.artists) { state.artists.map(LibraryArtistUiItem::artist) }
-    val folderDetailScrollPositions = rememberSaveable(saver = LibraryFolderScrollPositionsSaver) {
-        mutableMapOf<String, LibraryFolderDetailScrollPosition>()
-    }
-    var displayedFolderStableId by rememberSaveable { mutableStateOf<String?>(null) }
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     var trackSortMenuExpanded by remember { mutableStateOf(false) }
-    val defaultRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
-    var storedRootView by (phoneRootState ?: defaultRootState)
+    val selectedRootState = if (tracksOnly) null else (phoneRootState ?: navigation?.libraryRootState)
+    val rootState: MutableState<LibraryBrowserRootView> = selectedRootState
+        ?: rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
+    var storedRootView by rootState
     val rootView = if (tracksOnly) LibraryBrowserRootView.Tracks else storedRootView
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
-    var selectedFolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedFolderPath by rememberSaveable { mutableStateOf<String?>(null) }
-    val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter,
-        rootView, selectedFolderSourceId, selectedFolderPath)
-    fun selectedFolderStableId(): String? {
-        val sourceId = selectedFolderSourceId ?: return null
-        return LibraryFolderKey(sourceId = sourceId, path = selectedFolderPath.orEmpty()).stableId
-    }
-    fun saveSelectedFolderScrollPosition() {
-        val stableId = selectedFolderStableId() ?: return
-        folderDetailScrollPositions[stableId] = LibraryFolderDetailScrollPosition(
-            firstVisibleItemIndex = folderDetailListState.firstVisibleItemIndex,
-            firstVisibleItemScrollOffset = folderDetailListState.firstVisibleItemScrollOffset,
-        )
-    }
-    fun selectFolder(folder: LibraryFolderNode) {
-        saveSelectedFolderScrollPosition()
-        selectedFolderSourceId = folder.sourceId
-        selectedFolderPath = folder.path
-    }
-    fun navigateBackFromSelectedFolder() {
-        saveSelectedFolderScrollPosition()
-        val destination = resolveLibraryFolderBackDestination(
-            selectedFolderSourceId = selectedFolderSourceId,
-            selectedFolderPath = selectedFolderPath,
-        )
-        selectedFolderSourceId = destination.sourceId
-        selectedFolderPath = destination.path
-    }
-    PlatformBackHandler(enabled = selectedFolderSourceId != null) { navigateBackFromSelectedFolder() }
+    val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter, rootView)
     val tracksByArtistId = remember(visibleTracks) {
         visibleTracks.groupBy(Track::artistLibraryIdOrNull)
     }
@@ -667,20 +621,6 @@ private fun LibraryBrowserTab(
             tracks = visibleTracks,
             sourceLabelsById = state.sourceLabelsById,
         )
-    }
-    val selectedFolderKey = selectedFolderSourceId?.let { sourceId ->
-        LibraryFolderKey(sourceId = sourceId, path = selectedFolderPath.orEmpty())
-    }
-    val selectedFolder = selectedFolderKey?.let { folderTree.nodesByKey[it] }
-    val selectedFolderChildren = selectedFolderKey?.let { folderTree.childFoldersByKey[it].orEmpty() }.orEmpty()
-    val selectedFolderTracks = selectedFolderKey?.let { folderTree.directTracksByKey[it].orEmpty() }.orEmpty()
-    val folderTrackIndexColumnWidth = rememberListIndexColumnWidth(selectedFolderTracks.size)
-    val selectedFolderDetailItemCount = if (selectedFolder == null) {
-        0
-    } else {
-        val childItems = if (selectedFolderChildren.isEmpty()) 0 else 1 + selectedFolderChildren.size
-        val trackItems = 1 + if (selectedFolderTracks.isEmpty()) 1 else selectedFolderTracks.size
-        2 + childItems + trackItems
     }
     val rootSelectorModel = remember(
         currentUiLanguage,
@@ -812,59 +752,22 @@ private fun LibraryBrowserTab(
     LaunchedEffect(rootView, phoneRootClickRequestKey) {
         if (phoneRootState != null &&
             (previousRootView != rootView || phoneRootClickRequestKey != lastHandledRootClickRequestKey)
-        ) {
-            saveSelectedFolderScrollPosition()
-            exitSelectionMode()
-
-
-            selectedFolderSourceId = null
-            selectedFolderPath = null
-        }
+        ) exitSelectionMode()
         previousRootView = rootView
         lastHandledRootClickRequestKey = phoneRootClickRequestKey
     }
-
-    LaunchedEffect(rootView, selectedFolderKey, folderTree.nodesByKey, showFolderBrowser) {
-        if (rootView != LibraryBrowserRootView.Folders ||
-            (selectedFolderKey != null && selectedFolderKey !in folderTree.nodesByKey)
-        ) {
-            selectedFolderSourceId = null
-            selectedFolderPath = null
-        }
+    LaunchedEffect(rootView, showFolderBrowser) {
         if (rootView == LibraryBrowserRootView.Folders && !showFolderBrowser && phoneRootState == null) {
             storedRootView = LibraryBrowserRootView.Tracks
         }
-    }
-
-    LaunchedEffect(selectedFolderKey?.stableId, selectedFolder != null) {
-        val stableId = selectedFolderKey?.stableId ?: return@LaunchedEffect
-        if (selectedFolderDetailItemCount <= 0) return@LaunchedEffect
-        // The list state already restores the current folder's exact scroll position.
-        // Only apply the per-folder history when navigating to a different folder.
-        if (displayedFolderStableId == stableId) return@LaunchedEffect
-        val position = folderDetailScrollPositions[stableId] ?: LibraryFolderDetailScrollPosition(
-            firstVisibleItemIndex = 0,
-            firstVisibleItemScrollOffset = 0,
-        )
-        val itemIndex = position.firstVisibleItemIndex.coerceIn(0, selectedFolderDetailItemCount - 1)
-        folderDetailListState.scrollToItem(
-            index = itemIndex,
-            scrollOffset = position.firstVisibleItemScrollOffset.coerceAtLeast(0),
-        )
-        displayedFolderStableId = stableId
     }
 
     fun selectRootView(view: LibraryBrowserRootView) {
         if (selectionMode) {
             exitSelectionMode()
         }
-        saveSelectedFolderScrollPosition()
         previousRootView = view
         storedRootView = if (tracksOnly) LibraryBrowserRootView.Tracks else view
-
-
-        selectedFolderSourceId = null
-        selectedFolderPath = null
     }
     fun trackRowNavigationTargets(track: Track): PlaybackLibraryNavigationTargets {
         return resolveTrackRowLibraryNavigationTargets(
@@ -952,9 +855,7 @@ private fun LibraryBrowserTab(
     val activeRootView = rootView
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
         val rootView = pageRoot
-        val selectedFolder = selectedFolder.takeIf { pageRoot == activeRootView }
         val activeListState = when {
-            rootView == LibraryBrowserRootView.Folders && selectedFolder != null -> folderDetailListState
             rootView == LibraryBrowserRootView.Albums -> albumsListState
             rootView == LibraryBrowserRootView.Artists -> artistsListState
             rootView == LibraryBrowserRootView.Folders -> foldersListState
@@ -970,7 +871,7 @@ private fun LibraryBrowserTab(
                 state = activeListState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 28.dp, bottom = 20.dp)),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(if (rootView == LibraryBrowserRootView.Folders) 0.dp else 6.dp),
             ) {
                 if (showSearchField || combinedActionButton != null) {
                     item {
@@ -1103,68 +1004,6 @@ private fun LibraryBrowserTab(
                             )
                         }
                     }
-                    rootView == LibraryBrowserRootView.Folders && selectedFolder != null -> {
-                        item {
-                            DetailBackButton(
-                                onClick = ::navigateBackFromSelectedFolder,
-                            )
-                        }
-                        item {
-                            DetailSummaryCard(
-                                title = selectedFolder.name,
-                                subtitle = libraryFolderDetailSubtitle(selectedFolder),
-                                supportingText = libraryFolderSummaryLabel(selectedFolder),
-                                artworkLocator = selectedFolderTracks.firstOrNull()?.artworkLocator,
-                                artworkCacheKey = selectedFolderTracks.firstOrNull()?.let(::trackArtworkCacheKey),
-                            )
-                        }
-                        if (selectedFolderChildren.isNotEmpty()) {
-                            item {
-                                SectionTitle(title = uiString(Res.string.library_folders_title), subtitle = uiString(Res.string.library_subfolders_description))
-                            }
-                            items(selectedFolderChildren, key = { it.key.stableId }) { folder ->
-                                FolderRow(
-                                    folder = folder,
-                                    onClick = { selectFolder(folder) },
-                                )
-                            }
-                        }
-                        item {
-                            SectionTitle(title = uiString(Res.string.library_tracks_title), subtitle = uiString(Res.string.library_folder_tracks_description))
-                        }
-                        if (selectedFolderTracks.isEmpty()) {
-                            item {
-                                EmptyStateCard(
-                                    title = uiString(Res.string.library_folder_direct_tracks_empty),
-                                    body = if (selectedFolderChildren.isEmpty()) {
-                                        uiString(Res.string.library_folder_tracks_filter_empty_hint)
-                                    } else {
-                                        uiString(Res.string.library_subfolders_browse_hint)
-                                    },
-                                )
-                            }
-                        } else {
-                            itemsIndexed(selectedFolderTracks, key = { _, item -> item.id }) { index, track ->
-                                val navigationTargets = trackRowNavigationTargets(track)
-                                TrackRow(
-                                    track = track,
-                                    index = index,
-                                    indexColumnWidth = folderTrackIndexColumnWidth,
-                                    isFavorite = track.id in state.favoriteTrackIds,
-                                    onToggleFavorite = { actions.onToggleFavorite(track) },
-                                    menuContextKey = trackMenuContext,
-                                    showFavoriteIndicator = showFavoriteIndicator,
-                                    showDuration = showDuration,
-                                    onArtistClick = navigationTargetClick(navigationTargets.artistTarget),
-                                    onAlbumClick = navigationTargetClick(navigationTargets.albumTarget),
-                                    onClick = {
-                                        actions.onPlayTracks(selectedFolderTracks, index)
-                                    },
-                                )
-                            }
-                        }
-                    }
-
                     else -> {
                         val currentItemCount = when (rootView) {
                             LibraryBrowserRootView.Tracks -> visibleTracks.size
@@ -1179,7 +1018,9 @@ private fun LibraryBrowserTab(
                             LibraryBrowserRootView.Folders -> strings.folderLabel
                         }
                         if (!tracksOnly) item {
-                            if (phoneRootState != null && rootView == LibraryBrowserRootView.Tracks) {
+                            if (rootView == LibraryBrowserRootView.Folders) {
+                                FolderSectionHeading(strings.folderLabel, "folder-roots-heading")
+                            } else if (phoneRootState != null && rootView == LibraryBrowserRootView.Tracks) {
                                 PhoneLibraryTrackActions(
                                     loadedCount = visibleTracks.size,
                                     count = state.trackCount,
@@ -1325,11 +1166,13 @@ private fun LibraryBrowserTab(
                                 }
 
                                 LibraryBrowserRootView.Folders -> {
-                                    items(folderTree.rootFolders, key = { it.key.stableId }) { folder ->
-                                        FolderRow(
-                                            folder = folder,
-                                            onClick = { selectFolder(folder) },
-                                        )
+                                    itemsIndexed(folderTree.rootFolders, key = { _, folder -> folder.key.stableId }) { index, folder ->
+                                        FolderGroupedRow(index, folderTree.rootFolders.size) {
+                                            LibraryFolderRow(folder, showDivider = index < folderTree.rootFolders.lastIndex,
+                                                onClick = {
+                                                    if (navigation?.hasDetails == false) navigation.openFolder(folder, state.selectedSourceFilter)
+                                                })
+                                        }
                                     }
                                 }
                             }
@@ -1348,6 +1191,7 @@ private fun LibraryBrowserTab(
     }
     if (phoneRootState != null && !tracksOnly) {
         val roots = LibraryBrowserRootView.entries
+        val latestRootView by rememberUpdatedState(rootView)
         val pagerState = rememberPagerState(initialPage = rootView.ordinal) { roots.size }
         LaunchedEffect(rootView) {
             if (pagerState.currentPage != rootView.ordinal) pagerState.scrollToPage(rootView.ordinal)
@@ -1356,7 +1200,7 @@ private fun LibraryBrowserTab(
             snapshotFlow { pagerState.currentPage }
                 .distinctUntilChanged()
                 .collect { page ->
-                    if (pagerState.isScrollInProgress && roots[page] != rootView) {
+                    if (pagerState.isScrollInProgress && roots[page] != latestRootView) {
                         selectRootView(roots[page])
                     }
                 }
@@ -1364,8 +1208,7 @@ private fun LibraryBrowserTab(
         HorizontalPager(
             state = pagerState,
             modifier = modifier.fillMaxSize(),
-            userScrollEnabled = rootPagerScrollEnabled && !selectionMode &&
-                selectedFolderSourceId == null,
+            userScrollEnabled = rootPagerScrollEnabled && !selectionMode,
             key = { roots[it].name },
         ) { page -> pageContent(roots[page]) }
     } else {
@@ -1782,64 +1625,6 @@ private fun compactLibraryRootIcon(
     return defaultLibraryRootIcon(view, songsIcon)
 }
 
-@Composable
-private fun FolderRow(
-    folder: LibraryFolderNode,
-    onClick: () -> Unit,
-) {
-    val shellColors = mainShellColors
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(shellColors.cardContainer)
-                    .border(
-                        border = BorderStroke(1.dp, shellColors.cardBorder),
-                        shape = RoundedCornerShape(16.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.FolderOpen,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = folder.name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = libraryFolderSummaryLabel(folder),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 88.dp)
-                .height(1.dp)
-                .background(shellColors.cardBorder),
-        )
-    }
-}
-
 private fun Track.artistLibraryIdOrNull(): String? {
     return artistName?.trim()?.takeIf { it.isNotBlank() }?.let(::libraryArtistId)
 }
@@ -2179,7 +1964,7 @@ internal fun trackSortModeLabel(mode: TrackSortMode): String {
 }
 
 @Composable
-private fun LibraryFastScrollbar(
+internal fun LibraryFastScrollbar(
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {

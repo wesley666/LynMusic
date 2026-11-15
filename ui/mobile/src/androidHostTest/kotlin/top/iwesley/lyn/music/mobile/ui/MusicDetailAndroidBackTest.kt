@@ -51,6 +51,53 @@ import kotlin.test.assertTrue
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
+    @Test fun folderStackAndScrollPositionRestoreAfterActivityRecreation() {
+        Fixture().use { ui ->
+            val tree = top.iwesley.lyn.music.deriveLibraryFolderTree(ui.folderLibrary.filteredTracks,
+                ui.folderLibrary.sourceLabelsById)
+            for (path in listOf("", "Parent", "Parent/Child")) ui.navigation.openFolder(
+                tree.nodesByKey.getValue(top.iwesley.lyn.music.LibraryFolderKey("local", path)),
+                top.iwesley.lyn.music.feature.library.LibrarySourceFilter.ALL)
+            ui.frames()
+            val original = ui.navigation.top
+            compose.runOnIdle { ui.navigation.folderEntry(original).list.requestScrollToItem(23, 11) }
+            ui.frames()
+            assertEquals(23, ui.navigation.folderEntry(original).list.firstVisibleItemIndex)
+            ui.recreate()
+            assertEquals(original, ui.navigation.top)
+            assertEquals(listOf(null, "", "Parent", "Parent/Child"),
+                ui.navigation.backStack.map { (it as MusicDetailRoute).folderPath })
+            assertEquals(23, ui.navigation.folderEntry(original).list.firstVisibleItemIndex)
+            assertEquals(11, ui.navigation.folderEntry(original).list.firstVisibleItemScrollOffset)
+            assertEquals(LibraryBrowserRootView.Folders, ui.navigation.libraryRootView)
+            ui.navigation.requestBack(); ui.frames()
+            assertEquals("Parent", ui.navigation.top.folderPath)
+        }
+    }
+    @Test fun folderBackGesturesCancelAndPopOneDirectoryAtATimeOnBothEdges() {
+        for (edge in listOf(BackEvent.EDGE_LEFT, BackEvent.EDGE_RIGHT)) Fixture().use { ui ->
+            val tree = top.iwesley.lyn.music.deriveLibraryFolderTree(ui.folderLibrary.filteredTracks,
+                ui.folderLibrary.sourceLabelsById)
+            for (path in listOf("", "Parent", "Parent/Child")) ui.navigation.openFolder(
+                tree.nodesByKey.getValue(top.iwesley.lyn.music.LibraryFolderKey("local", path)),
+                top.iwesley.lyn.music.feature.library.LibrarySourceFilter.ALL)
+            ui.frames()
+            for (expectedParent in listOf("Parent", "", null)) {
+                val original = ui.navigation.top
+                val cancelled = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+                cancelled.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f, 0f)
+                cancelled.cancel()
+                ui.frames()
+                assertEquals(original, ui.navigation.top)
+                assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close()
+                ui.frames()
+                assertEquals(expectedParent, ui.navigation.top.folderPath)
+                assertFalse(ui.activity.isFinishing)
+                assertEquals(0, RecordingActivityClient.backRequests)
+            }
+            assertFalse(ui.navigation.hasDetails)
+        }
+    }
     @Test fun playlistDetailUsesBothSystemBackEdgesWithoutFinishingTheActivity() {
         for (edge in listOf(BackEvent.EDGE_LEFT, BackEvent.EDGE_RIGHT)) Fixture().use { ui ->
             ui.navigation.openPlaylist(top.iwesley.lyn.music.core.model.PlaylistSummary("playlist", "Playlist"),
@@ -256,9 +303,13 @@ class MusicDetailAndroidBackTest {
     }
 
     private inner class Fixture : AutoCloseable {
+        val folderLibrary = top.iwesley.lyn.music.feature.library.LibraryState(isLoadingContent = false,
+            filteredTracks = (0 until 60).map { top.iwesley.lyn.music.core.model.Track("folder-song-$it", "local", "Song $it",
+                mediaLocator = "", relativePath = "Parent/Child/${it.toString().padStart(3, '0')}.mp3") },
+            sourceLabelsById = mapOf("local" to "Local"))
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         private val queries = TestMusicDetailQueries(album = { flowOf(AlbumDetailData("Album")) })
-        val activity = controller.get()
+        val activity get() = controller.get()
         lateinit var navigation: MusicDetailNavigation
         var tagBackRequests = 0
 
@@ -269,6 +320,11 @@ class MusicDetailAndroidBackTest {
             ReflectionHelpers.callStaticMethod<Any>(shadow, "setEnablePredictiveBack", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true))
             ReflectionHelpers.callInstanceMethod<Any>(RuntimeEnvironment.getApplication().applicationInfo, "setEnableOnBackInvokedCallback", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType!!, true))
             controller.setup().visible().windowFocusChanged(true)
+            setContent()
+            frames()
+        }
+
+        private fun setContent() {
             activity.setContent {
                 navigation = rememberMusicDetailNavigation(queries) {}
                 CompositionLocalProvider(
@@ -280,11 +336,22 @@ class MusicDetailAndroidBackTest {
                             MusicDetailHost(onPlayerIntent = {}, musicTags = {
                                 MusicDetailBackHandler(enabled = true) { tagBackRequests++ }
                                 Text("Tags")
+                            }, folder = { route ->
+                                FolderDetailPage(route, navigation, folderLibrary,
+                                    top.iwesley.lyn.music.feature.favorites.FavoritesState(),
+                                    top.iwesley.lyn.music.feature.importing.ImportState(capabilities =
+                                        top.iwesley.lyn.music.core.model.PlatformCapabilities(true, true, true, true, false)),
+                                    {}, {}, showDuration = false)
                             }) { Text("Root") }
                         }
                     }
                 }
             }
+        }
+
+        fun recreate() {
+            controller.recreate().visible().windowFocusChanged(true)
+            setContent()
             frames()
         }
 

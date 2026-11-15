@@ -618,6 +618,7 @@ internal fun TrackRow(
     onSelectionToggle: (() -> Unit)? = null,
     indexColumnWidth: Dp = 32.dp,
     onRemoveFromPlaylist: (() -> Unit)? = null,
+    showDivider: Boolean = true,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -750,7 +751,7 @@ internal fun TrackRow(
                 }
             }
         }
-        Box(
+        if (showDivider) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 88.dp)

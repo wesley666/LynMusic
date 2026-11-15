@@ -45,6 +45,7 @@ internal data class MusicDetailRoute(
     val artistName: String? = null,
     val artworkLocator: String? = null,
     val artworkCacheKey: String? = null,
+    val folderPath: String? = null,
 ) : NavKey {
     val isRoot get() = kind == "root"
     fun sameTarget(other: MusicDetailRoute) = kind == other.kind && entityId == other.entityId &&
@@ -160,6 +161,9 @@ internal class MusicDetailNavigation(
     private val scope: CoroutineScope,
     private val restorePlayer: MutableState<Boolean>,
     private val onRestorePlayer: () -> Unit,
+    val libraryRootState: MutableState<LibraryBrowserRootView> = mutableStateOf(
+        if (backStack.any { (it as MusicDetailRoute).kind == "folder" })
+            LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks),
 ) {
     val top get() = backStack.last() as MusicDetailRoute
     val hasDetails get() = backStack.size > 1
@@ -169,7 +173,10 @@ internal class MusicDetailNavigation(
         private set
     private val entries = mutableMapOf<String, MusicDetailEntryState>()
     private val playlistEntries = mutableMapOf<String, PlaylistDetailEntryState>()
+    private val folderEntries = mutableMapOf<String, FolderDetailEntryState>()
     var playlistListState = LazyListState()
+    var folderListState = LazyListState()
+    var libraryRootView by libraryRootState
     val playlistRoute get() = backStack.filterIsInstance<MusicDetailRoute>().lastOrNull { it.kind == "playlist" }
     private val backHandlers = mutableMapOf<String, () -> Unit>()
     var gestureGeneration: Long? = null
@@ -218,6 +225,26 @@ internal class MusicDetailNavigation(
         }
     }
 
+    fun openFolder(folder: top.iwesley.lyn.music.LibraryFolderNode, sourceFilter: LibrarySourceFilter) {
+        if (folder.sourceId.isBlank()) return
+        val route = MusicDetailRoute(kind = "folder", entityId = folder.key.stableId,
+            sourceId = folder.sourceId, folderPath = folder.path, title = folder.name,
+            sourceFilter = encodeLibrarySourceFilter(sourceFilter))
+        if (top.sameTarget(route)) return
+        libraryRootView = LibraryBrowserRootView.Folders
+        captureGesture()
+        generation++
+        immediate = false
+        backStack.add(route.copy(entryId = "detail:${Random.nextLong()}"))
+    }
+
+    fun folderEntry(route: MusicDetailRoute): FolderDetailEntryState {
+        folderEntries[route.entryId]?.let { return it }
+        return FolderDetailEntryState().also {
+            if (backStack.any { (it as MusicDetailRoute).entryId == route.entryId }) folderEntries[route.entryId] = it
+        }
+    }
+
     fun setBackHandler(entryId: String, handler: (() -> Unit)?) {
         if (handler == null) backHandlers.remove(entryId) else backHandlers[entryId] = handler
     }
@@ -249,6 +276,7 @@ internal class MusicDetailNavigation(
         entries.values.forEach { it.cancel() }
         entries.clear()
         playlistEntries.clear()
+        folderEntries.clear()
         backHandlers.clear()
         while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
@@ -265,13 +293,14 @@ internal class MusicDetailNavigation(
             }
         }
     }
-    fun release(key: Any) { entries.remove(key)?.cancel(); playlistEntries.remove(key); backHandlers.remove(key) }
+    fun release(key: Any) { entries.remove(key)?.cancel(); playlistEntries.remove(key); folderEntries.remove(key); backHandlers.remove(key) }
     fun releaseRemovedEntries() {
         val activeIds = backStack.map { (it as MusicDetailRoute).entryId }.toSet()
         entries.keys.filterNot(activeIds::contains).forEach { release(it) }
         playlistEntries.keys.filterNot(activeIds::contains).forEach { release(it) }
+        folderEntries.keys.filterNot(activeIds::contains).forEach { release(it) }
     }
-    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); playlistEntries.clear(); backHandlers.clear() }
+    fun dispose() { entries.values.forEach { it.cancel() }; entries.clear(); playlistEntries.clear(); folderEntries.clear(); backHandlers.clear() }
 }
 
 internal val LocalMusicDetailNavigation = staticCompositionLocalOf<MusicDetailNavigation?> { null }
@@ -322,8 +351,15 @@ internal fun rememberMusicDetailNavigation(
     val stack = rememberNavBackStack(detailSavedStateConfiguration, MusicDetailRoute())
     val scope = rememberCoroutineScope()
     val restore = rememberSaveable { mutableStateOf(false) }
+    val libraryRootState = rememberSaveable {
+        mutableStateOf(if (stack.any { (it as MusicDetailRoute).kind == "folder" })
+            LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks)
+    }
     val latestRestore by rememberUpdatedState(onRestorePlayer)
-    val navigation = remember(stack, queries) { MusicDetailNavigation(stack, queries, scope, restore) { latestRestore() } }
+    val navigation = remember(stack, queries, libraryRootState) {
+        MusicDetailNavigation(stack, queries, scope, restore,
+            onRestorePlayer = { latestRestore() }, libraryRootState = libraryRootState)
+    }
     DisposableEffect(navigation) { onDispose { navigation.dispose() } }
     return navigation
 }
@@ -335,11 +371,13 @@ internal fun MusicDetailHost(
     showDuration: Boolean = true,
     musicTags: @Composable (MusicDetailRoute) -> Unit = {},
     playlist: @Composable (MusicDetailRoute) -> Unit = {},
+    folder: @Composable (MusicDetailRoute) -> Unit = {},
     root: @Composable () -> Unit,
 ) {
     val navigation = LocalMusicDetailNavigation.current
     val currentMusicTags by rememberUpdatedState(musicTags)
     val currentPlaylist by rememberUpdatedState(playlist)
+    val currentFolder by rememberUpdatedState(folder)
     if (navigation == null) { root(); return }
     DisposableEffect(navigation) {
         onDispose { navigation.releaseRemovedEntries() }
@@ -414,6 +452,7 @@ internal fun MusicDetailHost(
                         route.isRoot -> root()
                         route.kind == "tags" -> currentMusicTags(route)
                         route.kind == "playlist" -> currentPlaylist(route)
+                        route.kind == "folder" -> currentFolder(route)
                         route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, showDuration)
                         else -> ArtistDetailPage(route, navigation, onPlayerIntent, showDuration)
                     }
