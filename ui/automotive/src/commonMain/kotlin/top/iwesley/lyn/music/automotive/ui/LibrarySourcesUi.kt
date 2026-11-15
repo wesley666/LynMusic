@@ -1329,7 +1329,7 @@ private fun LibraryBrowserTab(
                     snapshotFlow { pagerState.currentPage }
                         .distinctUntilChanged()
                         .collect { page ->
-                            if (pagerState.isScrollInProgress && roots[page] != rootView) {
+                            if (pagerState.isScrollInProgress && roots[page] != currentRootView) {
                                 selectRootView(roots[page])
                             }
                         }
