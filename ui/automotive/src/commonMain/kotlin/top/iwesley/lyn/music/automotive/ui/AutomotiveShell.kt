@@ -421,9 +421,10 @@ internal fun AutomotivePortraitShell(
                 } else NavigationBar(containerColor = shellColors.navContainer) {
                     navigationTabs.forEach { tab ->
                         val label = if (portraitNavigation && tab == AppTab.Favorites) uiString(Res.string.favorites_collection_title) else mobileLibraryHubTabLabel(tab)
+                        val isSelected = if (portraitNavigation) automotiveNavigationGroup(selectedTab) == tab
+                        else isMobilePrimaryNavigationSelected(selectedTab, tab)
                         NavigationBarItem(
-                            selected = if (portraitNavigation) automotiveNavigationGroup(selectedTab) == tab
-                            else isMobilePrimaryNavigationSelected(selectedTab, tab),
+                            selected = isSelected,
                             onClick = {
                                 isMoreSheetVisible = false
                                 selectMobileTab(if (portraitNavigation && tab == AppTab.Favorites) lastCollectionTab else tab)
@@ -432,7 +433,7 @@ internal fun AutomotivePortraitShell(
                                 Icon(
                                     imageVector = when (tab) {
                                         AppTab.My -> Icons.Rounded.Person
-                                        AppTab.Favorites -> Icons.Rounded.Favorite
+                                        AppTab.Favorites -> if (isSelected) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder
                                         else -> Icons.Rounded.LibraryMusic
                                     },
                                     contentDescription = label,

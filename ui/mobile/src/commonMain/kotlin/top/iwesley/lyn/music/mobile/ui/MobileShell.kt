@@ -334,9 +334,10 @@ internal fun MobileShell(
                 } else NavigationBar(containerColor = shellColors.navContainer) {
                     navigationTabs.forEach { tab ->
                         val label = if (phoneNavigation && tab == AppTab.Favorites) uiString(Res.string.favorites_collection_title) else mobileLibraryHubTabLabel(tab)
+                        val isSelected = if (phoneNavigation) phoneNavigationGroup(selectedTab) == tab
+                        else isMobilePrimaryNavigationSelected(selectedTab, tab)
                         NavigationBarItem(
-                            selected = if (phoneNavigation) phoneNavigationGroup(selectedTab) == tab
-                            else isMobilePrimaryNavigationSelected(selectedTab, tab),
+                            selected = isSelected,
                             onClick = {
                                 isMoreSheetVisible = false
                                 selectMobileTab(if (phoneNavigation && tab == AppTab.Favorites) lastCollectionTab else tab)
@@ -345,7 +346,7 @@ internal fun MobileShell(
                                 Icon(
                                     imageVector = when (tab) {
                                         AppTab.My -> Icons.Rounded.Person
-                                        AppTab.Favorites -> Icons.Rounded.Favorite
+                                        AppTab.Favorites -> if (isSelected) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder
                                         else -> Icons.Rounded.LibraryMusic
                                     },
                                     contentDescription = label,

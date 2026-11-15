@@ -35,6 +35,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Person
@@ -203,7 +204,12 @@ internal fun LiquidGlassDock(
                     .graphicsLayer { translationX = (if (isLtr) 1f else -1f) * position * tabWidthPx }
                     .width(tabWidth).height(56.dp).then(selection),
             )
-            val icons = listOf(Icons.Rounded.LibraryMusic, Icons.Rounded.Favorite, Icons.Rounded.Person, Icons.Rounded.MoreHoriz)
+            val icons = listOf(
+                Icons.Rounded.LibraryMusic,
+                if (selectedIndex == 1) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                Icons.Rounded.Person,
+                Icons.Rounded.MoreHoriz,
+            )
             val labels = listOf(uiString(Res.string.library_title), uiString(Res.string.favorites_collection_title), uiString(Res.string.navigation_my_music), uiString(Res.string.common_more))
             Row(Modifier.fillMaxSize().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 icons.forEachIndexed { index, icon ->
