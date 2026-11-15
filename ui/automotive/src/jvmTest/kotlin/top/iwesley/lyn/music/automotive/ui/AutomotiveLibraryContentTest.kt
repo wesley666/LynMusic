@@ -32,6 +32,108 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class AutomotiveLibraryContentTest {
+    @Test fun `album grid uses actual width square covers and full span pagination`() = onUiThread {
+        for ((width, columns) in listOf(360 to 2, 599 to 2, 600 to 3, 735 to 3, 736 to 4, 1194 to 6)) {
+            Fixture(width, 1000).use { ui ->
+                ui.clickRoot(LibraryBrowserRootView.Albums)
+                val items = ui.albumGrid.layoutInfo.visibleItemsInfo
+                assertEquals(columns, items.filter { it.row == 0 }.size, "width=$width")
+                val cover = ui.nodes(unmerged = true).first { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("album-grid-cover-") == true }.boundsInRoot
+                assertEquals(cover.width, cover.height, 1f)
+                assertFalse(ui.hasTag("automotive-library-list-Albums"))
+                assertFalse(ui.hasLabel("Grid view"))
+            }
+        }
+        Fixture(390, 900).use { ui ->
+            ui.online = OnlineLibraryState(sourceId = "server", albums = listOf(
+                top.iwesley.lyn.music.data.repository.OnlineAlbumItem(Album("remote", "Remote album", "Artist", 70))),
+                canLoadMoreAlbums = true)
+            ui.clickRoot(LibraryBrowserRootView.Albums)
+            assertEquals(342, ui.albumGrid.layoutInfo.visibleItemsInfo.last().size.width)
+            val oldKey = ui.albumGrid.layoutInfo.visibleItemsInfo.first().key
+            ui.online = ui.online.copy(sourceId = "other"); ui.render()
+            assertNotEquals(oldKey, ui.albumGrid.layoutInfo.visibleItemsInfo.first().key)
+            assertTrue(ui.metadataTargets.isEmpty())
+            ui.clickLabel("Load more")
+            assertEquals(listOf<OnlineLibraryIntent>(OnlineLibraryIntent.LoadMoreAlbums), ui.onlineIntents)
+            ui.online = ui.online.copy(isLoadingMoreAlbums = true); ui.render()
+            assertTrue(ui.label("Loading").config.contains(SemanticsProperties.Disabled))
+            ui.online = ui.online.copy(isLoadingMoreAlbums = false, errorMessage = UiText.Raw("Page failed")); ui.render()
+            assertTrue(ui.hasLabel("Remote album")); assertTrue(ui.hasLabel("Load more"))
+            ui.online = ui.online.copy(albums = emptyList()); ui.render()
+            assertTrue(ui.hasLabel("Load more"))
+            ui.online = ui.online.copy(albums = listOf(top.iwesley.lyn.music.data.repository.OnlineAlbumItem(Album("remote", "Remote album"))))
+            ui.render()
+            val click = ui.tag("album-grid-card-remote").config[SemanticsActions.OnClick].action!!
+            click(); click(); ui.render()
+            assertEquals("other", (ui.metadataTargets.single() as LibraryNavigationTarget.OnlineAlbum).sourceId)
+            ui.clickLabel("Back")
+            ui.online = ui.online.copy(albums = listOf(top.iwesley.lyn.music.data.repository.OnlineAlbumItem(Album("", "", ""))))
+            ui.render()
+            assertTrue(ui.hasLabel("Unknown album")); assertTrue(ui.hasLabel("Unknown artist"))
+            assertTrue(ui.tag("album-grid-card-").config.contains(SemanticsProperties.Disabled))
+        }
+    }
+
+    @Test fun `album position survives loading and host restore while explicit search resets it`() = onUiThread {
+        val saved = Fixture().use { ui ->
+            ui.clickRoot(LibraryBrowserRootView.Albums)
+            ui.scroll(LibraryBrowserRootView.Albums, 1000f)
+            val index = ui.albumGrid.firstVisibleItemIndex
+            val offset = ui.albumGrid.firstVisibleItemScrollOffset
+            assertTrue(index > 0)
+            val loaded = ui.library
+            ui.library = loaded.copy(isLoadingContent = true, filteredAlbums = emptyList()); ui.render()
+            assertEquals(index, ui.albumGrid.firstVisibleItemIndex)
+            ui.library = loaded; ui.render()
+            assertEquals(index, ui.albumGrid.firstVisibleItemIndex)
+            assertEquals(offset, ui.albumGrid.firstVisibleItemScrollOffset)
+            ui.registry.performSave()
+        }
+        Fixture(restored = saved).use { ui ->
+            assertTrue(ui.albumGrid.firstVisibleItemIndex > 0)
+            ui.setQuery("Album 00")
+            assertEquals(0, ui.albumGrid.firstVisibleItemIndex)
+            assertEquals(0, ui.albumGrid.firstVisibleItemScrollOffset)
+            ui.clickTag("album-grid-card-${ui.library.filteredAlbums.first().id}")
+            ui.clickLabel("Back")
+            assertEquals("Album 00", ui.library.query)
+            assertTrue(ui.playerIntents.isEmpty())
+        }
+    }
+
+    @Test fun `online grid keeps appended anchors and resets search during loading`() = onUiThread {
+        Fixture().use { ui ->
+            val albums = (0..39).map { top.iwesley.lyn.music.data.repository.OnlineAlbumItem(Album("remote-$it","Remote $it","Artist",8)) }
+            ui.online = OnlineLibraryState(sourceId = "server",albums = albums,canLoadMoreAlbums = true)
+            ui.clickRoot(LibraryBrowserRootView.Albums); ui.scroll(LibraryBrowserRootView.Albums,1000f)
+            val anchor = ui.albumGrid.layoutInfo.visibleItemsInfo.first().key
+            ui.online = ui.online.copy(albums = albums + top.iwesley.lyn.music.data.repository.OnlineAlbumItem(Album("last","Last")))
+            ui.render(); assertEquals(anchor,ui.albumGrid.layoutInfo.visibleItemsInfo.first().key)
+            ui.online = ui.online.copy(isLoading = true,albums = emptyList()); ui.render()
+            ui.setQuery("Remote")
+            ui.online = ui.online.copy(isLoading = false,albums = albums.drop(10)); ui.render()
+            assertEquals(0,ui.albumGrid.firstVisibleItemIndex); assertEquals(0,ui.albumGrid.firstVisibleItemScrollOffset)
+            assertEquals(listOf<OnlineLibraryIntent>(OnlineLibraryIntent.SearchChanged("Remote")),ui.onlineIntents)
+        }
+    }
+
+    @Test fun `album scrollbar reaches partial last rows and positions short overflow`() = onUiThread {
+        for ((width, height, count) in listOf(Triple(390,900,39), Triple(834,900,39), Triple(390,900,7))) {
+            Fixture(width, height).use { ui ->
+                ui.library = ui.library.copy(filteredAlbums = ui.library.albums.take(count))
+                ui.clickRoot(LibraryBrowserRootView.Albums)
+                ui.dragAlbumScrollbar(1f)
+                assertFalse(ui.albumGrid.canScrollForward)
+                ui.dragAlbumScrollbar(0f)
+                assertFalse(ui.albumGrid.canScrollBackward)
+                ui.dragAlbumScrollbar(.5f)
+                assertTrue(ui.albumGrid.canScrollBackward)
+                assertTrue(ui.albumGrid.canScrollForward)
+            }
+        }
+    }
+
     @Test
     fun `both layouts share tab clicks swipes and non looping edges`() = onUiThread {
         for ((width, height) in listOf(1184 to 800, 480 to 900)) {
@@ -61,14 +163,14 @@ class AutomotiveLibraryContentTest {
             val headerBounds = ui.tag("automotive-library-header").boundsInRoot
             ui.clickRoot(LibraryBrowserRootView.Albums)
             ui.scroll(LibraryBrowserRootView.Albums, 650f)
-            val albumsPosition = ui.scrollPosition(LibraryBrowserRootView.Albums)
+            val albumAnchor = ui.albumGrid.layoutInfo.visibleItemsInfo.first().key
             ui.clickRoot(LibraryBrowserRootView.Tracks)
             assertEquals(tracksPosition, ui.scrollPosition(LibraryBrowserRootView.Tracks))
             ui.resize(480, 900)
             ui.assertRoot(LibraryBrowserRootView.Tracks)
             assertEquals(tracksPosition, ui.scrollPosition(LibraryBrowserRootView.Tracks))
             ui.clickRoot(LibraryBrowserRootView.Albums)
-            assertEquals(albumsPosition, ui.scrollPosition(LibraryBrowserRootView.Albums))
+            assertTrue(ui.albumGrid.layoutInfo.visibleItemsInfo.any { it.key == albumAnchor })
             ui.scroll(LibraryBrowserRootView.Albums, -10_000f)
             ui.clickLabel("Album 00")
             assertTrue(ui.hasLabel("Back"))
@@ -241,6 +343,8 @@ class AutomotiveLibraryContentTest {
             albums = albums, filteredAlbums = albums, artists = artists, filteredArtists = artists,
             visibleAlbumCount = albums.size, visibleArtistCount = artists.size))
         var online by mutableStateOf(OnlineLibraryState())
+        val onlineIntents = mutableListOf<OnlineLibraryIntent>()
+        val albumGrid get() = detailNavigation.libraryAlbumState.grid
         val playerIntents = mutableListOf<PlayerIntent>()
         val metadataTargets = mutableListOf<LibraryNavigationTarget>()
         private var navigationTarget by mutableStateOf<LibraryNavigationTarget?>(null)
@@ -277,11 +381,12 @@ class AutomotiveLibraryContentTest {
                                         favoritesState = FavoritesState(), importState = importState,
                                         onLibraryIntent = { intent -> library = when (intent) {
                                             is LibraryIntent.SearchChanged -> library.copy(query = intent.query,
-                                                filteredTracks = tracks.filter { it.title.contains(intent.query, true) })
+                                                filteredTracks = tracks.filter { it.title.contains(intent.query, true) },
+                                                filteredAlbums = albums.filter { it.title.contains(intent.query, true) })
                                             is LibraryIntent.SourceFilterChanged -> library.copy(selectedSourceFilter = intent.filter)
                                             is LibraryIntent.TrackSortChanged -> library.copy(selectedTrackSortMode = intent.mode)
                                         } },
-                                        onOnlineLibraryIntent = { intent -> online = when (intent) {
+                                        onOnlineLibraryIntent = { intent -> onlineIntents += intent; online = when (intent) {
                                             is OnlineLibraryIntent.SelectSource -> OnlineLibraryState(sourceId = intent.sourceId)
                                             is OnlineLibraryIntent.SearchChanged -> online.copy(query = intent.query)
                                             else -> online
@@ -309,9 +414,9 @@ class AutomotiveLibraryContentTest {
             Snapshot.sendApplyNotifications()
             scene.render(++frame * 16_666_667L).close()
         } }
-        fun nodes(): List<SemanticsNode> {
+        fun nodes(unmerged: Boolean = false): List<SemanticsNode> {
             fun walk(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::walk)
-            return scene.semanticsOwners.flatMap { walk(it.rootSemanticsNode) }
+            return scene.semanticsOwners.flatMap { walk(if (unmerged) it.unmergedRootSemanticsNode else it.rootSemanticsNode) }
         }
         fun tag(tag: String) = nodes().single { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
         fun hasTag(tag: String) = nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == tag }
@@ -325,6 +430,7 @@ class AutomotiveLibraryContentTest {
             scene.sendPointerEvent(PointerEventType.Release, node.boundsInRoot.center, type = PointerType.Touch)
             render()
         }
+        fun clickTag(value: String) = click(tag(value))
         fun focusInlineSearch() = click(tag("automotive-library-inline-search"))
         fun clickLabel(label: String) = click(label(label))
         fun clickRoot(root: LibraryBrowserRootView) = click(tag("automotive-library-tab-${root.name}"))
@@ -333,10 +439,21 @@ class AutomotiveLibraryContentTest {
         }
         fun resize(width: Int, height: Int) { scene.constraints = Constraints.fixed(width, height); render() }
         fun scroll(root: LibraryBrowserRootView, delta: Float) {
-            assertTrue(tag("automotive-library-list-${root.name}").config[SemanticsActions.ScrollBy].action!!.invoke(0f, delta))
+            assertTrue(tag(if (root == LibraryBrowserRootView.Albums) "automotive-library-grid-Albums" else "automotive-library-list-${root.name}").config[SemanticsActions.ScrollBy].action!!.invoke(0f, delta))
             render()
         }
-        fun scrollPosition(root: LibraryBrowserRootView) = tag("automotive-library-list-${root.name}").config[SemanticsProperties.VerticalScrollAxisRange].value()
+        fun scrollPosition(root: LibraryBrowserRootView) = tag(if (root == LibraryBrowserRootView.Albums) "automotive-library-grid-Albums" else "automotive-library-list-${root.name}").config[SemanticsProperties.VerticalScrollAxisRange].value()
+        fun dragAlbumScrollbar(fraction: Float) {
+            val bounds = tag("library-album-scrollbar").boundsInRoot
+            val start = Offset(bounds.center.x, bounds.top + bounds.height * (if (fraction == .5f) .1f else .5f))
+            val end = Offset(bounds.center.x, bounds.top + bounds.height * fraction)
+            scene.sendPointerEvent(PointerEventType.Press, start, type = PointerType.Touch)
+            repeat(12) { step ->
+                scene.sendPointerEvent(PointerEventType.Move, start + (end - start) * ((step + 1) / 12f), type = PointerType.Touch)
+                render(2)
+            }
+            scene.sendPointerEvent(PointerEventType.Release, end, type = PointerType.Touch); render()
+        }
         fun setQuery(query: String) {
             val input = nodes().single { it.config.contains(SemanticsActions.SetText) }
             assertTrue(input.config[SemanticsActions.SetText].action!!.invoke(AnnotatedString(query)))

@@ -161,6 +161,7 @@ internal class MusicDetailNavigation(
     private val scope: CoroutineScope,
     private val restorePlayer: MutableState<Boolean>,
     private val onRestorePlayer: () -> Unit,
+    val libraryAlbumState: LibraryAlbumGridState = LibraryAlbumGridState(),
     val libraryRootState: MutableState<LibraryBrowserRootView> = mutableStateOf(
         if (backStack.any { (it as MusicDetailRoute).kind == "folder" }) LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks),
 ) {
@@ -336,7 +337,9 @@ internal fun rememberMusicDetailNavigation(
     val latestRestore by rememberUpdatedState(onRestorePlayer)
     val libraryRoot = rememberSaveable { mutableStateOf(
         if (stack.any { (it as MusicDetailRoute).kind == "folder" }) LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks) }
-    val navigation = remember(stack, queries) { MusicDetailNavigation(stack, queries, scope, restore, { latestRestore() }, libraryRoot) }
+    val libraryAlbums = rememberLibraryAlbumGridState()
+    val navigation = remember(stack, queries, libraryAlbums) { MusicDetailNavigation(stack, queries, scope, restore, { latestRestore() },
+        libraryAlbumState = libraryAlbums, libraryRootState = libraryRoot) }
     DisposableEffect(navigation) { onDispose { navigation.dispose() } }
     return navigation
 }

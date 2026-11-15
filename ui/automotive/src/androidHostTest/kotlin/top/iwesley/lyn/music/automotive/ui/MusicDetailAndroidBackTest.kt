@@ -86,6 +86,47 @@ class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME,
         PlatformCapabilities(true, true, true, true, false))
+    @Test fun albumGridBothEdgesKeepItsPositionOnCancelAndReturnFromDetail() {
+        for (edge in listOf(BackEvent.EDGE_LEFT,BackEvent.EDGE_RIGHT)) Fixture(albumRoot = true).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.frames()
+            compose.onNodeWithTag("automotive-library-grid-Albums").performScrollToIndex(20); ui.frames()
+            val grid = ui.navigation.libraryAlbumState.grid
+            val index = grid.firstVisibleItemIndex; val offset = grid.firstVisibleItemScrollOffset
+            compose.onNodeWithTag("album-grid-card-album-20").performClick(); ui.frames()
+            val route = ui.navigation.top
+            assertEquals(1,ui.albumRequests)
+            val gesture = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            gesture.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f,0f); gesture.cancel(); ui.frames()
+            assertEquals(route,ui.navigation.top)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertEquals(index,grid.firstVisibleItemIndex); assertEquals(offset,grid.firstVisibleItemScrollOffset)
+            assertEquals(1,ui.albumRequests); assertFalse(ui.activity.isFinishing)
+            assertEquals(0,RecordingActivityClient.backRequests)
+        }
+    }
+
+    @Test fun albumGridHostRestoreKeepsItsPositionThroughInitialLoading() {
+        lateinit var saved: android.os.Bundle
+        lateinit var loaded: LibraryState
+        var index = 0; var offset = 0
+        Fixture(albumRoot = true).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.frames()
+            compose.onNodeWithTag("automotive-library-grid-Albums").performScrollToIndex(20); ui.frames()
+            index = ui.navigation.libraryAlbumState.grid.firstVisibleItemIndex
+            offset = ui.navigation.libraryAlbumState.grid.firstVisibleItemScrollOffset
+            loaded = ui.folderLibrary.value; saved = ui.saveState()
+        }
+        Fixture(albumRoot = true,folderInitiallyLoading = true,savedInstanceState = saved).use { ui ->
+            assertEquals(LibraryBrowserRootView.Albums,ui.navigation.libraryRootState.value)
+            assertEquals(index,ui.navigation.libraryAlbumState.grid.firstVisibleItemIndex)
+            ui.folderLibrary.value = loaded; ui.frames()
+            assertEquals(index,ui.navigation.libraryAlbumState.grid.firstVisibleItemIndex)
+            assertEquals(offset,ui.navigation.libraryAlbumState.grid.firstVisibleItemScrollOffset)
+            assertEquals(0,ui.albumRequests)
+        }
+    }
+
     @Test fun folderBothEdgesKeepPositionsOnCancelAndPopDirectoriesInOrder() {
         for (edge in listOf(BackEvent.EDGE_LEFT,BackEvent.EDGE_RIGHT)) Fixture(folderRoot = true).use { ui ->
             ui.openFolder(""); ui.openFolder("Parent"); val parent = ui.navigation.top
@@ -527,7 +568,7 @@ class MusicDetailAndroidBackTest {
         private val portraitFavoritesRoot: Boolean = false,
         private val playlistRoot: Boolean = false, private val onlinePlaylist: Boolean = false,
         savedInstanceState: android.os.Bundle? = null, private val folderRoot: Boolean = false,
-        folderInitiallyLoading: Boolean = false, private val portraitFolderRoot: Boolean = false) : AutoCloseable {
+        folderInitiallyLoading: Boolean = false, private val portraitFolderRoot: Boolean = false, private val albumRoot: Boolean = false) : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         var albumRequests = 0
         private val queries = TestMusicDetailQueries(album = {
@@ -544,7 +585,10 @@ class MusicDetailAndroidBackTest {
         private val folderTracks = (0..39).map { Track("song-$it","source","Song $it",mediaLocator = "",relativePath = "Parent/Album/$it.flac") }
         val folderLibrary = androidx.compose.runtime.mutableStateOf(LibraryState(isLoadingContent = folderInitiallyLoading,
             tracks = if (folderInitiallyLoading) emptyList() else folderTracks,
-            filteredTracks = if (folderInitiallyLoading) emptyList() else folderTracks,sourceLabelsById = mapOf("source" to "Storage")))
+            filteredTracks = if (folderInitiallyLoading) emptyList() else folderTracks,
+            albums = if (albumRoot) (0..39).map { top.iwesley.lyn.music.core.model.Album("album-$it","Album $it","Artist",12) } else emptyList(),
+            filteredAlbums = if (albumRoot && !folderInitiallyLoading) (0..39).map { top.iwesley.lyn.music.core.model.Album("album-$it","Album $it","Artist",12) } else emptyList(),
+            sourceLabelsById = mapOf("source" to "Storage")))
         private val folderSources = ImportState(capabilities = platform.capabilities,sources = listOf(SourceWithStatus(
             ImportSource("source",ImportSourceType.LOCAL_FOLDER,"Storage",""))))
         fun openFolder(path: String) {
@@ -591,7 +635,7 @@ class MusicDetailAndroidBackTest {
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() },
                 ) {
                     ProvideUiResourceLanguage("en") {
-                        LynMusicTheme { if (portraitFavoritesRoot || portraitFolderRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}, playlist = { route ->
+                        LynMusicTheme { if (portraitFavoritesRoot || portraitFolderRoot || albumRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}, playlist = { route ->
                             PlaylistDetailPage(route,navigation,playlistState.value,onlinePlaylistState.value,playlistSources,
                                 ::localPlaylist,::onlinePlaylist,{},allowSplit = false)
                         }, folder = { route ->
@@ -625,12 +669,12 @@ class MusicDetailAndroidBackTest {
             } }
             AutomotivePortraitShell(
                 portraitNavigation = true,mobilePortraitMiniPlayer = true,hideMiniPlayerBar = false,
-                selectedTab = if (portraitFolderRoot) AppTab.Library else AppTab.Favorites,onTabSelected = {},platform = platform,
-                myState = MyState(),libraryState = if (portraitFolderRoot) folderLibrary.value else LibraryState(),onlineLibraryState = OnlineLibraryState(),
+                selectedTab = if (portraitFolderRoot || albumRoot) AppTab.Library else AppTab.Favorites,onTabSelected = {},platform = platform,
+                myState = MyState(),libraryState = if (portraitFolderRoot || albumRoot) folderLibrary.value else LibraryState(),onlineLibraryState = OnlineLibraryState(),
                 playlistsState = PlaylistsState(),onlinePlaylistsState = OnlinePlaylistsState(),
                 favoritesState = FavoritesState(isLoadingContent = false,query = favoritesQuery.value,
                     tracks = tracks,filteredTracks = tracks,favoriteTrackIds = tracks.mapTo(mutableSetOf()) { it.id }),
-                onlineFavoritesState = OnlineFavoritesState(),importState = if (portraitFolderRoot) folderSources else ImportState(capabilities = platform.capabilities),
+                onlineFavoritesState = OnlineFavoritesState(),importState = if (portraitFolderRoot || albumRoot) folderSources else ImportState(capabilities = platform.capabilities),
                 playerState = PlayerState(),settingsState = SettingsState(),
                 onMyIntent = {},onLibraryIntent = { if (it is LibraryIntent.SearchChanged) folderLibrary.value = folderLibrary.value.copy(query = it.query) },
                 onOnlineLibraryIntent = {},onPlaylistsIntent = {},onOnlinePlaylistsIntent = {},

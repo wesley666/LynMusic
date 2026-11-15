@@ -643,9 +643,10 @@ private fun LibraryBrowserTab(
     val durationColumnWidth = 56.dp * if (rootState != null) LocalDensity.current.fontScale.coerceAtLeast(1f) else 1f
     val favoritesPage = if (tracksOnly) LocalFavoritesPageState.current else null
     val tracksListState = favoritesPage?.tracks ?: rememberLazyListState()
-    val albumsListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
     val navigation = LocalMusicDetailNavigation.current
+    val albumGridState = navigation?.libraryAlbumState ?: rememberLibraryAlbumGridState()
+    val currentAlbumContext by rememberUpdatedState(albumGridContext(state))
     val foreground by rememberUpdatedState(LocalMusicDetailIsForeground.current)
     val foldersListState = rememberSaveable(saver = LazyListState.Saver) {
         if (tracksOnly) LazyListState() else navigation?.folderListState ?: LazyListState()
@@ -660,6 +661,7 @@ private fun LibraryBrowserTab(
     val defaultRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
     var storedRootView by (rootState ?: defaultRootState)
     val rootView = if (tracksOnly) LibraryBrowserRootView.Tracks else storedRootView
+    val currentRootView by rememberUpdatedState(rootView)
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter, rootView) +
@@ -851,7 +853,10 @@ private fun LibraryBrowserTab(
             onlineSourceId = state.sourceId.takeIf { state.isOnline },
         )
     }
+    val albumContext = albumGridContext(state)
     fun openAlbumDetail(item: LibraryAlbumUiItem) {
+        if (!foreground || currentRootView != LibraryBrowserRootView.Albums || currentAlbumContext != albumContext ||
+            (navigation != null && (navigation.hasDetails || navigation.generation != navigationGeneration))) return
         val target = if (state.isOnline) {
             val sourceId = state.sourceId?.takeIf(String::isNotBlank) ?: return
             val albumId = item.remoteAlbumId?.trim()?.takeIf(String::isNotBlank) ?: return
@@ -981,20 +986,116 @@ private fun LibraryBrowserTab(
         if (rootState == null) tracksStatFocusRequester.requestFocus()
     }
     val activeRootView = rootView
+    val browserToolbar: @Composable () -> Unit = {
+        val useDesktopToolbar = useDesktopLibraryBrowserToolbar(showSearchField, showDuration)
+        if (showSearchField) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                    //.height(56.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LibraryBrowserSearchField(
+                    query = state.query,
+                    onQueryChanged = actions.onSearchChanged,
+                    placeholder = strings.searchLabel,
+                    useDesktopToolbar = useDesktopToolbar,
+                    containerColor = searchFieldContainerColor,
+                    colors = searchFieldColors,
+                    modifier = if (useDesktopToolbar) {
+                        Modifier
+                    } else {
+                        Modifier.weight(1f)
+                    },
+                    nonDesktopTrailingIcon = if (useDesktopToolbar) {
+                        null
+                    } else {
+                        {
+                            LibraryBrowserToolbarActions(
+                                sourceFilterOptions = state.sourceFilterOptions,
+                                selectedSourceFilter = state.selectedSourceFilter,
+                                onlineSourceOptions = onlineSourceOptions,
+                                selectedOnlineSourceId = state.sourceId,
+                                sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                                onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                                onSourceFilterChanged = actions.onSourceFilterChanged,
+                                onOnlineSourceSelected = actions.onOnlineSourceSelected,
+                                showTrackSortMenu = showTrackSortMenu,
+                                selectedTrackSortMode = state.selectedTrackSortMode,
+                                trackSortMenuExpanded = trackSortMenuExpanded,
+                                onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                                onTrackSortChanged = actions.onTrackSortChanged,
+                                actionButton = combinedActionButton,
+                            )
+                        }
+                    },
+                )
+                if (useDesktopToolbar) {
+                    Spacer(Modifier.weight(1f))
+                    LibraryBrowserToolbarActions(
+                        sourceFilterOptions = state.sourceFilterOptions,
+                        selectedSourceFilter = state.selectedSourceFilter,
+                        onlineSourceOptions = onlineSourceOptions,
+                        selectedOnlineSourceId = state.sourceId,
+                        sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                        onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                        onSourceFilterChanged = actions.onSourceFilterChanged,
+                        onOnlineSourceSelected = actions.onOnlineSourceSelected,
+                        showTrackSortMenu = showTrackSortMenu,
+                        selectedTrackSortMode = state.selectedTrackSortMode,
+                        trackSortMenuExpanded = trackSortMenuExpanded,
+                        onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                        onTrackSortChanged = actions.onTrackSortChanged,
+                        actionButton = combinedActionButton,
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                combinedActionButton?.invoke()
+            }
+        }
+    }
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
         val rootView = pageRoot
         val activeListState = when {
-            rootView == LibraryBrowserRootView.Albums -> albumsListState
             rootView == LibraryBrowserRootView.Artists -> artistsListState
             rootView == LibraryBrowserRootView.Folders -> foldersListState
             else -> tracksListState
         }
-        val useDesktopToolbar = useDesktopLibraryBrowserToolbar(
-            showSearchField = showSearchField,
-            showDuration = showDuration,
-        )
-
-        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        if (rootView == LibraryBrowserRootView.Albums) {
+            LibraryAlbumGrid(
+                state = state, page = albumGridState, tracksByAlbumId = tracksByAlbumId,
+                onOpenAlbum = ::openAlbumDetail, onLoadMore = actions.onLoadMoreAlbums,
+                onDismissMessage = actions.onDismissMessage,
+                header = if (rootState == null || showSearchField || combinedActionButton != null) ({
+                    Column {
+                        if (showSearchField || combinedActionButton != null) browserToolbar()
+                        if (rootState == null) LibraryRootSelector(
+                            model = rootSelectorModel, selectedRootView = rootView, songsIcon = strings.songsIcon,
+                            tracksStatFocusRequester = tracksStatFocusRequester, onSelectRootView = ::selectRootView,
+                            onPlayAllTracks = { if (visibleTracks.isNotEmpty()) actions.onPlayTracks(visibleTracks, 0) },
+                        )
+                    }
+                }) else null,
+                emptyContent = {
+                    when {
+                        state.isLoading -> EmptyStateCard(uiString(Res.string.library_loading_named_category, strings.albumLabel),
+                            uiString(Res.string.library_background_indexing_hint))
+                        state.allTrackCount == 0 -> EmptyStateCard(strings.emptyCollectionTitle, strings.emptyCollectionBody)
+                        state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
+                            uiString(Res.string.library_source_category_empty_title, strings.albumLabel), strings.emptyFilterBody)
+                        else -> EmptyStateCard(uiString(Res.string.library_category_filter_empty_title, strings.albumLabel), strings.emptySearchBody)
+                    }
+                },
+            )
+        } else BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val folderPage = rootView == LibraryBrowserRootView.Folders
             val folderPadding = if (maxWidth >= 600.dp) 24.dp else 20.dp
             val statusList = rememberLazyListState()
@@ -1006,83 +1107,7 @@ private fun LibraryBrowserTab(
                     top = 20.dp, end = if (folderPage) folderPadding + 8.dp else 28.dp, bottom = 20.dp)),
                 verticalArrangement = Arrangement.spacedBy(if (folderPage) 0.dp else 6.dp),
             ) {
-                if (showSearchField || combinedActionButton != null) {
-                    item {
-                        if (showSearchField) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                    //.height(56.dp)
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                LibraryBrowserSearchField(
-                                    query = state.query,
-                                    onQueryChanged = actions.onSearchChanged,
-                                    placeholder = strings.searchLabel,
-                                    useDesktopToolbar = useDesktopToolbar,
-                                    containerColor = searchFieldContainerColor,
-                                    colors = searchFieldColors,
-                                    modifier = if (useDesktopToolbar) {
-                                        Modifier
-                                    } else {
-                                        Modifier.weight(1f)
-                                    },
-                                    nonDesktopTrailingIcon = if (useDesktopToolbar) {
-                                        null
-                                    } else {
-                                        {
-                                            LibraryBrowserToolbarActions(
-                                                sourceFilterOptions = state.sourceFilterOptions,
-                                                selectedSourceFilter = state.selectedSourceFilter,
-                                                onlineSourceOptions = onlineSourceOptions,
-                                                selectedOnlineSourceId = state.sourceId,
-                                                sourceFilterMenuExpanded = sourceFilterMenuExpanded,
-                                                onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
-                                                onSourceFilterChanged = actions.onSourceFilterChanged,
-                                                onOnlineSourceSelected = actions.onOnlineSourceSelected,
-                                                showTrackSortMenu = showTrackSortMenu,
-                                                selectedTrackSortMode = state.selectedTrackSortMode,
-                                                trackSortMenuExpanded = trackSortMenuExpanded,
-                                                onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
-                                                onTrackSortChanged = actions.onTrackSortChanged,
-                                                actionButton = combinedActionButton,
-                                            )
-                                        }
-                                    },
-                                )
-                                if (useDesktopToolbar) {
-                                    Spacer(Modifier.weight(1f))
-                                    LibraryBrowserToolbarActions(
-                                        sourceFilterOptions = state.sourceFilterOptions,
-                                        selectedSourceFilter = state.selectedSourceFilter,
-                                        onlineSourceOptions = onlineSourceOptions,
-                                        selectedOnlineSourceId = state.sourceId,
-                                        sourceFilterMenuExpanded = sourceFilterMenuExpanded,
-                                        onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
-                                        onSourceFilterChanged = actions.onSourceFilterChanged,
-                                        onOnlineSourceSelected = actions.onOnlineSourceSelected,
-                                        showTrackSortMenu = showTrackSortMenu,
-                                        selectedTrackSortMode = state.selectedTrackSortMode,
-                                        trackSortMenuExpanded = trackSortMenuExpanded,
-                                        onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
-                                        onTrackSortChanged = actions.onTrackSortChanged,
-                                        actionButton = combinedActionButton,
-                                    )
-                                }
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                combinedActionButton?.invoke()
-                            }
-                        }
-                    }
-                }
+                if (showSearchField || combinedActionButton != null) item { browserToolbar() }
                 if (selectionMode && pageRoot == activeRootView) {
                     item {
                         TrackSelectionActionBar(
@@ -1232,36 +1257,7 @@ private fun LibraryBrowserTab(
                                     }
                                 }
 
-                                LibraryBrowserRootView.Albums -> {
-                                    items(state.albums, key = { it.id }) { albumItem ->
-                                        val album = albumItem.album
-                                        val fallbackArtworkTrack = tracksByAlbumId[album.id].orEmpty().firstOrNull()
-                                        AlbumRow(
-                                            album = album,
-                                            enabled = !state.isOnline || (
-                                                state.sourceId?.isNotBlank() == true && albumItem.remoteAlbumId?.isNotBlank() == true
-                                            ),
-                                            artworkLocator = albumItem.artworkLocator ?: fallbackArtworkTrack?.artworkLocator,
-                                            artworkCacheKey = if (albumItem.artworkLocator == null) {
-                                                fallbackArtworkTrack?.let(::trackArtworkCacheKey)
-                                            } else {
-                                                null
-                                            },
-                                            onClick = {
-                                                openAlbumDetail(albumItem)
-                                            },
-                                        )
-                                    }
-                                    if (state.capabilities.canLoadMoreAlbums) {
-                                        item {
-                                            LibraryLoadMoreRow(
-                                                isLoading = state.isLoadingMoreAlbums,
-                                                count = state.albumCount,
-                                                onLoadMore = actions.onLoadMoreAlbums,
-                                            )
-                                        }
-                                    }
-                                }
+                                LibraryBrowserRootView.Albums -> Unit // Rendered by the independent grid above.
 
                                 LibraryBrowserRootView.Artists -> {
                                     items(state.artists, key = { it.id }) { artistItem ->
@@ -1530,34 +1526,34 @@ private fun LibraryTrackActions(
 }
 
 @Composable
-private fun LibraryLoadMoreRow(
+internal fun LibraryLoadMoreRow(
     isLoading: Boolean,
     count: LibraryBrowserCount? = null,
     onLoadMore: () -> Unit,
+    wrap: Boolean = false,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val content: @Composable () -> Unit = {
         count?.let {
             Text(
-                text = libraryLoadMoreStatusLabel(it),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = libraryLoadMoreStatusLabel(it), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
-        OutlinedButton(
-            onClick = onLoadMore,
-            enabled = !isLoading,
-        ) {
+        OutlinedButton(onClick = onLoadMore, enabled = !isLoading,
+            modifier = if (wrap) Modifier.heightIn(min = 48.dp) else Modifier) {
             Text(if (isLoading) uiString(Res.string.library_loading_status) else uiString(Res.string.library_load_more_action))
         }
     }
+    if (wrap) FlowRow(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically,
+    ) { content() }
+    else Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { content() }
 }
 
 internal fun libraryLoadMoreStatusLabelText(count: LibraryBrowserCount): UiText {

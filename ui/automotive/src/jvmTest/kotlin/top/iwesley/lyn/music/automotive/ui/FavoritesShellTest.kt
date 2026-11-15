@@ -48,6 +48,50 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesShellTest {
+    @Test fun albumGridUsesActualShellsAndRestoresAfterDetails() = onUiThread {
+        for ((w,h) in listOf(1280 to 720,1920 to 720,800 to 1280,480 to 900,640 to 400)) {
+            Fixture(w,h,visual = true,albumMode = true,count = 13).use { ui ->
+                ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.render()
+                ui.capture("albums-$w-$h")
+                val grid = ui.navigation.libraryAlbumState.grid
+                ui.scrollAlbumsTo(12,10_000)
+                assertTrue(ui.tag("album-grid-card-album-12").let { it.positionInRoot.y + it.size.height } <= ui.playerTop(), "$w/$h")
+                ui.capture("albums-bottom-$w-$h")
+                ui.clickTag("album-grid-card-album-12")
+                assertEquals("album-12",ui.navigation.top.entityId)
+                val index = grid.firstVisibleItemIndex; val offset = grid.firstVisibleItemScrollOffset
+                ui.navigation.requestBack(); ui.render()
+                assertTrue(ui.tag("album-grid-card-album-12").let { it.positionInRoot.y + it.size.height } <= ui.playerTop())
+                assertTrue(ui.libraryIntents.isEmpty()); assertTrue(ui.intents.isEmpty())
+                assertEquals(index,grid.firstVisibleItemIndex); assertEquals(offset,grid.firstVisibleItemScrollOffset)
+            }
+        }
+        Fixture(480,900,visual = true,albumMode = true,online = true,count = 5).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.render()
+            ui.scrollAlbumsTo(5,10_000); ui.capture("albums-online-partial")
+            assertTrue(ui.label("加载更多").boundsInRoot.bottom <= ui.playerTop())
+        }
+    }
+
+    @Test fun albumGridCoversScalesFontsThemesAndSidebarStates() = onUiThread {
+        for ((w,h) in listOf(1280 to 720,480 to 900,640 to 400)) {
+            for (scale in listOf(.8f,.9f,1f,1.1f,1.2f)) for (font in listOf(1f,1.5f,2f)) {
+                Fixture(w,h,visual = true,albumMode = true,count = 9,density = scale,fontScale = font,
+                    dark = font == 2f,longNames = true).use { ui ->
+                    ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.render()
+                    ui.scrollAlbumsTo(8,10_000)
+                    assertTrue(ui.tag("album-grid-card-album-8").let { it.positionInRoot.y + it.size.height } <= ui.playerTop() + 1f)
+                    if (scale == 1f && font == 2f) ui.capture("albums-large-font-$w-$h")
+                }
+            }
+        }
+        Fixture(1280,720,visual = true,albumMode = true).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Albums; ui.render()
+            ui.click("展开导航"); ui.capture("albums-sidebar-expanded")
+            ui.tag("album-grid-card-album-0")
+        }
+    }
+
     @Test fun folderLayoutsUseActualShellsAndKeepLastActionsAboveThePlayer() = onUiThread {
         for ((w,h) in listOf(1280 to 720,1920 to 720,800 to 1280,480 to 900,640 to 400))
             Fixture(w,h,visual = true,folderMode = true,count = 8).use { ui ->
@@ -589,13 +633,13 @@ class FavoritesShellTest {
     private class Fixture(
         width: Int, height: Int, val visual: Boolean = false, density: Float = 1f,
         fontScale: Float = 1f, val dark: Boolean = false, val longNames: Boolean = false,
-        online: Boolean = false, count: Int = 96, val playlistMode: Boolean = false, val folderMode: Boolean = false, folderSources: Int = 0,
+        online: Boolean = false, count: Int = 96, val playlistMode: Boolean = false, val folderMode: Boolean = false, folderSources: Int = 0, val albumMode: Boolean = false,
     ) : AutoCloseable {
         var width by mutableStateOf(width)
         var height by mutableStateOf(height)
         var density by mutableStateOf(density)
         var fontScale by mutableStateOf(fontScale)
-        var selectedTab by mutableStateOf(if (folderMode) AppTab.Library else if (playlistMode) AppTab.Playlists else AppTab.Favorites)
+        var selectedTab by mutableStateOf(if (folderMode || albumMode) AppTab.Library else if (playlistMode) AppTab.Playlists else AppTab.Favorites)
         private var registry = SaveableStateRegistry(null) { true }
         private val scheduler = TestCoroutineScheduler()
         private val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
@@ -614,9 +658,15 @@ class FavoritesShellTest {
             tracks.first().copy(id = "other-song",sourceId = "other",title = "Other source song",relativePath = "Parent/$folderName/song.flac")) +
             (0..15).map { tracks.first().copy(id = "sibling-$it",relativePath = "Parent/Sibling $it/song.flac") } +
             (0 until folderSources).map { tracks.first().copy(id = "extra-song-$it",sourceId = "extra-$it",relativePath = "song.flac") } else emptyList()
+        private val gridAlbums = (0 until count).map {
+            Album("album-$it", if (longNames) "一个很长的专辑名称 A long album name with additional information $it" else if (visual) "我爱南京 ${it + 1}" else "Album $it",
+                if (longNames) "一个很长的歌手名字 A long artist name with collaborators" else if (visual) "李志" else "Artist", 12)
+        }
+        var onlineLibrary by mutableStateOf(if (albumMode && online) OnlineLibraryState(sourceId = "source",
+            albums = gridAlbums.map { top.iwesley.lyn.music.data.repository.OnlineAlbumItem(it) },canLoadMoreAlbums = true) else OnlineLibraryState())
         var library by mutableStateOf(if (folderMode) LibraryState(isLoadingContent = false,tracks = folderTracks,filteredTracks = folderTracks,
             sourceLabelsById = mapOf("source" to if (visual) "本地音乐" else "Storage", "other" to "Other storage") +
-                (0 until folderSources).associate { "extra-$it" to "Storage %02d".format(it) }) else LibraryState())
+                (0 until folderSources).associate { "extra-$it" to "Storage %02d".format(it) }) else if (albumMode) LibraryState(isLoadingContent = false,tracks = tracks,filteredTracks = tracks,albums = gridAlbums,filteredAlbums = gridAlbums) else LibraryState())
         val libraryIntents = mutableListOf<LibraryIntent>()
         val playlistTargets = mutableListOf<Track>()
         fun sendLibrary(intent: LibraryIntent) {
@@ -633,6 +683,7 @@ class FavoritesShellTest {
             val tree = deriveLibraryFolderTree(library.filteredTracks,library.sourceLabelsById)
             navigation.openFolder(tree.nodesByKey.getValue(LibraryFolderKey(sourceId,path)),library.selectedSourceFilter); render()
         }
+        fun scrollAlbumsTo(index: Int, offset: Int = 0) { scope.launch { navigation.libraryAlbumState.grid.scrollToItem(index,offset) }; render() }
         fun scrollFolderRootsTo(index: Int,offset: Int = 0) { scope.launch { navigation.folderListState.scrollToItem(index,offset) }; render() }
         fun scrollFolderTo(index: Int,offset: Int = 0) { scope.launch { folderEntry.list.scrollToItem(index,offset) }; render() }
         var favorites by mutableStateOf(if (folderMode) emptyList() else tracks)
@@ -758,7 +809,7 @@ class FavoritesShellTest {
             if (maxWidth > maxHeight) AutomotiveLandscapeShell(
                 navigationRailState = rememberWideNavigationRailState(),
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
-                myState = MyState(), libraryState = library, onlineLibraryState = OnlineLibraryState(),
+                myState = MyState(), libraryState = library, onlineLibraryState = onlineLibrary,
                 playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,
@@ -769,7 +820,7 @@ class FavoritesShellTest {
             ) else AutomotivePortraitShell(
                 portraitNavigation = true, mobilePortraitMiniPlayer = true, hideMiniPlayerBar = false,
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
-                myState = MyState(), libraryState = library, onlineLibraryState = OnlineLibraryState(),
+                myState = MyState(), libraryState = library, onlineLibraryState = onlineLibrary,
                 playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,

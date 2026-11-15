@@ -1176,6 +1176,7 @@ internal fun AutomotiveLibraryContent(
     val keyboardController = LocalSoftwareKeyboardController.current
     val presentation = currentPlayerPresentation()
     val updateQuery: (String) -> Unit = {
+        if (it != query) detailNavigation?.libraryAlbumState?.reset()
         if (online) onOnlineLibraryIntent(OnlineLibraryIntent.SearchChanged(it))
         else onLibraryIntent(LibraryIntent.SearchChanged(it))
     }
@@ -1200,10 +1201,14 @@ internal fun AutomotiveLibraryContent(
         onlineSourceOptions = importState.onlineNavidromeSourceOptions(),
         selectedOnlineSourceId = onlineLibraryState.sourceId,
         onSourceFilterChanged = {
+            if (online || it != libraryState.selectedSourceFilter) detailNavigation?.libraryAlbumState?.reset()
             onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(null))
             onLibraryIntent(LibraryIntent.SourceFilterChanged(it))
         },
-        onOnlineSourceSelected = { onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(it)) },
+        onOnlineSourceSelected = {
+            if (it != onlineLibraryState.sourceId || query.isNotBlank()) detailNavigation?.libraryAlbumState?.reset()
+            onOnlineLibraryIntent(OnlineLibraryIntent.SelectSource(it))
+        },
     )
     LibraryTab(
         state = libraryState,
@@ -1219,7 +1224,15 @@ internal fun AutomotiveLibraryContent(
         showInlineBatchOperationButton = false,
         navigationTarget = libraryNavigationTarget,
         onNavigationHandled = onLibraryNavigationHandled,
-        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
+        onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget?.let { onOpen -> { target ->
+            if (rootState.value == LibraryBrowserRootView.Albums) {
+                searchAutoFocus = false
+                inlineSearchFocused = false
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+            }
+            onOpen(target)
+        } },
         rootState = rootState,
         rootClickRequestKey = rootClickRequestKey,
         rootPagerScrollEnabled = !searchExpanded && (!searchEnabled || (!inlineSearchFocused && query.isBlank())),
