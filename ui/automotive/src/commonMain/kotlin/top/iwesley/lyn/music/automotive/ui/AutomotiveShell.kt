@@ -1019,6 +1019,7 @@ private fun RootTabContent(
         }
     }
     val libraryEntry = LocalAutomotiveLibraryEntry.current ?: rememberAutomotiveLibraryEntry()
+    val favoritesEntry = LocalAutomotiveFavoritesEntry.current ?: rememberAutomotiveFavoritesEntry()
     if (resolvedSelectedTab == AppTab.Library) {
         libraryEntry {
             AutomotiveLibraryContent(
@@ -1041,6 +1042,7 @@ private fun RootTabContent(
     }
     if (mobileLibraryHub && isMobileLibraryHubTab(resolvedSelectedTab)) {
         MobileLibraryHubTab(
+            favoritesEntry = favoritesEntry,
             selectedTab = resolvedSelectedTab,
             playlistsState = playlistsState,
             onlinePlaylistsState = onlinePlaylistsState,
@@ -1085,17 +1087,16 @@ private fun RootTabContent(
             modifier = modifier,
         )
 
-        AppTab.Favorites -> FavoritesTab(
+        AppTab.Favorites -> favoritesEntry.content(AutomotiveFavoritesPage(
             state = favoritesState,
             importState = importState,
             onlineState = onlineFavoritesState,
             onFavoritesIntent = onFavoritesIntent,
             onOnlineIntent = onOnlineFavoritesIntent,
             onPlayerIntent = onPlayerIntent,
-            showDuration = true,
             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
             modifier = modifier,
-        )
+        ))
 
         AppTab.Tags -> Unit
 
@@ -1354,6 +1355,7 @@ private fun LandscapeLibraryTabStrip(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MobileLibraryHubTab(
+    favoritesEntry: AutomotiveFavoritesEntry,
     selectedTab: AppTab,
     playlistsState: PlaylistsState,
     onlinePlaylistsState: OnlinePlaylistsState,
@@ -1390,7 +1392,7 @@ private fun MobileLibraryHubTab(
     var favoritesRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
     var playlistsRefreshHoldActive by rememberSaveable { mutableStateOf(false) }
     var playlistsRefreshHoldKey by rememberSaveable { mutableStateOf(0) }
-    var favoritesBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
+    var favoritesBatchSelectionRequestKey by favoritesEntry.batchSelectionRequest
     var playlistsBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
     val favoritesPullRefreshState = rememberPullToRefreshState()
     val playlistsPullRefreshState = rememberPullToRefreshState()
@@ -1465,6 +1467,12 @@ private fun MobileLibraryHubTab(
     fun enterSearchMode(autoFocus: Boolean) {
         searchBarAutoFocus = autoFocus
         isSearchMode = true
+    }
+
+    PlatformBackHandler(enabled = isSearchMode && foreground) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        exitSearchMode()
     }
 
     fun startFavoritesRefreshHold() {
@@ -1671,21 +1679,19 @@ private fun MobileLibraryHubTab(
                             )
                         },
                     ) {
-                        FavoritesTab(
+                        favoritesEntry.content(AutomotiveFavoritesPage(
                             state = favoritesState,
                             importState = importState,
                             onlineState = onlineFavoritesState,
                             onFavoritesIntent = onFavoritesIntent,
                             onOnlineIntent = onOnlineFavoritesIntent,
                             onPlayerIntent = onPlayerIntent,
-                            showDuration = false,
                             showSearchField = false,
                             showRefreshActionButton = false,
                             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
-                            batchSelectionRequestKey = favoritesBatchSelectionRequestKey,
                             showInlineBatchOperationButton = false,
                             modifier = Modifier.fillMaxSize(),
-                        )
+                        ))
                     }
                 }
 
@@ -1794,7 +1800,7 @@ private fun MobileLibraryHubTabStrip(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = 52.dp)
             .padding(start = 20.dp, end = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2038,7 +2044,7 @@ private fun MobileLibraryHubSearchBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .heightIn(min = 64.dp)
             .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2100,16 +2106,18 @@ private fun MobileLibraryHubTabItem(
     val inactiveColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f)
     Box(
         modifier = modifier
-            .height(44.dp)
+            .heightIn(min = 48.dp)
             .widthIn(min = if (compact) 48.dp else 56.dp)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .padding(horizontal = if (compact) 8.dp else 12.dp),
+            .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 4.dp),
     ) {
         Text(
             text = label,
             color = if (selected) activeColor else inactiveColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.align(Alignment.Center),
+            maxLines = 1,
+            softWrap = false,
         )
         Box(
             modifier = Modifier

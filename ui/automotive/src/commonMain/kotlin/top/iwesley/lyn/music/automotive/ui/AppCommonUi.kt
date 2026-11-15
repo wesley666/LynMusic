@@ -837,6 +837,7 @@ internal fun TrackRow(
     selected: Boolean = false,
     onSelectionToggle: (() -> Unit)? = null,
     indexColumnWidth: Dp = 32.dp,
+    selectionControlSize: Dp = 32.dp,
     onClick: () -> Unit,
 ) {
     val shellColors = mainShellColors
@@ -888,7 +889,7 @@ internal fun TrackRow(
                     Checkbox(
                         checked = selected,
                         onCheckedChange = { onSelectionToggle?.invoke() },
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(selectionControlSize),
                     )
                 }
             } else {

@@ -38,6 +38,17 @@ import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesMenuIntegrationTest {
     @Test
+    fun `online favorites initial loading never shows indexed favorites`() = onUiThread {
+        for (width in listOf(360, 1000)) Fixture(online = true, width = width,
+            initialOnlineState = OnlineFavoritesState(sourceId = "source", isLoading = true)).use { ui ->
+            assertTrue(ui.visible("Loading Favorite songs"))
+            assertFalse(ui.visible("Track A"))
+            assertTrue(ui.onlineIntents.isEmpty())
+            assertTrue(ui.localIntents.isEmpty())
+        }
+    }
+
+    @Test
     fun `favorite menu opens independent details without changing library mode or search`() = onUiThread {
         for (onlineFavorites in listOf(false, true)) {
             for (query in listOf("", "unrelated search")) {
@@ -213,6 +224,7 @@ class FavoritesMenuIntegrationTest {
         online: Boolean, previousUnlike: Boolean = false, width: Int = 1000, navigationEnabled: Boolean = false,
         libraryInitiallyOnline: Boolean = online, private val navigateToLibrary: Boolean = false,
         libraryQuery: String = "", private val deferLibrarySourceChange: Boolean = false,
+        initialOnlineState: OnlineFavoritesState? = null,
     ) : AutoCloseable {
         val platform = PlatformDescriptor(ANDROID_PLATFORM_NAME, PlatformCapabilities(true, true, true, true, false))
         val track = Track(
@@ -242,7 +254,7 @@ class FavoritesMenuIntegrationTest {
             ))) else emptyList(),
         )
         // Existing online refresh accepts the server row while retaining the earlier operation record.
-        private val onlineFavorites = if (online) OnlineFavoritesState(
+        private val onlineFavorites = initialOnlineState ?: if (online) OnlineFavoritesState(
             sourceId = "source",
             tracks = listOf(track),
             favoriteOverridesBySourceId = if (previousUnlike) mapOf("source" to mapOf("a" to false)) else emptyMap(),

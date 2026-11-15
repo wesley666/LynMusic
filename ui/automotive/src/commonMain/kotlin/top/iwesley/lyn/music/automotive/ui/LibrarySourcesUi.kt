@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -125,6 +126,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -458,6 +460,11 @@ internal fun FavoritesTab(
                 null
             },
             showFavoriteIndicator = false,
+            tracksOnly = true,
+            onRetry = {
+                if (isOnlineMode) onOnlineIntent(OnlineFavoritesIntent.Refresh)
+                else onFavoritesIntent(FavoritesIntent.Refresh)
+            },
             showDuration = showDuration,
             showSearchField = showSearchField,
             showTrackSortActionButton = showSearchField && !isOnlineMode,
@@ -638,6 +645,8 @@ private fun LibraryBrowserTab(
     showSearchField: Boolean = true,
     showTrackSortActionButton: Boolean = true,
     showFolderBrowser: Boolean = false,
+    tracksOnly: Boolean = false,
+    onRetry: () -> Unit = {},
     rootSelectorStyle: LibraryRootSelectorStyle = LibraryRootSelectorStyle.Default,
     actionButton: (@Composable () -> Unit)? = null,
     navigationTarget: LibraryNavigationTarget? = null,
@@ -652,7 +661,8 @@ private fun LibraryBrowserTab(
     modifier: Modifier = Modifier,
 ) {
     val durationColumnWidth = 56.dp * if (rootState != null) LocalDensity.current.fontScale.coerceAtLeast(1f) else 1f
-    val tracksListState = rememberLazyListState()
+    val favoritesPage = if (tracksOnly) LocalFavoritesPageState.current else null
+    val tracksListState = favoritesPage?.tracks ?: rememberLazyListState()
     val albumsListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
     val foldersListState = rememberLazyListState()
@@ -668,13 +678,15 @@ private fun LibraryBrowserTab(
     var sourceFilterMenuExpanded by remember { mutableStateOf(false) }
     var trackSortMenuExpanded by remember { mutableStateOf(false) }
     val defaultRootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
-    var rootView by (rootState ?: defaultRootState)
+    var storedRootView by (rootState ?: defaultRootState)
+    val rootView = if (tracksOnly) LibraryBrowserRootView.Tracks else storedRootView
     var previousRootView by remember { mutableStateOf(rootView) }
     var lastHandledRootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     var selectedFolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedFolderPath by rememberSaveable { mutableStateOf<String?>(null) }
     val trackMenuContext = listOf(state.sourceId, state.isOnline, state.selectedSourceFilter,
-        rootView, selectedFolderSourceId, selectedFolderPath)
+        rootView, selectedFolderSourceId, selectedFolderPath) +
+        if (tracksOnly) listOf(state.query, state.selectedTrackSortMode) else emptyList()
     fun selectedFolderStableId(): String? {
         val sourceId = selectedFolderSourceId ?: return null
         return LibraryFolderKey(sourceId = sourceId, path = selectedFolderPath.orEmpty()).stableId
@@ -752,11 +764,15 @@ private fun LibraryBrowserTab(
             playAllEnabled = visibleTracks.isNotEmpty(),
         )
     }
-    var selectionMode by rememberSaveable { mutableStateOf(false) }
-    var selectedTrackIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var batchQualitySheetVisible by rememberSaveable { mutableStateOf(false) }
-    var lastHandledBatchSelectionRequestKey by rememberSaveable { mutableStateOf(0) }
-    var pendingBatchDownloadTracks by remember { mutableStateOf(emptyList<Track>()) }
+    val selectionState: MutableState<Boolean> = favoritesPage?.selectionMode ?: rememberSaveable { mutableStateOf(false) }
+    val selectedIdsState: MutableState<List<String>> = favoritesPage?.selectedTrackIds ?: rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var selectionMode by selectionState
+    var selectedTrackIds by selectedIdsState
+    var batchQualitySheetVisible by if (tracksOnly) remember(selectionMode) { mutableStateOf(false) }
+        else rememberSaveable { mutableStateOf(false) }
+    val handledRequestState: MutableState<Int> = favoritesPage?.handledBatchRequest ?: rememberSaveable { mutableStateOf(0) }
+    var lastHandledBatchSelectionRequestKey by handledRequestState
+    var pendingBatchDownloadTracks by remember(if (tracksOnly) selectionMode else false) { mutableStateOf(emptyList<Track>()) }
     val batchVisibleTracks = if (
         rootView == LibraryBrowserRootView.Tracks
     ) {
@@ -820,7 +836,7 @@ private fun LibraryBrowserTab(
             startBatchDownload(tracks, NavidromeAudioQuality.Original)
         }
     }
-    PlatformBackHandler(enabled = selectionMode) {
+    PlatformBackHandler(enabled = selectionMode && (!tracksOnly || LocalMusicDetailIsForeground.current)) {
         exitSelectionMode()
     }
     LaunchedEffect(selectionMode, supportsBatchDownload) {
@@ -828,7 +844,8 @@ private fun LibraryBrowserTab(
             onOfflineDownloadIntent(OfflineDownloadIntent.RefreshAvailableSpace)
         }
     }
-    LaunchedEffect(batchVisibleTracks) {
+    LaunchedEffect(batchVisibleTracks, if (tracksOnly) state.isLoading else false) {
+        if (tracksOnly && state.isLoading && batchVisibleTracks.isEmpty()) return@LaunchedEffect
         val pruned = pruneSelectedTrackIds(selectedTrackIds, batchVisibleTracks)
         if (pruned != selectedTrackIds) {
             selectedTrackIds = pruned
@@ -882,7 +899,7 @@ private fun LibraryBrowserTab(
             selectedFolderPath = null
         }
         if (rootView == LibraryBrowserRootView.Folders && !showFolderBrowser && rootState == null) {
-            rootView = LibraryBrowserRootView.Tracks
+            storedRootView = LibraryBrowserRootView.Tracks
         }
     }
 
@@ -910,7 +927,7 @@ private fun LibraryBrowserTab(
         }
         saveSelectedFolderScrollPosition()
         previousRootView = view
-        rootView = view
+        storedRootView = view
 
 
         selectedFolderSourceId = null
@@ -986,6 +1003,61 @@ private fun LibraryBrowserTab(
 
         batchOperationButton != null -> batchOperationButton
         else -> actionButton
+    }
+    val batchQualitySheet: @Composable () -> Unit = {
+        if (batchQualitySheetVisible) {
+            BatchDownloadQualityBottomSheet(
+                selectedCount = pendingBatchDownloadTracks.size,
+                tracks = pendingBatchDownloadTracks,
+                downloadsByTrackId = offlineUiState.downloadsByTrackId,
+                onQualitySelected = { quality ->
+                    startBatchDownload(pendingBatchDownloadTracks, quality)
+                },
+                onDismiss = {
+                    batchQualitySheetVisible = false
+                    pendingBatchDownloadTracks = emptyList()
+                },
+            )
+        }
+    }
+    if (tracksOnly) {
+        FavoritesBrowserContent(
+            state = state, actions = actions, strings = strings, tracks = visibleTracks,
+            listState = tracksListState, selectionMode = selectionMode,
+            selectedTrackIds = selectedTrackIds, indexWidth = trackIndexColumnWidth,
+            menuContext = trackMenuContext,
+            selectionActions = {
+                TrackSelectionActionBar(
+                    selectedCount = selectedBatchTracks.size,
+                    downloadSizeEstimateLabel = batchDownloadSizeEstimateLabel(selectedBatchDownloadSizeEstimate).displayText(),
+                    allVisibleSelected = allVisibleBatchTracksSelected,
+                    hasVisibleTracks = batchVisibleTracks.isNotEmpty(),
+                    onToggleSelectAll = { selectedTrackIds = toggleAllVisibleTrackSelection(selectedTrackIds, batchVisibleTracks) },
+                    onDownloadSelected = ::requestBatchDownload, onCancelSelection = ::exitSelectionMode,
+                )
+            },
+            onSelectionToggle = { track -> selectedTrackIds = toggleTrackSelection(selectedTrackIds, track.id) },
+            navigationTargets = ::trackRowNavigationTargets,
+            onNavigate = onOpenLibraryNavigationTarget,
+            showSearchField = showSearchField,
+            standaloneActions = combinedActionButton,
+            toolbarActions = {
+                LibraryBrowserToolbarActions(
+                    sourceFilterOptions = state.sourceFilterOptions, selectedSourceFilter = state.selectedSourceFilter,
+                    onlineSourceOptions = onlineSourceOptions, selectedOnlineSourceId = state.sourceId,
+                    sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                    onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                    onSourceFilterChanged = actions.onSourceFilterChanged, onOnlineSourceSelected = actions.onOnlineSourceSelected,
+                    showTrackSortMenu = showTrackSortMenu, selectedTrackSortMode = state.selectedTrackSortMode,
+                    trackSortMenuExpanded = trackSortMenuExpanded, onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                    onTrackSortChanged = actions.onTrackSortChanged, actionButton = combinedActionButton,
+                )
+            },
+            onRetry = onRetry,
+            modifier = modifier,
+        )
+        batchQualitySheet()
+        return
     }
     val searchFieldColors = OutlinedTextFieldDefaults.colors(
         focusedContainerColor = searchFieldContainerColor,
@@ -1427,19 +1499,131 @@ private fun LibraryBrowserTab(
             }
         }
     }
-    if (batchQualitySheetVisible) {
-        BatchDownloadQualityBottomSheet(
-            selectedCount = pendingBatchDownloadTracks.size,
-            tracks = pendingBatchDownloadTracks,
-            downloadsByTrackId = offlineUiState.downloadsByTrackId,
-            onQualitySelected = { quality ->
-                startBatchDownload(pendingBatchDownloadTracks, quality)
-            },
-            onDismiss = {
-                batchQualitySheetVisible = false
-                pendingBatchDownloadTracks = emptyList()
-            },
-        )
+    batchQualitySheet()
+}
+
+@Composable
+private fun FavoritesBrowserContent(
+    state: LibraryBrowserUiState,
+    actions: LibraryBrowserActions,
+    strings: LibraryBrowserStrings,
+    tracks: List<Track>,
+    listState: LazyListState,
+    selectionMode: Boolean,
+    selectedTrackIds: List<String>,
+    indexWidth: Dp,
+    menuContext: Any,
+    selectionActions: @Composable () -> Unit,
+    onSelectionToggle: (Track) -> Unit,
+    navigationTargets: (Track) -> PlaybackLibraryNavigationTargets,
+    onNavigate: ((LibraryNavigationTarget) -> Unit)?,
+    showSearchField: Boolean,
+    standaloneActions: (@Composable () -> Unit)?,
+    toolbarActions: @Composable () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier,
+) {
+    val statusList = rememberLazyListState()
+    val statusOnly = tracks.isEmpty() && (state.isLoading || state.errorMessage != null)
+    val activeList = if (statusOnly) statusList else listState
+    val partiallyLoaded = state.isOnline && state.trackCount.hasMore
+    val initialFailure = tracks.isEmpty() && state.errorMessage != null && !state.capabilities.canLoadMoreTracks
+    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        .testTag("automotive-favorites-page")) {
+        val density = LocalDensity.current
+        val fontScale = density.fontScale.coerceAtLeast(1f)
+        val wideRows = maxWidth - 48.dp >= 520.dp * fontScale
+        val headerLayout = listOf(showSearchField.toString(), maxWidth.value.toString(), density.fontScale.toString())
+        val pageState = LocalFavoritesPageState.current
+        var previousHeaderLayout by (pageState?.headerLayout ?: rememberSaveable { mutableStateOf<List<String>?>(headerLayout) })
+        LaunchedEffect(headerLayout) {
+            // A toolbar pixel offset must not skip songs when the toolbar moves into the shell.
+            if (previousHeaderLayout != null && previousHeaderLayout != headerLayout && listState.firstVisibleItemIndex < 4) {
+                listState.requestScrollToItem(0)
+            }
+            previousHeaderLayout = headerLayout
+        }
+        LazyColumn(
+            state = activeList,
+            modifier = Modifier.fillMaxSize().testTag("automotive-favorites-list"),
+            contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 28.dp, bottom = 20.dp)),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            // Keep all four header keys in both shells, including their empty slots.
+            item("favorites-toolbar") {
+                if (showSearchField) FlowRow(
+                    Modifier.fillMaxWidth().testTag("favorites-toolbar"),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DesktopLibrarySearchField(state.query, actions.onSearchChanged, strings.searchLabel,
+                        containerColor = mainShellColors.cardBorder, responsive = true)
+                    toolbarActions()
+                } else if (standaloneActions != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { standaloneActions() }
+                }
+            }
+            item("favorites-selection") { if (selectionMode) selectionActions() }
+            item("favorites-actions") {
+                val countLabel = if (state.isLoading && tracks.isEmpty()) uiString(Res.string.library_loading_status)
+                    else uiString(Res.plurals.common_track_count, tracks.size,
+                        if (partiallyLoaded) "${tracks.size}+" else tracks.size.toString())
+                TrackListActions(
+                    countLabel, uiString(if (partiallyLoaded) Res.string.library_play_loaded_tracks else Res.string.player_play_all),
+                    onPlay = { actions.onPlayTracks(tracks, 0) }, enabled = tracks.isNotEmpty() && !selectionMode,
+                    modifier = Modifier.testTag("favorites-track-actions"),
+                    playModifier = Modifier.testTag("favorites-play-all"), countModifier = Modifier.testTag("favorites-track-count"),
+                )
+            }
+            item("favorites-message") {
+                if (!initialFailure) state.message?.let { BannerCard(it, actions.onDismissMessage) }
+            }
+            if (tracks.isEmpty() && (state.isLoading || !state.capabilities.canLoadMoreTracks)) item("favorites-status") {
+                when {
+                    state.isLoading -> EmptyStateCard(uiString(Res.string.library_loading_named_category, strings.trackLabel),
+                        uiString(Res.string.library_background_indexing_hint))
+                    initialFailure -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        EmptyStateCard(uiString(Res.string.favorites_online_load_failed), state.errorMessage!!.displayText())
+                        Button(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text(uiString(Res.string.common_retry)) }
+                    }
+                    state.allTrackCount == 0 -> EmptyStateCard(strings.emptyCollectionTitle, strings.emptyCollectionBody)
+                    state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
+                        uiString(Res.string.library_source_category_empty_title, strings.trackLabel), strings.emptyFilterBody)
+                    else -> EmptyStateCard(uiString(Res.string.library_category_filter_empty_title, strings.trackLabel), strings.emptySearchBody)
+                }
+            }
+            itemsIndexed(tracks, key = { _, track -> "track:${track.sourceId}:${track.id}" }) { index, track ->
+                val targets = navigationTargets(track)
+                TrackRow(
+                    track, index, isFavorite = true, onToggleFavorite = { actions.onToggleFavorite(track) },
+                    indexColumnWidth = if (selectionMode) maxOf(48.dp, indexWidth) else indexWidth,
+                    selectionControlSize = 48.dp,
+                    showFavoriteIndicator = false, menuContextKey = menuContext,
+                    showDuration = wideRows, durationColumnWidth = 56.dp * fontScale,
+                    onArtistClick = targets.artistTarget?.let { target -> onNavigate?.let { { it(target) } } },
+                    onAlbumClick = targets.albumTarget?.let { target -> onNavigate?.let { { it(target) } } },
+                    selectionMode = selectionMode, selected = track.id in selectedTrackIds,
+                    onSelectionToggle = { onSelectionToggle(track) },
+                    onClick = { actions.onPlayTracks(tracks, index) },
+                )
+            }
+            if (state.capabilities.canLoadMoreTracks) item("favorites-load-more") {
+                FlowRow(Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(libraryLoadMoreStatusLabel(state.trackCount), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = actions.onLoadMoreTracks, enabled = !state.isLoadingMoreTracks,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("favorites-load-more")) {
+                        Text(uiString(when {
+                            state.isLoadingMoreTracks -> Res.string.library_loading_status
+                            state.errorMessage != null -> Res.string.common_retry
+                            else -> Res.string.library_load_more_action
+                        }))
+                    }
+                }
+            }
+        }
+        LibraryFastScrollbar(activeList, Modifier.align(Alignment.CenterEnd).fillMaxHeight()
+            .padding(end = 8.dp, top = 20.dp, bottom = 20.dp + LocalDockBottomInset.current))
     }
 }
 
@@ -1959,6 +2143,7 @@ internal fun DesktopLibrarySearchField(
     containerColor: Color,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    responsive: Boolean = false,
 ) {
     var textFieldValueState by remember {
         mutableStateOf(librarySearchTextFieldValueFor(query))
@@ -1986,8 +2171,9 @@ internal fun DesktopLibrarySearchField(
         textStyle = textStyle,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         modifier = modifier
-            .width(desktopLibrarySearchFieldWidthDp().dp)
-            .height(desktopLibrarySearchFieldHeightDp().dp)
+            .then(if (responsive) Modifier.widthIn(max = 320.dp).fillMaxWidth()
+                .height(maxOf(48.dp, with(LocalDensity.current) { textStyle.lineHeight.toDp() } + 16.dp))
+                else Modifier.width(desktopLibrarySearchFieldWidthDp().dp).height(desktopLibrarySearchFieldHeightDp().dp))
             .clip(shape)
             .background(containerColor),
         decorationBox = { innerTextField ->
@@ -2021,7 +2207,7 @@ internal fun DesktopLibrarySearchField(
                 if (shouldShowDesktopLibrarySearchClearButton(textFieldValueState.text)) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(if (responsive) 48.dp else 32.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable(enabled = enabled) {
                                 textFieldValueState = librarySearchTextFieldValueFor("")

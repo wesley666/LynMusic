@@ -109,6 +109,7 @@ fun AutomotiveApp(
         }
         val navigationRailState = rememberWideNavigationRailState()
         val libraryEntry = rememberAutomotiveLibraryEntry()
+        val favoritesEntry = rememberAutomotiveFavoritesEntry()
         var pendingPlaylistTrack by remember { mutableStateOf<Track?>(null) }
         var shouldRestoreOnlinePlaylistSource by remember { mutableStateOf(false) }
         var onlinePlaylistSourceRestoreTarget by remember { mutableStateOf<String?>(null) }
@@ -141,8 +142,19 @@ fun AutomotiveApp(
                 }
             }
         }
-        val onOnlineFavoritesIntent: (OnlineFavoritesIntent) -> Unit = remember(component) {
+        val onFavoritesIntent: (FavoritesIntent) -> Unit = remember(component, favoritesEntry) {
             { intent ->
+                favoritesEntry.prepareForIntent(intent, component.favoritesStore.state.value)
+                component.favoritesStore.dispatch(intent)
+            }
+        }
+        val onOnlineFavoritesIntent: (OnlineFavoritesIntent) -> Unit = remember(component, favoritesEntry) {
+            { intent ->
+                favoritesEntry.prepareForIntent(
+                    intent,
+                    component.onlineFavoritesStore.state.value,
+                    component.onlineFavoritesStore.rememberedSourceId,
+                )
                 if (
                     intent.shouldClearRememberedOnlineFavoritesSource(
                         currentOnlineSourceId = component.onlineFavoritesStore.state.value.sourceId,
@@ -296,6 +308,7 @@ fun AutomotiveApp(
             LocalMusicDetailNavigation provides details,
             LocalPlayerPresentation provides presentation,
             LocalAutomotiveLibraryEntry provides libraryEntry,
+            LocalAutomotiveFavoritesEntry provides favoritesEntry,
             LocalTrackListActionBindings provides trackListBindings,
             LocalPlatformDescriptor provides component.platform,
             LocalArtworkCacheStore provides component.artworkCacheStore,
@@ -449,7 +462,7 @@ fun AutomotiveApp(
                                 onOnlineLibraryIntent = onOnlineLibraryIntent,
                                 onPlaylistsIntent = component.playlistsStore::dispatch,
                                 onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
-                                onFavoritesIntent = component.favoritesStore::dispatch,
+                                onFavoritesIntent = onFavoritesIntent,
                                 onOnlineFavoritesIntent = onOnlineFavoritesIntent,
                                 onImportIntent = component.importStore::dispatch,
                                 onPlayerIntent = onPlayerIntent,
@@ -488,7 +501,7 @@ fun AutomotiveApp(
                                 onOnlineLibraryIntent = onOnlineLibraryIntent,
                                 onPlaylistsIntent = component.playlistsStore::dispatch,
                                 onOnlinePlaylistsIntent = onOnlinePlaylistsIntent,
-                                onFavoritesIntent = component.favoritesStore::dispatch,
+                                onFavoritesIntent = onFavoritesIntent,
                                 onOnlineFavoritesIntent = onOnlineFavoritesIntent,
                                 onImportIntent = component.importStore::dispatch,
                                 onPlayerIntent = onPlayerIntent,

@@ -125,8 +125,8 @@ class FavoritesMenuIntegrationTest {
     @Test
     fun `independent album detail uses the app favorite state instead of assuming the whole album is liked`() = onUiThread {
         Fixture(online = true, previousUnlike = true, navigationEnabled = true).use { ui ->
-            ui.click("Album")
-            ui.click("Album A")
+            ui.click("More actions for Track A")
+            ui.click("View album")
             ui.click("More actions for Track A")
             assertTrue(ui.visible("Add to favorites"))
             ui.click("Add to favorites")

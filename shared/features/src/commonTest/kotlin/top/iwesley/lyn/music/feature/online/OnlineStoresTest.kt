@@ -7,9 +7,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.advanceTimeBy
@@ -177,9 +181,11 @@ class OnlineStoresTest : UiResourceTest() {
             startImmediately = false,
         )
 
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertTrue(store.state.value.isLoading)
         advanceUntilIdle()
 
-        assertNull(store.state.value.sourceId)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
         assertLocalizedEquals(0, importSourceRepository.observeSourcesCalls)
         assertLocalizedEquals(0, repository.favoriteCalls)
 
@@ -195,6 +201,199 @@ class OnlineStoresTest : UiResourceTest() {
 
         assertLocalizedEquals(1, importSourceRepository.observeSourcesCalls)
         assertLocalizedEquals(1, repository.favoriteCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites keep remembered identity while source validation is pending`() = runTest {
+        val sourceGate = CompletableDeferred<Unit>()
+        val repository = FakeNavidromeOnlineDataSource()
+        val sources = FakeImportSourceRepository(observationGate = sourceGate)
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, sources,
+            FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID), scope,
+            startImmediately = false)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertTrue(store.state.value.isLoading)
+        store.ensureStartedIfRememberedSource()
+        runCurrent()
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertTrue(store.state.value.isLoading)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+
+        sourceGate.complete(Unit)
+        advanceUntilIdle()
+        assertLocalizedEquals(1, repository.favoriteCalls)
+        assertFalse(store.state.value.isLoading)
+        sources.emitSources(listOf(onlineSource(), onlineSource("other")))
+        store.ensureStartedIfRememberedSource()
+        advanceUntilIdle()
+        assertLocalizedEquals(1, repository.favoriteCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites pending validation preserves a search submitted before it completes`() = runTest {
+        val sourceGate = CompletableDeferred<Unit>()
+        val repository = FakeNavidromeOnlineDataSource()
+        val sources = FakeImportSourceRepository(observationGate = sourceGate)
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, sources,
+            FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID), scope)
+        runCurrent()
+        store.dispatch(OnlineFavoritesIntent.SearchChanged("typed"))
+        runCurrent()
+        sourceGate.complete(Unit)
+        runCurrent()
+        assertLocalizedEquals("typed", store.state.value.query)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+        advanceUntilIdle()
+        assertLocalizedEquals(listOf(ONLINE_SOURCE_ID to "typed"), repository.favoriteRequests)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites pending validation does not repeat an explicit refresh`() = runTest {
+        val sourceGate = CompletableDeferred<Unit>()
+        val repository = FakeNavidromeOnlineDataSource()
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, FakeImportSourceRepository(observationGate = sourceGate),
+            FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID), scope)
+        runCurrent()
+        store.dispatch(OnlineFavoritesIntent.Refresh)
+        runCurrent()
+        assertLocalizedEquals(1, repository.favoriteCalls)
+        sourceGate.complete(Unit)
+        advanceUntilIdle()
+        assertLocalizedEquals(1, repository.favoriteCalls)
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites clear an unstarted remembered identity without starting queries`() = runTest {
+        val repository = FakeNavidromeOnlineDataSource()
+        val sources = FakeImportSourceRepository()
+        val preferences = FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID)
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, sources, preferences, scope, startImmediately = false)
+        store.clearRememberedSource()
+        advanceUntilIdle()
+        assertNull(store.state.value.sourceId)
+        assertFalse(store.state.value.isLoading)
+        assertNull(preferences.onlineFavoritesSourceId.value)
+        store.ensureStartedIfRememberedSource()
+        advanceUntilIdle()
+        assertLocalizedEquals(0, sources.observeSourcesCalls)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites clear the initial identity while validation is still pending`() = runTest {
+        val sourceGate = CompletableDeferred<Unit>()
+        val repository = FakeNavidromeOnlineDataSource()
+        val preferences = FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID)
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, FakeImportSourceRepository(observationGate = sourceGate), preferences, scope)
+        runCurrent()
+        store.clearRememberedSource()
+        runCurrent()
+        assertNull(store.state.value.sourceId)
+        assertFalse(store.state.value.isLoading)
+        assertNull(preferences.onlineFavoritesSourceId.value)
+        sourceGate.complete(Unit)
+        advanceUntilIdle()
+        assertNull(store.state.value.sourceId)
+        assertLocalizedEquals(0, repository.favoriteCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites source selected before validation wins over the remembered identity`() = runTest {
+        for (persist in listOf(false, true)) {
+            val sourceGate = CompletableDeferred<Unit>()
+            val repository = FakeNavidromeOnlineDataSource()
+            val preferences = FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID)
+            val scope = testScope(testScheduler)
+            val sources = FakeImportSourceRepository(listOf(onlineSource(), onlineSource("other")), sourceGate)
+            val store = OnlineFavoritesStore(repository, sources, preferences, scope)
+            runCurrent()
+            store.dispatch(OnlineFavoritesIntent.SelectSource("other", persist = persist))
+            runCurrent()
+            sourceGate.complete(Unit)
+            advanceUntilIdle()
+            assertLocalizedEquals("other", store.state.value.sourceId)
+            assertLocalizedEquals(if (persist) "other" else ONLINE_SOURCE_ID, preferences.onlineFavoritesSourceId.value)
+            assertLocalizedEquals(listOf("other" to ""), repository.favoriteRequests)
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `online favorites only fall back after validation confirms the remembered source is unavailable`() = runTest {
+        for (unavailable in listOf(emptyList(), listOf(onlineSource().let { it.copy(source = it.source.copy(enabled = false)) }),
+            listOf(onlineSource().let { it.copy(source = it.source.copy(indexMode = ImportSourceIndexMode.LOCAL_INDEX)) }))) {
+            val sourceGate = CompletableDeferred<Unit>()
+            val repository = FakeNavidromeOnlineDataSource()
+            val preferences = FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID)
+            val scope = testScope(testScheduler)
+            val store = OnlineFavoritesStore(repository, FakeImportSourceRepository(unavailable, sourceGate), preferences, scope)
+            runCurrent()
+            assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+            assertTrue(store.state.value.isLoading)
+            sourceGate.complete(Unit)
+            advanceUntilIdle()
+            assertNull(store.state.value.sourceId)
+            assertNull(preferences.onlineFavoritesSourceId.value)
+            assertFalse(store.state.value.isLoading)
+            assertLocalizedEquals(0, repository.favoriteCalls)
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `online favorites failure and retry keep the remembered source selected`() = runTest {
+        val repository = FakeNavidromeOnlineDataSource(favoritesFailure = IllegalStateException("Unavailable"))
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, FakeImportSourceRepository(),
+            FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID), scope)
+        advanceUntilIdle()
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertTrue(store.state.value.errorMessage != null)
+        assertFalse(store.state.value.isLoading)
+        repository.favoritesFailure = null
+        store.dispatch(OnlineFavoritesIntent.Refresh)
+        advanceUntilIdle()
+        assertLocalizedEquals(ONLINE_SOURCE_ID, store.state.value.sourceId)
+        assertNull(store.state.value.errorMessage)
+        assertLocalizedEquals(listOf("track-1"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(2, repository.favoriteCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `online favorites late response cannot replace a newly selected source`() = runTest {
+        val oldResponse = CompletableDeferred<OnlinePage<Track>>()
+        var calls = 0
+        val repository = FakeNavidromeOnlineDataSource(favoriteTracksHandler = { _, _, _ ->
+            if (++calls == 1) withContext(NonCancellable) { oldResponse.await() }
+            else OnlinePage(listOf(sampleTrack(id = "latest").copy(sourceId = "other")), totalCount = 1)
+        })
+        val scope = testScope(testScheduler)
+        val store = OnlineFavoritesStore(repository, FakeImportSourceRepository(listOf(onlineSource(), onlineSource("other"))),
+            FakeLibrarySourceFilterPreferencesStore(onlineFavoritesSourceId = ONLINE_SOURCE_ID), scope)
+        runCurrent()
+        assertLocalizedEquals(1, repository.favoriteCalls)
+        store.dispatch(OnlineFavoritesIntent.SelectSource("other"))
+        runCurrent()
+        assertLocalizedEquals("other", store.state.value.sourceId)
+        assertLocalizedEquals(listOf("latest"), store.state.value.tracks.map { it.id })
+        oldResponse.complete(OnlinePage(listOf(sampleTrack(id = "late")), totalCount = 1))
+        advanceUntilIdle()
+        assertLocalizedEquals("other", store.state.value.sourceId)
+        assertLocalizedEquals(listOf("latest"), store.state.value.tracks.map { it.id })
+        assertLocalizedEquals(2, repository.favoriteCalls)
         scope.cancel()
     }
 
@@ -1119,6 +1318,7 @@ private class FakeNavidromeOnlineDataSource(
         private set
     var favoriteCalls = 0
         private set
+    val favoriteRequests = mutableListOf<Pair<String, String>>()
     var playlistCalls = 0
         private set
     val addTrackCalls = mutableListOf<Pair<String, String>>()
@@ -1182,6 +1382,7 @@ private class FakeNavidromeOnlineDataSource(
         query: String,
     ): OnlinePage<Track> {
         favoriteCalls += 1
+        favoriteRequests += sourceId to query
         favoritesFailure?.let { throw it }
         return favoriteTracksHandler(offset, limit, query)
     }
@@ -1221,6 +1422,7 @@ private class FakeNavidromeOnlineDataSource(
 
 private class FakeImportSourceRepository(
     initialSources: List<SourceWithStatus> = listOf(onlineSource()),
+    private val observationGate: CompletableDeferred<Unit>? = null,
 ) : ImportSourceRepository {
     private val sources = MutableStateFlow(initialSources)
     var observeSourcesCalls = 0
@@ -1228,7 +1430,10 @@ private class FakeImportSourceRepository(
 
     override fun observeSources(): Flow<List<SourceWithStatus>> {
         observeSourcesCalls += 1
-        return sources
+        return if (observationGate == null) sources else flow {
+            observationGate.await()
+            emitAll(sources)
+        }
     }
 
     fun emitSources(nextSources: List<SourceWithStatus>) {

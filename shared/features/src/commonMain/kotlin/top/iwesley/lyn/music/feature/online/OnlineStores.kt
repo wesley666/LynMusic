@@ -903,7 +903,9 @@ class OnlineFavoritesStore(
     private val storeScope: CoroutineScope,
     startImmediately: Boolean = true,
 ) : BaseStore<OnlineFavoritesState, OnlineFavoritesIntent, OnlineFavoritesEffect>(
-    initialState = OnlineFavoritesState(),
+    initialState = preferencesStore.onlineFavoritesSourceId.value.normalizedSourceIdOrNull().let { sourceId ->
+        OnlineFavoritesState(sourceId = sourceId, isLoading = sourceId != null)
+    },
     scope = storeScope,
 ) {
     private var requestVersion = 0
@@ -945,6 +947,10 @@ class OnlineFavoritesStore(
     fun clearRememberedSource() {
         storeScope.launch {
             preferencesStore.setOnlineFavoritesSourceId(null)
+            if (requestVersion == 0) {
+                // Clear the initial UI identity without starting source observation or a query.
+                selectSource(sourceId = null, persist = false, temporary = false)
+            }
         }
     }
 
@@ -1016,6 +1022,9 @@ class OnlineFavoritesStore(
         if (hasTemporarySourceSelection && currentSourceId == temporarySourceId) return
         if (currentSourceId != validRememberedSourceId) {
             selectSource(sourceId = validRememberedSourceId, persist = false, temporary = false)
+        } else if (currentSourceId != null && requestVersion == 0) {
+            // The remembered identity is already visible; validation still has to start its first query.
+            launchRefresh(version = ++requestVersion)
         }
     }
 
