@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="library_album_view">专辑视图</string>
+    <string name="library_grid_view">网格视图</string>
+    <string name="library_list_view">列表视图</string>
     <string name="mac_no_file">未选择文件</string>
     <string name="mac_open_file">打开本地文件</string>
     <string name="mac_seek_unsupported">歌曲可能正在转码，不支持快进。</string>

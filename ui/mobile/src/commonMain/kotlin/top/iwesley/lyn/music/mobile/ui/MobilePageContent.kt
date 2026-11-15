@@ -238,10 +238,12 @@ internal fun RootMobilePageContent(
     onTabChanged: (AppTab) -> Unit = onTabSelected,
     modifier: Modifier = Modifier,
 ) {
+    val albumBrowserState = LocalMusicDetailNavigation.current?.libraryAlbumState ?: rememberLibraryAlbumBrowserState()
     if (mobileLibraryHub && isMobileLibraryHubTab(selectedTab)) {
         MobileLibraryHubTab(
             selectedTab = selectedTab,
             phoneNavigation = phoneLibraryNavigation,
+            albumBrowserState = albumBrowserState,
             libraryState = libraryState,
             onlineLibraryState = onlineLibraryState,
             playlistsState = playlistsState,
@@ -289,6 +291,7 @@ internal fun RootMobilePageContent(
             onOnlineIntent = onOnlineLibraryIntent,
             onPlayerIntent = onPlayerIntent,
             showDuration = false,
+            albumBrowserState = albumBrowserState,
             navigationTarget = libraryNavigationTarget,
             onNavigationHandled = onLibraryNavigationHandled,
             onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
@@ -420,6 +423,7 @@ internal fun mobileLibraryHubRefreshIndicatorVisible(
 private fun MobileLibraryHubTab(
     selectedTab: AppTab,
     phoneNavigation: Boolean,
+    albumBrowserState: LibraryAlbumBrowserState,
     libraryState: LibraryState,
     onlineLibraryState: OnlineLibraryState,
     playlistsState: PlaylistsState,
@@ -645,6 +649,9 @@ private fun MobileLibraryHubTab(
                     phoneRootClickRequestKey += 1
                 },
                 searchEnabled = !(phoneLibrary && phoneRootState.value == LibraryBrowserRootView.Folders && activeTabOnline),
+                albumBrowserState = albumBrowserState.takeIf {
+                    activeSearchTab == AppTab.Library && phoneRootState.value == LibraryBrowserRootView.Albums
+                },
                 batchAction = if (batchOperationAvailable) {
                     MobileLibraryHubBatchAction(onClick = ::requestBatchSelection)
                 } else {
@@ -741,6 +748,7 @@ private fun MobileLibraryHubTab(
                     onOnlineIntent = onOnlineLibraryIntent,
                     onPlayerIntent = onPlayerIntent,
                     showDuration = false,
+                    albumBrowserState = albumBrowserState,
                     showSearchField = false,
                     batchSelectionRequestKey = libraryBatchSelectionRequestKey,
                     showInlineBatchOperationButton = false,
@@ -902,6 +910,7 @@ private fun MobileLibraryHubTabStrip(
     batchAction: MobileLibraryHubBatchAction?,
     sourceMenu: MobileLibraryHubSourceMenu?,
     sortMenu: MobileLibraryHubSortMenu?,
+    albumBrowserState: LibraryAlbumBrowserState?,
     onSearchClick: () -> Unit,
     onTabClick: (Int, AppTab) -> Unit,
     modifier: Modifier = Modifier,
@@ -935,7 +944,7 @@ private fun MobileLibraryHubTabStrip(
                 )
             }
         }
-        if (batchAction != null || sourceMenu != null || sortMenu != null) {
+        if (batchAction != null || sourceMenu != null || sortMenu != null || albumBrowserState != null) {
             Box {
                 IconButton(
                     onClick = {
@@ -954,6 +963,7 @@ private fun MobileLibraryHubTabStrip(
                     batchAction = batchAction,
                     sourceMenu = sourceMenu,
                     sortMenu = sortMenu,
+                    albumBrowserState = albumBrowserState,
                     onLayerChanged = { menuLayer = it },
                     onDismiss = { menuExpanded = false },
                     onSourceFilterChanged = { filter ->
@@ -987,6 +997,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
     batchAction: MobileLibraryHubBatchAction?,
     sourceMenu: MobileLibraryHubSourceMenu?,
     sortMenu: MobileLibraryHubSortMenu?,
+    albumBrowserState: LibraryAlbumBrowserState?,
     onLayerChanged: (MobileLibraryHubMenuLayer) -> Unit,
     onDismiss: () -> Unit,
     onSourceFilterChanged: (LibrarySourceFilter) -> Unit,
@@ -1000,6 +1011,7 @@ private fun MobileLibraryHubActionsDropdownMenu(
     ) {
         when (layer) {
             MobileLibraryHubMenuLayer.Root -> {
+                albumBrowserState?.let { AlbumViewMenuItems(it, onDismiss) }
                 if (batchAction != null) {
                     DropdownMenuItem(
                         text = { Text(uiString(Res.string.library_batch_actions)) },

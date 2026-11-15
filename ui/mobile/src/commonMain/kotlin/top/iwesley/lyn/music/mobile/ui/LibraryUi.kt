@@ -34,10 +34,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -180,6 +177,7 @@ internal fun LibraryTab(
     phoneRootState: MutableState<LibraryBrowserRootView>? = null,
     phoneRootClickRequestKey: Int = 0,
     rootPagerScrollEnabled: Boolean = true,
+    albumBrowserState: LibraryAlbumBrowserState? = null,
     modifier: Modifier = Modifier,
 ) {
     val onlineSourceOptions = remember(importState.sources) {
@@ -284,6 +282,7 @@ internal fun LibraryTab(
         phoneRootState = phoneRootState,
         phoneRootClickRequestKey = phoneRootClickRequestKey,
         rootPagerScrollEnabled = rootPagerScrollEnabled,
+        albumBrowserState = albumBrowserState,
         navigationTarget = navigationTarget,
         onNavigationHandled = onNavigationHandled,
         onOpenLibraryNavigationTarget = onOpenLibraryNavigationTarget,
@@ -581,12 +580,14 @@ private fun LibraryBrowserTab(
     phoneRootState: MutableState<LibraryBrowserRootView>? = null,
     phoneRootClickRequestKey: Int = 0,
     rootPagerScrollEnabled: Boolean = true,
+    albumBrowserState: LibraryAlbumBrowserState? = null,
     modifier: Modifier = Modifier,
 ) {
     val tracksListState = rememberLazyListState()
-    val albumsListState = rememberLazyListState()
-    val artistsListState = rememberLazyListState()
     val navigation = LocalMusicDetailNavigation.current
+    val albumBrowser = albumBrowserState ?: navigation?.libraryAlbumState ?: rememberLibraryAlbumBrowserState()
+    val albumsListState = albumBrowser.list
+    val artistsListState = rememberLazyListState()
     val foldersListState = rememberSaveable(saver = LazyListState.Saver) {
         if (tracksOnly) LazyListState() else navigation?.folderListState ?: LazyListState()
     }
@@ -855,6 +856,7 @@ private fun LibraryBrowserTab(
     val activeRootView = rootView
     val pageContent: @Composable (LibraryBrowserRootView) -> Unit = { pageRoot ->
         val rootView = pageRoot
+        val useAlbumGrid = rootView == LibraryBrowserRootView.Albums && albumBrowser.viewMode.value == AlbumViewMode.Grid
         val activeListState = when {
             rootView == LibraryBrowserRootView.Albums -> albumsListState
             rootView == LibraryBrowserRootView.Artists -> artistsListState
@@ -866,89 +868,104 @@ private fun LibraryBrowserTab(
             showDuration = showDuration,
         )
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                state = activeListState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = dockContentPadding(PaddingValues(start = 20.dp, top = 20.dp, end = 28.dp, bottom = 20.dp)),
-                verticalArrangement = Arrangement.spacedBy(if (rootView == LibraryBrowserRootView.Folders) 0.dp else 6.dp),
-            ) {
-                if (showSearchField || combinedActionButton != null) {
-                    item {
-                        if (showSearchField) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                    //.height(56.dp)
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                LibraryBrowserSearchField(
-                                    query = state.query,
-                                    onQueryChanged = actions.onSearchChanged,
-                                    placeholder = strings.searchLabel,
-                                    useDesktopToolbar = useDesktopToolbar,
-                                    containerColor = searchFieldContainerColor,
-                                    colors = searchFieldColors,
-                                    modifier = if (useDesktopToolbar) {
-                                        Modifier
-                                    } else {
-                                        Modifier.weight(1f)
-                                    },
-                                    nonDesktopTrailingIcon = if (useDesktopToolbar) {
-                                        null
-                                    } else {
-                                        {
-                                            LibraryBrowserToolbarActions(
-                                                sourceFilterOptions = state.sourceFilterOptions,
-                                                selectedSourceFilter = state.selectedSourceFilter,
-                                                onlineSourceOptions = onlineSourceOptions,
-                                                selectedOnlineSourceId = state.sourceId,
-                                                sourceFilterMenuExpanded = sourceFilterMenuExpanded,
-                                                onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
-                                                onSourceFilterChanged = actions.onSourceFilterChanged,
-                                                onOnlineSourceSelected = actions.onOnlineSourceSelected,
-                                                showTrackSortMenu = showTrackSortMenu,
-                                                selectedTrackSortMode = state.selectedTrackSortMode,
-                                                trackSortMenuExpanded = trackSortMenuExpanded,
-                                                onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
-                                                onTrackSortChanged = actions.onTrackSortChanged,
-                                                actionButton = combinedActionButton,
-                                            )
-                                        }
-                                    },
-                                )
-                                if (useDesktopToolbar) {
-                                    Spacer(Modifier.weight(1f))
-                                    LibraryBrowserToolbarActions(
-                                        sourceFilterOptions = state.sourceFilterOptions,
-                                        selectedSourceFilter = state.selectedSourceFilter,
-                                        onlineSourceOptions = onlineSourceOptions,
-                                        selectedOnlineSourceId = state.sourceId,
-                                        sourceFilterMenuExpanded = sourceFilterMenuExpanded,
-                                        onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
-                                        onSourceFilterChanged = actions.onSourceFilterChanged,
-                                        onOnlineSourceSelected = actions.onOnlineSourceSelected,
-                                        showTrackSortMenu = showTrackSortMenu,
-                                        selectedTrackSortMode = state.selectedTrackSortMode,
-                                        trackSortMenuExpanded = trackSortMenuExpanded,
-                                        onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
-                                        onTrackSortChanged = actions.onTrackSortChanged,
-                                        actionButton = combinedActionButton,
-                                    )
-                                }
-                            }
+        val toolbar: @Composable () -> Unit = {
+            if (showSearchField) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                        //.height(56.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LibraryBrowserSearchField(
+                        query = state.query,
+                        onQueryChanged = actions.onSearchChanged,
+                        placeholder = strings.searchLabel,
+                        useDesktopToolbar = useDesktopToolbar,
+                        containerColor = searchFieldContainerColor,
+                        colors = searchFieldColors,
+                        modifier = if (useDesktopToolbar) {
+                            Modifier
                         } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                combinedActionButton?.invoke()
+                            Modifier.weight(1f)
+                        },
+                        nonDesktopTrailingIcon = if (useDesktopToolbar) {
+                            null
+                        } else {
+                            {
+                                LibraryBrowserToolbarActions(
+                                    sourceFilterOptions = state.sourceFilterOptions,
+                                    selectedSourceFilter = state.selectedSourceFilter,
+                                    onlineSourceOptions = onlineSourceOptions,
+                                    selectedOnlineSourceId = state.sourceId,
+                                    sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                                    onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                                    onSourceFilterChanged = actions.onSourceFilterChanged,
+                                    onOnlineSourceSelected = actions.onOnlineSourceSelected,
+                                    showTrackSortMenu = showTrackSortMenu,
+                                    selectedTrackSortMode = state.selectedTrackSortMode,
+                                    trackSortMenuExpanded = trackSortMenuExpanded,
+                                    onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                                    onTrackSortChanged = actions.onTrackSortChanged,
+                                    actionButton = combinedActionButton,
+                                    albumBrowserState = albumBrowser.takeIf { rootView == LibraryBrowserRootView.Albums },
+                                )
                             }
-                        }
+                        },
+                    )
+                    if (useDesktopToolbar) {
+                        Spacer(Modifier.weight(1f))
+                        LibraryBrowserToolbarActions(
+                            sourceFilterOptions = state.sourceFilterOptions,
+                            selectedSourceFilter = state.selectedSourceFilter,
+                            onlineSourceOptions = onlineSourceOptions,
+                            selectedOnlineSourceId = state.sourceId,
+                            sourceFilterMenuExpanded = sourceFilterMenuExpanded,
+                            onSourceFilterMenuExpandedChange = { sourceFilterMenuExpanded = it },
+                            onSourceFilterChanged = actions.onSourceFilterChanged,
+                            onOnlineSourceSelected = actions.onOnlineSourceSelected,
+                            showTrackSortMenu = showTrackSortMenu,
+                            selectedTrackSortMode = state.selectedTrackSortMode,
+                            trackSortMenuExpanded = trackSortMenuExpanded,
+                            onTrackSortMenuExpandedChange = { trackSortMenuExpanded = it },
+                            onTrackSortChanged = actions.onTrackSortChanged,
+                            actionButton = combinedActionButton,
+                            albumBrowserState = albumBrowser.takeIf { rootView == LibraryBrowserRootView.Albums },
+                        )
                     }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    combinedActionButton?.invoke()
+                }
+            }
+        }
+        val fixedToolbar = rootView == LibraryBrowserRootView.Albums && showSearchField
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (fixedToolbar) {
+                Box(Modifier.fillMaxWidth().padding(start = 20.dp, top = 20.dp, end = 28.dp)
+                    .testTag("album-browser-toolbar")) {
+                    toolbar()
+                }
+            }
+            LibraryBrowserLayout(
+                useGrid = useAlbumGrid,
+                listState = activeListState,
+                gridState = albumBrowser.grid,
+                modifier = Modifier.weight(1f),
+                contentPadding = dockContentPadding(PaddingValues(
+                    start = 20.dp, top = if (fixedToolbar && !useAlbumGrid) 6.dp else 20.dp,
+                    end = 28.dp, bottom = 20.dp,
+                )),
+                listSpacing = if (rootView == LibraryBrowserRootView.Folders) 0.dp else 6.dp,
+            ) {
+                if (!fixedToolbar && (showSearchField || combinedActionButton != null)) {
+                    item { toolbar() }
                 }
                 if (selectionMode && pageRoot == activeRootView) {
                     item {
@@ -1017,7 +1034,7 @@ private fun LibraryBrowserTab(
                             LibraryBrowserRootView.Artists -> strings.artistLabel
                             LibraryBrowserRootView.Folders -> strings.folderLabel
                         }
-                        if (!tracksOnly) item {
+                        if (!tracksOnly && !(useAlbumGrid && strings.sectionTitle.isBlank() && strings.sectionSubtitle.isBlank())) item {
                             if (rootView == LibraryBrowserRootView.Folders) {
                                 FolderSectionHeading(strings.folderLabel, "folder-roots-heading")
                             } else if (phoneRootState != null && rootView == LibraryBrowserRootView.Tracks) {
@@ -1110,7 +1127,8 @@ private fun LibraryBrowserTab(
                                     items(state.albums, key = { it.id }) { albumItem ->
                                         val album = albumItem.album
                                         val fallbackArtworkTrack = tracksByAlbumId[album.id].orEmpty().firstOrNull()
-                                        AlbumRow(
+                                        AlbumBrowserItem(
+                                            grid = useAlbumGrid,
                                             album = album,
                                             enabled = !state.isOnline || (
                                                 state.sourceId?.isNotBlank() == true && albumItem.remoteAlbumId?.isNotBlank() == true
@@ -1180,13 +1198,6 @@ private fun LibraryBrowserTab(
                     }
                 }
             }
-            LibraryFastScrollbar(
-                listState = activeListState,
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .padding(end = 8.dp, top = 20.dp, bottom = 20.dp + LocalDockBottomInset.current),
-            )
         }
     }
     if (phoneRootState != null && !tracksOnly) {
@@ -1817,8 +1828,10 @@ private fun LibraryBrowserToolbarActions(
     onTrackSortMenuExpandedChange: (Boolean) -> Unit,
     onTrackSortChanged: (TrackSortMode) -> Unit,
     actionButton: (@Composable () -> Unit)?,
+    albumBrowserState: LibraryAlbumBrowserState? = null,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+        albumBrowserState?.let { AlbumViewMenu(it) }
         Box {
             IconButton(onClick = { onSourceFilterMenuExpandedChange(true) }) {
                 Icon(
@@ -1969,8 +1982,6 @@ internal fun LibraryFastScrollbar(
     modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    var trackSize by remember { mutableStateOf(IntSize.Zero) }
     val totalItemsCount by remember(listState) {
         derivedStateOf { listState.layoutInfo.totalItemsCount }
     }
@@ -1995,32 +2006,69 @@ internal fun LibraryFastScrollbar(
             }
         }
     }
-    val thumbHeightPx = trackSize.height * visibleFraction
+    LibraryScrollbar(
+        visibleFraction = visibleFraction,
+        scrollFraction = scrollFraction,
+        canScroll = listState.canScrollForward || listState.canScrollBackward,
+        modifier = modifier,
+        onScrollToFraction = { fraction ->
+            coroutineScope.launch {
+                listState.scrollToItem((fraction * (totalItemsCount - 1)).roundToInt())
+            }
+        },
+    )
+}
+
+@Composable
+internal fun LibraryScrollbar(
+    visibleFraction: Float,
+    scrollFraction: Float,
+    canScroll: Boolean,
+    modifier: Modifier = Modifier,
+    onScrollToFraction: (Float) -> Unit,
+) {
+    if (!canScroll) return
+    val density = LocalDensity.current
+    var trackSize by remember { mutableStateOf(IntSize.Zero) }
+    var dragVisibleFraction by remember { mutableStateOf<Float?>(null) }
+    val latestScrollToFraction by rememberUpdatedState(onScrollToFraction)
+    val latestVisibleFraction by rememberUpdatedState(visibleFraction)
+    val thumbHeightPx = trackSize.height * (dragVisibleFraction ?: visibleFraction)
     val thumbOffsetPx = (trackSize.height - thumbHeightPx).coerceAtLeast(0f) * scrollFraction
     val thumbHeightDp = with(density) { thumbHeightPx.toDp() }
     val thumbOffsetDp = with(density) { thumbOffsetPx.toDp() }
 
-    fun scrollToFraction(y: Float) {
-        if (trackSize.height <= 0 || totalItemsCount <= 1) return
-        val fraction = (y / trackSize.height.toFloat()).coerceIn(0f, 1f)
-        val targetIndex = (fraction * (totalItemsCount - 1)).roundToInt()
-        coroutineScope.launch {
-            listState.scrollToItem(targetIndex)
-        }
+    fun scrollToFraction(y: Float, fractionVisible: Float, onScroll: (Float) -> Unit) {
+        if (trackSize.height <= 0) return
+        val thumbHeight = trackSize.height * fractionVisible
+        val fraction = ((y - thumbHeight / 2f) / (trackSize.height - thumbHeight).coerceAtLeast(1f)).coerceIn(0f, 1f)
+        onScroll(fraction)
     }
 
     Box(
         modifier = modifier
             .width(18.dp)
             .onSizeChanged { trackSize = it }
-            .pointerInput(totalItemsCount, trackSize) {
-                detectVerticalDragGestures(
-                    onDragStart = { offset -> scrollToFraction(offset.y) },
-                    onVerticalDrag = { change, _ ->
-                        change.consume()
-                        scrollToFraction(change.position.y)
-                    },
-                )
+            .pointerInput(trackSize) {
+                var dragScroll: (Float) -> Unit = {}
+                try {
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            val fractionVisible = latestVisibleFraction
+                            dragVisibleFraction = fractionVisible
+                            dragScroll = latestScrollToFraction
+                            scrollToFraction(offset.y, fractionVisible, dragScroll)
+                        },
+                        onDragEnd = { dragVisibleFraction = null; dragScroll = {} },
+                        onDragCancel = { dragVisibleFraction = null; dragScroll = {} },
+                        onVerticalDrag = { change, _ ->
+                            change.consume()
+                            scrollToFraction(change.position.y, dragVisibleFraction ?: latestVisibleFraction, dragScroll)
+                        },
+                    )
+                } finally {
+                    dragVisibleFraction = null
+                }
             },
         contentAlignment = Alignment.TopCenter,
     ) {

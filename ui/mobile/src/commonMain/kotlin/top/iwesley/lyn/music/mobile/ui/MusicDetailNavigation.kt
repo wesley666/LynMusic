@@ -164,6 +164,7 @@ internal class MusicDetailNavigation(
     val libraryRootState: MutableState<LibraryBrowserRootView> = mutableStateOf(
         if (backStack.any { (it as MusicDetailRoute).kind == "folder" })
             LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks),
+    val libraryAlbumState: LibraryAlbumBrowserState = LibraryAlbumBrowserState(),
 ) {
     val top get() = backStack.last() as MusicDetailRoute
     val hasDetails get() = backStack.size > 1
@@ -356,9 +357,11 @@ internal fun rememberMusicDetailNavigation(
             LibraryBrowserRootView.Folders else LibraryBrowserRootView.Tracks)
     }
     val latestRestore by rememberUpdatedState(onRestorePlayer)
-    val navigation = remember(stack, queries, libraryRootState) {
+    val libraryAlbumState = rememberLibraryAlbumBrowserState()
+    val navigation = remember(stack, queries, libraryRootState, libraryAlbumState) {
         MusicDetailNavigation(stack, queries, scope, restore,
-            onRestorePlayer = { latestRestore() }, libraryRootState = libraryRootState)
+            onRestorePlayer = { latestRestore() }, libraryRootState = libraryRootState,
+            libraryAlbumState = libraryAlbumState)
     }
     DisposableEffect(navigation) { onDispose { navigation.dispose() } }
     return navigation

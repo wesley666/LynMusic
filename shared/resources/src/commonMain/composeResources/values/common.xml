@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="library_album_view">Album view</string>
+    <string name="library_grid_view">Grid view</string>
+    <string name="library_list_view">List view</string>
     <string name="mac_no_file">No file selected</string>
     <string name="mac_open_file">Open local file</string>
     <string name="mac_seek_unsupported">This song may be transcoding. Seeking is unavailable.</string>
