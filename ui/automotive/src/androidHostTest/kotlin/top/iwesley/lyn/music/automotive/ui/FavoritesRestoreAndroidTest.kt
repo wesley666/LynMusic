@@ -19,7 +19,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +74,62 @@ class FavoritesRestoreAndroidTest {
 
     @Test fun activityRecreationKeepsOnlinePositionWhenOnlineSourceRestoresFirst() {
         for (indexedCount in listOf(0, 3)) checkRecreation(indexedCount, indexedFirst = false)
+    }
+
+    @Test fun pullRefreshRecoversInitialFailureWhileItsMessageIsVisible() {
+        checkFailureRefresh(clearMessageBeforeRefresh = false)
+    }
+
+    @Test fun pullRefreshRecoversInitialFailureAfterItsMessageIsCleared() {
+        checkFailureRefresh(clearMessageBeforeRefresh = true)
+    }
+
+    private fun checkFailureRefresh(clearMessageBeforeRefresh: Boolean) {
+        val preferences = object : LibrarySourceFilterPreferencesStore by unused() {
+            override val onlineFavoritesSourceId = MutableStateFlow<String?>("source")
+        }
+        var available = false
+        var requests = 0
+        val recovered = Track("recovered", "source", "Recovered song", mediaLocator = "", relativePath = "song")
+        val repository = object : NavidromeOnlineDataSource by unused() {
+            override suspend fun favoriteTracks(sourceId: String, offset: Int, limit: Int, query: String): OnlinePage<Track> {
+                assertEquals("source", sourceId)
+                assertEquals(0, offset)
+                requests++
+                if (!available) error("Server unavailable")
+                return OnlinePage(listOf(recovered), totalCount = 1)
+            }
+        }
+        Fixture(preferences, repository).use { ui ->
+            ui.restoreSources()
+            assertEquals(1, requests)
+            assertNotNull(ui.store.state.value.errorMessage)
+            compose.onNodeWithText("Close").assertIsDisplayed()
+            compose.onNodeWithText("No favorite songs yet").assertIsDisplayed()
+            compose.onNodeWithText("Retry").assertDoesNotExist()
+            if (clearMessageBeforeRefresh) {
+                compose.onNodeWithText("Close").performClick()
+                ui.frames()
+                assertNull(ui.store.state.value.errorMessage)
+                compose.onNodeWithText("Close").assertDoesNotExist()
+                assertEquals(1, requests)
+            }
+            available = true
+            // Let the shell's existing two-second minimum refresh indicator finish first.
+            compose.mainClock.advanceTimeBy(3_000)
+            ui.frames()
+            compose.onNodeWithTag("automotive-favorites-list").performTouchInput {
+                swipeDown(startY = 12f, endY = height - 12f, durationMillis = 200)
+            }
+            compose.mainClock.advanceTimeBy(3_000)
+            ui.frames()
+            assertEquals(2, requests)
+            assertEquals("source", ui.store.state.value.sourceId)
+            assertEquals(listOf(recovered), ui.store.state.value.tracks)
+            assertNull(ui.store.state.value.errorMessage)
+            compose.onNodeWithText("Recovered song").assertIsDisplayed()
+            compose.onNodeWithText("No favorite songs yet").assertDoesNotExist()
+        }
     }
 
     private fun checkRecreation(indexedCount: Int, indexedFirst: Boolean) {

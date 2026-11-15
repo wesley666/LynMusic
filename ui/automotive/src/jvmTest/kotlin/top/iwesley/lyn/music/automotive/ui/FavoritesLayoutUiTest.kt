@@ -25,9 +25,6 @@ import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.library.*
 import top.iwesley.lyn.music.feature.online.*
 import top.iwesley.lyn.music.feature.player.PlayerIntent
-import top.iwesley.lyn.music.core.model.uiText
-import top.iwesley.lyn.music.resources.Res
-import top.iwesley.lyn.music.resources.favorites_online_load_failed
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
@@ -131,17 +128,31 @@ class FavoritesLayoutUiTest {
         }
     }
 
-    @Test fun initialFailureRetriesRefreshAndPagingFailureRetainsPlayback() = onUiThread {
-        Fixture(online = true).use { ui ->
-            val error = uiText(Res.string.favorites_online_load_failed)
+    @Test fun failuresUseExistingMessagesAndRefreshWhilePagingRemainsPlayable() = onUiThread {
+        for (width in listOf(390, 1194)) Fixture(width = width, online = true, showRefreshActionButton = true).use { ui ->
+            val error = UiText.Raw("Server unavailable")
             ui.onlineState = ui.onlineState.copy(tracks = emptyList(), canLoadMore = false, errorMessage = error)
-            ui.render(); ui.click("Retry")
+            ui.render()
+            assertTrue(ui.visible("Server unavailable"))
+            assertTrue(ui.visible("No favorite songs yet"))
+            assertFalse(ui.visible("Retry"))
+            assertTrue(ui.tagged("favorites-play-all").config.contains(SemanticsProperties.Disabled))
+            ui.click("Refresh")
             assertEquals(listOf<OnlineFavoritesIntent>(OnlineFavoritesIntent.Refresh), ui.onlineIntents)
+            ui.onlineState = ui.onlineState.copy(errorMessage = null)
+            ui.render()
+            assertFalse(ui.visible("Server unavailable"))
+            assertTrue(ui.visible("No favorite songs yet"))
+            ui.click("Refresh")
+            assertEquals(listOf<OnlineFavoritesIntent>(OnlineFavoritesIntent.Refresh, OnlineFavoritesIntent.Refresh), ui.onlineIntents)
             ui.onlineState = ui.onlineState.copy(tracks = ui.tracks.take(2), canLoadMore = true, errorMessage = error)
-            ui.render(); ui.click("Play loaded songs")
+            ui.render()
+            assertTrue(ui.visible("Server unavailable"))
+            assertFalse(ui.visible("Retry"))
+            ui.click("Play loaded songs")
             assertEquals(PlayerIntent.PlayTracks(ui.tracks.take(2), 0), ui.plays.single())
-            ui.click("Retry")
-            assertEquals(listOf(OnlineFavoritesIntent.Refresh, OnlineFavoritesIntent.LoadMore), ui.onlineIntents)
+            ui.click("Load more")
+            assertEquals(listOf<OnlineFavoritesIntent>(OnlineFavoritesIntent.Refresh, OnlineFavoritesIntent.Refresh, OnlineFavoritesIntent.LoadMore), ui.onlineIntents)
         }
     }
 
@@ -162,7 +173,8 @@ class FavoritesLayoutUiTest {
         failure?.let { throw it }
     }
 
-    private class Fixture(width: Int = 390, val online: Boolean = false, loading: Boolean = false, fontScale: Float = 1f) : AutoCloseable {
+    private class Fixture(width: Int = 390, val online: Boolean = false, loading: Boolean = false, fontScale: Float = 1f,
+        showRefreshActionButton: Boolean = false) : AutoCloseable {
         private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME, PlatformCapabilities(true, true, true, true, false))
         val tracks = ('A'..'C').map { letter ->
             Track(letter.toString(), "source", "Song $letter", "Artist A", "Album A",
@@ -194,7 +206,7 @@ class FavoritesLayoutUiTest {
                                 filteredAlbums = deriveVisibleAlbums(visible), filteredArtists = deriveVisibleArtists(visible),
                                 favoriteTrackIds = favorites.mapTo(mutableSetOf()) { it.id }),
                             importState = ImportState(capabilities = platform.capabilities), onlineState = onlineState,
-                            showSearchField = false, showRefreshActionButton = false, showDuration = width >= 600,
+                            showSearchField = false, showRefreshActionButton = showRefreshActionButton, showDuration = width >= 600,
                             showInlineBatchOperationButton = false,
                             onFavoritesIntent = { intent ->
                                 if (intent is FavoritesIntent.ToggleFavorite) favorites = favorites.filterNot { it.id == intent.track.id }

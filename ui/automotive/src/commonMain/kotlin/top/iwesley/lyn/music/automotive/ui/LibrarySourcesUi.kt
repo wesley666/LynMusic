@@ -461,10 +461,6 @@ internal fun FavoritesTab(
             },
             showFavoriteIndicator = false,
             tracksOnly = true,
-            onRetry = {
-                if (isOnlineMode) onOnlineIntent(OnlineFavoritesIntent.Refresh)
-                else onFavoritesIntent(FavoritesIntent.Refresh)
-            },
             showDuration = showDuration,
             showSearchField = showSearchField,
             showTrackSortActionButton = showSearchField && !isOnlineMode,
@@ -646,7 +642,6 @@ private fun LibraryBrowserTab(
     showTrackSortActionButton: Boolean = true,
     showFolderBrowser: Boolean = false,
     tracksOnly: Boolean = false,
-    onRetry: () -> Unit = {},
     rootSelectorStyle: LibraryRootSelectorStyle = LibraryRootSelectorStyle.Default,
     actionButton: (@Composable () -> Unit)? = null,
     navigationTarget: LibraryNavigationTarget? = null,
@@ -1053,7 +1048,6 @@ private fun LibraryBrowserTab(
                     onTrackSortChanged = actions.onTrackSortChanged, actionButton = combinedActionButton,
                 )
             },
-            onRetry = onRetry,
             modifier = modifier,
         )
         batchQualitySheet()
@@ -1520,14 +1514,12 @@ private fun FavoritesBrowserContent(
     showSearchField: Boolean,
     standaloneActions: (@Composable () -> Unit)?,
     toolbarActions: @Composable () -> Unit,
-    onRetry: () -> Unit,
     modifier: Modifier,
 ) {
     val statusList = rememberLazyListState()
     val statusOnly = tracks.isEmpty() && (state.isLoading || state.errorMessage != null)
     val activeList = if (statusOnly) statusList else listState
     val partiallyLoaded = state.isOnline && state.trackCount.hasMore
-    val initialFailure = tracks.isEmpty() && state.errorMessage != null && !state.capabilities.canLoadMoreTracks
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .testTag("automotive-favorites-page")) {
         val density = LocalDensity.current
@@ -1575,16 +1567,12 @@ private fun FavoritesBrowserContent(
                 )
             }
             item("favorites-message") {
-                if (!initialFailure) state.message?.let { BannerCard(it, actions.onDismissMessage) }
+                state.message?.let { BannerCard(it, actions.onDismissMessage) }
             }
             if (tracks.isEmpty() && (state.isLoading || !state.capabilities.canLoadMoreTracks)) item("favorites-status") {
                 when {
                     state.isLoading -> EmptyStateCard(uiString(Res.string.library_loading_named_category, strings.trackLabel),
                         uiString(Res.string.library_background_indexing_hint))
-                    initialFailure -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        EmptyStateCard(uiString(Res.string.favorites_online_load_failed), state.errorMessage!!.displayText())
-                        Button(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text(uiString(Res.string.common_retry)) }
-                    }
                     state.allTrackCount == 0 -> EmptyStateCard(strings.emptyCollectionTitle, strings.emptyCollectionBody)
                     state.selectedSourceFilter != LibrarySourceFilter.ALL -> EmptyStateCard(
                         uiString(Res.string.library_source_category_empty_title, strings.trackLabel), strings.emptyFilterBody)
@@ -1613,11 +1601,8 @@ private fun FavoritesBrowserContent(
                         style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = actions.onLoadMoreTracks, enabled = !state.isLoadingMoreTracks,
                         modifier = Modifier.heightIn(min = 48.dp).testTag("favorites-load-more")) {
-                        Text(uiString(when {
-                            state.isLoadingMoreTracks -> Res.string.library_loading_status
-                            state.errorMessage != null -> Res.string.common_retry
-                            else -> Res.string.library_load_more_action
-                        }))
+                        Text(uiString(if (state.isLoadingMoreTracks) Res.string.library_loading_status
+                            else Res.string.library_load_more_action))
                     }
                 }
             }
