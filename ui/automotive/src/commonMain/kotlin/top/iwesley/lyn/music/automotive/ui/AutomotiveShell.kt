@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -431,7 +432,7 @@ internal fun AutomotivePortraitShell(
                                 Icon(
                                     imageVector = when (tab) {
                                         AppTab.My -> Icons.Rounded.Person
-                                        AppTab.Favorites -> Icons.Rounded.FavoriteBorder
+                                        AppTab.Favorites -> Icons.Rounded.Favorite
                                         else -> Icons.Rounded.LibraryMusic
                                     },
                                     contentDescription = label,
