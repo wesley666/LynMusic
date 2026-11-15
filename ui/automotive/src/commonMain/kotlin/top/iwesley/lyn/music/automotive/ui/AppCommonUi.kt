@@ -828,6 +828,7 @@ internal fun TrackRow(
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     showFavoriteIndicator: Boolean = true,
+    showDivider: Boolean = true,
     menuContextKey: Any? = null,
     showDuration: Boolean = true,
     durationColumnWidth: Dp = 56.dp,
@@ -969,7 +970,7 @@ internal fun TrackRow(
                 }
             }
         }
-        Box(
+        if (showDivider) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 88.dp)

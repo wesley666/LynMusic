@@ -61,6 +61,8 @@ import top.iwesley.lyn.music.feature.importing.ImportState
 import top.iwesley.lyn.music.feature.online.OnlineFavoritesState
 import top.iwesley.lyn.music.feature.online.OnlineLibraryState
 import top.iwesley.lyn.music.feature.online.OnlinePlaylistsState
+import top.iwesley.lyn.music.*
+import top.iwesley.lyn.music.feature.library.LibraryIntent
 import top.iwesley.lyn.music.feature.library.LibraryState
 import top.iwesley.lyn.music.feature.favorites.FavoritesIntent
 import top.iwesley.lyn.music.feature.my.MyState
@@ -84,6 +86,76 @@ class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
     private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME,
         PlatformCapabilities(true, true, true, true, false))
+    @Test fun folderBothEdgesKeepPositionsOnCancelAndPopDirectoriesInOrder() {
+        for (edge in listOf(BackEvent.EDGE_LEFT,BackEvent.EDGE_RIGHT)) Fixture(folderRoot = true).use { ui ->
+            ui.openFolder(""); ui.openFolder("Parent"); val parent = ui.navigation.top
+            ui.openFolder("Parent/Album"); val leaf = ui.navigation.top
+            compose.onNodeWithTag("folder-content").performScrollToIndex(20); ui.frames()
+            val entry = ui.navigation.folderEntry(leaf)
+            val index = entry.list.firstVisibleItemIndex
+            val offset = entry.list.firstVisibleItemScrollOffset
+            val cancelled = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            cancelled.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f,0f); cancelled.cancel(); ui.frames()
+            assertEquals(leaf,ui.navigation.top)
+            assertEquals(index,entry.list.firstVisibleItemIndex); assertEquals(offset,entry.list.firstVisibleItemScrollOffset)
+            assertEquals(0,ui.albumRequests)
+            ui.navigation.open(LibraryNavigationTarget.Album("album")); ui.frames()
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertEquals(leaf,ui.navigation.top); assertEquals(index,entry.list.firstVisibleItemIndex)
+            val oldCallback = ui.animationCallback()
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertEquals(parent,ui.navigation.top)
+            oldCallback.onBackInvoked(); ui.frames(); assertEquals(parent,ui.navigation.top)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertEquals("",ui.navigation.top.folderPath)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close(); ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertEquals(LibraryBrowserRootView.Folders,ui.navigation.libraryRootState.value)
+            assertFalse(ui.activity.isFinishing); assertEquals(0,RecordingActivityClient.backRequests)
+        }
+    }
+
+    @Test fun folderBackReturnsToRootSearchBeforeClearingItsQuery() {
+        Fixture(portraitFolderRoot = true).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Folders
+            ui.folderLibrary.value = ui.folderLibrary.value.copy(query = "Parent"); ui.frames()
+            compose.onNodeWithContentDescription("Exit search").assertExists()
+            compose.onNodeWithText("Storage").performClick(); ui.frames()
+            assertEquals("folder",ui.navigation.top.kind)
+            assertEquals("Parent",ui.folderLibrary.value.query)
+            val route = ui.navigation.top
+            val cancelled = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(BackEvent.EDGE_LEFT))
+            cancelled.moveBy(160f,0f); cancelled.cancel(); ui.frames()
+            assertEquals(route,ui.navigation.top)
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(BackEvent.EDGE_RIGHT)).close(); ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertEquals("Parent",ui.folderLibrary.value.query)
+            compose.onNodeWithContentDescription("Exit search").assertExists()
+            assertFalse(ui.activity.isFinishing)
+        }
+    }
+
+    @Test fun folderHostRestoreKeepsItsAnchorThroughInitialLoading() {
+        lateinit var saved: android.os.Bundle
+        lateinit var loaded: LibraryState
+        var index = 0; var offset = 0
+        Fixture(folderRoot = true).use { ui ->
+            ui.openFolder("Parent/Album")
+            compose.onNodeWithTag("folder-content").performScrollToIndex(20); ui.frames()
+            index = ui.navigation.folderEntry(ui.navigation.top).list.firstVisibleItemIndex
+            offset = ui.navigation.folderEntry(ui.navigation.top).list.firstVisibleItemScrollOffset
+            loaded = ui.folderLibrary.value; saved = ui.saveState()
+        }
+        Fixture(folderRoot = true,folderInitiallyLoading = true,savedInstanceState = saved).use { ui ->
+            compose.onNodeWithTag("folder-loading").assertExists()
+            assertEquals("Parent/Album",ui.navigation.top.folderPath)
+            ui.folderLibrary.value = loaded; ui.frames()
+            val entry = ui.navigation.folderEntry(ui.navigation.top)
+            assertEquals(index,entry.list.firstVisibleItemIndex); assertEquals(offset,entry.list.firstVisibleItemScrollOffset)
+            assertEquals(0,ui.albumRequests)
+        }
+    }
+
     @Test fun playlistGestureCancellationRetainsPositionAndChildrenDoNotReload() {
         for (edge in listOf(BackEvent.EDGE_LEFT,BackEvent.EDGE_RIGHT)) Fixture(playlistRoot = true).use { ui ->
             ui.openPlaylist()
@@ -454,7 +526,8 @@ class MusicDetailAndroidBackTest {
     private inner class Fixture(withTracks: Boolean = false, favoritesRoot: Boolean = false,
         private val portraitFavoritesRoot: Boolean = false,
         private val playlistRoot: Boolean = false, private val onlinePlaylist: Boolean = false,
-        savedInstanceState: android.os.Bundle? = null) : AutoCloseable {
+        savedInstanceState: android.os.Bundle? = null, private val folderRoot: Boolean = false,
+        folderInitiallyLoading: Boolean = false, private val portraitFolderRoot: Boolean = false) : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         var albumRequests = 0
         private val queries = TestMusicDetailQueries(album = {
@@ -468,6 +541,16 @@ class MusicDetailAndroidBackTest {
         val favoritesQuery = androidx.compose.runtime.mutableStateOf("")
         val playlistState = androidx.compose.runtime.mutableStateOf(PlaylistsState(isLoadingContent = false))
         val onlinePlaylistState = androidx.compose.runtime.mutableStateOf(OnlinePlaylistsState(sourceId = if (onlinePlaylist) "source" else null))
+        private val folderTracks = (0..39).map { Track("song-$it","source","Song $it",mediaLocator = "",relativePath = "Parent/Album/$it.flac") }
+        val folderLibrary = androidx.compose.runtime.mutableStateOf(LibraryState(isLoadingContent = folderInitiallyLoading,
+            tracks = if (folderInitiallyLoading) emptyList() else folderTracks,
+            filteredTracks = if (folderInitiallyLoading) emptyList() else folderTracks,sourceLabelsById = mapOf("source" to "Storage")))
+        private val folderSources = ImportState(capabilities = platform.capabilities,sources = listOf(SourceWithStatus(
+            ImportSource("source",ImportSourceType.LOCAL_FOLDER,"Storage",""))))
+        fun openFolder(path: String) {
+            val tree = deriveLibraryFolderTree(folderLibrary.value.filteredTracks,folderLibrary.value.sourceLabelsById)
+            navigation.openFolder(tree.nodesByKey.getValue(LibraryFolderKey("source",path)),LibrarySourceFilter.ALL); frames()
+        }
         var playlistRequests = 0
         private val playlistTracks = (0..39).map { PlaylistTrackEntry(Track("song-$it","source","Song $it",mediaLocator = "",relativePath = "$it")) }
         private val playlistSources = ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(ImportSource("source",ImportSourceType.NAVIDROME,
@@ -508,9 +591,11 @@ class MusicDetailAndroidBackTest {
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() },
                 ) {
                     ProvideUiResourceLanguage("en") {
-                        LynMusicTheme { if (portraitFavoritesRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}, playlist = { route ->
+                        LynMusicTheme { if (portraitFavoritesRoot || portraitFolderRoot) PortraitFavorites() else MusicDetailHost(onPlayerIntent = {}, playlist = { route ->
                             PlaylistDetailPage(route,navigation,playlistState.value,onlinePlaylistState.value,playlistSources,
                                 ::localPlaylist,::onlinePlaylist,{},allowSplit = false)
+                        }, folder = { route ->
+                            FolderDetailPage(route,navigation,folderLibrary.value,FavoritesState(),folderSources,{},{})
                         }) {
                             if (favoritesRoot) {
                                 val tracks = androidx.compose.runtime.remember { (0..2).map {
@@ -540,14 +625,15 @@ class MusicDetailAndroidBackTest {
             } }
             AutomotivePortraitShell(
                 portraitNavigation = true,mobilePortraitMiniPlayer = true,hideMiniPlayerBar = false,
-                selectedTab = AppTab.Favorites,onTabSelected = {},platform = platform,
-                myState = MyState(),libraryState = LibraryState(),onlineLibraryState = OnlineLibraryState(),
+                selectedTab = if (portraitFolderRoot) AppTab.Library else AppTab.Favorites,onTabSelected = {},platform = platform,
+                myState = MyState(),libraryState = if (portraitFolderRoot) folderLibrary.value else LibraryState(),onlineLibraryState = OnlineLibraryState(),
                 playlistsState = PlaylistsState(),onlinePlaylistsState = OnlinePlaylistsState(),
                 favoritesState = FavoritesState(isLoadingContent = false,query = favoritesQuery.value,
                     tracks = tracks,filteredTracks = tracks,favoriteTrackIds = tracks.mapTo(mutableSetOf()) { it.id }),
-                onlineFavoritesState = OnlineFavoritesState(),importState = ImportState(capabilities = platform.capabilities),
+                onlineFavoritesState = OnlineFavoritesState(),importState = if (portraitFolderRoot) folderSources else ImportState(capabilities = platform.capabilities),
                 playerState = PlayerState(),settingsState = SettingsState(),
-                onMyIntent = {},onLibraryIntent = {},onOnlineLibraryIntent = {},onPlaylistsIntent = {},onOnlinePlaylistsIntent = {},
+                onMyIntent = {},onLibraryIntent = { if (it is LibraryIntent.SearchChanged) folderLibrary.value = folderLibrary.value.copy(query = it.query) },
+                onOnlineLibraryIntent = {},onPlaylistsIntent = {},onOnlinePlaylistsIntent = {},
                 onFavoritesIntent = { if (it is FavoritesIntent.SearchChanged) favoritesQuery.value = it.query },
                 onOnlineFavoritesIntent = {},onImportIntent = {},onPlayerIntent = {},onSettingsIntent = {},
                 onOpenBackgroundRunSettings = {},onOpenLibraryNavigationTarget = { navigation.open(it) },onOpenAddToPlaylist = {},

@@ -2,9 +2,11 @@
 
 package top.iwesley.lyn.music.automotive.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.rememberWideNavigationRailState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.*
@@ -46,6 +48,150 @@ import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 
 class FavoritesShellTest {
+    @Test fun folderLayoutsUseActualShellsAndKeepLastActionsAboveThePlayer() = onUiThread {
+        for ((w,h) in listOf(1280 to 720,1920 to 720,800 to 1280,480 to 900,640 to 400))
+            Fixture(w,h,visual = true,folderMode = true,count = 8).use { ui ->
+                ui.navigation.libraryRootState.value = LibraryBrowserRootView.Folders; ui.render()
+                ui.tag("folder-roots-heading"); ui.capture("folders-list-$w-$h")
+                ui.openFolder(""); ui.capture("folders-root-$w-$h")
+                ui.openFolder("Parent"); ui.capture("folders-mixed-$w-$h")
+                ui.openFolder("Only folders"); ui.capture("folders-subdirs-$w-$h")
+                ui.openFolder(); ui.capture("folders-songs-$w-$h")
+                ui.scrollFolderTo(ui.folderEntry.list.layoutInfo.totalItemsCount - 1)
+                val menu = ui.label("山阴路的夏天 8 的更多操作").boundsInRoot
+                assertTrue(menu.bottom <= ui.playerTop(), "$w/$h: $menu")
+                ui.capture("folders-bottom-$w-$h")
+                assertTrue(ui.intents.isEmpty())
+            }
+    }
+
+    @Test fun folderSourceOverviewRestoresItsAnchorAfterOpeningAndRotating() = onUiThread {
+        Fixture(1280,720,folderMode = true,folderSources = 24).use { ui ->
+            ui.navigation.libraryRootState.value = LibraryBrowserRootView.Folders; ui.render()
+            ui.scrollFolderRootsTo(9,9)
+            val list = ui.navigation.folderListState
+            val anchor = list.layoutInfo.visibleItemsInfo.first().key
+            ui.clickTag("folder-row:${LibraryFolderKey("extra-10","").stableId}")
+            assertEquals("extra-10",ui.navigation.top.sourceId)
+            ui.resize(800,1280)
+            ui.navigation.requestBack(); ui.render()
+            assertEquals(LibraryBrowserRootView.Folders,ui.navigation.libraryRootState.value)
+            assertEquals(anchor,list.layoutInfo.visibleItemsInfo.first().key)
+            assertEquals(9,list.firstVisibleItemScrollOffset)
+            val loaded = ui.library
+            ui.library = loaded.copy(isLoadingContent = true,filteredTracks = emptyList()); ui.render()
+            ui.library = loaded; ui.render()
+            assertEquals(anchor,ui.navigation.folderListState.layoutInfo.visibleItemsInfo.first().key)
+            assertEquals(9,ui.navigation.folderListState.firstVisibleItemScrollOffset)
+            ui.clickTag("folder-row:${LibraryFolderKey("extra-10","").stableId}")
+            assertEquals("extra-10",ui.navigation.top.sourceId)
+            assertTrue(ui.libraryIntents.isEmpty())
+        }
+    }
+
+    @Test fun folderEachLevelKeepsItsPositionAcrossChildrenShellsAndLoading() = onUiThread {
+        Fixture(1280,720,folderMode = true).use { ui ->
+            ui.openFolder(""); ui.click("Parent")
+            ui.scrollFolderTo(8,7); val parent = ui.navigation.top
+            ui.openFolder(); ui.scrollFolderTo(40,11); val leaf = ui.navigation.top
+            for ((w,h) in listOf(800 to 1280,1920 to 720,480 to 900,640 to 400,1280 to 720)) {
+                ui.resize(w,h)
+                assertEquals(leaf,ui.navigation.top)
+                assertEquals(40,ui.folderEntry.list.firstVisibleItemIndex)
+                assertEquals(11,ui.folderEntry.list.firstVisibleItemScrollOffset)
+            }
+            ui.navigation.open(LibraryNavigationTarget.Album("album")); ui.render()
+            ui.navigation.pop(); ui.render()
+            assertEquals(40,ui.folderEntry.list.firstVisibleItemIndex)
+            val loaded = ui.library
+            ui.library = loaded.copy(isLoadingContent = true,filteredTracks = emptyList()); ui.render()
+            ui.tag("folder-loading")
+            ui.library = loaded; ui.render()
+            assertEquals(11,ui.folderEntry.list.firstVisibleItemScrollOffset)
+            ui.rebuild(); assertEquals(40,ui.folderEntry.list.firstVisibleItemIndex)
+            ui.navigation.requestBack(); ui.render()
+            assertEquals(parent,ui.navigation.top)
+            assertEquals(8,ui.folderEntry.list.firstVisibleItemIndex)
+            assertEquals(7,ui.folderEntry.list.firstVisibleItemScrollOffset)
+            assertTrue(ui.libraryIntents.isEmpty())
+        }
+    }
+
+    @Test fun folderPlaybackUsesOnlyDirectSongsAndExistingMenus() = onUiThread {
+        Fixture(1280,720,folderMode = true).use { ui ->
+            ui.openFolder("Parent")
+            ui.scrollFolderTo(ui.folderEntry.list.layoutInfo.totalItemsCount - 1)
+            ui.click("Play all")
+            assertEquals(listOf("parent-song"),(ui.intents.last() as PlayerIntent.PlayTracks).tracks.map { it.id })
+            ui.openFolder("Only folders")
+            assertFalse(ui.visible("Play all")); assertFalse(ui.hasTag("folder-songs-heading"))
+            ui.openFolder()
+            ui.click("Play all"); assertEquals(ui.tracks,(ui.intents.last() as PlayerIntent.PlayTracks).tracks)
+            ui.click("More actions for Song 0"); ui.click("Add to favorites")
+            assertTrue(ui.favorites.any { it.id == "track-0" })
+            ui.click("More actions for Song 0"); ui.click("Add to playlist")
+            assertEquals(ui.tracks.first(),ui.playlistTargets.last())
+            for (kind in listOf("album","artist")) {
+                ui.click("More actions for Song 0"); ui.click("View $kind")
+                assertEquals(kind,ui.navigation.top.kind)
+                ui.navigation.pop(); ui.render()
+            }
+            ui.click("02"); assertEquals(PlayerIntent.PlayTracks(ui.tracks,1),ui.intents.last())
+            ui.intents.clear(); ui.swipeVertically("folder-content"); assertTrue(ui.intents.isEmpty())
+        }
+    }
+
+    @Test fun folderEmptyAndUnavailableStatesPreserveTheRouteWithoutShowingOtherSources() = onUiThread {
+        Fixture(480,900,folderMode = true).use { ui ->
+            ui.openFolder(); val route = ui.navigation.top; val loaded = ui.library
+            ui.library = loaded.copy(filteredTracks = emptyList()); ui.render()
+            ui.tag("folder-empty"); assertEquals(route,ui.navigation.top)
+            assertFalse(ui.visible("Play all"))
+            ui.library = loaded.copy(sourceLabelsById = emptyMap()); ui.render()
+            assertTrue(ui.visible("This source is unavailable. Go back or retry after restoring the source."))
+            ui.library = loaded.copy(isLoadingContent = true,filteredTracks = emptyList(),sourceLabelsById = emptyMap()); ui.render()
+            ui.tag("folder-loading")
+            ui.library = loaded
+            val originalSources = ui.importState
+            for (source in listOf(originalSources.sources.first().source.copy(enabled = false),
+                originalSources.sources.first().source.copy(indexMode = ImportSourceIndexMode.ONLINE))) {
+                ui.importState = originalSources.copy(sources = listOf(SourceWithStatus(source))); ui.render()
+                assertTrue(ui.visible("This source is unavailable. Go back or retry after restoring the source."))
+                assertEquals(route,ui.navigation.top)
+            }
+            ui.importState = originalSources
+            ui.openFolder(sourceId = "other")
+            assertTrue(ui.visible("Other source song")); assertFalse(ui.visible("Song 0"))
+            assertTrue(ui.libraryIntents.isEmpty())
+        }
+    }
+
+    @Test fun folderScalesAndWidthThresholdsKeepPlaybackAndMenusReachable() = onUiThread {
+        for ((w,h) in listOf(1280 to 720,480 to 900,640 to 400))
+            for (scale in AppDisplayScalePreset.entries) for (font in listOf(1f,1.5f,2f))
+                Fixture(w,h,density = scale.scale,fontScale = font,dark = scale.ordinal % 2 == 0,
+                    longNames = true,folderMode = true,count = 120).use { ui ->
+                    ui.openFolder(); ui.scrollFolderTo(2)
+                    val play = ui.tag("folder-play-all").boundsInRoot
+                    assertTrue(play.height + 1f >= 48f * scale.scale)
+                    assertTrue(play.top >= ui.tag("folder-toolbar").boundsInRoot.bottom && play.bottom <= ui.playerTop(), "$w/$h/$scale/$font: $play")
+                    ui.scrollFolderTo(ui.folderEntry.list.layoutInfo.totalItemsCount - 1)
+                    assertTrue(ui.label("More actions for Song 119").boundsInRoot.bottom <= ui.playerTop())
+                    if (scale == AppDisplayScalePreset.ExtraLarge && font == 2f) ui.capture("folders-large-$w-$h")
+                }
+        Fixture(591,991,folderMode = true).use { ui ->
+            ui.openFolder()
+            for (width in listOf(591,592,599,600,1119,1120)) {
+                ui.fontScale = if (width >= 1119) 2f else 1f
+                ui.resize(width,width + 400)
+                ui.scrollFolderTo(0)
+                assertEquals(if (width >= 600) 24f else 20f,ui.tag("folder-path").boundsInRoot.left,1f)
+                ui.scrollFolderTo(ui.folderEntry.list.layoutInfo.totalItemsCount - 1)
+                assertEquals(width !in listOf(591,1119),ui.visible("120:00"),"width=$width")
+            }
+        }
+    }
+
     @Test fun playlistListAndDetailsUseRealShellsInBothOrientations() = onUiThread {
         for ((w, h) in listOf(1280 to 720, 1920 to 720, 800 to 1280, 480 to 900, 640 to 400))
             Fixture(w, h, visual = true, playlistMode = true).use { ui ->
@@ -443,24 +589,53 @@ class FavoritesShellTest {
     private class Fixture(
         width: Int, height: Int, val visual: Boolean = false, density: Float = 1f,
         fontScale: Float = 1f, val dark: Boolean = false, val longNames: Boolean = false,
-        online: Boolean = false, count: Int = 96, val playlistMode: Boolean = false,
+        online: Boolean = false, count: Int = 96, val playlistMode: Boolean = false, val folderMode: Boolean = false, folderSources: Int = 0,
     ) : AutoCloseable {
         var width by mutableStateOf(width)
         var height by mutableStateOf(height)
         var density by mutableStateOf(density)
         var fontScale by mutableStateOf(fontScale)
-        var selectedTab by mutableStateOf(if (playlistMode) AppTab.Playlists else AppTab.Favorites)
+        var selectedTab by mutableStateOf(if (folderMode) AppTab.Library else if (playlistMode) AppTab.Playlists else AppTab.Favorites)
         private var registry = SaveableStateRegistry(null) { true }
         private val scheduler = TestCoroutineScheduler()
         private val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(scheduler))
         private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME, PlatformCapabilities(true, true, true, true, false))
+        private val folderName = if (longNames) "A long folder name with 中文 and additional information for wrapping" else "Album"
         val tracks = (0 until count).map { index -> Track("track-$index", "source",
             if (visual) "山阴路的夏天 ${index + 1}" else "Song $index",
             if (longNames) "A very long artist name with several collaborators and additional information" else if (visual) "李志" else "Artist A",
             if (longNames) "A very long album title with additional information" else if (visual) "我爱南京" else "Album A",
-            durationMs = 7_200_000, mediaLocator = buildNavidromeSongLocator("source", "$index"), relativePath = "$index",
+            durationMs = 7_200_000, mediaLocator = buildNavidromeSongLocator("source", "$index"), relativePath = if (folderMode) "Parent/$folderName/${index.toString().padStart(3,'0')}.flac" else "$index",
             artistId = "artist", albumId = "album") }
-        var favorites by mutableStateOf(tracks)
+        private val folderTracks = tracks + if (folderMode) listOf(
+            tracks.first().copy(id = "parent-song",title = "Parent song",relativePath = "Parent/parent.flac"),
+            tracks.first().copy(id = "root-song",title = "Root song",relativePath = "root.flac"),
+            tracks.first().copy(id = "only-folders",relativePath = "Only folders/Nested/song.flac"),
+            tracks.first().copy(id = "other-song",sourceId = "other",title = "Other source song",relativePath = "Parent/$folderName/song.flac")) +
+            (0..15).map { tracks.first().copy(id = "sibling-$it",relativePath = "Parent/Sibling $it/song.flac") } +
+            (0 until folderSources).map { tracks.first().copy(id = "extra-song-$it",sourceId = "extra-$it",relativePath = "song.flac") } else emptyList()
+        var library by mutableStateOf(if (folderMode) LibraryState(isLoadingContent = false,tracks = folderTracks,filteredTracks = folderTracks,
+            sourceLabelsById = mapOf("source" to if (visual) "本地音乐" else "Storage", "other" to "Other storage") +
+                (0 until folderSources).associate { "extra-$it" to "Storage %02d".format(it) }) else LibraryState())
+        val libraryIntents = mutableListOf<LibraryIntent>()
+        val playlistTargets = mutableListOf<Track>()
+        fun sendLibrary(intent: LibraryIntent) {
+            libraryIntents += intent
+            when (intent) {
+                is LibraryIntent.SearchChanged -> library = library.copy(query = intent.query,
+                    filteredTracks = folderTracks.filter { it.title.contains(intent.query,true) || it.relativePath.contains(intent.query,true) })
+                is LibraryIntent.SourceFilterChanged -> library = library.copy(selectedSourceFilter = intent.filter)
+                is LibraryIntent.TrackSortChanged -> library = library.copy(selectedTrackSortMode = intent.mode)
+            }
+        }
+        val folderEntry get() = navigation.folderEntry(navigation.top)
+        fun openFolder(path: String = "Parent/$folderName", sourceId: String = "source") {
+            val tree = deriveLibraryFolderTree(library.filteredTracks,library.sourceLabelsById)
+            navigation.openFolder(tree.nodesByKey.getValue(LibraryFolderKey(sourceId,path)),library.selectedSourceFilter); render()
+        }
+        fun scrollFolderRootsTo(index: Int,offset: Int = 0) { scope.launch { navigation.folderListState.scrollToItem(index,offset) }; render() }
+        fun scrollFolderTo(index: Int,offset: Int = 0) { scope.launch { folderEntry.list.scrollToItem(index,offset) }; render() }
+        var favorites by mutableStateOf(if (folderMode) emptyList() else tracks)
         var loading by mutableStateOf(false)
         var query by mutableStateOf("")
         var filter by mutableStateOf<LibrarySourceFilter>(LibrarySourceFilter.ALL)
@@ -513,8 +688,9 @@ class FavoritesShellTest {
             }
             render()
         }
-        private val importState = ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(
-            ImportSource("source", ImportSourceType.NAVIDROME, "Server", "", indexMode = ImportSourceIndexMode.ONLINE))))
+        var importState by mutableStateOf(ImportState(capabilities = platform.capabilities, sources = listOf(SourceWithStatus(
+            ImportSource("source", if (folderMode) ImportSourceType.LOCAL_FOLDER else ImportSourceType.NAVIDROME, "Server", "",
+                indexMode = if (folderMode) ImportSourceIndexMode.LOCAL_INDEX else ImportSourceIndexMode.ONLINE)))))
         private val player = PlayerState(snapshot = PlaybackSnapshot(queue = listOf(Track("playing", "local",
             if (visual) "正在播放" else "Now playing", mediaLocator = "", relativePath = "playing")), currentIndex = 0))
         private val queries = TestMusicDetailQueries(tracks = { tracks })
@@ -534,7 +710,7 @@ class FavoritesShellTest {
                 is FavoritesIntent.SearchChanged -> query = intent.query
                 is FavoritesIntent.SourceFilterChanged -> filter = intent.filter
                 is FavoritesIntent.TrackSortChanged -> sort = intent.mode
-                is FavoritesIntent.ToggleFavorite -> favorites = favorites.filterNot { it.id == intent.track.id }
+                is FavoritesIntent.ToggleFavorite -> favorites = if (favorites.any { it.id == intent.track.id }) favorites.filterNot { it.id == intent.track.id } else favorites + intent.track
                 else -> Unit
             }
         }
@@ -567,6 +743,7 @@ class FavoritesShellTest {
                     LocalTrackListActionBindings provides TrackListActionBindings(
                         favoriteState = { TrackFavoriteUiState(it.id in favorites.map { track -> track.id }) },
                         onSetFavorite = { track, _ -> onFavorite(FavoritesIntent.ToggleFavorite(track)) },
+                        onAddToPlaylist = { playlistTargets += it },
                     )) {
                     ProvideUiResourceLanguage(if (visual) "zh-CN" else "en") {
                         LynMusicTheme(themeTokens = if (dark) CLASSIC_APP_THEME_TOKENS else OCEAN_APP_THEME_TOKENS,
@@ -576,26 +753,27 @@ class FavoritesShellTest {
             }
         }
         @Composable private fun Shell() {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            // Match AutomotiveApp's backing surface around the real responsive shell.
+            BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             if (maxWidth > maxHeight) AutomotiveLandscapeShell(
                 navigationRailState = rememberWideNavigationRailState(),
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
-                myState = MyState(), libraryState = LibraryState(), onlineLibraryState = OnlineLibraryState(),
+                myState = MyState(), libraryState = library, onlineLibraryState = OnlineLibraryState(),
                 playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,
-                settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = {}, onOnlineLibraryIntent = {},
+                settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = ::sendLibrary, onOnlineLibraryIntent = {},
                 onPlaylistsIntent = ::sendPlaylist, onOnlinePlaylistsIntent = ::sendOnlinePlaylist, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
                 onImportIntent = {}, onPlayerIntent = { intents += it }, onSettingsIntent = {},
                 onOpenBackgroundRunSettings = {}, onOpenLibraryNavigationTarget = { navigation.open(it) }, onOpenAddToPlaylist = {},
             ) else AutomotivePortraitShell(
                 portraitNavigation = true, mobilePortraitMiniPlayer = true, hideMiniPlayerBar = false,
                 selectedTab = selectedTab, onTabSelected = { navigation.clear(); selectedTab = it }, platform = platform,
-                myState = MyState(), libraryState = LibraryState(), onlineLibraryState = OnlineLibraryState(),
+                myState = MyState(), libraryState = library, onlineLibraryState = OnlineLibraryState(),
                 playlistsState = playlists, onlinePlaylistsState = onlinePlaylists,
                 favoritesState = localState(), onlineFavoritesState = onlineState,
                 importState = importState, playerState = player,
-                settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = {}, onOnlineLibraryIntent = {},
+                settingsState = SettingsState(), onMyIntent = {}, onLibraryIntent = ::sendLibrary, onOnlineLibraryIntent = {},
                 onPlaylistsIntent = ::sendPlaylist, onOnlinePlaylistsIntent = ::sendOnlinePlaylist, onFavoritesIntent = ::sendFavorite, onOnlineFavoritesIntent = ::sendOnline,
                 onImportIntent = {}, onPlayerIntent = { intents += it }, onSettingsIntent = {},
                 onOpenBackgroundRunSettings = {}, onOpenLibraryNavigationTarget = { navigation.open(it) }, onOpenAddToPlaylist = {},
@@ -623,6 +801,7 @@ class FavoritesShellTest {
             fun walk(n: SemanticsNode): List<SemanticsNode> = listOf(n) + n.children.flatMap(::walk)
             return scene.semanticsOwners.flatMap { walk(it.unmergedRootSemanticsNode) }.filter { !it.boundsInRoot.isEmpty }
         }
+        fun hasTag(value: String) = nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == value }
         fun tag(value: String) = nodes().lastOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == value } ?: error("Missing $value; labels=${nodes().map { it.config.getOrNull(SemanticsProperties.Text) }}")
         private fun matches(n: SemanticsNode, value: String) = n.config.getOrNull(SemanticsProperties.Text)?.any { it.text == value } == true ||
             n.config.getOrNull(SemanticsProperties.ContentDescription)?.contains(value) == true
@@ -654,8 +833,8 @@ class FavoritesShellTest {
             val file = File("build/reports/favorites-layout/automotive-shell-$name.png"); file.parentFile.mkdirs()
             scene.render(++frame * 16_666_667L).use { image -> image.encodeToData()!!.use { file.writeBytes(it.bytes) } }
         }
-        fun swipeVertically() {
-            val list = tag("automotive-favorites-list").boundsInRoot
+        fun swipeVertically(listTag: String = "automotive-favorites-list") {
+            val list = tag(listTag).boundsInRoot
             val start = Offset(list.center.x, minOf(list.bottom, playerTop()) - 12f)
             val end = Offset(list.center.x, list.top + 12f)
             scene.sendPointerEvent(PointerEventType.Press, start, type = PointerType.Touch, timeMillis = frame * 16)

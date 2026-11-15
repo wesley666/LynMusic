@@ -950,6 +950,11 @@ private fun TabContent(
             PlaylistDetailPage(route, navigation, playlistsState, onlinePlaylistsState, importState,
                 onPlaylistsIntent, onOnlinePlaylistsIntent, onPlayerIntent, allowSplit = !compact)
         }
+    }, folder = { route ->
+        detailNavigation?.let { navigation ->
+            FolderDetailPage(route, navigation, libraryState, favoritesState, importState,
+                onFavoritesIntent, onPlayerIntent)
+        }
     }) {
         RootTabContent(
             selectedTab = selectedTab,
@@ -1158,7 +1163,8 @@ internal fun AutomotiveLibraryContent(
     compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val rootState = rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
+    val detailNavigation = LocalMusicDetailNavigation.current
+    val rootState = detailNavigation?.libraryRootState ?: rememberSaveable { mutableStateOf(LibraryBrowserRootView.Tracks) }
     var rootClickRequestKey by rememberSaveable { mutableStateOf(0) }
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var searchAutoFocus by remember { mutableStateOf(false) }
@@ -1217,9 +1223,16 @@ internal fun AutomotiveLibraryContent(
         rootState = rootState,
         rootClickRequestKey = rootClickRequestKey,
         rootPagerScrollEnabled = !searchExpanded && (!searchEnabled || (!inlineSearchFocused && query.isBlank())),
+        onOpenFolder = { folder ->
+            searchAutoFocus = false
+            inlineSearchFocused = false
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+            detailNavigation?.openFolder(folder, libraryState.selectedSourceFilter)
+        },
         header = { actions ->
             // Register after browser detail/selection handlers: back first exits search.
-            PlatformBackHandler(enabled = searchExpanded || inlineSearchFocused || query.isNotBlank()) {
+            PlatformBackHandler(enabled = LocalMusicDetailIsForeground.current && (searchExpanded || inlineSearchFocused || query.isNotBlank())) {
                 exitSearch()
             }
             val batchAction = actions.onBatchSelection?.let { MobileLibraryHubBatchAction(it) }

@@ -47,60 +47,6 @@ class AndroidBackNavigationTest {
     }
 
     @Test
-    fun `library browser returns folder detail when folder is selected`() {
-        assertEquals(
-            LibraryBrowserBackTarget.Folder,
-            resolveLibraryBrowserBackTarget(
-                selectedArtistId = null,
-                selectedAlbumId = null,
-                selectedFolderSourceId = "source-1",
-            ),
-        )
-    }
-
-    @Test
-    fun `library folder back destination returns parent folder for nested path`() {
-        assertEquals(
-            LibraryFolderBackDestination(
-                sourceId = "source-1",
-                path = "Music/Rock",
-            ),
-            resolveLibraryFolderBackDestination(
-                selectedFolderSourceId = "source-1",
-                selectedFolderPath = "Music/Rock/Live",
-            ),
-        )
-    }
-
-    @Test
-    fun `library folder back destination returns source root from first level folder`() {
-        assertEquals(
-            LibraryFolderBackDestination(
-                sourceId = "source-1",
-                path = "",
-            ),
-            resolveLibraryFolderBackDestination(
-                selectedFolderSourceId = "source-1",
-                selectedFolderPath = "Music",
-            ),
-        )
-    }
-
-    @Test
-    fun `library folder back destination exits source root to folder list`() {
-        assertEquals(
-            LibraryFolderBackDestination(
-                sourceId = null,
-                path = null,
-            ),
-            resolveLibraryFolderBackDestination(
-                selectedFolderSourceId = "source-1",
-                selectedFolderPath = "",
-            ),
-        )
-    }
-
-    @Test
     fun `playlists detail can navigate back when a playlist is selected`() {
         assertTrue(canNavigateBackFromPlaylistDetail("playlist-1"))
     }
