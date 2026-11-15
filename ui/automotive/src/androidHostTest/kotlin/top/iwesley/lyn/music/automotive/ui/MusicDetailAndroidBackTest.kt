@@ -17,6 +17,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.assertIsSelected
 import org.junit.Rule
@@ -37,6 +38,10 @@ import org.robolectric.shadows.ShadowWindowManagerGlobal
 import org.robolectric.util.ReflectionHelpers
 import top.iwesley.lyn.music.feature.details.AlbumDetailData
 import top.iwesley.lyn.music.feature.details.MusicDetailQueries
+import top.iwesley.lyn.music.core.model.Track
+import top.iwesley.lyn.music.ANDROID_AUTOMOTIVE_PLATFORM_NAME
+import top.iwesley.lyn.music.core.model.PlatformCapabilities
+import top.iwesley.lyn.music.core.model.PlatformDescriptor
 import top.iwesley.lyn.music.resources.ProvideUiResourceLanguage
 import top.iwesley.lyn.music.ui.LynMusicTheme
 import java.time.Duration
@@ -51,6 +56,8 @@ import kotlin.test.assertTrue
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class MusicDetailAndroidBackTest {
     @get:Rule val compose = createEmptyComposeRule()
+    private val platform = PlatformDescriptor(ANDROID_AUTOMOTIVE_PLATFORM_NAME,
+        PlatformCapabilities(true, true, true, true, false))
     @Test fun lastDetailGestureDoesNotFinishActivity() {
         Fixture().use { ui ->
             ui.navigation.open(LibraryNavigationTarget.Album("album"))
@@ -130,6 +137,32 @@ class MusicDetailAndroidBackTest {
             ui.frames()
             assertEquals(route, ui.navigation.top)
             compose.onNodeWithTag("artist-tab-Albums").assertIsSelected()
+            assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close()
+            ui.frames()
+            assertFalse(ui.navigation.hasDetails)
+            assertFalse(ui.activity.isFinishing)
+            assertEquals(0, RecordingActivityClient.backRequests)
+        }
+    }
+
+    @Test fun albumScrollSurvivesEitherCancelledSystemBackEdgeWithoutReloading() {
+        for (edge in listOf(BackEvent.EDGE_LEFT, BackEvent.EDGE_RIGHT)) Fixture(withTracks = true).use { ui ->
+            ui.navigation.open(LibraryNavigationTarget.Album("album"))
+            ui.frames()
+            val route = ui.navigation.top
+            compose.onNodeWithTag("album-tracks").performScrollToIndex(15)
+            ui.frames()
+            val entry = ui.navigation.entry(route)
+            val index = entry.contentListState.firstVisibleItemIndex
+            val offset = entry.contentListState.firstVisibleItemScrollOffset
+            val gesture = assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge))
+            gesture.moveBy(if (edge == BackEvent.EDGE_LEFT) 160f else -160f, 0f)
+            ui.frames(2)
+            gesture.cancel(); ui.frames()
+            assertEquals(route, ui.navigation.top)
+            assertEquals(index, entry.contentListState.firstVisibleItemIndex)
+            assertEquals(offset, entry.contentListState.firstVisibleItemScrollOffset)
+            assertEquals(1, ui.albumRequests)
             assertNotNull(ShadowWindowManagerGlobal.startPredictiveBackGesture(edge)).close()
             ui.frames()
             assertFalse(ui.navigation.hasDetails)
@@ -229,7 +262,7 @@ class MusicDetailAndroidBackTest {
         try {
             activity.setContent {
                 navigation = rememberMusicDetailNavigation(queries) {}
-                CompositionLocalProvider(LocalMusicDetailNavigation provides navigation,
+                CompositionLocalProvider(LocalPlatformDescriptor provides platform, LocalMusicDetailNavigation provides navigation,
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() }) {
                     ProvideUiResourceLanguage("en") {
                         LynMusicTheme { MusicDetailHost(onPlayerIntent = {}) { Text("Root") } }
@@ -252,6 +285,11 @@ class MusicDetailAndroidBackTest {
             frames()
             assertEquals("album", navigation.top.kind)
             assertFalse(activity.isFinishing)
+            activity.onBackPressedDispatcher.onBackPressed()
+            frames()
+            assertFalse(navigation.hasDetails)
+            assertFalse(activity.isFinishing)
+            navigation.open(LibraryNavigationTarget.Album("album"))
             navigation.open(LibraryNavigationTarget.Artist("artist", artistName = "Artist"))
             frames()
             navigation.clear()
@@ -263,9 +301,15 @@ class MusicDetailAndroidBackTest {
         }
     }
 
-    private inner class Fixture : AutoCloseable {
+    private inner class Fixture(withTracks: Boolean = false) : AutoCloseable {
         private val controller = Robolectric.buildActivity(ComponentActivity::class.java)
-        private val queries = TestMusicDetailQueries(album = { flowOf(AlbumDetailData("Album")) })
+        var albumRequests = 0
+        private val queries = TestMusicDetailQueries(album = {
+            albumRequests++
+            flowOf(AlbumDetailData("Album", tracks = if (withTracks) (0..39).map {
+                Track("song-$it", "source", "Song $it", mediaLocator = "", relativePath = "$it")
+            } else emptyList()))
+        })
         val activity = controller.get()
         lateinit var navigation: MusicDetailNavigation
 
@@ -279,6 +323,7 @@ class MusicDetailAndroidBackTest {
             activity.setContent {
                 navigation = rememberMusicDetailNavigation(queries) {}
                 CompositionLocalProvider(
+                    LocalPlatformDescriptor provides platform,
                     LocalMusicDetailNavigation provides navigation,
                     LocalPlayerPresentation provides androidx.compose.runtime.remember { PlayerPresentation() },
                 ) {

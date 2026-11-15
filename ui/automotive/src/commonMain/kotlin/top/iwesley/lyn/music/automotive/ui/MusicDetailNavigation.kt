@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,9 +24,7 @@ import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import top.iwesley.lyn.music.automotive.ui.platform.PlatformMusicDetailBackInput
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collectLatest
-import top.iwesley.lyn.music.core.model.Track
 import androidx.savedstate.serialization.SavedStateConfiguration
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
@@ -65,16 +64,6 @@ internal fun LibraryNavigationTarget.detailRoute(): MusicDetailRoute = when (thi
     is LibraryNavigationTarget.OnlineArtist -> MusicDetailRoute(kind = "artist", entityId = artistId,
         sourceId = sourceId, title = artistName)
 }
-
-/** Preserve the existing album presentation while artists use independent queries. */
-internal data class MusicDetailContent(
-    val title: String,
-    val artistName: String? = null,
-    val artworkLocator: String? = null,
-    val tracks: List<Track> = emptyList(),
-    val albums: List<MusicDetailAlbum> = emptyList(),
-    val artworkCacheKey: String? = null,
-)
 
 /** Each independently retriable query owns its job and publication generation. */
 internal class DetailQueryState<T>(
@@ -134,9 +123,7 @@ internal class MusicDetailEntryState(
     scope: CoroutineScope,
 ) {
     private val album = DetailQueryState(scope) {
-        queries.observeAlbum(route.albumRequest()).map {
-            MusicDetailContent(it.title, it.artistName, it.artworkLocator, it.tracks, artworkCacheKey = it.artworkCacheKey)
-        }
+        queries.observeAlbum(route.albumRequest())
     }
     val artistTracks = DetailQueryState(scope) { queries.observeArtistTracks(route.artistRequest()) }
     val artistAlbums = DetailQueryState(scope) { queries.observeArtistAlbums(route.artistRequest()) }
@@ -144,6 +131,8 @@ internal class MusicDetailEntryState(
     val loading get() = album.loading
     val error get() = album.error
     var contentListState = LazyListState()
+    var albumSummaryScrollState = ScrollState(0)
+    var albumHeaderLayout: AlbumHeaderLayout? = null
     var albumListState = LazyListState()
     var favoriteListState = LazyListState()
     var selectedArtistTab by mutableStateOf(ArtistDetailTab.Songs)
@@ -354,7 +343,7 @@ internal fun MusicDetailHost(
                 CompositionLocalProvider(LocalMusicDetailIsForeground provides entryForeground) {
                     when {
                         route.isRoot -> root()
-                        route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, showDuration)
+                        route.kind == "album" -> AlbumDetailPage(route, navigation, onPlayerIntent, allowSplit = showDuration)
                         else -> ArtistDetailPage(route, navigation, onPlayerIntent)
                     }
                 }
